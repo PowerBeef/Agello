@@ -48,7 +48,7 @@ final class DeviceHarness {
       savedDefaults[key] = UserDefaults.standard.object(forKey: key)
     }
     container = try! ModelContainer(
-      for: ChatThread.self, ChatTurn.self,
+      for: ChatStore.schema,
       configurations: ModelConfiguration(isStoredInMemoryOnly: true))
     appState = AppState(useMockEngine: false)
     appState.modelContext = container.mainContext

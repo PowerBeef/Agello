@@ -16,7 +16,7 @@ final class MessageActionsTests: XCTestCase {
   override func setUp() async throws {
     savedSelection = UserDefaults.standard.object(forKey: "selectedThreadID")
     container = try ModelContainer(
-      for: ChatThread.self, ChatTurn.self,
+      for: ChatStore.schema,
       configurations: ModelConfiguration(isStoredInMemoryOnly: true))
     appState = AppState(useMockEngine: true)
     appState.modelContext = container.mainContext

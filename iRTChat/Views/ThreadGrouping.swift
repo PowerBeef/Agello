@@ -9,12 +9,16 @@ enum ThreadGrouping {
     var id: String { title }
   }
 
-  /// Groups `items` (already sorted newest first) by `date`.
+  /// Groups `items` (already sorted newest first) by `date`; pinned items
+  /// come first in their own section.
   static func groups<Item>(
-    _ items: [Item], date: (Item) -> Date, now: Date = .now, calendar: Calendar = .current
+    _ items: [Item], date: (Item) -> Date, pinned: (Item) -> Bool = { _ in false },
+    now: Date = .now, calendar: Calendar = .current
   ) -> [Group<Item>] {
-    var groups: [Group<Item>] = []
-    for item in items {
+    let pinnedItems = items.filter(pinned)
+    var groups: [Group<Item>] =
+      pinnedItems.isEmpty ? [] : [Group(title: String(localized: "Pinned"), items: pinnedItems)]
+    for item in items where !pinned(item) {
       let title = section(for: date(item), now: now, calendar: calendar)
       if groups.last?.title == title {
         groups[groups.count - 1].items.append(item)

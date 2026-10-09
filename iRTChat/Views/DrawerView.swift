@@ -11,6 +11,7 @@ struct DrawerView: View {
   var onSelect: (ChatThread) -> Void
   var onNewChat: () -> Void
   var onRename: (ChatThread) -> Void
+  var onTogglePin: (ChatThread) -> Void
   var onDelete: (ChatThread) -> Void
   var onSettings: () -> Void
 
@@ -89,7 +90,9 @@ struct DrawerView: View {
   private func list(_ rows: [Row]) -> some View {
     ScrollView {
       LazyVStack(alignment: .leading, spacing: 2) {
-        ForEach(ThreadGrouping.groups(rows, date: { $0.thread.updatedAt })) { group in
+        ForEach(
+          ThreadGrouping.groups(rows, date: { $0.thread.updatedAt }, pinned: { $0.thread.isPinned })
+        ) { group in
           Text(group.title)
             .font(.footnote.weight(.semibold))
             .foregroundStyle(.secondary)
@@ -121,6 +124,13 @@ struct DrawerView: View {
           if appState.generatingThreadID == thread.id {
             ProgressView().controlSize(.mini)
           }
+          if thread.isPinned {
+            Spacer(minLength: 4)
+            Image(systemName: "pin.fill")
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+              .accessibilityLabel("Pinned")
+          }
         }
         if let snippet = row.snippet {
           Text(snippet)
@@ -139,6 +149,11 @@ struct DrawerView: View {
     }
     .buttonStyle(.plain)
     .contextMenu {
+      Button(
+        thread.isPinned ? "Unpin" : "Pin", systemImage: thread.isPinned ? "pin.slash" : "pin"
+      ) {
+        onTogglePin(thread)
+      }
       Button("Rename", systemImage: "pencil") { onRename(thread) }
       Button("Delete", systemImage: "trash", role: .destructive) { onDelete(thread) }
         // Its reply is still being written into this chat.

@@ -5,7 +5,7 @@ import SwiftData
 /// never edit a shipped schema.
 enum ChatMigrationPlan: SchemaMigrationPlan {
   static var schemas: [any VersionedSchema.Type] {
-    [SchemaV0.self, SchemaV1.self, SchemaV2.self]
+    [SchemaV0.self, SchemaV1.self, SchemaV2.self, SchemaV3.self]
   }
 
   static var stages: [MigrationStage] {
@@ -23,6 +23,8 @@ enum ChatMigrationPlan: SchemaMigrationPlan {
           }
           try context.save()
         }),
+      // New models and an optional project link only.
+      .lightweight(fromVersion: SchemaV2.self, toVersion: SchemaV3.self),
     ]
   }
 

@@ -126,6 +126,12 @@ struct ContentView: View {
           if let thread = currentThread {
             ToolbarItem(placement: .topBarTrailing) {
               Menu {
+                Button(
+                  thread.isPinned ? "Unpin" : "Pin",
+                  systemImage: thread.isPinned ? "pin.slash" : "pin"
+                ) {
+                  togglePin(thread)
+                }
                 Button("Rename", systemImage: "pencil") { startRename(thread) }
                 Button("Delete", systemImage: "trash", role: .destructive) { deleting = thread }
                   .disabled(appState.generatingThreadID == thread.id)
@@ -150,6 +156,7 @@ struct ContentView: View {
       },
       onNewChat: newChat,
       onRename: startRename,
+      onTogglePin: togglePin,
       onDelete: { deleting = $0 },
       onSettings: {
         showSettings = true
@@ -201,6 +208,12 @@ struct ContentView: View {
 
   private var isDeleting: Binding<Bool> {
     Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })
+  }
+
+  private func togglePin(_ thread: ChatThread) {
+    thread.isPinned.toggle()
+    try? context.save()
+    Haptics.complete()
   }
 
   private func startRename(_ thread: ChatThread) {

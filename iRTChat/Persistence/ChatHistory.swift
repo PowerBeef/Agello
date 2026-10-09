@@ -2,17 +2,21 @@ import Foundation
 import SwiftData
 
 /// The current schema's models (see `Schema/` and ``ChatMigrationPlan``).
-typealias ChatThread = SchemaV2.ChatThread
-typealias ChatTurn = SchemaV2.ChatTurn
+typealias ChatThread = SchemaV3.ChatThread
+typealias ChatTurn = SchemaV3.ChatTurn
+typealias Project = SchemaV3.Project
+typealias ChatDocument = SchemaV3.ChatDocument
+typealias DocumentChunk = SchemaV3.DocumentChunk
+typealias MemoryItem = SchemaV3.MemoryItem
 
 /// Schema for the app's container.
 enum ChatStore {
-  static var schema: Schema { Schema(versionedSchema: SchemaV2.self) }
+  static var schema: Schema { Schema(versionedSchema: SchemaV3.self) }
 }
 
 // MARK: - Thread: branches
 
-extension SchemaV2.ChatThread {
+extension SchemaV3.ChatThread {
   var modelID: ModelID {
     get { ModelID(storedValue: modelIDRaw) }
     set { modelIDRaw = newValue.rawValue }
@@ -52,11 +56,24 @@ extension SchemaV2.ChatThread {
     }
   }
 
+  /// Chain turns by creation time and select the last as the active leaf
+  /// (the V3 counterpart of ``ChatMigrationPlan/linkLinearHistory(_:)``).
+  func linkLinearHistory() {
+    let ordered = turns.sorted { $0.createdAt < $1.createdAt }
+    var previous: UUID?
+    for turn in ordered {
+      turn.parentID = previous
+      previous = turn.id
+    }
+    activeLeafID = ordered.last?.id
+    updatedAt = ordered.last?.createdAt ?? createdAt
+  }
+
   /// Continue the visible branch with `turn` and make it the active leaf.
   func append(_ turn: ChatTurn) {
     if activeLeafID == nil, !turns.isEmpty {
       // Legacy linear thread: adopt creation order first.
-      ChatMigrationPlan.linkLinearHistory(self)
+      linkLinearHistory()
     }
     attach(turn, parentID: activeLeafID)
   }
@@ -101,7 +118,7 @@ extension SchemaV2.ChatThread {
 
 // MARK: - Turn
 
-extension SchemaV2.ChatTurn {
+extension SchemaV3.ChatTurn {
   /// Prefix of model turns that record a failed generation.
   static let errorPrefix = "Error: "
 

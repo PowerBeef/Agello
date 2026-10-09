@@ -120,7 +120,7 @@ final class ChatFlowUITests: XCTestCase {
     attachScreenshot("settings")
     element("settings.done").tap()
     // Settings opens from the drawer, which is still showing behind it.
-    element("drawer.close").tap()
+    closeDrawer()
     send("Say 'two'.")
     try waitForReplyToFinish(timeout: 120)
     XCTAssertFalse(lastModelText().hasPrefix("Error:"), lastModelText())
@@ -170,6 +170,13 @@ final class ChatFlowUITests: XCTestCase {
       app.alerts.buttons["Save"].tap()
     }
     XCTAssertTrue(app.navigationBars["Greetings"].waitForExistence(timeout: 5))
+
+    // Pin: the chat moves to a "Pinned" section in the drawer.
+    element("chat.menu").tap()
+    app.buttons["Pin"].tap()
+    openDrawer()
+    XCTAssertTrue(app.staticTexts["Pinned"].waitForExistence(timeout: 5), "No Pinned section")
+    closeDrawer()
 
     element("chat.menu").tap()
     app.buttons["Delete"].tap()
@@ -309,6 +316,12 @@ final class ChatFlowUITests: XCTestCase {
     // Let the slide-in animation settle before tapping rows.
     _ = element("drawer.close").waitForExistence(timeout: 2)
     usleep(400_000)
+  }
+
+  private func closeDrawer() {
+    element("drawer.close").tap()
+    XCTAssertTrue(element("drawer.close").waitForNonExistence(timeout: 5), "Drawer did not close")
+    usleep(300_000)
   }
 
   private func openSettings() {

@@ -20,7 +20,7 @@ final class AppStateTests: XCTestCase {
       savedDefaults[key] = UserDefaults.standard.object(forKey: key)
     }
     container = try ModelContainer(
-      for: ChatThread.self, ChatTurn.self,
+      for: ChatStore.schema,
       configurations: ModelConfiguration(isStoredInMemoryOnly: true))
     appState = AppState(useMockEngine: true)
     appState.modelContext = container.mainContext

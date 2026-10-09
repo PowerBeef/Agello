@@ -69,3 +69,17 @@ final class OnboardingTests: XCTestCase {
     XCTAssertFalse(OnboardingView.shouldShow(done: false, isMock: true, downloaded: false))
   }
 }
+
+extension ThreadGroupingTests {
+  func testPinnedItemsComeFirstInTheirOwnSection() {
+    let now = date("2026-10-09T10:00:00Z")
+    let items = [
+      ("a", "2026-10-09T09:00:00Z", false), ("b", "2026-08-01T09:00:00Z", true),
+      ("c", "2026-10-08T09:00:00Z", false),
+    ].map { ($0.0, date($0.1), $0.2) }
+    let groups = ThreadGrouping.groups(
+      items, date: { $0.1 }, pinned: { $0.2 }, now: now, calendar: calendar)
+    XCTAssertEqual(groups.map(\.title), ["Pinned", "Today", "Yesterday"])
+    XCTAssertEqual(groups[0].items.map(\.0), ["b"])
+  }
+}

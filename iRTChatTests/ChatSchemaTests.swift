@@ -85,6 +85,49 @@ final class ChatSchemaTests: XCTestCase {
     XCTAssertEqual(thread.orderedTurns.first?.hasAudio, false)
   }
 
+  func testV2StoreMigratesToV3WithoutLoss() throws {
+    let threadID = UUID()
+    let image = Data([0xFF, 0xD8, 0x02])
+    do {
+      let container = try ModelContainer(
+        for: Schema(versionedSchema: SchemaV2.self),
+        configurations: ModelConfiguration(url: storeURL))
+      let thread = SchemaV2.ChatThread(title: "Pinned trip")
+      thread.id = threadID
+      thread.isPinned = true
+      container.mainContext.insert(thread)
+      let first = SchemaV2.ChatTurn(role: .user, text: "Plan Kyoto", imageData: image)
+      let reply = SchemaV2.ChatTurn(role: .model, text: "Day 1: temples")
+      reply.parentID = first.id
+      thread.turns.append(contentsOf: [first, reply])
+      thread.activeLeafID = reply.id
+      try container.mainContext.save()
+    }
+
+    let opened = ChatStoreLoader.open(url: storeURL)
+    XCTAssertNil(opened.recoveryNotice)
+    let context = opened.container.mainContext
+    let thread = try XCTUnwrap(try context.fetch(FetchDescriptor<ChatThread>()).first)
+    XCTAssertEqual(thread.id, threadID)
+    XCTAssertTrue(thread.isPinned)
+    XCTAssertNil(thread.projectID)
+    XCTAssertEqual(thread.orderedTurns.map(\.text), ["Plan Kyoto", "Day 1: temples"])
+    XCTAssertEqual(thread.orderedTurns.first?.imageData, image)
+
+    // The new models work in the migrated store.
+    let project = Project(name: "Travel")
+    context.insert(project)
+    thread.projectID = project.id
+    let document = ChatDocument(
+      name: "guide.pdf", kindRaw: "pdf", byteCount: 10, pageCount: 2, text: "…",
+      projectID: project.id)
+    document.chunks.append(DocumentChunk(index: 0, text: "Temples", pageStart: 1, pageEnd: 1))
+    context.insert(document)
+    context.insert(MemoryItem(text: "Prefers trains"))
+    XCTAssertNoThrow(try context.save())
+    XCTAssertEqual(try context.fetch(FetchDescriptor<DocumentChunk>()).count, 1)
+  }
+
   func testUnreadableStoreIsSetAsideNotFatal() throws {
     try Data("not a database".utf8).write(to: storeURL)
     let opened = ChatStoreLoader.open(url: storeURL)
