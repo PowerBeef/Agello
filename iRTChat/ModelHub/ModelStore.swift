@@ -14,7 +14,9 @@ final class ModelStore: NSObject {
     case failed(message: String)
   }
 
-  private(set) var states: [ModelID: DownloadState] = [.e4b: .notDownloaded]
+  private(set) var states: [ModelID: DownloadState] = [
+    .e4b: .notDownloaded, .embeddingGemma: .notDownloaded,
+  ]
 
   /// The one chat model (Gemma 4 E4B).
   let activeModelID: ModelID = .e4b
@@ -29,6 +31,9 @@ final class ModelStore: NSObject {
   private var downloadingSpec: ModelSpec?
   @ObservationIgnored
   private var resumeData: [ModelID: Data] = [:]
+  /// Downloads waiting for the current one (one at a time).
+  @ObservationIgnored
+  private var queue: [ModelSpec] = []
 
   override init() {
     super.init()
@@ -142,6 +147,26 @@ final class ModelStore: NSObject {
     task.taskDescription = spec.id.rawValue
     activeTask = task
     task.resume()
+  }
+
+  /// Download `spec` unless it's already here, downloading, or queued; waits
+  /// for any other download instead of pausing it.
+  func ensureDownloaded(_ spec: ModelSpec) {
+    guard !isDownloaded(spec), downloadingSpec?.id != spec.id,
+      !queue.contains(where: { $0.id == spec.id })
+    else { return }
+    if downloadingSpec == nil {
+      startDownload(spec)
+    } else {
+      queue.append(spec)
+    }
+  }
+
+  /// Start the next queued download, if the slot is free.
+  private func startNextQueued() {
+    guard downloadingSpec == nil, !queue.isEmpty else { return }
+    let next = queue.removeFirst()
+    if !isDownloaded(next) { startDownload(next) } else { startNextQueued() }
   }
 
   func pauseDownload(_ spec: ModelSpec) {
@@ -335,6 +360,7 @@ extension ModelStore {
       } else {
         self.states[spec.id] = .ready
       }
+      self.startNextQueued()
     }
   }
 
@@ -374,6 +400,7 @@ extension ModelStore {
       } else {
         self.states[spec.id] = .failed(message: error.localizedDescription)
       }
+      self.startNextQueued()
     }
   }
 }

@@ -2,16 +2,19 @@ import Foundation
 
 // MARK: - Model identity
 
-/// The chat model. iRTChat runs Gemma 4 E4B only; chats stored with other
-/// identifiers (e.g. "e2b" from earlier versions) continue on E4B.
+/// Downloadable models. Chats run Gemma 4 E4B only (stored identifiers
+/// like "e2b" from earlier versions continue on E4B); EmbeddingGemma powers
+/// search by meaning in files and memory.
 enum ModelID: String, Codable, Sendable, CaseIterable, Identifiable {
   case e4b
+  case embeddingGemma = "embeddinggemma-2-text-270m"
 
   var id: String { rawValue }
 
-  /// Decodes stored identifiers, mapping retired models to E4B.
+  /// Decodes a chat's stored model, mapping retired (and non-chat) models to E4B.
   init(storedValue: String) {
-    self = ModelID(rawValue: storedValue) ?? .e4b
+    let model = ModelID(rawValue: storedValue) ?? .e4b
+    self = model == .embeddingGemma ? .e4b : model
   }
 }
 

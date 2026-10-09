@@ -34,6 +34,10 @@ enum SchemaV3: VersionedSchema {
     var activeLeafID: UUID?
     /// The project this chat belongs to, if any.
     var projectID: UUID?
+    /// Float16 vector of the chat's title and opening, for search by meaning.
+    var searchEmbedding: Data?
+    /// When `searchEmbedding` was computed (re-embed after new messages).
+    var searchEmbeddedAt: Date?
     @Relationship(deleteRule: .cascade, inverse: \ChatTurn.thread)
     var turns: [ChatTurn] = []
 
@@ -118,6 +122,9 @@ enum SchemaV3: VersionedSchema {
     /// Identifier of the embedding model that indexed the chunks; nil until
     /// indexed (or when the index must be rebuilt).
     var indexedWith: String?
+    /// Whole-document summary, written once when the document is too long
+    /// to read in full and reused for later questions.
+    var summary: String?
     @Relationship(deleteRule: .cascade, inverse: \DocumentChunk.document)
     var chunks: [DocumentChunk] = []
 

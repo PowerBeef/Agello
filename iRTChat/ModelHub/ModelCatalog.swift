@@ -32,9 +32,25 @@ enum ModelCatalog {
     sizeBytes: 3_659_530_240
   )
 
-  static let all: [ModelSpec] = [e4b]
+  /// EmbeddingGemma 2 (text, 270M): turns text into vectors for search by
+  /// meaning in files and memory.
+  static let embeddingGemma = ModelSpec(
+    id: .embeddingGemma,
+    displayName: "EmbeddingGemma",
+    tagline: "Finds the right passages in your files and memories.",
+    repo: "litert-community/embeddinggemma-2-text-270m-litert-lm",
+    fileName: "embeddinggemma-2-text-270m.litertlm",
+    sizeBytes: 164_626_432
+  )
+
+  static let all: [ModelSpec] = [e4b, embeddingGemma]
 
   static let `default`: ModelSpec = e4b
 
-  static func spec(for id: ModelID) -> ModelSpec { e4b }
+  static func spec(for id: ModelID) -> ModelSpec {
+    switch id {
+    case .e4b: return e4b
+    case .embeddingGemma: return embeddingGemma
+    }
+  }
 }
