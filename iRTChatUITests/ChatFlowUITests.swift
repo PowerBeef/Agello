@@ -264,6 +264,25 @@ final class ChatFlowUITests: XCTestCase {
       "Reasoning streamed with Think off")
   }
 
+  /// An attached file shows as a chip, travels with the message, and the
+  /// reply lists it as a source.
+  func testAttachedFileIsSentAndCited() throws {
+    app.terminate()
+    app.launchArguments.append("--uitest-sample-file")
+    app.launch()
+    try openNewChat()
+    XCTAssertTrue(element("message.file").waitForExistence(timeout: 5), "No pending file chip")
+    send("When does the trailhead parking open?")
+    try waitForReplyToFinish(timeout: 180)
+    attachScreenshot("file-reply")
+    XCTAssertTrue(element("message.sources").waitForExistence(timeout: 5), "No sources")
+    // The chip moved from the composer to the sent message.
+    XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "message.file").count, 1)
+    if !Self.isSimulator {
+      XCTAssertTrue(lastModelText().contains("6"), lastModelText())
+    }
+  }
+
   /// E4B is the only model: its card (Settings → Models) shows Ready
   /// (device) or Download.
   func testModelsShowTheModel() throws {

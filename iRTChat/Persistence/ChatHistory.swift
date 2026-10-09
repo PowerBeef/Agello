@@ -151,8 +151,36 @@ struct MessageParts: Codable, Equatable, Sendable {
   var toolActivity: [ToolActivityRecord] = []
   /// Sources cited by this reply (web pages, files), numbered from 1.
   var sources: [SourceRecord] = []
+  /// Files the user attached to this message.
+  var files: [FileRecord] = []
 
-  var isEmpty: Bool { toolActivity.isEmpty && sources.isEmpty }
+  var isEmpty: Bool { toolActivity.isEmpty && sources.isEmpty && files.isEmpty }
+
+  init(
+    toolActivity: [ToolActivityRecord] = [], sources: [SourceRecord] = [], files: [FileRecord] = []
+  ) {
+    self.toolActivity = toolActivity
+    self.sources = sources
+    self.files = files
+  }
+
+  /// Tolerates missing keys: parts saved before a field existed still decode.
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    toolActivity = try container.decodeIfPresent([ToolActivityRecord].self, forKey: .toolActivity) ?? []
+    sources = try container.decodeIfPresent([SourceRecord].self, forKey: .sources) ?? []
+    files = try container.decodeIfPresent([FileRecord].self, forKey: .files) ?? []
+  }
+}
+
+/// A file attached to a message (its text lives in a ``ChatDocument``).
+struct FileRecord: Codable, Equatable, Sendable, Identifiable {
+  /// The ``ChatDocument`` id.
+  var id: UUID
+  var name: String
+  /// ``DocumentKind`` raw value.
+  var kind: String
+  var pageCount: Int
 }
 
 struct ToolActivityRecord: Codable, Equatable, Sendable {

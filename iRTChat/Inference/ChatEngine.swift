@@ -42,6 +42,14 @@ protocol ChatEngineProtocol: Sendable {
   /// one live conversation per engine), which is replaced by an empty one:
   /// the caller must re-seed history before the next send.
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data
+  /// Run plain-text helper prompts one after another (e.g. summarizing a
+  /// long document section by section), each in a throwaway conversation.
+  /// Like ``helperJSON``, this leaves the main conversation empty.
+  /// `progress` receives the number of prompts completed. Stops early (with
+  /// the outputs so far) when the calling task is cancelled.
+  func helperTexts(
+    _ prompts: [String], maxOutputTokens: Int, progress: @Sendable (Int) async -> Void
+  ) async throws -> [String]
 }
 
 // MARK: - Live engine
@@ -434,6 +442,36 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     return Data(output.utf8)
   }
 
+  func helperTexts(
+    _ prompts: [String], maxOutputTokens: Int, progress: @Sendable (Int) async -> Void
+  ) async throws -> [String] {
+    guard let engine, let resolved, let options else { throw ChatError.engineNotReady }
+    guard !generating else { throw ChatError.underlying(message: "Busy generating.") }
+    generating = true
+    defer { generating = false }
+    let started = Date()
+    var outputs: [String] = []
+    for prompt in prompts {
+      if Task.isCancelled { break }
+      // No grammar here, so speculative decoding stays on for speed.
+      conversation = nil
+      let helper = try await engine.createConversation(
+        with: ConversationConfig(enableSpeculativeDecoding: resolved.enableSpeculativeDecoding))
+      let reply = try await helper.sendMessage(
+        LiteRTLM.Message(prompt), maxOutputTokens: maxOutputTokens)
+      outputs.append(reply.toString.trimmingCharacters(in: .whitespacesAndNewlines))
+      await progress(outputs.count)
+    }
+    conversation = nil
+    conversation = try await Self.makeConversation(
+      engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
+      history: [])
+    pendingSeedTokens = preambleTokens
+    Log.engine.info(
+      "helper texts: \(outputs.count)/\(prompts.count) in \(Date().timeIntervalSince(started), format: .fixed(precision: 1))s")
+    return outputs
+  }
+
   // MARK: Send
 
   nonisolated func send(
@@ -793,5 +831,20 @@ actor MockChatEngine: ChatEngineProtocol {
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data {
     helperPrompts.append(prompt)
     return helperResponse
+  }
+
+  /// Test instrumentation: every plain-text helper prompt.
+  private(set) var helperTextPrompts: [String] = []
+
+  func helperTexts(
+    _ prompts: [String], maxOutputTokens: Int, progress: @Sendable (Int) async -> Void
+  ) async throws -> [String] {
+    var outputs: [String] = []
+    for prompt in prompts {
+      helperTextPrompts.append(prompt)
+      outputs.append("- Key point \(outputs.count + 1) of this part.")
+      await progress(outputs.count)
+    }
+    return outputs
   }
 }

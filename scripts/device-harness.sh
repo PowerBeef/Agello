@@ -2,7 +2,7 @@
 # On-device test harness for iRTChat (physical iPhone only).
 #
 # Usage:
-#   scripts/device-harness.sh [inference|ui|all|thinking|memory|calibrate|probes] [extra xcodebuild args...]
+#   scripts/device-harness.sh [inference|files|ui|all|thinking|memory|calibrate|probes] [extra xcodebuild args...]
 #
 #   inference  In-app scenarios through the real engine (download, load, text,
 #              chat isolation, stop, tools, thinking, image, audio, settings
@@ -71,6 +71,7 @@ status=0
 case "$SUITE" in
   inference) run_suite inference -only-testing:iRTChatDeviceTests/InferenceScenarioTests "$@" || status=$? ;;
   ui) run_suite ui -only-testing:iRTChatUITests "$@" || status=$? ;;
+  files) run_suite files -only-testing:iRTChatDeviceTests/KnowledgeScenarioTests "$@" || status=$? ;;
   thinking)
     export TEST_RUNNER_HARNESS_THINKING=1
     run_suite thinking -only-testing:iRTChatDeviceTests/ThinkingScenarioTests "$@" || status=$?
@@ -88,7 +89,8 @@ case "$SUITE" in
     run_suite calibrate -only-testing:iRTChatDeviceTests/CalibrationScenarioTests "$@" || status=$?
     ;;
   all)
-    run_suite inference -only-testing:iRTChatDeviceTests/InferenceScenarioTests "$@" || status=$?
+    run_suite inference -only-testing:iRTChatDeviceTests/InferenceScenarioTests \
+      -only-testing:iRTChatDeviceTests/KnowledgeScenarioTests "$@" || status=$?
     ui_status=0
     run_suite ui -only-testing:iRTChatUITests "$@" || ui_status=$?
     [ "$status" -eq 0 ] && status=$ui_status

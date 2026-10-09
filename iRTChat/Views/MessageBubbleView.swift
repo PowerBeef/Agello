@@ -38,6 +38,9 @@ struct MessageBubbleView: View {
     HStack(alignment: .bottom, spacing: 8) {
       Spacer(minLength: 56)
       VStack(alignment: .trailing, spacing: 6) {
+        ForEach(turn.parts.files) { file in
+          FileChip(record: file)
+        }
         if let data = turn.imageData, let image = UIImage(data: data) {
           Image(uiImage: image)
             .resizable()
@@ -122,6 +125,10 @@ struct MessageBubbleView: View {
           toolChips
         }
         if !isStreaming, !turn.text.isEmpty {
+          let sources = turn.parts.sources
+          if !sources.isEmpty {
+            sourcesCard(sources)
+          }
           actionRow
         }
         if let stats = turn.stats {
@@ -134,6 +141,40 @@ struct MessageBubbleView: View {
       }
       Spacer(minLength: 4)
     }
+  }
+
+  // MARK: - Sources
+
+  private func sourcesCard(_ sources: [SourceRecord]) -> some View {
+    DisclosureGroup {
+      VStack(alignment: .leading, spacing: 8) {
+        ForEach(sources) { source in
+          VStack(alignment: .leading, spacing: 2) {
+            Text("\(source.index). \(source.title)")
+              .font(.caption.weight(.semibold))
+            if let snippet = source.snippet {
+              Text(snippet)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+      .padding(.top, 6)
+    } label: {
+      Label(
+        sources.count == 1 ? "1 source" : "\(sources.count) sources",
+        systemImage: "doc.text.magnifyingglass"
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
+    }
+    .padding(DS.padMD)
+    .glassEffect(.regular, in: .rect(cornerRadius: DS.radiusInner))
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("message.sources")
   }
 
   // MARK: - Actions

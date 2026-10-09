@@ -74,7 +74,16 @@ final class AppState {
     }
   }
 
-  var modelContext: ModelContext?
+  var modelContext: ModelContext? {
+    didSet { knowledge.modelContext = modelContext }
+  }
+  /// Attached files: storage, indexing, and retrieval.
+  let knowledge: KnowledgeBase
+  /// What's happening before a reply starts (e.g. "Reading report.pdf ·
+  /// part 3 of 11"); nil otherwise.
+  var preparingStatus: String?
+  /// Reading files before a reply (cancelled by Stop).
+  @ObservationIgnored private var preparationTask: Task<FileContextResult?, Never>?
 
   /// Thread whose text history the native conversation currently holds.
   @ObservationIgnored private var conversationThreadID: UUID?
@@ -94,6 +103,7 @@ final class AppState {
     self.store = store ?? ModelStore()
     self.engine =
       useMockEngine ? MockChatEngine() : LiteRTChatEngine()
+    self.knowledge = KnowledgeBase(store: self.store, useHashingEmbedder: useMockEngine)
     if let data = UserDefaults.standard.data(forKey: "inferenceOptions"),
       let decoded = try? JSONDecoder().decode(InferenceOptions.self, from: data)
     {
@@ -338,19 +348,25 @@ final class AppState {
   /// Send a message in `thread`. Returns false when the message was not
   /// accepted (nothing was persisted), so the caller can restore the draft.
   @discardableResult
-  func send(text: String, imageData: Data?, audioFileURL: URL?, in thread: ChatThread) async
-    -> Bool
-  {
+  func send(
+    text: String, imageData: Data?, audioFileURL: URL?, files: [FileRecord] = [],
+    in thread: ChatThread
+  ) async -> Bool {
     let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !prompt.isEmpty || imageData != nil || audioFileURL != nil else { return false }
+    guard !prompt.isEmpty || imageData != nil || audioFileURL != nil || !files.isEmpty else {
+      return false
+    }
     return await generate(
       prompt: prompt, imageData: imageData, audioFileURL: audioFileURL, in: thread,
       history: nil
     ) {
-      thread.append(
-        ChatTurn(role: .user, text: prompt, imageData: imageData, hasAudio: audioFileURL != nil))
+      let turn = ChatTurn(
+        role: .user, text: prompt, imageData: imageData, hasAudio: audioFileURL != nil)
+      if !files.isEmpty { turn.parts = MessageParts(files: files) }
+      thread.append(turn)
       if thread.title == "New chat" {
-        thread.title = Self.title(prompt: prompt, hasImage: imageData != nil)
+        thread.title = Self.title(
+          prompt: prompt, hasImage: imageData != nil, fileName: files.first?.name)
       }
     }
   }
@@ -380,12 +396,17 @@ final class AppState {
   @discardableResult
   func edit(_ userTurn: ChatTurn, text: String, in thread: ChatThread) async -> Bool {
     let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard userTurn.isUser, !prompt.isEmpty || userTurn.imageData != nil else { return false }
+    let files = userTurn.parts.files
+    guard userTurn.isUser, !prompt.isEmpty || userTurn.imageData != nil || !files.isEmpty else {
+      return false
+    }
     return await generate(
       prompt: prompt, imageData: userTurn.imageData, audioFileURL: nil, in: thread,
       history: thread.textHistory(before: userTurn)
     ) {
-      thread.addVersion(ChatTurn(role: .user, text: prompt, imageData: userTurn.imageData), of: userTurn)
+      let turn = ChatTurn(role: .user, text: prompt, imageData: userTurn.imageData)
+      if !files.isEmpty { turn.parts = MessageParts(files: files) }
+      thread.addVersion(turn, of: userTurn)
     }
   }
 
@@ -425,6 +446,27 @@ final class AppState {
 
     let threadID = thread.id
     selectedThreadID = threadID
+
+    // Files in this chat (and its project): build what the model reads.
+    var enginePrompt = prompt
+    var sources: [SourceRecord] = []
+    let documents = documents(for: thread)
+    if !documents.isEmpty {
+      guard await ensureEngineLoaded() else { return false }
+      isGenerating = true
+      generatingThreadID = threadID
+      let task = Task { await self.assembleFileContext(question: prompt, documents: documents) }
+      preparationTask = task
+      let assembled = await task.value
+      preparationTask = nil
+      preparingStatus = nil
+      isGenerating = false
+      generatingThreadID = nil
+      guard let assembled else { return false }  // stopped while reading
+      enginePrompt = assembled.prompt
+      sources = assembled.sources
+    }
+
     let history = rewound ?? thread.textHistory
     let ready = await serialized {
       // Rewinding: the engine holds later turns that must not stay in context.
@@ -449,7 +491,8 @@ final class AppState {
       do {
         return .success(
           try await self.engine.fitContext(
-            text: prompt, imageData: imageData, audioFileURL: audioFileURL, history: history))
+            text: enginePrompt, imageData: imageData, audioFileURL: audioFileURL,
+            history: history))
       } catch {
         return .failure(
           error as? ChatError ?? .underlying(message: error.localizedDescription))
@@ -470,6 +513,7 @@ final class AppState {
     // Placeholder model turn, mutated live as chunks stream in.
     persist()
     let reply = ChatTurn(role: .model)
+    if !sources.isEmpty { reply.parts = MessageParts(sources: sources) }
     if let replacing {
       thread.addVersion(reply, of: replacing)
     } else {
@@ -482,7 +526,7 @@ final class AppState {
     engineState = .generating
     conversationIsEmpty = false
 
-    let stream = engine.send(text: prompt, imageData: imageData, audioFileURL: audioFileURL)
+    let stream = engine.send(text: enginePrompt, imageData: imageData, audioFileURL: audioFileURL)
     await consume(stream, into: reply, context: context)
 
     isGenerating = false
@@ -504,7 +548,8 @@ final class AppState {
       let reply = path.last, !reply.isUser, !reply.text.isEmpty,
       !reply.text.hasPrefix(ChatTurn.errorPrefix)
     else { return }
-    let provisional = Self.title(prompt: first.text, hasImage: first.imageData != nil)
+    let provisional = Self.title(
+      prompt: first.text, hasImage: first.imageData != nil, fileName: first.parts.files.first?.name)
     guard thread.title == provisional else { return }  // renamed by the user
     let prompt = HelperTasks.titlePrompt(
       user: first.text.isEmpty ? provisional : first.text, reply: reply.text)
@@ -536,9 +581,104 @@ final class AppState {
   }
 
   /// Chat title from the first message; attachment-only messages get a label.
-  static func title(prompt: String, hasImage: Bool) -> String {
+  static func title(prompt: String, hasImage: Bool, fileName: String? = nil) -> String {
     if !prompt.isEmpty { return String(prompt.prefix(42)) }
+    if let fileName { return String(fileName.prefix(42)) }
     return hasImage ? "Photo" : "Voice message"
+  }
+
+  // MARK: - Files
+
+  struct FileContextResult {
+    var prompt: String
+    var sources: [SourceRecord]
+  }
+
+  /// The chat's own files, then its project's.
+  func documents(for thread: ChatThread) -> [ChatDocument] {
+    var documents = knowledge.documents(threadID: thread.id)
+    if let projectID = thread.projectID { documents += knowledge.documents(projectID: projectID) }
+    return documents
+  }
+
+  /// What the model reads for `question`: whole files when they fit half
+  /// the context window; otherwise a section summary of long files (for
+  /// "summarize"-style questions, cached on the document) or the most
+  /// relevant excerpts with page labels. nil when stopped.
+  private func assembleFileContext(question: String, documents: [ChatDocument]) async
+    -> FileContextResult?
+  {
+    let window = resolved?.maxNumTokens ?? 8_192
+    let budget = FileContext.budget(window: window, question: question)
+    var materials: [FileContext.Material] = []
+    var sources: [SourceRecord] = []
+    func cite(_ title: String, _ snippet: String? = nil) {
+      sources.append(
+        SourceRecord(index: sources.count + 1, title: title, url: nil, snippet: snippet))
+    }
+
+    let total = documents.reduce(0) { $0 + ContextBudget.estimateTokens($1.text) }
+    if total <= budget {
+      for document in documents {
+        materials.append(.full(name: document.name, pageCount: document.pageCount, text: document.text))
+        cite(document.name)
+      }
+    } else if FileContext.wantsSummary(question) {
+      let share = budget / documents.count
+      for document in documents {
+        if ContextBudget.estimateTokens(document.text) <= share {
+          materials.append(.full(name: document.name, pageCount: document.pageCount, text: document.text))
+        } else {
+          guard let summary = await summary(of: document) else { return nil }
+          materials.append(
+            .summary(
+              name: document.name, pageCount: document.pageCount,
+              text: FileContext.truncate(summary, tokens: share)))
+        }
+        cite(document.name)
+      }
+    } else {
+      preparingStatus = "Searching your files…"
+      let passages = FileContext.fit(
+        await knowledge.search(question, in: documents, limit: 24), budget: budget)
+      if Task.isCancelled { return nil }
+      materials.append(.excerpts(passages.map { (label: $0.citation, text: $0.text) }))
+      for passage in passages { cite(passage.citation, String(passage.text.prefix(240))) }
+    }
+    return FileContextResult(
+      prompt: FileContext.prompt(question: question, materials: materials), sources: sources)
+  }
+
+  /// A long document's section-by-section summary, written once and cached.
+  private func summary(of document: ChatDocument) async -> String? {
+    if let summary = document.summary { return summary }
+    let chunks = document.chunks.sorted { $0.index < $1.index }.map {
+      ChunkDraft(index: $0.index, text: $0.text, pageStart: $0.pageStart, pageEnd: $0.pageEnd)
+    }
+    let sections = FileContext.sections(chunks)
+    let prompts = sections.map { FileContext.sectionPrompt($0, of: document.name) }
+    let name = document.name
+    let count = sections.count
+    preparingStatus = "Reading \(name)…"
+    let outputs: [String]? = await serialized {
+      defer {
+        // The helper left the engine's conversation empty.
+        self.conversationThreadID = nil
+        self.conversationIsEmpty = true
+      }
+      return try? await self.engine.helperTexts(
+        prompts, maxOutputTokens: FileContext.sectionSummaryTokens
+      ) { done in
+        await MainActor.run {
+          self.preparingStatus = "Reading \(name) · part \(min(done + 1, count)) of \(count)"
+        }
+      }
+    }
+    guard let outputs, !Task.isCancelled, outputs.count == sections.count else { return nil }
+    let summary = FileContext.joinSummaries(outputs, sections: sections)
+    document.summary = summary
+    try? modelContext?.save()
+    return summary
   }
 
   private func consume(
@@ -606,6 +746,7 @@ final class AppState {
   }
 
   func stop() {
+    preparationTask?.cancel()
     Task { await engine.cancel() }
   }
 
@@ -694,6 +835,7 @@ final class AppState {
     guard !empty.isEmpty else { return }
     for thread in empty {
       if conversationThreadID == thread.id { conversationThreadID = nil }
+      knowledge.deleteDocuments(threadID: thread.id)
       context.delete(thread)
     }
     try? context.save()
@@ -702,6 +844,7 @@ final class AppState {
   func deleteThread(_ thread: ChatThread, in context: ModelContext) {
     if selectedThreadID == thread.id { selectedThreadID = nil }
     if conversationThreadID == thread.id { conversationThreadID = nil }
+    knowledge.deleteDocuments(threadID: thread.id)
     context.delete(thread)
     try? context.save()
   }

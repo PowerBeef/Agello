@@ -16,6 +16,12 @@ struct ChatView: View {
   @State private var showLibrary = false
   @State private var showPhotos = false
   @State private var showCamera = false
+  @State private var showFiles = false
+  @State private var showScanner = false
+  /// Files read and waiting to be sent with the next message.
+  @State private var pendingFiles: [ExtractedDocument] = []
+  /// Files being read right now.
+  @State private var readingFiles = 0
   @State private var reader = SpeechReader()
   /// The user message being edited in the composer, if any.
   @State private var editingTurn: ChatTurn?
@@ -34,6 +40,7 @@ struct ChatView: View {
       // Composer rows keep their full height; the messages area above
       // shrinks instead (e.g. above the keyboard), so nothing is pushed under it.
       Group {
+        preparingBar
         editingBar
         pendingBar
         inputBar
@@ -81,6 +88,21 @@ struct ChatView: View {
       pendingImage = nil
     }
     .onDisappear { reader.stop() }
+    .onAppear {
+      // UI tests: the system file picker can't be driven, so attach a sample.
+      if thread == nil, pendingFiles.isEmpty,
+        ProcessInfo.processInfo.arguments.contains("--uitest-sample-file")
+      {
+        pendingFiles = [
+          ExtractedDocument(
+            name: "trip-notes.md", kind: .text, byteCount: 120,
+            pages: [
+              "Hiking trip notes.\n\nThe trailhead parking opens at 6 am. Bring a tent, a stove, "
+                + "and three litres of water per person."
+            ])
+        ]
+      }
+    }
   }
 
   private var ambientBackground: some View {
@@ -297,8 +319,49 @@ struct ChatView: View {
 
   // MARK: - Pending attachments
 
+  /// "Reading report.pdf · part 3 of 11" while files are prepared.
+  @ViewBuilder
+  private var preparingBar: some View {
+    if let status = appState.preparingStatus, appState.generatingThreadID == thread?.id {
+      HStack(spacing: 8) {
+        ProgressView().controlSize(.small)
+        Text(status)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .accessibilityIdentifier("chat.preparing")
+        Spacer()
+      }
+      .padding(.horizontal, 20)
+      .padding(.vertical, 4)
+    }
+  }
+
   @ViewBuilder
   private var pendingBar: some View {
+    if !pendingFiles.isEmpty || readingFiles > 0 {
+      ScrollView(.horizontal, showsIndicators: false) {
+        HStack(spacing: 8) {
+          ForEach(Array(pendingFiles.enumerated()), id: \.offset) { index, file in
+            FileChip(name: file.name, kind: file.kind, pageCount: file.isPaged ? file.pages.count : 0) {
+              pendingFiles.remove(at: index)
+            }
+          }
+          if readingFiles > 0 {
+            HStack(spacing: 6) {
+              ProgressView().controlSize(.mini)
+              Text("Reading…").font(.caption)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .glassEffect(.regular, in: .capsule)
+            .accessibilityIdentifier("composer.readingFile")
+          }
+        }
+        .padding(.horizontal)
+      }
+      .padding(.vertical, 4)
+    }
     if pendingImage != nil || recorder.finishedURL != nil || recorder.isRecording {
       GlassEffectContainer(spacing: 8) {
         HStack(spacing: 8) {
@@ -387,6 +450,40 @@ struct ChatView: View {
       }
       .ignoresSafeArea()
     }
+    .fullScreenCover(isPresented: $showScanner) {
+      DocumentScanner { pages in
+        read { try await DocumentIngestor.extract(scannedPages: pages, name: scanName()) }
+      }
+      .ignoresSafeArea()
+    }
+    .fileImporter(
+      isPresented: $showFiles, allowedContentTypes: DocumentIngestor.supportedTypes,
+      allowsMultipleSelection: true
+    ) { result in
+      switch result {
+      case .success(let urls):
+        for url in urls { read { try await DocumentIngestor.extract(from: url) } }
+      case .failure(let error):
+        appState.generationError = error.localizedDescription
+      }
+    }
+  }
+
+  /// Read a file in the background into the pending attachments.
+  private func read(_ extract: @escaping @Sendable () async throws -> ExtractedDocument) {
+    readingFiles += 1
+    Task {
+      defer { readingFiles -= 1 }
+      do {
+        pendingFiles.append(try await Task.detached(priority: .userInitiated) { try await extract() }.value)
+      } catch {
+        appState.generationError = error.localizedDescription
+      }
+    }
+  }
+
+  private func scanName() -> String {
+    "Scan \(Date.now.formatted(date: .abbreviated, time: .shortened))"
   }
 
   private var attachDisabled: Bool { appState.isGenerating || editingTurn != nil }
@@ -396,6 +493,9 @@ struct ChatView: View {
       Button("Camera", systemImage: "camera") { showCamera = true }
         .disabled(!CameraPicker.isAvailable)
       Button("Photos", systemImage: "photo.on.rectangle") { showPhotos = true }
+      Button("Files", systemImage: "folder") { showFiles = true }
+      Button("Scan document", systemImage: "doc.viewfinder") { showScanner = true }
+        .disabled(!DocumentScanner.isAvailable)
     } label: {
       Image(systemName: "plus")
         .font(.body.weight(.medium))
@@ -403,7 +503,7 @@ struct ChatView: View {
         .glassEffect(.regular.interactive(), in: .circle)
     }
     .disabled(attachDisabled)
-    .accessibilityLabel("Add photos")
+    .accessibilityLabel("Add photos and files")
     .accessibilityIdentifier("composer.attach")
   }
 
@@ -470,8 +570,9 @@ struct ChatView: View {
   }
 
   private var canSend: Bool {
-    !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      || pendingImage != nil || recorder.finishedURL != nil
+    guard readingFiles == 0 else { return false }
+    return !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      || pendingImage != nil || recorder.finishedURL != nil || !pendingFiles.isEmpty
   }
 
   private func send() {
@@ -494,21 +595,30 @@ struct ChatView: View {
     let text = draft
     let image = pendingImage
     let audioURL = recorder.finishedURL
+    let files = pendingFiles
     draft = ""
     pendingImage = nil
+    pendingFiles = []
     inputFocused = false
     Haptics.send()
     let target = thread ?? appState.newThread(in: context)
+    // Files belong to the chat from now on (indexed in the background).
+    let documents = files.compactMap { appState.knowledge.add($0, threadID: target.id) }
+    let records = documents.map {
+      FileRecord(id: $0.id, name: $0.name, kind: $0.kindRaw, pageCount: $0.pageCount)
+    }
     Task {
       let accepted = await appState.send(
-        text: text, imageData: image, audioFileURL: audioURL, in: target)
+        text: text, imageData: image, audioFileURL: audioURL, files: records, in: target)
       if accepted {
         recorder.discard()
       } else {
         // Nothing was sent: give the user their input back (the recording
         // was never discarded).
+        for document in documents { appState.knowledge.delete(document) }
         if draft.isEmpty { draft = text }
         if pendingImage == nil { pendingImage = image }
+        if pendingFiles.isEmpty { pendingFiles = files }
       }
     }
   }
