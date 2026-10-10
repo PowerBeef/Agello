@@ -10,5 +10,10 @@
 	<!-- Default per-app memory limit measured on device: ~3.5 GB. -->
 	<key>com.apple.developer.kernel.increased-memory-limit</key>
 	<true/>
+	<!-- Shared with the share extension: items shared from other apps. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.patricedery.irtchat</string>
+	</array>
 </dict>
 </plist>

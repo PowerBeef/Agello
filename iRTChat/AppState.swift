@@ -756,6 +756,66 @@ final class AppState {
     await send(text: "", imageData: imageData, audioFileURL: audioFileURL, in: thread)
   }
 
+  // MARK: - Shared from other apps
+
+  /// Answer the oldest item shared to iRTChat (share sheet) in a new chat.
+  /// Returns false when there is nothing to do (or a reply is running).
+  @discardableResult
+  func answerNextSharedItem(inbox base: URL? = nil) async -> Bool {
+    guard !isBusy, let context = modelContext, let (item, file) = ShareInbox.pending(base: base).first
+    else { return false }
+    let thread = newThread(in: context)
+    newChatProjectID = nil
+    selectedThreadID = thread.id
+    var question = ShareInbox.question(for: item)
+    var files: [FileRecord] = []
+    var image: Data?
+
+    func attach(_ extracted: ExtractedDocument) {
+      if let document = knowledge.add(extracted, threadID: thread.id) {
+        files.append(
+          FileRecord(
+            id: document.id, name: document.name, kind: document.kindRaw,
+            pageCount: document.pageCount))
+      }
+    }
+
+    switch item.kind {
+    case .file:
+      if let file, let extracted = try? await DocumentIngestor.extract(from: file) {
+        attach(extracted)
+      } else {
+        generationError = String(localized: "iRTChat couldn't read the shared file.")
+      }
+    case .image:
+      if let file, let data = try? Data(contentsOf: file) { image = ImagePreparer.prepare(data) ?? data }
+    case .url:
+      let link = item.url.flatMap(URL.init(string:))
+      if webSettings.allowed, let link, let page = await WebClient().readPage(link) {
+        attach(
+          ExtractedDocument(
+            name: page.title ?? link.host() ?? link.absoluteString, kind: .text,
+            byteCount: Int64(page.text.utf8.count), pages: [page.text]))
+        question += "\n\n(\(link.absoluteString))"
+      } else if let link {
+        question += "\n\n\(link.absoluteString)"
+      }
+    case .text:
+      let text = item.text ?? ""
+      if text.count > ShareInbox.inlineTextLimit {
+        attach(
+          ExtractedDocument(
+            name: String(localized: "Shared text"), kind: .text, byteCount: Int64(text.utf8.count),
+            pages: [text]))
+      } else if question != text {
+        question += "\n\n\(text)"
+      }
+    }
+    ShareInbox.remove(item.id, base: base)
+    await send(text: question, imageData: image, audioFileURL: nil, files: files, in: thread)
+    return true
+  }
+
   // MARK: - Dictation
 
   /// A recording is being turned into text for the composer.

@@ -8,6 +8,7 @@ import SwiftUI
 struct ContentView: View {
   @Environment(AppState.self) private var appState
   @Environment(\.modelContext) private var context
+  @Environment(\.scenePhase) private var scenePhase
   @Query(sort: \ChatThread.updatedAt, order: .reverse) private var threads: [ChatThread]
 
   @State private var drawerOpen = false
@@ -76,7 +77,11 @@ struct ContentView: View {
     .onChange(of: AppRouter.shared.pending, initial: true) {
       if let action = AppRouter.shared.take() { perform(action) }
     }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active { answerSharedItems() }
+    }
     .task {
+      answerSharedItems()
       SpotlightIndex.refresh(in: context)
       appState.pruneEmptyThreads()
       presentOnboarding = OnboardingView.shouldShow(
@@ -196,6 +201,13 @@ struct ContentView: View {
         openProject = appState.newProject(named: String(localized: "New project"), in: context)
       },
       onMove: { thread, projectID in appState.move(thread, toProject: projectID) })
+  }
+
+  /// Items shared from other apps while iRTChat wasn't open.
+  private func answerSharedItems() {
+    Task {
+      while await appState.answerNextSharedItem() {}
+    }
   }
 
   /// Carry out a request from Siri, Shortcuts, widgets, Spotlight, or a link.

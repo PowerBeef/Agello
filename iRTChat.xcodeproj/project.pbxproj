@@ -11,6 +11,7 @@
 		500000000000000000000003 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 500000000000000000000002 /* Markdown */; };
 		500000000000000000000006 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 500000000000000000000005 /* SwiftMath */; };
 		60000000000000000000000C /* iRTChatWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 600000000000000000000001 /* iRTChatWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		70000000000000000000000C /* iRTChatShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 700000000000000000000001 /* iRTChatShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -31,6 +32,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				60000000000000000000000C /* iRTChatWidgets.appex in Embed Foundation Extensions */,
+				70000000000000000000000C /* iRTChatShare.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -66,6 +68,13 @@
 			remoteGlobalIDString = 600000000000000000000002;
 			remoteInfo = iRTChatWidgets;
 		};
+		70000000000000000000000E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 100000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 700000000000000000000002;
+			remoteInfo = iRTChatShare;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
@@ -74,6 +83,7 @@
 		400000000000000000000001 /* iRTChatDeviceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = iRTChatDeviceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000011 /* iRTChatUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = iRTChatUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		600000000000000000000001 /* iRTChatWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = iRTChatWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		700000000000000000000001 /* iRTChatShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = iRTChatShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -99,6 +109,21 @@
 			);
 			target = 600000000000000000000002 /* iRTChatWidgets */;
 		};
+		700000000000000000000007 /* Exceptions for "iRTChatShare" folder in "iRTChatShare" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				iRTChatShare.entitlements,
+			);
+			target = 700000000000000000000002 /* iRTChatShare */;
+		};
+		700000000000000000000008 /* Exceptions for "iRTChat" folder in "iRTChatShare" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				System/ShareInbox.swift,
+			);
+			target = 700000000000000000000002 /* iRTChatShare */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -107,6 +132,7 @@
 			exceptions = (
 				400000000000000000000043 /* Exceptions for "iRTChat" folder in "iRTChat" target */,
 				600000000000000000000008 /* Exceptions for "iRTChat" folder in "iRTChatWidgets" target */,
+				700000000000000000000008 /* Exceptions for "iRTChat" folder in "iRTChatShare" target */,
 			);
 			path = iRTChat;
 			sourceTree = "<group>";
@@ -132,6 +158,14 @@
 				600000000000000000000007 /* Exceptions for "iRTChatWidgets" folder in "iRTChatWidgets" target */,
 			);
 			path = iRTChatWidgets;
+			sourceTree = "<group>";
+		};
+		700000000000000000000006 /* iRTChatShare */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				700000000000000000000007 /* Exceptions for "iRTChatShare" folder in "iRTChatShare" target */,
+			);
+			path = iRTChatShare;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -175,6 +209,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		700000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -186,6 +227,7 @@
 				400000000000000000000002 /* iRTChatDeviceTests */,
 				400000000000000000000012 /* iRTChatUITests */,
 				600000000000000000000006 /* iRTChatWidgets */,
+				700000000000000000000006 /* iRTChatShare */,
 				100000000000000000000015 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -198,6 +240,7 @@
 				400000000000000000000001 /* iRTChatDeviceTests.xctest */,
 				400000000000000000000011 /* iRTChatUITests.xctest */,
 				600000000000000000000001 /* iRTChatWidgets.appex */,
+				700000000000000000000001 /* iRTChatShare.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -219,6 +262,7 @@
 			);
 			dependencies = (
 				60000000000000000000000F /* PBXTargetDependency */,
+				70000000000000000000000F /* PBXTargetDependency */,
 			);
 			name = iRTChat;
 			packageProductDependencies = (
@@ -316,6 +360,26 @@
 			productReference = 600000000000000000000001 /* iRTChatWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		700000000000000000000002 /* iRTChatShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 700000000000000000000009 /* Build configuration list for PBXNativeTarget "iRTChatShare" */;
+			buildPhases = (
+				700000000000000000000003 /* Sources */,
+				700000000000000000000004 /* Frameworks */,
+				700000000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				700000000000000000000006 /* iRTChatShare */,
+			);
+			name = iRTChatShare;
+			productName = iRTChatShare;
+			productReference = 700000000000000000000001 /* iRTChatShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -344,6 +408,9 @@
 					600000000000000000000002 = {
 						CreatedOnToolsVersion = 27.0;
 					};
+					700000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+					};
 				};
 			};
 			buildConfigurationList = 100000000000000000000018 /* Build configuration list for PBXProject "iRTChat" */;
@@ -369,6 +436,7 @@
 				400000000000000000000003 /* iRTChatDeviceTests */,
 				400000000000000000000013 /* iRTChatUITests */,
 				600000000000000000000002 /* iRTChatWidgets */,
+				700000000000000000000002 /* iRTChatShare */,
 			);
 		};
 /* End PBXProject section */
@@ -403,6 +471,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		600000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		700000000000000000000005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -447,6 +522,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		700000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -469,6 +551,11 @@
 			isa = PBXTargetDependency;
 			target = 600000000000000000000002 /* iRTChatWidgets */;
 			targetProxy = 60000000000000000000000E /* PBXContainerItemProxy */;
+		};
+		70000000000000000000000F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 700000000000000000000002 /* iRTChatShare */;
+			targetProxy = 70000000000000000000000E /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -801,6 +888,62 @@
 			};
 			name = Release;
 		};
+		70000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = iRTChatShare/iRTChatShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = iRTChatShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = iRTChat;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.irtchat.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "SHARE_EXTENSION $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		70000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = iRTChatShare/iRTChatShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = iRTChatShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = iRTChat;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.irtchat.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "SHARE_EXTENSION $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -854,6 +997,15 @@
 			buildConfigurations = (
 				60000000000000000000000A /* Debug */,
 				60000000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		700000000000000000000009 /* Build configuration list for PBXNativeTarget "iRTChatShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				70000000000000000000000A /* Debug */,
+				70000000000000000000000B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
