@@ -99,7 +99,7 @@ SwiftUI with Liquid Glass surfaces, haptics, VoiceOver labels, and accessibility
 | **Signing** | An Apple Developer account with the **Extended Virtual Addressing** and **Increased Memory Limit** capabilities |
 | **Network** | Only to download the model |
 
-The simulator can't run the model (it has no Metal path for LiteRT-LM); it runs the full interface with a scripted mock engine instead.
+iRTChat runs on a physical iPhone only: the simulator has no Metal path for LiteRT-LM.
 
 ## Getting started
 
@@ -114,9 +114,9 @@ The simulator can't run the model (it has no Metal path for LiteRT-LM); it runs 
 > [!NOTE]
 > Automatic signing registers the required capabilities from `iRTChat/iRTChat.entitlements`. If signing fails with *"PLA Update available"*, accept the latest Program License Agreement at [developer.apple.com/account](https://developer.apple.com/account).
 
-### Explore the interface in the simulator
+### Try the interface without a model
 
-Run the `iRTChat` scheme on any iPhone simulator with the `--mock-engine` launch argument (**Product → Scheme → Edit Scheme → Run → Arguments**). A scripted engine drives the whole interface without downloading a model: streaming, reasoning (when Think is on), titles, regenerate, and edit. A prompt containing "markdown" returns a rich sample with code, a table, and math.
+Run the `iRTChat` scheme with the `--mock-engine` launch argument (**Product → Scheme → Edit Scheme → Run → Arguments**). A scripted engine drives the whole interface without downloading a model: streaming, reasoning (when Think is on), titles, regenerate, and edit. A prompt containing "markdown" returns a rich sample with code, a table, and math.
 
 ## The model
 
@@ -218,19 +218,11 @@ For reference, Google reports 1,189 prefill and 25 decode tokens per second for 
 
 | Target | Runs on | Covers |
 | --- | --- | --- |
-| `iRTChatTests` (119 tests) | Simulator | Planner, context budgeting, device policy, schema migration and branching, regenerate / edit / versions, markdown and highlighting, chat grouping and search, personalization, titles, downloads, calculator, and the app pipeline through the mock engine |
+| `iRTChatTests` (154 tests) | iPhone | Planner, context budgeting, device policy, schema migration and branching, regenerate / edit / versions, markdown and highlighting, chat grouping and search, personalization, titles, downloads, calculator, and the app pipeline through the mock engine |
 | `iRTChatDeviceTests` (25 scenarios) | iPhone | The real engine in-process: download, load, text, chat isolation, stop and continue, tools, thinking, image, audio, settings rebuilds, context limits, titles, benchmark. Opt-in suites: long Thinking with the compact reasoning cache, 8 GB memory simulation, context calibration, and LiteRT-LM probes. |
-| `iRTChatUITests` (12 flows) | iPhone or simulator | Real taps: send, Stop, Home button mid-reply, leaving and returning mid-reply, rapid settings changes, drawer and search, rename and delete, regenerate / edit / versions, Think, markdown, keyboard clearance, Models |
+| `iRTChatUITests` (15 flows) | iPhone | Real taps: send, Stop, Home button mid-reply, leaving and returning mid-reply, rapid settings changes, drawer and search, rename and delete, regenerate / edit / versions, Think, markdown, keyboard clearance, Models |
 
-**Unit tests (simulator)**
-
-```sh
-xcodebuild test -project iRTChat.xcodeproj -scheme iRTChat \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
-  -only-testing:iRTChatTests
-```
-
-**On-device harness** (a connected, unlocked iPhone; downloads E4B if missing)
+All suites run on a connected, unlocked iPhone through the harness (it downloads E4B and EmbeddingGemma if missing). The simulator isn't used.
 
 The harness targets the `deviceId` in `.mobilebuildmcp/config.yaml`, a local, git-ignored file. Create it once from the template and set your iPhone's UDID (from `xcrun devicectl list devices`), or pass `DEVICE_ID=<udid>` per run:
 
@@ -239,9 +231,11 @@ cp .mobilebuildmcp/config.example.yaml .mobilebuildmcp/config.yaml
 ```
 
 ```sh
+scripts/device-harness.sh unit        # unit tests
 scripts/device-harness.sh inference   # engine scenarios
+scripts/device-harness.sh files       # files with the real models (index, summarize, cite)
 scripts/device-harness.sh ui          # real-tap UI flows
-scripts/device-harness.sh all         # inference, then UI
+scripts/device-harness.sh all         # unit, inference + files, then UI
 scripts/device-harness.sh thinking    # long Thinking-mode scenarios, compact reasoning cache
 scripts/device-harness.sh memory      # 8 GB iPhone memory simulation
 scripts/device-harness.sh calibrate   # speed and memory at 4K–32K context
@@ -300,7 +294,6 @@ Vendor/LiteRT-LM/             LiteRT-LM v0.18.0 Swift package
 - Force-quitting the app (swiping it away) cancels a model download, as iOS does for all background downloads.
 - When you switch chats, only text history is replayed to the model, not images or audio.
 - Voice recordings are not stored. They are marked in the chat, and replies to voice-only messages can't be regenerated.
-- The simulator runs the interface with the mock engine only.
 - LiteRT-LM's Swift API does not yet support saving and restoring KV sessions, so reopening a long chat replays its history.
 
 ## Vendored LiteRT-LM

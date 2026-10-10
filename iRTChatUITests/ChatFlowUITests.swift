@@ -189,7 +189,12 @@ final class ChatFlowUITests: XCTestCase {
   /// Rich replies: code block (with Copy), table and display math render.
   /// Simulator only: the mock engine answers "markdown" with a fixed sample.
   func testMarkdownRendering() throws {
-    try XCTSkipUnless(Self.isSimulator, "Uses the mock engine's markdown sample")
+    // The scripted engine answers "markdown" with a fixed rich sample.
+    if !Self.isSimulator {
+      app.terminate()
+      app.launchArguments.append("--mock-engine")
+      app.launch()
+    }
     try openNewChat()
     send("Show me markdown")
     try waitForReplyToFinish(timeout: 30)
@@ -281,6 +286,29 @@ final class ChatFlowUITests: XCTestCase {
     if !Self.isSimulator {
       XCTAssertTrue(lastModelText().contains("6"), lastModelText())
     }
+  }
+
+  /// A project: create it, start a chat in it; the chat lives in the
+  /// project, not in the drawer's recent chats.
+  func testProjectChat() throws {
+    try openNewChat()
+    openDrawer()
+    element("drawer.newProject").tap()
+    let name = element("project.name")
+    XCTAssertTrue(name.waitForExistence(timeout: 5), "Project didn't open")
+    name.clearAndType("Hiking")
+    element("project.newChat").tap()
+    XCTAssertTrue(element("chat.project").waitForExistence(timeout: 5), "Not a project chat")
+    try waitForEngineReady()
+    send("Say 'trail'.")
+    try waitForReplyToFinish(timeout: 120)
+
+    openDrawer()
+    XCTAssertEqual(rows().count, 0, "Project chat shown in recents")
+    element("drawer.project").firstMatch.tap()
+    XCTAssertTrue(element("project.chat").waitForExistence(timeout: 5), "Chat not in project")
+    attachScreenshot("project")
+    element("project.done").tap()
   }
 
   /// E4B is the only model: its card (Settings → Models) shows Ready

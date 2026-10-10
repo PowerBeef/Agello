@@ -2,18 +2,23 @@
 # On-device test harness for iRTChat (physical iPhone only).
 #
 # Usage:
-#   scripts/device-harness.sh [inference|files|ui|all|thinking|memory|calibrate|probes] [extra xcodebuild args...]
+#   scripts/device-harness.sh [unit|inference|files|ui|all|thinking|memory|calibrate|probes] [extra xcodebuild args...]
 #
+#   unit       Unit tests (planner, budgets, schema, markdown, files, projects,
+#              the app pipeline through the scripted engine), on the iPhone.
 #   inference  In-app scenarios through the real engine (download, load, text,
 #              chat isolation, stop, tools, thinking, image, audio, settings
 #              round-trip, context limit, titles, benchmark). Downloads E4B if missing.
+#   files      Files with the real models: EmbeddingGemma indexing and retrieval,
+#              "summarize this 40-page PDF", cited follow-up.
 #   ui         Real-tap flows (send, Stop, Home button mid-reply, leave/return
-#              mid-reply, rapid Settings changes, Models tab). Needs E4B downloaded.
+#              mid-reply, drawer, projects, files, message actions, Think,
+#              keyboard, Settings). Needs E4B downloaded.
 #   thinking   Long Thinking-mode scenarios (issue #703 prompt, budgets up to 2K).
 #   calibrate  Context-size calibration: memory and speed at 4K-32K KV caches.
 #   probes     LiteRT-LM feature probes (helper conversation, JSON, embeddings).
 #   memory     8 GB iPhone memory simulation (E4B at 5.0/4.0/3.5 GB usable).
-#   all        inference, then ui.
+#   all        unit, inference + files, then ui.
 #
 # Env: DEVICE_ID (default: deviceId from the git-ignored .mobilebuildmcp/config.yaml),
 #      OUT (default: build/device-harness).
@@ -70,6 +75,7 @@ pull_report() {
 status=0
 case "$SUITE" in
   inference) run_suite inference -only-testing:iRTChatDeviceTests/InferenceScenarioTests "$@" || status=$? ;;
+  unit) run_suite unit -only-testing:iRTChatTests "$@" || status=$? ;;
   ui) run_suite ui -only-testing:iRTChatUITests "$@" || status=$? ;;
   files) run_suite files -only-testing:iRTChatDeviceTests/KnowledgeScenarioTests "$@" || status=$? ;;
   thinking)
@@ -89,8 +95,11 @@ case "$SUITE" in
     run_suite calibrate -only-testing:iRTChatDeviceTests/CalibrationScenarioTests "$@" || status=$?
     ;;
   all)
+    run_suite unit -only-testing:iRTChatTests "$@" || status=$?
+    inference_status=0
     run_suite inference -only-testing:iRTChatDeviceTests/InferenceScenarioTests \
-      -only-testing:iRTChatDeviceTests/KnowledgeScenarioTests "$@" || status=$?
+      -only-testing:iRTChatDeviceTests/KnowledgeScenarioTests "$@" || inference_status=$?
+    [ "$status" -eq 0 ] && status=$inference_status
     ui_status=0
     run_suite ui -only-testing:iRTChatUITests "$@" || ui_status=$?
     [ "$status" -eq 0 ] && status=$ui_status

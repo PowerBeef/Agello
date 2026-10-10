@@ -67,3 +67,32 @@ struct Personalization: Codable, Equatable, Sendable {
     String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
   }
 }
+
+/// The project of the chat the model is in: its instructions join the
+/// system prompt.
+struct ProjectContext: Equatable, Sendable {
+  var id: UUID
+  var name: String
+  var instructions: String
+
+  /// Per-project limit, like personalization fields.
+  static let instructionLimit = 1_500
+}
+
+enum SystemPrompt {
+  /// Base prompt, then personalization, then the project's instructions.
+  static func compose(
+    base: String, personalization: Personalization, project: ProjectContext?
+  ) -> String {
+    var prompt = personalization.systemPrompt(base: base)
+    if let project {
+      let instructions = String(
+        project.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+          .prefix(ProjectContext.instructionLimit))
+      var block = "This chat is part of the project \"\(project.name)\"."
+      if !instructions.isEmpty { block += " Follow the project's instructions:\n\(instructions)" }
+      prompt += "\n\n" + block
+    }
+    return prompt
+  }
+}

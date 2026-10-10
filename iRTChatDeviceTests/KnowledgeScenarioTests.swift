@@ -37,6 +37,13 @@ final class KnowledgeScenarioTests: DeviceTestCase {
     return ExtractedDocument(name: "coastal-report.pdf", kind: .pdf, byteCount: 250_000, pages: pages)
   }
 
+  /// Pages named by a citation: "x.pdf, p. 3" → 3...3, "pp. 22–24" → 22...24.
+  static func pages(in citation: String) -> ClosedRange<Int> {
+    let numbers = citation.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
+    guard let first = numbers.first else { return 0...0 }
+    return first...(numbers.dropFirst().first ?? first)
+  }
+
   private func freshEmbedding() async throws -> TimeInterval {
     let seconds = try await harness.ensureDownloaded(ModelCatalog.embeddingGemma, timeout: 900)
     XCTAssertNotNil(appState.knowledge.currentEmbedder() as? LiteRTEmbedder)
@@ -103,7 +110,9 @@ final class KnowledgeScenarioTests: DeviceTestCase {
     XCTAssertFalse(followUp.text.hasPrefix(ChatTurn.errorPrefix), followUp.text)
     XCTAssertTrue(followUp.text.contains("4.2"), followUp.text)
     let sources = followUp.reply?.parts.sources.map(\.title) ?? []
-    XCTAssertTrue(sources.contains { $0.contains("23") }, "Sources: \(sources)")
+    XCTAssertTrue(
+      sources.first.map { Self.pages(in: $0).contains(23) } ?? false,
+      "The top source should cover page 23: \(sources)")
 
     // Asked again later: the cached summary makes it fast.
     let again = await harness.ask("Give me the main points again, briefly.", in: thread)
@@ -116,7 +125,7 @@ final class KnowledgeScenarioTests: DeviceTestCase {
         "summaryStats": DeviceHarness.stats(summary.reply?.stats),
         "cachedSummaryChars": document.summary?.count ?? 0,
         "followUpSeconds": followUp.seconds, "followUpReply": followUp.text,
-        "followUpSources": sources, "followUpCitesPage": followUp.text.contains("23"),
+        "followUpSources": sources, "followUpMentionsPages": followUp.text.contains("22"),
         "againSeconds": again.seconds,
         "footprintGB": Double(MemoryProbe.footprintBytes()) / 1e9,
       ], in: self)

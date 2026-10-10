@@ -215,6 +215,13 @@ struct ChatView: View {
   private var emptyState: some View {
     VStack {
       Spacer()
+      if let project = newChatProject {
+        Label(project.name, systemImage: "folder")
+          .font(.subheadline.weight(.medium))
+          .foregroundStyle(.secondary)
+          .padding(.bottom, 4)
+          .accessibilityIdentifier("chat.project")
+      }
       Text(greeting)
         .font(.title2.weight(.semibold))
         .multilineTextAlignment(.center)
@@ -225,6 +232,12 @@ struct ChatView: View {
     .padding(.horizontal, 24)
     .contentShape(.rect)
     .onTapGesture { inputFocused = false }
+  }
+
+  /// The project a new chat will join, for the empty state.
+  private var newChatProject: Project? {
+    guard thread == nil, let id = appState.newChatProjectID else { return nil }
+    return try? context.fetch(FetchDescriptor<Project>(predicate: #Predicate { $0.id == id })).first
   }
 
   private var greeting: String {
@@ -482,6 +495,16 @@ struct ChatView: View {
     }
   }
 
+  /// A new chat, in the project it was started from (if any).
+  private func newThread() -> ChatThread {
+    let thread = appState.newThread(in: context)
+    if let projectID = appState.newChatProjectID {
+      thread.projectID = projectID
+      try? context.save()
+    }
+    return thread
+  }
+
   private func scanName() -> String {
     "Scan \(Date.now.formatted(date: .abbreviated, time: .shortened))"
   }
@@ -601,7 +624,7 @@ struct ChatView: View {
     pendingFiles = []
     inputFocused = false
     Haptics.send()
-    let target = thread ?? appState.newThread(in: context)
+    let target = thread ?? newThread()
     // Files belong to the chat from now on (indexed in the background).
     let documents = files.compactMap { appState.knowledge.add($0, threadID: target.id) }
     let records = documents.map {

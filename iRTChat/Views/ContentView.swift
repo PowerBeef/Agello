@@ -17,6 +17,7 @@ struct ContentView: View {
   @State private var renaming: ChatThread?
   @State private var renameText = ""
   @State private var deleting: ChatThread?
+  @State private var openProject: Project?
   @AppStorage("onboardingDone") private var onboardingDone = false
   /// Decided once at launch, so finishing the download doesn't dismiss the
   /// welcome screen before "Start chatting".
@@ -74,6 +75,23 @@ struct ContentView: View {
     .onChange(of: appState.selectedThreadID) { appState.pruneEmptyThreads() }
     .sheet(isPresented: $showSettings) {
       SettingsView()
+    }
+    .sheet(item: $openProject) { project in
+      ProjectView(
+        project: project,
+        onOpenChat: { thread in
+          openProject = nil
+          appState.newChatProjectID = nil
+          appState.selectedThreadID = thread.id
+          setDrawer(open: false)
+        },
+        onNewChat: {
+          openProject = nil
+          appState.selectedThreadID = nil
+          appState.newChatProjectID = project.id
+          setDrawer(open: false)
+        },
+        onDelete: { appState.deleteProject(project, in: context) })
     }
     .fullScreenCover(isPresented: $presentOnboarding, onDismiss: { onboardingDone = true }) {
       OnboardingView { presentOnboarding = false }
@@ -151,6 +169,7 @@ struct ContentView: View {
   private var drawer: some View {
     DrawerView(
       onSelect: { thread in
+        appState.newChatProjectID = nil
         appState.selectedThreadID = thread.id
         setDrawer(open: false)
       },
@@ -160,11 +179,17 @@ struct ContentView: View {
       onDelete: { deleting = $0 },
       onSettings: {
         showSettings = true
-      })
+      },
+      onOpenProject: { openProject = $0 },
+      onNewProject: {
+        openProject = appState.newProject(named: String(localized: "New project"), in: context)
+      },
+      onMove: { thread, projectID in appState.move(thread, toProject: projectID) })
   }
 
   private func newChat() {
     // Saved on the first message, so unused new chats never pile up.
+    appState.newChatProjectID = nil
     appState.selectedThreadID = nil
     setDrawer(open: false)
   }

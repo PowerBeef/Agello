@@ -5,6 +5,7 @@ import SwiftUI
 struct DrawerView: View {
   @Environment(AppState.self) private var appState
   @Query(sort: \ChatThread.updatedAt, order: .reverse) private var threads: [ChatThread]
+  @Query(sort: \Project.updatedAt, order: .reverse) private var projects: [Project]
   @State private var query = ""
   @FocusState private var searchFocused: Bool
 
@@ -14,6 +15,9 @@ struct DrawerView: View {
   var onTogglePin: (ChatThread) -> Void
   var onDelete: (ChatThread) -> Void
   var onSettings: () -> Void
+  var onOpenProject: (Project) -> Void
+  var onNewProject: () -> Void
+  var onMove: (ChatThread, UUID?) -> Void
 
   private struct Row: Identifiable {
     var thread: ChatThread
@@ -22,10 +26,11 @@ struct DrawerView: View {
   }
 
   /// Saved chats (empty ones are never shown), filtered by the search.
+  /// Project chats live in their project, but search finds them too.
   private var rows: [Row] {
     threads.compactMap { thread in
       guard !thread.turns.isEmpty else { return nil }
-      if query.isEmpty { return Row(thread: thread) }
+      if query.isEmpty { return thread.projectID == nil ? Row(thread: thread) : nil }
       let messages = thread.orderedTurns.map(\.text)
       return ThreadGrouping.match(query: query, title: thread.title, messages: messages)
         .map { Row(thread: thread, snippet: $0.snippet) }
@@ -36,6 +41,9 @@ struct DrawerView: View {
     let rows = rows
     VStack(spacing: 0) {
       header
+      if query.isEmpty {
+        projectsSection
+      }
       if rows.isEmpty {
         Spacer()
         if query.isEmpty {
@@ -85,6 +93,40 @@ struct DrawerView: View {
     }
     .padding(.horizontal)
     .padding(.vertical, 8)
+  }
+
+  private var projectsSection: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      HStack {
+        Text("Projects")
+          .font(.footnote.weight(.semibold))
+          .foregroundStyle(.secondary)
+        Spacer()
+        Button(action: onNewProject) {
+          Image(systemName: "folder.badge.plus")
+        }
+        .accessibilityLabel("New project")
+        .accessibilityIdentifier("drawer.newProject")
+      }
+      .padding(.horizontal, 12)
+      .padding(.top, 6)
+      .padding(.bottom, 4)
+      ForEach(projects.prefix(6)) { project in
+        Button {
+          onOpenProject(project)
+        } label: {
+          Label(project.name, systemImage: "folder")
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("drawer.project")
+      }
+    }
+    .padding(.horizontal, 8)
   }
 
   private func list(_ rows: [Row]) -> some View {
@@ -155,6 +197,17 @@ struct DrawerView: View {
         onTogglePin(thread)
       }
       Button("Rename", systemImage: "pencil") { onRename(thread) }
+      if !projects.isEmpty {
+        Menu("Move to project", systemImage: "folder") {
+          ForEach(projects) { project in
+            Button(project.name) { onMove(thread, project.id) }
+              .disabled(thread.projectID == project.id)
+          }
+          if thread.projectID != nil {
+            Button("Remove from project", systemImage: "folder.badge.minus") { onMove(thread, nil) }
+          }
+        }
+      }
       Button("Delete", systemImage: "trash", role: .destructive) { onDelete(thread) }
         // Its reply is still being written into this chat.
         .disabled(appState.generatingThreadID == thread.id)

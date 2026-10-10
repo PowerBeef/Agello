@@ -46,9 +46,16 @@ final class AppState {
   /// user's personalization.
   var effectiveOptions: InferenceOptions {
     var effective = options
-    effective.systemPrompt = personalization.systemPrompt(base: options.systemPrompt)
+    effective.systemPrompt = SystemPrompt.compose(
+      base: options.systemPrompt, personalization: personalization, project: activeProject)
     return effective
   }
+
+  /// The project of the chat the engine's conversation belongs to.
+  @ObservationIgnored private(set) var activeProject: ProjectContext?
+  /// A new chat started from a project page joins that project on its
+  /// first message.
+  var newChatProjectID: UUID?
   var selectedThreadID: UUID? {
     didSet {
       UserDefaults.standard.set(selectedThreadID?.uuidString, forKey: "selectedThreadID")
@@ -329,6 +336,30 @@ final class AppState {
     if conversationThreadID == threadID { return true }
     // Never swap the conversation out from under a live reply.
     if isGenerating { return false }
+    // A chat in another project (or none) needs other instructions in the
+    // system prompt: rebuild the conversation with them.
+    let project = projectContext(for: threadID)
+    if project != activeProject {
+      activeProject = project
+      Log.engine.info("system prompt for project change: \(history.count) turns")
+      do {
+        if let live = engine as? LiteRTChatEngine {
+          resolved = try await live.updateConversationOptions(
+            effectiveOptions, enableTools: enableTools, history: history)
+        } else {
+          if let mock = engine as? MockChatEngine {
+            await mock.applyConversationOptions(effectiveOptions)
+          }
+          try await engine.reseed(history: history)
+        }
+      } catch {
+        generationError = (error as? ChatError)?.displayMessage ?? error.localizedDescription
+        return false
+      }
+      conversationThreadID = threadID
+      conversationIsEmpty = history.isEmpty
+      return true
+    }
     if !(history.isEmpty && conversationIsEmpty) {
       Log.engine.info("reseed for thread switch: \(history.count) turns")
       do {
@@ -838,6 +869,64 @@ final class AppState {
       knowledge.deleteDocuments(threadID: thread.id)
       context.delete(thread)
     }
+    try? context.save()
+  }
+
+  // MARK: - Projects
+
+  private func projectContext(for threadID: UUID) -> ProjectContext? {
+    guard let context = modelContext else { return nil }
+    let thread = try? context.fetch(
+      FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == threadID })
+    ).first
+    // A new chat started from a project page isn't saved yet.
+    guard let projectID = thread?.projectID ?? (thread == nil ? newChatProjectID : nil) else {
+      return nil
+    }
+    guard
+      let project = try? context.fetch(
+        FetchDescriptor<Project>(predicate: #Predicate { $0.id == projectID })
+      ).first
+    else { return nil }
+    return ProjectContext(id: project.id, name: project.name, instructions: project.instructions)
+  }
+
+  /// A project's instructions or name changed: its open chat picks them up
+  /// before the next message.
+  func projectInstructionsChanged(_ projectID: UUID) {
+    if activeProject?.id == projectID { conversationThreadID = nil }
+  }
+
+  @discardableResult
+  func newProject(named name: String, in context: ModelContext) -> Project {
+    let project = Project(name: name)
+    context.insert(project)
+    try? context.save()
+    return project
+  }
+
+  /// Move a chat into a project (or out, with nil).
+  func move(_ thread: ChatThread, toProject projectID: UUID?) {
+    thread.projectID = projectID
+    try? modelContext?.save()
+    if conversationThreadID == thread.id { conversationThreadID = nil }
+  }
+
+  /// Delete a project with its chats and files.
+  func deleteProject(_ project: Project, in context: ModelContext) {
+    let projectID = project.id
+    let chats = (try? context.fetch(
+      FetchDescriptor<ChatThread>(predicate: #Predicate { $0.projectID == projectID }))) ?? []
+    for thread in chats where generatingThreadID != thread.id {
+      deleteThread(thread, in: context)
+    }
+    for document in knowledge.documents(projectID: projectID) { knowledge.delete(document) }
+    if newChatProjectID == projectID { newChatProjectID = nil }
+    if activeProject?.id == projectID {
+      activeProject = nil
+      conversationThreadID = nil
+    }
+    context.delete(project)
     try? context.save()
   }
 

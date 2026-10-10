@@ -177,4 +177,54 @@ final class ProbeScenarioTests: DeviceTestCase {
     try FileManager.default.moveItem(at: temporary, to: destination)
     return destination
   }
+
+  /// Numbers in replies came out duplicated once ("March 202026",
+  /// "pp. 222–24"). Copy tasks and the real file follow-up, with speculative
+  /// decoding (MTP) on and off, counting corrupted outputs.
+  func test04_NumberFidelityWithAndWithoutMTP() async throws {
+    try await requireLoadedModel()
+    let copyLine =
+      "The renovation budget of 4.2 million dollars was approved in March 2026 (coastal-report.pdf, pp. 22–24)."
+    let years = (2018...2030).map(String.init).joined(separator: ", ")
+    var report: [String: Any] = [:]
+    for mtp in [true, false] {
+      appState.options.enableSpeculativeDecoding = mtp
+      await appState.applyCurrentOptions()
+      _ = await appState.ensureEngineLoaded()
+      var failures: [String] = []
+      var trials = 0
+      for _ in 0..<6 {
+        trials += 2
+        let copy = await harness.ask(
+          "Copy this line exactly, with nothing else:\n\(copyLine)", in: harness.newThread())
+        let copied = copy.text.replacingOccurrences(of: "**", with: "")
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !copied.contains(copyLine) { failures.append("copy: \(copied)") }
+        let list = await harness.ask(
+          "Write the years from 2018 to 2030 separated by commas and spaces, nothing else.",
+          in: harness.newThread())
+        if !list.text.contains(years) { failures.append("years: \(list.text)") }
+      }
+      for _ in 0..<4 {
+        trials += 1
+        let thread = harness.newThread()
+        let document = appState.knowledge.add(KnowledgeScenarioTests.report(), threadID: thread.id)
+        if let document { await appState.knowledge.waitForIndexing([document]) }
+        let reply = await harness.ask(
+          "What was the harbour renovation budget, and when was it approved?", in: thread)
+        let pages = reply.text.matches(of: /pp?\. ?(\d+)/).compactMap { Int($0.output.1) }
+        if reply.text.contains("202026") || pages.contains(where: { $0 > 40 })
+          || !reply.text.contains("2026")
+        {
+          failures.append("file: \(reply.text)")
+        }
+      }
+      report[mtp ? "mtpOn" : "mtpOff"] = [
+        "trials": trials, "failures": failures.count, "examples": Array(failures.prefix(6)),
+        "speculative": appState.resolved?.enableSpeculativeDecoding ?? false,
+      ]
+      harness.record("probe04_numberFidelity", report, in: self)
+    }
+    appState.options.enableSpeculativeDecoding = true
+  }
 }
