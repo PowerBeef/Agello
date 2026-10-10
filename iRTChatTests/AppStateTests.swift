@@ -249,3 +249,39 @@ final class AppStateTests: XCTestCase {
     XCTAssertFalse(thread.orderedTurns.last?.thought.isEmpty ?? true, "Think didn't apply in time")
   }
 }
+
+// MARK: - Precision for long contexts (LiteRT-LM #3913)
+
+extension AppStateTests {
+  func testHighPrecisionThresholdsHaveHysteresis() {
+    XCTAssertFalse(AppState.wantsHighPrecision(contextTokens: 2_000, current: false))
+    XCTAssertTrue(AppState.wantsHighPrecision(contextTokens: 2_600, current: false))
+    XCTAssertTrue(AppState.wantsHighPrecision(contextTokens: 2_000, current: true), "Stays on")
+    XCTAssertFalse(AppState.wantsHighPrecision(contextTokens: 1_000, current: true))
+  }
+
+  func testLongChatsSwitchToFloat32AndShortOnesBack() async {
+    await appState.ensureEngineLoaded()
+    XCTAssertEqual(appState.resolved?.float32Activations, false)
+
+    let long = appState.newThread(in: context)
+    let essay = String(repeating: "A long paragraph about lighthouses and their keepers. ", count: 180)
+    await appState.send(text: essay, imageData: nil, audioFileURL: nil, in: long)
+    XCTAssertTrue(appState.highPrecision)
+    XCTAssertEqual(appState.resolved?.float32Activations, true)
+    XCTAssertTrue(appState.effectiveOptions.highPrecision)
+
+    let short = appState.newThread(in: context)
+    await appState.send(text: "Hi", imageData: nil, audioFileURL: nil, in: short)
+    XCTAssertFalse(appState.highPrecision)
+    XCTAssertEqual(appState.resolved?.float32Activations, false)
+  }
+
+  func testHighPrecisionIsNeverStored() throws {
+    var options = InferenceOptions()
+    options.highPrecision = true
+    let decoded = try JSONDecoder().decode(
+      InferenceOptions.self, from: try JSONEncoder().encode(options))
+    XCTAssertFalse(decoded.highPrecision)
+  }
+}

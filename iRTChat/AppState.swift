@@ -48,7 +48,20 @@ final class AppState {
     var effective = options
     effective.systemPrompt = SystemPrompt.compose(
       base: options.systemPrompt, personalization: personalization, project: activeProject)
+    effective.highPrecision = highPrecision
     return effective
+  }
+
+  /// 32-bit GPU activations for long contexts, where the default 16-bit path
+  /// corrupts digits (LiteRT-LM #3913). Decided per message.
+  @ObservationIgnored private(set) var highPrecision = false
+  /// Switch to high precision at this many context tokens…
+  static let highPrecisionOnTokens = 2_500
+  /// …and back below this many (no reload ping-pong between similar chats).
+  static let highPrecisionOffTokens = 1_500
+
+  static func wantsHighPrecision(contextTokens: Int, current: Bool) -> Bool {
+    current ? contextTokens >= highPrecisionOffTokens : contextTokens >= highPrecisionOnTokens
   }
 
   /// The project of the chat the engine's conversation belongs to.
@@ -499,6 +512,21 @@ final class AppState {
     }
 
     let history = rewound ?? thread.textHistory
+
+    // Long contexts need 32-bit GPU activations (an engine rebuild).
+    let contextTokens =
+      ContextBudget.estimateHistory(history) + ContextBudget.estimateTokens(enginePrompt)
+    let wantPrecision = Self.wantsHighPrecision(contextTokens: contextTokens, current: highPrecision)
+    if wantPrecision != highPrecision {
+      highPrecision = wantPrecision
+      Log.engine.info("precision: \(wantPrecision ? "float32" : "default", privacy: .public) at ~\(contextTokens) tokens")
+      if wantPrecision { preparingStatus = String(localized: "Switching to high precision…") }
+      generatingThreadID = threadID
+      await applyCurrentOptions()
+      generatingThreadID = nil
+      preparingStatus = nil
+    }
+
     let ready = await serialized {
       // Rewinding: the engine holds later turns that must not stay in context.
       if rewound != nil, self.conversationThreadID == threadID { self.conversationThreadID = nil }
