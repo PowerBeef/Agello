@@ -34,7 +34,7 @@ final class DeviceHarness {
 
   private static let defaultsKeys = [
     "inferenceOptions", "enableTools", "selectedThreadID", "benchmarkReport", "memoryEnabled",
-    "personalization",
+    "personalization", "webSearch",
   ]
   private var savedDefaults: [String: Any] = [:]
   private var report: [String: Any] = [:]
@@ -159,11 +159,12 @@ final class DeviceHarness {
 
   /// Send through the real app pipeline (``AppState/send``) and wait for the reply.
   func ask(
-    _ prompt: String, in thread: ChatThread, image: Data? = nil, audio: URL? = nil
+    _ prompt: String, in thread: ChatThread, image: Data? = nil, audio: URL? = nil,
+    webSearch: Bool = false
   ) async -> Exchange {
     let started = Date()
     let accepted = await appState.send(
-      text: prompt, imageData: image, audioFileURL: audio, in: thread)
+      text: prompt, imageData: image, audioFileURL: audio, webSearch: webSearch, in: thread)
     let reply = accepted ? thread.orderedTurns.last(where: { !$0.isUser }) : nil
     return Exchange(accepted: accepted, reply: reply, seconds: Date().timeIntervalSince(started))
   }

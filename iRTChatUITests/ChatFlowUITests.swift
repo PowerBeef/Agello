@@ -312,6 +312,24 @@ final class ChatFlowUITests: XCTestCase {
     element("project.done").tap()
   }
 
+  /// The Search chip searches the web for one message; the reply lists
+  /// linked sources and the chip turns itself off.
+  func testWebSearchFromComposer() throws {
+    try openNewChat()
+    let search = element("composer.search")
+    XCTAssertTrue(search.waitForExistence(timeout: 5))
+    search.tap()
+    XCTAssertEqual(search.value as? String, "On")
+    send("What is the capital of Australia?")
+    try waitForReplyToFinish(timeout: 180)
+    XCTAssertEqual(search.value as? String, "Off", "Search should apply to one message")
+    if !Self.isSimulator {
+      XCTAssertTrue(element("message.sources").waitForExistence(timeout: 5), "No sources")
+      XCTAssertTrue(lastModelText().contains("Canberra"), lastModelText())
+    }
+    attachScreenshot("web-search")
+  }
+
   /// Memory: turn it on and add a memory by hand.
   func testMemorySettings() throws {
     openSettings()

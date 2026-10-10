@@ -50,8 +50,21 @@ final class AppState {
       base: options.systemPrompt, personalization: personalization, project: activeProject,
       memories: memoryEnabled ? memoryTexts() : [])
     effective.highPrecision = highPrecision
+    effective.webSearchTool = webSettings.allowed && webSettings.automatic
     return effective
   }
+
+  /// Web search settings (provider, automatic mode, master switch).
+  var webSettings = WebSearchSettings() {
+    didSet {
+      UserDefaults.standard.set(try? JSONEncoder().encode(webSettings), forKey: "webSearch")
+      // Automatic mode changes the tools the conversation offers.
+      if (oldValue.allowed && oldValue.automatic) != (webSettings.allowed && webSettings.automatic) {
+        scheduleApplyOptions()
+      }
+    }
+  }
+  @ObservationIgnored private(set) lazy var webResearch = WebResearch(knowledge: knowledge)
 
   /// The system prompt the engine's conversation was built with; a
   /// different one (project, memories, personalization) means a rebuild.
@@ -90,6 +103,13 @@ final class AppState {
   }
 
   var isGenerating = false
+  /// Preparing a reply (web search, reading files, precision switch): the
+  /// composer shows Stop from the first step until the reply ends.
+  var isPreparing = false
+  /// The chat a reply is being prepared for (its status line).
+  var preparingThreadID: UUID?
+  /// A reply is being prepared or written.
+  var isBusy: Bool { isGenerating || isPreparing }
   /// The chat whose reply is streaming (only it shows the live cursor and
   /// can't be deleted mid-reply).
   var generatingThreadID: UUID?
@@ -145,6 +165,11 @@ final class AppState {
     }
     self.enableTools = UserDefaults.standard.object(forKey: "enableTools") as? Bool ?? true
     self.memoryEnabled = UserDefaults.standard.bool(forKey: "memoryEnabled")
+    if let data = UserDefaults.standard.data(forKey: "webSearch"),
+      let decoded = try? JSONDecoder().decode(WebSearchSettings.self, from: data)
+    {
+      self.webSettings = decoded
+    }
     if let data = UserDefaults.standard.data(forKey: "personalization"),
       let decoded = try? JSONDecoder().decode(Personalization.self, from: data)
     {
@@ -161,6 +186,7 @@ final class AppState {
     // iOS sends memory warnings long before it terminates apps (E4B kept
     // working with ~0.8 GB left in the 8 GB simulation), so only stop a reply
     // when memory is actually nearly exhausted (also checked while streaming).
+    installWebSearchTool()
     memoryWarningObserver = NotificationCenter.default.addObserver(
       forName: UIApplication.didReceiveMemoryWarningNotification, object: nil,
       queue: .main
@@ -413,7 +439,7 @@ final class AppState {
   @discardableResult
   func send(
     text: String, imageData: Data?, audioFileURL: URL?, files: [FileRecord] = [],
-    in thread: ChatThread
+    webSearch: Bool = false, in thread: ChatThread
   ) async -> Bool {
     let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !prompt.isEmpty || imageData != nil || audioFileURL != nil || !files.isEmpty else {
@@ -421,11 +447,11 @@ final class AppState {
     }
     return await generate(
       prompt: prompt, imageData: imageData, audioFileURL: audioFileURL, in: thread,
-      history: nil
+      history: nil, webSearch: webSearch
     ) {
       let turn = ChatTurn(
         role: .user, text: prompt, imageData: imageData, hasAudio: audioFileURL != nil)
-      if !files.isEmpty { turn.parts = MessageParts(files: files) }
+      if !files.isEmpty || webSearch { turn.parts = MessageParts(files: files, webSearch: webSearch) }
       thread.append(turn)
       if thread.title == "New chat" {
         thread.title = Self.title(
@@ -450,7 +476,8 @@ final class AppState {
     }
     return await generate(
       prompt: prompt.text, imageData: prompt.imageData, audioFileURL: nil, in: thread,
-      history: thread.textHistory(before: prompt), replacing: reply
+      history: thread.textHistory(before: prompt), replacing: reply,
+      webSearch: prompt.parts.webSearch
     ) {}
   }
 
@@ -460,15 +487,16 @@ final class AppState {
   func edit(_ userTurn: ChatTurn, text: String, in thread: ChatThread) async -> Bool {
     let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
     let files = userTurn.parts.files
+    let webSearch = userTurn.parts.webSearch
     guard userTurn.isUser, !prompt.isEmpty || userTurn.imageData != nil || !files.isEmpty else {
       return false
     }
     return await generate(
       prompt: prompt, imageData: userTurn.imageData, audioFileURL: nil, in: thread,
-      history: thread.textHistory(before: userTurn)
+      history: thread.textHistory(before: userTurn), webSearch: webSearch
     ) {
       let turn = ChatTurn(role: .user, text: prompt, imageData: userTurn.imageData)
-      if !files.isEmpty { turn.parts = MessageParts(files: files) }
+      if !files.isEmpty || webSearch { turn.parts = MessageParts(files: files, webSearch: webSearch) }
       thread.addVersion(turn, of: userTurn)
     }
   }
@@ -495,11 +523,18 @@ final class AppState {
   private func generate(
     prompt: String, imageData: Data?, audioFileURL: URL?, in thread: ChatThread,
     history rewound: [(role: ChatRole, text: String)]?, replacing: ChatTurn? = nil,
-    persist: () -> Void
+    webSearch: Bool = false, persist: () -> Void
   ) async -> Bool {
-    guard !isGenerating, !isBenchmarking else { return false }
+    guard !isGenerating, !isPreparing, !isBenchmarking else { return false }
     guard let context = modelContext else { return false }
     generationError = nil
+    isPreparing = true
+    preparingThreadID = thread.id
+    defer {
+      isPreparing = false
+      preparingThreadID = nil
+      preparingStatus = nil
+    }
     // A just-changed setting (e.g. the composer's Think toggle) applies to
     // this message, not after it.
     if optionsDirty {
@@ -516,21 +551,41 @@ final class AppState {
     let documents = documents(for: thread)
     if !documents.isEmpty {
       guard await ensureEngineLoaded() else { return false }
-      isGenerating = true
-      generatingThreadID = threadID
       let task = Task { await self.assembleFileContext(question: prompt, documents: documents) }
       preparationTask = task
       let assembled = await task.value
       preparationTask = nil
       preparingStatus = nil
-      isGenerating = false
-      generatingThreadID = nil
       guard let assembled else { return false }  // stopped while reading
       enginePrompt = assembled.prompt
       sources = assembled.sources
     }
 
     let history = rewound ?? thread.textHistory
+
+    // Web search the user asked for: plan queries, search, read, rank.
+    if webSearch, webSettings.allowed {
+      guard await ensureEngineLoaded() else { return false }
+      let filePrompt = documents.isEmpty ? nil : enginePrompt
+      let firstIndex = sources.count + 1
+      let task = Task { () -> WebOutcome in
+        await self.searchWeb(question: prompt, history: history, firstIndex: firstIndex)
+      }
+      webTask = task
+      let outcome = await task.value
+      webTask = nil
+      preparingStatus = nil
+      switch outcome {
+      case .cancelled:
+        return false
+      case .failed(let message):
+        generationError = message
+      case .found(let findings):
+        enginePrompt = WebContext.prompt(
+          question: prompt, sources: findings.sources, filePrompt: filePrompt)
+        sources += findings.sources.map(\.record)
+      }
+    }
 
     // Long contexts need 32-bit GPU activations (an engine rebuild).
     let contextTokens =
@@ -540,9 +595,7 @@ final class AppState {
       highPrecision = wantPrecision
       Log.engine.info("precision: \(wantPrecision ? "float32" : "default", privacy: .public) at ~\(contextTokens) tokens")
       if wantPrecision { preparingStatus = String(localized: "Switching to high precision…") }
-      generatingThreadID = threadID
       await applyCurrentOptions()
-      generatingThreadID = nil
       preparingStatus = nil
     }
 
@@ -600,12 +653,23 @@ final class AppState {
     try? context.save()
 
     isGenerating = true
+    isPreparing = false
     generatingThreadID = threadID
     engineState = .generating
     conversationIsEmpty = false
 
+    WebSourcesRecorder.reset()
+    toolSourceOffset = sources.count
     let stream = engine.send(text: enginePrompt, imageData: imageData, audioFileURL: audioFileURL)
     await consume(stream, into: reply, context: context)
+    // Sources found by the automatic web_search tool during the reply.
+    let toolSources = WebSourcesRecorder.drain()
+    if !toolSources.isEmpty {
+      var parts = reply.parts
+      parts.sources += toolSources
+      reply.parts = parts
+      try? context.save()
+    }
 
     isGenerating = false
     generatingThreadID = nil
@@ -664,6 +728,83 @@ final class AppState {
     if !prompt.isEmpty { return String(prompt.prefix(42)) }
     if let fileName { return String(fileName.prefix(42)) }
     return hasImage ? "Photo" : "Voice message"
+  }
+
+  // MARK: - Web search
+
+  enum WebOutcome: Sendable {
+    case found(WebResearch.Findings)
+    case failed(String)
+    case cancelled
+  }
+
+  /// Web search before a reply (cancelled by Stop).
+  @ObservationIgnored private var webTask: Task<WebOutcome, Never>?
+  /// Sources already attached to the reply before the automatic tool runs.
+  @ObservationIgnored private var toolSourceOffset = 0
+
+  /// Plan queries (the model resolves follow-ups; a first question is
+  /// searched as asked), then research them.
+  private func searchWeb(
+    question: String, history: [(role: ChatRole, text: String)], firstIndex: Int
+  ) async -> WebOutcome {
+    var queries = [WebContext.directQuery(question)]
+    if !history.isEmpty {
+      preparingStatus = String(localized: "Planning the search…")
+      let prompt = WebContext.queryPrompt(question: question, history: history)
+      let output: Data? = await serialized {
+        defer {
+          self.conversationThreadID = nil
+          self.conversationIsEmpty = true
+        }
+        return try? await self.engine.helperJSON(
+          prompt: prompt, schemaJSON: WebContext.querySchema,
+          maxOutputTokens: WebContext.queryMaxOutputTokens)
+      }
+      let planned = output.map(WebContext.parseQueries) ?? []
+      if !planned.isEmpty { queries = planned }
+    }
+    if Task.isCancelled { return .cancelled }
+    let window = resolved?.maxNumTokens ?? 8_192
+    do {
+      let findings = try await webResearch.research(
+        queries: queries, question: question, settings: webSettings,
+        budgetTokens: FileContext.budget(window: window, question: question),
+        firstIndex: firstIndex
+      ) { status in self.preparingStatus = status }
+      return findings.sources.isEmpty
+        ? .failed(String(localized: "The web search found nothing useful. Answered without it."))
+        : .found(findings)
+    } catch is CancellationError {
+      return .cancelled
+    } catch {
+      if Task.isCancelled { return .cancelled }
+      return .failed(
+        String(localized: "Web search failed: \(error.localizedDescription) Answered without it."))
+    }
+  }
+
+  /// The automatic `web_search` tool's work (runs during a reply).
+  private func installWebSearchTool() {
+    WebSearchTool.handler = { [weak self] query, maxBytes in
+      await self?.toolSearch(query, maxBytes: maxBytes) ?? "Web search is unavailable."
+    }
+  }
+
+  private func toolSearch(_ query: String, maxBytes: Int) async -> String {
+    guard webSettings.allowed else { return "Web search is turned off." }
+    do {
+      let findings = try await webResearch.research(
+        queries: [query], question: query, settings: webSettings,
+        // ~3 bytes per token (ContextBudget.bytesPerToken).
+        budgetTokens: max(200, Int(Double(maxBytes) / ContextBudget.bytesPerToken) - 40),
+        firstIndex: toolSourceOffset + WebSourcesRecorder.nextIndex
+      ) { _ in }
+      WebSourcesRecorder.record(findings.sources.map(\.record))
+      return findings.sources.isEmpty ? "No results." : WebContext.sourcesBlock(findings.sources)
+    } catch {
+      return "Web search failed: \(error.localizedDescription)"
+    }
   }
 
   // MARK: - Files
@@ -826,6 +967,7 @@ final class AppState {
 
   func stop() {
     preparationTask?.cancel()
+    webTask?.cancel()
     Task { await engine.cancel() }
   }
 

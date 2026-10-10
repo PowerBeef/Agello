@@ -110,6 +110,9 @@ struct InferenceOptions: Codable, Sendable, Equatable {
   /// stored setting). The default 16-bit path corrupts digits once the
   /// context reaches a few thousand tokens (LiteRT-LM issue #3913).
   var highPrecision: Bool = false
+  /// Offer the model the `web_search` tool (automatic web search; runtime
+  /// only, from the web settings).
+  var webSearchTool: Bool = false
 
   /// Stored keys (``highPrecision`` is decided at runtime, never saved).
   private enum CodingKeys: String, CodingKey {

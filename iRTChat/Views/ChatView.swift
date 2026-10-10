@@ -22,6 +22,8 @@ struct ChatView: View {
   @State private var pendingFiles: [ExtractedDocument] = []
   /// Files being read right now.
   @State private var readingFiles = 0
+  /// Search the web for the next message.
+  @State private var searchWeb = false
   @State private var reader = SpeechReader()
   /// The user message being edited in the composer, if any.
   @State private var editingTurn: ChatTurn?
@@ -273,7 +275,7 @@ struct ChatView: View {
   private func actions(for turn: ChatTurn) -> MessageActions {
     guard let thread else { return MessageActions() }
     return MessageActions(
-      isBusy: appState.isGenerating,
+      isBusy: appState.isBusy,
       isSpeaking: reader.speakingID == turn.id,
       canRegenerate: !turn.isUser && appState.canRegenerate(turn, in: thread),
       regenerate: {
@@ -335,7 +337,7 @@ struct ChatView: View {
   /// "Reading report.pdf · part 3 of 11" while files are prepared.
   @ViewBuilder
   private var preparingBar: some View {
-    if let status = appState.preparingStatus, appState.generatingThreadID == thread?.id {
+    if let status = appState.preparingStatus, appState.preparingThreadID == thread?.id {
       HStack(spacing: 8) {
         ProgressView().controlSize(.small)
         Text(status)
@@ -437,6 +439,9 @@ struct ChatView: View {
       HStack(spacing: DS.spaceMD) {
         attachMenu
         thinkToggle
+        if appState.webSettings.allowed {
+          searchToggle
+        }
         Spacer(minLength: 0)
         micButton
         actionButton
@@ -509,7 +514,7 @@ struct ChatView: View {
     "Scan \(Date.now.formatted(date: .abbreviated, time: .shortened))"
   }
 
-  private var attachDisabled: Bool { appState.isGenerating || editingTurn != nil }
+  private var attachDisabled: Bool { appState.isBusy || editingTurn != nil }
 
   private var attachMenu: some View {
     Menu {
@@ -530,6 +535,28 @@ struct ChatView: View {
     .accessibilityIdentifier("composer.attach")
   }
 
+  /// Web search for the next message only.
+  private var searchToggle: some View {
+    Button {
+      searchWeb.toggle()
+      Haptics.complete()
+    } label: {
+      Label("Search", systemImage: "globe")
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(searchWeb ? Color.accentColor : .secondary)
+        .padding(.horizontal, 12)
+        .frame(height: 36)
+        .glassEffect(
+          searchWeb
+            ? .regular.tint(.accentColor.opacity(0.25)).interactive() : .regular.interactive(),
+          in: .capsule)
+    }
+    .buttonStyle(.plain)
+    .disabled(appState.isBusy || editingTurn != nil)
+    .accessibilityValue(searchWeb ? "On" : "Off")
+    .accessibilityIdentifier("composer.search")
+  }
+
   /// Reasoning for the next messages (applies before the next send).
   private var thinkToggle: some View {
     let isOn = appState.options.enableThinking
@@ -548,7 +575,7 @@ struct ChatView: View {
           in: .capsule)
     }
     .buttonStyle(.plain)
-    .disabled(appState.isGenerating)
+    .disabled(appState.isBusy)
     .accessibilityValue(isOn ? "On" : "Off")
     .accessibilityIdentifier("composer.think")
   }
@@ -568,7 +595,7 @@ struct ChatView: View {
 
   @ViewBuilder
   private var actionButton: some View {
-    if appState.isGenerating {
+    if appState.isBusy {
       Button(action: { appState.stop() }) {
         Image(systemName: "stop.fill")
           .frame(width: DS.controlTarget, height: DS.controlTarget)
@@ -619,9 +646,11 @@ struct ChatView: View {
     let image = pendingImage
     let audioURL = recorder.finishedURL
     let files = pendingFiles
+    let webSearch = searchWeb
     draft = ""
     pendingImage = nil
     pendingFiles = []
+    searchWeb = false
     inputFocused = false
     Haptics.send()
     let target = thread ?? newThread()
@@ -632,7 +661,8 @@ struct ChatView: View {
     }
     Task {
       let accepted = await appState.send(
-        text: text, imageData: image, audioFileURL: audioURL, files: records, in: target)
+        text: text, imageData: image, audioFileURL: audioURL, files: records,
+        webSearch: webSearch, in: target)
       if accepted {
         recorder.discard()
       } else {
@@ -642,6 +672,7 @@ struct ChatView: View {
         if draft.isEmpty { draft = text }
         if pendingImage == nil { pendingImage = image }
         if pendingFiles.isEmpty { pendingFiles = files }
+        searchWeb = webSearch
       }
     }
   }

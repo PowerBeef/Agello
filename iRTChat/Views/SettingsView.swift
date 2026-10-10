@@ -126,7 +126,23 @@ struct SettingsView: View {
         }
       }
       .accessibilityIdentifier("settings.memory")
+      NavigationLink {
+        WebSearchSettingsView()
+      } label: {
+        LabeledContent {
+          Text(webSummary)
+        } label: {
+          Label("Web search", systemImage: "globe")
+        }
+      }
+      .accessibilityIdentifier("settings.web")
     }
+  }
+
+  private var webSummary: String {
+    let web = appState.webSettings
+    guard web.allowed else { return String(localized: "Off") }
+    return web.automatic ? String(localized: "Automatic") : web.provider.displayName
   }
 
   private var personalizationSummary: String {

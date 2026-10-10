@@ -100,7 +100,7 @@ struct MessageBubbleView: View {
         }
         if !turn.text.isEmpty {
           VStack(alignment: .leading, spacing: 6) {
-            MarkdownView(turn.text)
+            MarkdownView(WebContext.linkCitations(turn.text, sources: turn.parts.sources))
               .textSelection(.enabled)
             if isStreaming {
               RoundedRectangle(cornerRadius: 1.5)
@@ -156,9 +156,15 @@ struct MessageBubbleView: View {
     DisclosureGroup {
       VStack(alignment: .leading, spacing: 8) {
         ForEach(sources) { source in
-          VStack(alignment: .leading, spacing: 2) {
+          let row = VStack(alignment: .leading, spacing: 2) {
             Text("\(source.index). \(source.title)")
               .font(.caption.weight(.semibold))
+              .foregroundStyle(.primary)
+            if let host = source.url.flatMap(URL.init(string:))?.host() {
+              Text(host.hasPrefix("www.") ? String(host.dropFirst(4)) : host)
+                .font(.caption2)
+                .foregroundStyle(Color.accentColor)
+            }
             if let snippet = source.snippet {
               Text(snippet)
                 .font(.caption)
@@ -167,6 +173,12 @@ struct MessageBubbleView: View {
             }
           }
           .frame(maxWidth: .infinity, alignment: .leading)
+          if let link = source.url.flatMap(URL.init(string:)) {
+            Link(destination: link) { row }
+              .accessibilityIdentifier("message.source")
+          } else {
+            row
+          }
         }
       }
       .padding(.top, 6)

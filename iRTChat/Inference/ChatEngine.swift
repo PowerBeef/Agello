@@ -286,7 +286,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   ) async throws -> Conversation {
     let sampler = try SamplerConfig(
       topK: resolved.topK, topP: resolved.topP, temperature: resolved.temperature)
-    let tools: [any Tool] = toolsEnabled ? [CurrentDateTimeTool(), CalculatorTool()] : []
+    var tools: [any Tool] = toolsEnabled ? [CurrentDateTimeTool(), CalculatorTool()] : []
+    if options.webSearchTool { tools.append(WebSearchTool()) }
     let initial = history.suffix(maxReplayedTurns).map { turn -> LiteRTLM.Message in
       switch turn.role {
       case .user: return LiteRTLM.Message(turn.text, role: .user)

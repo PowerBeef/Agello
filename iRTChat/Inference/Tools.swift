@@ -36,6 +36,34 @@ struct CurrentDateTimeTool: Tool {
   }
 }
 
+// MARK: - Web search tool (automatic mode)
+
+/// Lets the model search the web when a question needs fresh or factual
+/// information. Offered only when the user turned on automatic web search.
+struct WebSearchTool: Tool {
+  static let name = "web_search"
+  static let description =
+    "Search the web for current events, recent facts, prices, schedules, or anything you are unsure about. Returns numbered sources to cite like [1]."
+
+  @ToolParam(description: "A short, self-contained web search query.")
+  var query: String = ""
+
+  /// Runs the search for the app (set by `AppState`); returns the sources
+  /// block for the model, or an error message.
+  nonisolated(unsafe) static var handler: (@Sendable (String, Int) async -> String)?
+
+  func run() async throws -> Any {
+    guard let limits = ToolBudget.claim() else { return ToolBudget.limitReachedResult }
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, let handler = Self.handler else {
+      return ["error": "Web search is unavailable."]
+    }
+    ToolActivity.record(Self.name, summary: "Searched the web for “\(trimmed)”")
+    let result = await handler(trimmed, limits.maxResultBytes)
+    return ["sources": ToolBudget.fit(result, limits)]
+  }
+}
+
 // MARK: - Calculator tool
 
 enum CalculatorError: Error, LocalizedError, Equatable {

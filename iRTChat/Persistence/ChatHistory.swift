@@ -153,15 +153,19 @@ struct MessageParts: Codable, Equatable, Sendable {
   var sources: [SourceRecord] = []
   /// Files the user attached to this message.
   var files: [FileRecord] = []
+  /// The user asked for a web search with this message.
+  var webSearch = false
 
-  var isEmpty: Bool { toolActivity.isEmpty && sources.isEmpty && files.isEmpty }
+  var isEmpty: Bool { toolActivity.isEmpty && sources.isEmpty && files.isEmpty && !webSearch }
 
   init(
-    toolActivity: [ToolActivityRecord] = [], sources: [SourceRecord] = [], files: [FileRecord] = []
+    toolActivity: [ToolActivityRecord] = [], sources: [SourceRecord] = [], files: [FileRecord] = [],
+    webSearch: Bool = false
   ) {
     self.toolActivity = toolActivity
     self.sources = sources
     self.files = files
+    self.webSearch = webSearch
   }
 
   /// Tolerates missing keys: parts saved before a field existed still decode.
@@ -170,6 +174,7 @@ struct MessageParts: Codable, Equatable, Sendable {
     toolActivity = try container.decodeIfPresent([ToolActivityRecord].self, forKey: .toolActivity) ?? []
     sources = try container.decodeIfPresent([SourceRecord].self, forKey: .sources) ?? []
     files = try container.decodeIfPresent([FileRecord].self, forKey: .files) ?? []
+    webSearch = try container.decodeIfPresent(Bool.self, forKey: .webSearch) ?? false
   }
 }
 

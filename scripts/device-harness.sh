@@ -2,7 +2,7 @@
 # On-device test harness for iRTChat (physical iPhone only).
 #
 # Usage:
-#   scripts/device-harness.sh [unit|inference|files|ui|all|thinking|memory|calibrate|probes] [extra xcodebuild args...]
+#   scripts/device-harness.sh [unit|inference|files|web|ui|all|thinking|memory|calibrate|probes] [extra xcodebuild args...]
 #
 #   unit       Unit tests (planner, budgets, schema, markdown, files, projects,
 #              the app pipeline through the scripted engine), on the iPhone.
@@ -11,6 +11,8 @@
 #              round-trip, context limit, titles, benchmark). Downloads E4B if missing.
 #   files      Files with the real models: EmbeddingGemma indexing and retrieval,
 #              "summarize this 40-page PDF", cited follow-up.
+#   web        Live web search with the real model (needs internet): cited
+#              answer, planned follow-up, automatic mode.
 #   ui         Real-tap flows (send, Stop, Home button mid-reply, leave/return
 #              mid-reply, drawer, projects, files, message actions, Think,
 #              keyboard, Settings). Needs E4B downloaded.
@@ -78,6 +80,7 @@ case "$SUITE" in
   unit) run_suite unit -only-testing:iRTChatTests "$@" || status=$? ;;
   ui) run_suite ui -only-testing:iRTChatUITests "$@" || status=$? ;;
   files) run_suite files -only-testing:iRTChatDeviceTests/KnowledgeScenarioTests "$@" || status=$? ;;
+  web) run_suite web -only-testing:iRTChatDeviceTests/WebScenarioTests "$@" || status=$? ;;
   thinking)
     export TEST_RUNNER_HARNESS_THINKING=1
     run_suite thinking -only-testing:iRTChatDeviceTests/ThinkingScenarioTests "$@" || status=$?
@@ -98,7 +101,8 @@ case "$SUITE" in
     run_suite unit -only-testing:iRTChatTests "$@" || status=$?
     inference_status=0
     run_suite inference -only-testing:iRTChatDeviceTests/InferenceScenarioTests \
-      -only-testing:iRTChatDeviceTests/KnowledgeScenarioTests "$@" || inference_status=$?
+      -only-testing:iRTChatDeviceTests/KnowledgeScenarioTests \
+      -only-testing:iRTChatDeviceTests/WebScenarioTests "$@" || inference_status=$?
     [ "$status" -eq 0 ] && status=$inference_status
     ui_status=0
     run_suite ui -only-testing:iRTChatUITests "$@" || ui_status=$?
