@@ -47,9 +47,23 @@ final class AppState {
   var effectiveOptions: InferenceOptions {
     var effective = options
     effective.systemPrompt = SystemPrompt.compose(
-      base: options.systemPrompt, personalization: personalization, project: activeProject)
+      base: options.systemPrompt, personalization: personalization, project: activeProject,
+      memories: memoryEnabled ? memoryTexts() : [])
     effective.highPrecision = highPrecision
     return effective
+  }
+
+  /// The system prompt the engine's conversation was built with; a
+  /// different one (project, memories, personalization) means a rebuild.
+  @ObservationIgnored private var appliedSystemPrompt: String?
+
+  /// Memory: learn lasting facts from the user's messages and add them to
+  /// the system prompt. Off by default.
+  var memoryEnabled = false {
+    didSet {
+      UserDefaults.standard.set(memoryEnabled, forKey: "memoryEnabled")
+      memoriesChanged()
+    }
   }
 
   /// 32-bit GPU activations for long contexts, where the default 16-bit path
@@ -130,6 +144,7 @@ final class AppState {
       self.options = decoded
     }
     self.enableTools = UserDefaults.standard.object(forKey: "enableTools") as? Bool ?? true
+    self.memoryEnabled = UserDefaults.standard.bool(forKey: "memoryEnabled")
     if let data = UserDefaults.standard.data(forKey: "personalization"),
       let decoded = try? JSONDecoder().decode(Personalization.self, from: data)
     {
@@ -235,6 +250,7 @@ final class AppState {
         enableTools: enableTools
       )
       resolved = plan
+      appliedSystemPrompt = effectiveOptions.systemPrompt
       engineState = .ready
       return true
     } catch {
@@ -307,6 +323,7 @@ final class AppState {
         do {
           resolved = try await live.updateConversationOptions(
             newOptions, enableTools: enableTools, history: history)
+          appliedSystemPrompt = newOptions.systemPrompt
           conversationThreadID = selectedThreadID
           conversationIsEmpty = history.isEmpty
         } catch {
@@ -318,6 +335,7 @@ final class AppState {
         options: newOptions, model: store.activeModelID,
         memoryBytes: DeviceProfile.current.physicalMemoryBytes)
       await mock.applyConversationOptions(newOptions)
+      appliedSystemPrompt = newOptions.systemPrompt
     }
   }
 
@@ -349,12 +367,12 @@ final class AppState {
     if conversationThreadID == threadID { return true }
     // Never swap the conversation out from under a live reply.
     if isGenerating { return false }
-    // A chat in another project (or none) needs other instructions in the
-    // system prompt: rebuild the conversation with them.
-    let project = projectContext(for: threadID)
-    if project != activeProject {
-      activeProject = project
-      Log.engine.info("system prompt for project change: \(history.count) turns")
+    // Another project, changed memories or personalization: rebuild the
+    // conversation with the right system prompt.
+    activeProject = projectContext(for: threadID)
+    let systemPrompt = effectiveOptions.systemPrompt
+    if systemPrompt != appliedSystemPrompt {
+      Log.engine.info("system prompt changed: rebuild with \(history.count) turns")
       do {
         if let live = engine as? LiteRTChatEngine {
           resolved = try await live.updateConversationOptions(
@@ -369,6 +387,7 @@ final class AppState {
         generationError = (error as? ChatError)?.displayMessage ?? error.localizedDescription
         return false
       }
+      appliedSystemPrompt = systemPrompt
       conversationThreadID = threadID
       conversationIsEmpty = history.isEmpty
       return true
@@ -595,6 +614,7 @@ final class AppState {
       pendingOptionsApply = false
       await applyCurrentOptions()
     }
+    await learnMemories(from: prompt, reply: reply, in: thread)
     await generateTitleIfNeeded(for: thread)
     return true
   }
@@ -898,6 +918,53 @@ final class AppState {
       context.delete(thread)
     }
     try? context.save()
+  }
+
+  // MARK: - Memory
+
+  /// Saved memories, most recent first, as added to the system prompt.
+  func memoryTexts() -> [String] {
+    var descriptor = FetchDescriptor<MemoryItem>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
+    descriptor.fetchLimit = SystemPrompt.memoryLimit
+    return ((try? modelContext?.fetch(descriptor)) ?? []).map(\.text)
+  }
+
+  /// Memories were added, edited or deleted (or memory was switched): the
+  /// open conversation picks them up before the next message.
+  func memoriesChanged() {
+    conversationThreadID = nil
+  }
+
+  /// After a reply: save lasting facts from the user's message (memory on,
+  /// and only when the message is about the user).
+  private func learnMemories(from message: String, reply: ChatTurn, in thread: ChatThread) async {
+    guard memoryEnabled, HelperTasks.shouldLookForMemories(message), !reply.text.isEmpty,
+      !reply.text.hasPrefix(ChatTurn.errorPrefix), let context = modelContext
+    else { return }
+    let all = ((try? context.fetch(FetchDescriptor<MemoryItem>())) ?? []).map(\.text)
+    let prompt = HelperTasks.memoryPrompt(user: message, existing: all)
+    let output: Data? = await serialized {
+      guard !self.isGenerating, await self.engine.isLoaded else { return nil }
+      defer {
+        // The helper left the engine's conversation empty.
+        self.conversationThreadID = nil
+        self.conversationIsEmpty = true
+      }
+      return try? await self.engine.helperJSON(
+        prompt: prompt, schemaJSON: HelperTasks.memorySchema,
+        maxOutputTokens: HelperTasks.memoryMaxOutputTokens)
+    }
+    guard let output else { return }
+    let learned = HelperTasks.newMemories(HelperTasks.parseMemories(output), existing: all)
+    guard !learned.isEmpty else { return }
+    for text in learned { context.insert(MemoryItem(text: text, sourceThreadID: thread.id)) }
+    var parts = reply.parts
+    parts.toolActivity.append(
+      ToolActivityRecord(name: "memory", summary: learned.joined(separator: " · ")))
+    reply.parts = parts
+    try? context.save()
+    Log.engine.info("memory: saved \(learned.count)")
+    memoriesChanged()
   }
 
   // MARK: - Projects

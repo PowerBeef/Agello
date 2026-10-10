@@ -80,11 +80,22 @@ struct ProjectContext: Equatable, Sendable {
 }
 
 enum SystemPrompt {
-  /// Base prompt, then personalization, then the project's instructions.
+  /// Memories added to the system prompt (most recent first).
+  static let memoryLimit = 25
+
+  /// Base prompt, personalization, saved memories, then the project's
+  /// instructions.
   static func compose(
-    base: String, personalization: Personalization, project: ProjectContext?
+    base: String, personalization: Personalization, project: ProjectContext?,
+    memories: [String] = []
   ) -> String {
     var prompt = personalization.systemPrompt(base: base)
+    if !memories.isEmpty {
+      let list = memories.prefix(memoryLimit).map { "- \($0)" }.joined(separator: "\n")
+      prompt +=
+        "\n\nWhat you remember about the user from earlier chats (use it when relevant; "
+        + "don't recite this list):\n\(list)"
+    }
     if let project {
       let instructions = String(
         project.instructions.trimmingCharacters(in: .whitespacesAndNewlines)

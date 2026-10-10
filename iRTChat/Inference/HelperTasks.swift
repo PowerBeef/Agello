@@ -49,4 +49,80 @@ enum HelperTasks {
     }
     return title
   }
+
+  // MARK: Memory
+
+  static let memorySchema =
+    #"{"type":"object","properties":{"memories":{"type":"array","items":{"type":"string"},"maxItems":3}},"required":["memories"]}"#
+  static let memoryMaxOutputTokens = 96
+  static let maxMemoryLength = 120
+
+  /// Only messages about the user can hold facts worth remembering; skips
+  /// the helper (and the conversation rebuild it causes) for the rest.
+  static func shouldLookForMemories(_ message: String) -> Bool {
+    let text = " " + message.lowercased().folding(options: .diacriticInsensitive, locale: nil) + " "
+    let cues = [
+      " i ", " i'm ", " im ", " i've ", " i'd ", " i'll ", " my ", " me ", " mine ", " myself ",
+      "remember", " je ", " j'", " mon ", " ma ", " mes ", " moi ", "souviens", "rappelle",
+    ]
+    return cues.contains { text.contains($0) }
+  }
+
+  /// Instructions first, with examples: measured on device, Gemma otherwise
+  /// tends to return an empty list for messages full of facts.
+  static func memoryPrompt(user: String, existing: [String]) -> String {
+    let known = existing.isEmpty ? "(none)" : existing.prefix(25).map { "- \($0)" }.joined(separator: "\n")
+    return """
+      You keep a short memory about the user for future conversations.
+
+      Extract lasting facts about the user from their message below: preferences, diet, where \
+      they live, work, family, pets, ongoing projects, and anything they ask you to remember. \
+      Write each fact as a short phrase, for example "Is vegetarian", "Lives in Montreal", \
+      "Has a daughter, Léa (6)". Don't include the request or question itself, or anything \
+      temporary. Return an empty list only when the message says nothing lasting about the user.
+
+      Already remembered (don't repeat):
+      \(known)
+
+      User's message: "\(ContextBudget.prefix(user, maxBytes: 1_200))"
+      """
+  }
+
+  /// Cleaned facts from the model's JSON.
+  static func parseMemories(_ json: Data) -> [String] {
+    guard
+      let object = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any],
+      let raw = object["memories"] as? [String]
+    else { return [] }
+    return raw.compactMap { item in
+      var text = item.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        .joined(separator: " ")
+        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”-•* ").union(.whitespaces))
+      while let last = text.last, ".;,".contains(last) { text.removeLast() }
+      guard text.count >= 3 else { return nil }
+      return String(text.prefix(maxMemoryLength))
+    }
+  }
+
+  /// Candidates that aren't (near-)duplicates of existing memories or of
+  /// each other: same words, ignoring case, accents and filler words.
+  static func newMemories(_ candidates: [String], existing: [String]) -> [String] {
+    var kept: [String] = []
+    var seenTexts = Set(existing.map { $0.lowercased() })
+    var seenTerms = existing.map { Set(KeywordScorer.terms($0)) }.filter { !$0.isEmpty }
+    for candidate in candidates {
+      guard !seenTexts.contains(candidate.lowercased()) else { continue }
+      let terms = Set(KeywordScorer.terms(candidate))
+      // Near-identical, or already covered by a more specific memory.
+      let duplicate = !terms.isEmpty && seenTerms.contains { other in
+        terms.isSubset(of: other)
+          || Double(terms.intersection(other).count) / Double(terms.union(other).count) >= 0.75
+      }
+      guard !duplicate else { continue }
+      kept.append(candidate)
+      seenTexts.insert(candidate.lowercased())
+      if !terms.isEmpty { seenTerms.append(terms) }
+    }
+    return kept
+  }
 }

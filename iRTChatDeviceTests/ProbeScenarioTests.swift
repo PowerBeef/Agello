@@ -332,6 +332,57 @@ final class ProbeScenarioTests: DeviceTestCase {
     }
   }
 
+  /// Memory extraction: which prompt gets Gemma to list facts (and nothing
+  /// for impersonal messages) under JSON-constrained decoding?
+  func test08_MemoryExtractionPrompts() async throws {
+    try await requireLoadedModel()
+    let messages = [
+      "I'm vegetarian and I live in Montreal. Suggest a quick dinner.",
+      "My daughter Léa is 6 and loves dinosaurs. Any gift ideas?",
+      "Remember that my gate code is 4521.",
+      "Je travaille comme infirmière de nuit, des idées de repas faciles ?",
+      "What is 2+2?",
+    ]
+    func variantB(_ message: String, key: String) -> String {
+      """
+      You keep a short memory about the user for future conversations.
+
+      Extract lasting facts about the user from their message below: preferences, diet, where \
+      they live, work, family, pets, ongoing projects, and anything they ask you to remember. \
+      Write each fact as a short phrase, for example "Is vegetarian", "Lives in Montreal", \
+      "Has a daughter, Léa (6)". Don't include the request or question itself. Return an empty \
+      list only when the message says nothing about the user.
+
+      Already remembered (don't repeat): (none)
+
+      User's message: "\(message)"
+      """
+    }
+    let variants: [(String, (String) -> String, String)] = [
+      ("A_current", { HelperTasks.memoryPrompt(user: $0, existing: []) }, HelperTasks.memorySchema),
+      ("B_instructionsFirst", { variantB($0, key: "memories") }, HelperTasks.memorySchema),
+      (
+        "C_factsKey", { variantB($0, key: "facts").replacingOccurrences(of: "memory", with: "notes") },
+        #"{"type":"object","properties":{"facts":{"type":"array","items":{"type":"string"},"maxItems":3}},"required":["facts"]}"#
+      ),
+    ]
+    var results: [[String: String]] = []
+    for (name, prompt, schema) in variants {
+      for message in messages {
+        let started = Date()
+        let output = (try? await appState.engine.helperJSON(
+          prompt: prompt(message), schemaJSON: schema, maxOutputTokens: 96)).map {
+            String(decoding: $0, as: UTF8.self)
+          } ?? "ERROR"
+        results.append([
+          "variant": name, "message": String(message.prefix(40)), "output": output,
+          "seconds": String(format: "%.1f", Date().timeIntervalSince(started)),
+        ])
+        harness.record("probe08_memoryPrompts", ["results": results], in: self)
+      }
+    }
+  }
+
   nonisolated static func greedyWhole(engine: Engine, prompt: String, maxOutputTokens: Int = 160)
     async throws -> String
   {

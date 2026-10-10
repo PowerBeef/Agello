@@ -33,7 +33,8 @@ final class DeviceHarness {
   let baselineOptions = InferenceOptions()
 
   private static let defaultsKeys = [
-    "inferenceOptions", "enableTools", "selectedThreadID", "benchmarkReport",
+    "inferenceOptions", "enableTools", "selectedThreadID", "benchmarkReport", "memoryEnabled",
+    "personalization",
   ]
   private var savedDefaults: [String: Any] = [:]
   private var report: [String: Any] = [:]

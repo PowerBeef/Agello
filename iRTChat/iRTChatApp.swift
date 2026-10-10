@@ -39,6 +39,7 @@ struct iRTChatApp: App {
       try? container.mainContext.save()
       for key in [
         "inferenceOptions", "enableTools", "selectedThreadID", "activeModelID", "personalization",
+        "memoryEnabled",
       ] {
         UserDefaults.standard.removeObject(forKey: key)
       }

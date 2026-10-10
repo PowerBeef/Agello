@@ -311,6 +311,22 @@ final class ChatFlowUITests: XCTestCase {
     element("project.done").tap()
   }
 
+  /// Memory: turn it on and add a memory by hand.
+  func testMemorySettings() throws {
+    openSettings()
+    element("settings.memory").tap()
+    let toggle = element("memory.enabled")
+    XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+    if (toggle.value as? String) != "1" { toggle.switches.firstMatch.tap() }
+    element("memory.add").tap()
+    let field = app.alerts.textFields.firstMatch
+    XCTAssertTrue(field.waitForExistence(timeout: 5))
+    field.typeText("Prefers metric units\n")
+    if app.alerts.firstMatch.waitForExistence(timeout: 1) { app.alerts.buttons["Save"].tap() }
+    XCTAssertTrue(element("memory.row").waitForExistence(timeout: 5), "Memory not listed")
+    attachScreenshot("memory")
+  }
+
   /// E4B is the only model: its card (Settings → Models) shows Ready
   /// (device) or Download.
   func testModelsShowTheModel() throws {

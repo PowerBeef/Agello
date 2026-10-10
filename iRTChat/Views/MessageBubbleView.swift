@@ -125,9 +125,16 @@ struct MessageBubbleView: View {
           toolChips
         }
         if !isStreaming, !turn.text.isEmpty {
-          let sources = turn.parts.sources
-          if !sources.isEmpty {
-            sourcesCard(sources)
+          let parts = turn.parts
+          if !parts.sources.isEmpty {
+            sourcesCard(parts.sources)
+          }
+          if let memory = parts.toolActivity.last(where: { $0.name == "memory" }) {
+            Label("Memory updated", systemImage: "brain.head.profile")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .accessibilityValue(memory.summary)
+              .accessibilityIdentifier("message.memory")
           }
           actionRow
         }

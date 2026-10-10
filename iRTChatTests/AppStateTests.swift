@@ -8,7 +8,9 @@ import XCTest
 /// scripted mock engine with an in-memory store.
 @MainActor
 final class AppStateTests: XCTestCase {
-  private static let defaultsKeys = ["selectedThreadID", "inferenceOptions", "personalization"]
+  private static let defaultsKeys = [
+    "selectedThreadID", "inferenceOptions", "personalization", "memoryEnabled",
+  ]
   private var savedDefaults: [String: Any] = [:]
   private var container: ModelContainer!
   private var appState: AppState!

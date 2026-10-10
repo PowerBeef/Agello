@@ -1,4 +1,5 @@
 import LiteRTLM
+import SwiftData
 import UIKit
 import XCTest
 
@@ -347,6 +348,37 @@ final class InferenceScenarioTests: DeviceTestCase {
     XCTAssertTrue(
       recall.text.localizedCaseInsensitiveContains("ZORBLAX"),
       "Context lost after the title helper: \(recall.text)")
+  }
+
+  /// Memory with the real model: a fact is learned from a personal message
+  /// and shapes a later, unrelated chat.
+  func test12_Memory() async throws {
+    try await requireLoadedModel()
+    appState.memoryEnabled = true
+    defer {
+      for memory in (try? harness.context.fetch(FetchDescriptor<MemoryItem>())) ?? [] {
+        harness.context.delete(memory)
+      }
+      appState.memoryEnabled = false
+    }
+    let first = await harness.ask(
+      "I'm vegetarian and I live in Montreal. Suggest a quick dinner.", in: harness.newThread())
+    let learned = ((try? harness.context.fetch(FetchDescriptor<MemoryItem>())) ?? []).map(\.text)
+    let later = await harness.ask("Suggest a dinner recipe for tonight.", in: harness.newThread())
+    let meats = ["chicken", "beef", "pork", "fish", "salmon", "shrimp", "bacon", "lamb", "turkey"]
+    let mentionsMeat = meats.filter { later.text.localizedCaseInsensitiveContains($0) }
+    harness.record(
+      "12_memory",
+      [
+        "learned": learned, "firstSeconds": first.seconds, "laterReply": String(later.text.prefix(500)),
+        "laterMentionsMeat": mentionsMeat,
+        "memoryNote": first.reply?.parts.toolActivity.map(\.summary) ?? [],
+      ], in: self)
+    XCTAssertFalse(first.text.hasPrefix(ChatTurn.errorPrefix), first.text)
+    XCTAssertTrue(
+      learned.contains { $0.localizedCaseInsensitiveContains("vegetarian") }, "Learned: \(learned)")
+    XCTAssertTrue(appState.effectiveOptions.systemPrompt.localizedCaseInsensitiveContains("vegetarian"))
+    XCTAssertFalse(later.text.hasPrefix(ChatTurn.errorPrefix), later.text)
   }
 
   func test90_Benchmark() async throws {

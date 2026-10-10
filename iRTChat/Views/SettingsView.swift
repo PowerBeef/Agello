@@ -116,6 +116,16 @@ struct SettingsView: View {
         }
       }
       .accessibilityIdentifier("settings.personalization")
+      NavigationLink {
+        MemoryView()
+      } label: {
+        LabeledContent {
+          Text(appState.memoryEnabled ? String(localized: "On") : String(localized: "Off"))
+        } label: {
+          Label("Memory", systemImage: "brain.head.profile")
+        }
+      }
+      .accessibilityIdentifier("settings.memory")
     }
   }
 
