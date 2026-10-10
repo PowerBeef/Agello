@@ -48,7 +48,7 @@ final class AppState {
     var effective = options
     effective.systemPrompt = SystemPrompt.compose(
       base: options.systemPrompt, personalization: personalization, project: activeProject,
-      memories: memoryEnabled ? memoryTexts() : [])
+      memories: memoryEnabled ? memoryTexts() : [], voice: voiceModeActive)
     effective.highPrecision = highPrecision
     effective.webSearchTool = webSettings.allowed && webSettings.automatic
     return effective
@@ -661,7 +661,11 @@ final class AppState {
     WebSourcesRecorder.reset()
     toolSourceOffset = sources.count
     let stream = engine.send(text: enginePrompt, imageData: imageData, audioFileURL: audioFileURL)
-    await consume(stream, into: reply, context: context)
+    // Voice mode: the reply starts with the user's transcript.
+    let voiceTurn =
+      voiceModeActive && audioFileURL != nil
+      ? thread.turns.first { $0.id == reply.parentID && $0.isUser } : nil
+    await consume(stream, into: reply, context: context, voiceTurn: voiceTurn)
     // Sources found by the automatic web_search tool during the reply.
     let toolSources = WebSourcesRecorder.drain()
     if !toolSources.isEmpty {
@@ -678,7 +682,7 @@ final class AppState {
       pendingOptionsApply = false
       await applyCurrentOptions()
     }
-    await learnMemories(from: prompt, reply: reply, in: thread)
+    await learnMemories(from: voiceTurn?.text ?? prompt, reply: reply, in: thread)
     await generateTitleIfNeeded(for: thread)
     return true
   }
@@ -728,6 +732,27 @@ final class AppState {
     if !prompt.isEmpty { return String(prompt.prefix(42)) }
     if let fileName { return String(fileName.prefix(42)) }
     return hasImage ? "Photo" : "Voice message"
+  }
+
+  // MARK: - Voice mode
+
+  /// Voice mode is open: replies start with the user's transcript and are
+  /// short and speakable (the system prompt changes, so the conversation is
+  /// rebuilt before the next message).
+  var voiceModeActive = false {
+    didSet {
+      if voiceModeActive != oldValue { conversationThreadID = nil }
+    }
+  }
+
+  /// The live answer of a voice turn (transcript removed) and whether the
+  /// reply has ended; voice mode speaks it sentence by sentence.
+  @ObservationIgnored var onVoiceReply: ((String, Bool) -> Void)?
+
+  /// Send a spoken turn (and optionally what the camera sees).
+  @discardableResult
+  func sendVoiceTurn(audioFileURL: URL, imageData: Data?, in thread: ChatThread) async -> Bool {
+    await send(text: "", imageData: imageData, audioFileURL: audioFileURL, in: thread)
   }
 
   // MARK: - Dictation
@@ -939,15 +964,32 @@ final class AppState {
   }
 
   private func consume(
-    _ stream: AsyncThrowingStream<ChatEvent, Error>, into reply: ChatTurn, context: ModelContext
+    _ stream: AsyncThrowingStream<ChatEvent, Error>, into reply: ChatTurn, context: ModelContext,
+    voiceTurn: ChatTurn? = nil
   ) async {
     // Stream into a plain accumulator and publish to the SwiftData model at
     // ~10 Hz: per-token model writes re-render (and re-parse markdown for)
     // the whole bubble 40-100 times a second.
     var accumulator = StreamAccumulator()
     var lastFlush = ContinuousClock.now
-    func flush() {
-      reply.text = accumulator.text
+    func flush(final: Bool = false) {
+      if let voiceTurn {
+        // "⟦what the user said⟧ answer": the transcript becomes the user's
+        // message; the answer is shown and spoken.
+        let split = VoiceText.split(accumulator.text)
+        if let heard = split.heard, voiceTurn.text != heard {
+          voiceTurn.text = heard
+          if let thread = voiceTurn.thread, thread.title == Self.title(prompt: "", hasImage: voiceTurn.imageData != nil),
+            thread.orderedTurns.first?.id == voiceTurn.id
+          {
+            thread.title = Self.title(prompt: heard, hasImage: false)
+          }
+        }
+        reply.text = split.answer
+        onVoiceReply?(split.answer, final)
+      } else {
+        reply.text = accumulator.text
+      }
       reply.thought = accumulator.thought
       if reply.toolNames != accumulator.toolNames { reply.toolNames = accumulator.toolNames }
       if reply.parts.toolActivity != accumulator.toolActivity {
@@ -973,11 +1015,11 @@ final class AppState {
           reply.stats = stats
         }
       }
-      flush()
+      flush(final: true)
       try? context.save()
       Haptics.complete()
     } catch let error as ChatError {
-      flush()
+      flush(final: true)
       switch error {
       case .generationCancelled, .replyTruncated:
         if case .replyTruncated = error { generationError = error.displayMessage }
@@ -995,7 +1037,7 @@ final class AppState {
         Haptics.error()
       }
     } catch {
-      flush()
+      flush(final: true)
       reply.text = reply.text.isEmpty ? ChatTurn.errorPrefix + error.localizedDescription : reply.text
       try? context.save()
       Haptics.error()

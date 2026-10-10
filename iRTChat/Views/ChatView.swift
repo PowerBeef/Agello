@@ -27,6 +27,7 @@ struct ChatView: View {
   /// The recording in progress is dictation (text for the composer), not a
   /// voice message.
   @State private var dictating = false
+  @State private var showVoice = false
   @State private var reader = SpeechReader()
   /// The user message being edited in the composer, if any.
   @State private var editingTurn: ChatTurn?
@@ -72,6 +73,10 @@ struct ChatView: View {
       Button("OK", role: .cancel) {}
     } message: {
       Text("Enable microphone access in Settings to send voice messages.")
+    }
+    .fullScreenCover(isPresented: $showVoice) {
+      VoiceModeView(
+        session: VoiceSession(appState: appState, thread: thread, makeThread: newThread))
     }
     .onChange(of: recorder.isRecording) { wasRecording, isRecording in
       if wasRecording, !isRecording, dictating { finishDictation() }
@@ -657,6 +662,19 @@ struct ChatView: View {
       }
       .accessibilityLabel("Stop generating")
       .accessibilityIdentifier("chat.stop")
+    } else if !canSend, !recorder.isRecording, !appState.isTranscribing, editingTurn == nil {
+      // Nothing to send: talk instead (voice mode).
+      Button {
+        showVoice = true
+      } label: {
+        Image(systemName: "waveform")
+          .font(.headline)
+          .frame(width: DS.controlTarget, height: DS.controlTarget)
+          .glassEffect(.regular.tint(.accentColor).interactive(), in: .circle)
+          .glassEffectID("action", in: inputNamespace)
+      }
+      .accessibilityLabel("Voice mode")
+      .accessibilityIdentifier("composer.voice")
     } else {
       Button(action: send) {
         Image(systemName: "arrow.up")

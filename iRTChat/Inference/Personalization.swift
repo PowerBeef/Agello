@@ -87,7 +87,16 @@ enum SystemPrompt {
   /// instructions.
   static func compose(
     base: String, personalization: Personalization, project: ProjectContext?,
-    memories: [String] = []
+    memories: [String] = [], voice: Bool = false
+  ) -> String {
+    let prompt = composeText(
+      base: base, personalization: personalization, project: project, memories: memories)
+    return voice ? prompt + "\n\n" + VoiceText.instruction : prompt
+  }
+
+  private static func composeText(
+    base: String, personalization: Personalization, project: ProjectContext?,
+    memories: [String]
   ) -> String {
     var prompt = personalization.systemPrompt(base: base)
     if !memories.isEmpty {

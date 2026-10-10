@@ -412,6 +412,60 @@ final class InferenceScenarioTests: DeviceTestCase {
     XCTAssertFalse(after.text.hasPrefix(ChatTurn.errorPrefix), after.text)
   }
 
+  /// Voice mode with the real model: spoken turns (synthesized speech)
+  /// come back as "transcript, then a short answer"; measures the time to
+  /// the first speakable sentence.
+  func test14_VoiceTurns() async throws {
+    try await requireLoadedModel()
+    guard appState.resolved?.enableAudio == true else { throw XCTSkip("No audio in this session") }
+    let thread = harness.newThread()
+    var results: [[String: Any]] = []
+    appState.voiceModeActive = true
+    defer {
+      appState.voiceModeActive = false
+      appState.onVoiceReply = nil
+    }
+    for (language, sentence) in [
+      ("en-US", "What's a good name for a golden retriever puppy?"),
+      ("en-US", "And one that starts with the letter M?"),
+      ("fr-CA", "Merci! Et quelle est la capitale du Canada?"),
+    ] {
+      let audio = try await TestMedia.spokenWAV(sentence, language: language)
+      defer { try? FileManager.default.removeItem(at: audio) }
+      var stream = VoiceText.SentenceStream()
+      var firstSentence: Double?
+      let started = Date()
+      appState.onVoiceReply = { answer, final in
+        if firstSentence == nil, !stream.next(from: answer, final: final).isEmpty {
+          firstSentence = Date().timeIntervalSince(started)
+        }
+      }
+      let accepted = await appState.sendVoiceTurn(audioFileURL: audio, imageData: nil, in: thread)
+      let user = thread.orderedTurns.last(where: \.isUser)
+      let reply = thread.orderedTurns.last
+      results.append([
+        "language": language, "said": sentence, "heard": user?.text ?? "",
+        "wer": Dictation.wordErrorRate(reference: sentence, hypothesis: user?.text ?? ""),
+        "answer": reply?.text ?? "", "firstSentenceSeconds": firstSentence ?? -1,
+        "totalSeconds": Date().timeIntervalSince(started),
+      ])
+      harness.record("14_voiceTurns", ["results": results, "title": thread.title], in: self)
+      XCTAssertTrue(accepted)
+      XCTAssertLessThanOrEqual(
+        Dictation.wordErrorRate(reference: sentence, hypothesis: user?.text ?? ""), 0.25,
+        "Heard: \(user?.text ?? "")")
+      XCTAssertFalse(reply?.text.contains("⟦") ?? true, reply?.text ?? "")
+      XCTAssertFalse(reply?.text.isEmpty ?? true)
+      XCTAssertNotNil(firstSentence)
+    }
+    XCTAssertNotEqual(thread.title, "Voice message")
+    // Back to text: the voice turns replay as text and chat works.
+    appState.voiceModeActive = false
+    let after = await harness.ask("Summarize what we talked about in one sentence.", in: thread)
+    XCTAssertFalse(after.text.hasPrefix(ChatTurn.errorPrefix), after.text)
+    harness.record("14_voiceTurns", ["results": results, "title": thread.title, "after": after.text], in: self)
+  }
+
   func test90_Benchmark() async throws {
     _ = try await harness.ensureDownloaded(ModelCatalog.e4b, timeout: 5400)
     await appState.runBenchmark()

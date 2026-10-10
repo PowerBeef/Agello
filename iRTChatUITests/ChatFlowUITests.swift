@@ -349,7 +349,25 @@ final class ChatFlowUITests: XCTestCase {
     while (mic.value as? String) != "", Date() < deadline { usleep(300_000) }
     XCTAssertEqual(mic.value as? String, "", "Mic stuck in \(mic.value ?? "")")
     XCTAssertFalse(element("composer.recording").exists)
-    XCTAssertTrue(element("chat.send").exists)
+    XCTAssertTrue(element("chat.send").exists || element("composer.voice").exists)
+  }
+
+  /// Voice mode opens from the empty composer and ends back in the chat
+  /// (test microphone: XCTest can't answer the system prompt on device).
+  func testVoiceModeOpensAndCloses() throws {
+    app.terminate()
+    app.launchArguments.append("--uitest-fake-mic")
+    app.launch()
+    try openNewChat()
+    let voice = element("composer.voice")
+    XCTAssertTrue(voice.waitForExistence(timeout: 5), "No voice button in the empty composer")
+    voice.tap()
+    let state = element("voice.state")
+    XCTAssertTrue(state.waitForExistence(timeout: 10))
+    XCTAssertEqual(state.label, "Listening")
+    attachScreenshot("voice-mode")
+    element("voice.end").tap()
+    XCTAssertTrue(element("chat.input").waitForExistence(timeout: 5), "Didn't return to the chat")
   }
 
   /// Memory: turn it on and add a memory by hand.
@@ -403,7 +421,7 @@ final class ChatFlowUITests: XCTestCase {
     // Let the keyboard and the composer finish animating.
     usleep(600_000)
     let composer = element("chat.composer").frame
-    let send = element("chat.send").exists ? element("chat.send").frame : element("chat.stop").frame
+    let send = ["chat.send", "composer.voice", "chat.stop"].map(element).first { $0.exists }?.frame ?? .zero
     let top = keyboard.frame.minY
     let report = "window=\(app.windows.firstMatch.frame) keyboard=\(keyboard.frame) composer=\(composer) send=\(send)"
     let attachment = XCTAttachment(string: report)
@@ -477,7 +495,9 @@ final class ChatFlowUITests: XCTestCase {
     _ = element("chat.stop").waitForExistence(timeout: 10)
     XCTAssertTrue(
       element("chat.stop").waitForNonExistence(timeout: timeout), "Reply did not finish in time")
-    XCTAssertTrue(element("chat.send").waitForExistence(timeout: 5))
+    // Idle again: Send (draft present) or the voice-mode button (empty).
+    XCTAssertTrue(
+      element("chat.send").waitForExistence(timeout: 5) || element("composer.voice").exists)
   }
 
   private func attachScreenshot(_ name: String) {

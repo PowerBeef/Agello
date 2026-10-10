@@ -15,14 +15,16 @@ final class ProbeScenarioTests: DeviceTestCase {
   }
 
   private func gemmaEngine(
-    maxNumTokens: Int = 8_192, gpu: Bool = true, activations: ActivationDataType? = nil
+    maxNumTokens: Int = 8_192, gpu: Bool = true, activations: ActivationDataType? = nil,
+    audio: Bool = false
   ) async throws -> Engine {
     _ = try await harness.ensureDownloaded(ModelCatalog.e4b)
     await appState.engine.unload()
     let url = try XCTUnwrap(appState.store.localURL(for: ModelCatalog.e4b))
     let engine = Engine(
       engineConfig: try EngineConfig(
-        modelPath: url.path, backend: gpu ? .gpu : .cpu(), maxNumTokens: maxNumTokens,
+        modelPath: url.path, backend: gpu ? .gpu : .cpu(), audioBackend: audio ? .cpu() : nil,
+        maxNumTokens: maxNumTokens,
         cacheDir: try LiteRTChatEngine.cacheDirectory(), activationDataType: activations))
     try await engine.initialize()
     return engine
@@ -381,6 +383,103 @@ final class ProbeScenarioTests: DeviceTestCase {
         harness.record("probe08_memoryPrompts", ["results": results], in: self)
       }
     }
+  }
+
+  /// Voice mode design: (A) audio straight to Gemma, (C) "transcript
+  /// first, then answer" in the same reply; time to the first speakable
+  /// answer sentence and format compliance; (B) the cost of re-reading a
+  /// voice chat's history after a helper wipes the conversation.
+  func test09_VoiceTurnLatency() async throws {
+    let utterances = [
+      ("en-US", "What's a good name for a golden retriever puppy?"),
+      ("en-US", "How long should I boil an egg for a soft yolk?"),
+      ("fr-CA", "Quelle est la capitale de l'Australie?"),
+    ]
+    var audio: [(String, String, URL)] = []
+    for (language, text) in utterances {
+      audio.append((language, text, try await TestMedia.spokenWAV(text, language: language)))
+    }
+    defer { for item in audio { try? FileManager.default.removeItem(at: item.2) } }
+    let engine = try await gemmaEngine(audio: true)
+    let plain = "You are a helpful voice assistant. Answer in one to three short spoken sentences, without markdown."
+    let transcriptFirst =
+      plain
+      + " Start every reply with exactly what the user said, transcribed in their language between ⟦ and ⟧, then your answer."
+    var results: [[String: String]] = []
+    for (mode, system) in [("A_direct", plain), ("C_transcriptFirst", transcriptFirst)] {
+      for (language, reference, url) in audio {
+        let timing = try await Self.timeVoiceTurn(engine: engine, system: system, audio: url)
+        results.append([
+          "mode": mode, "language": language, "reference": reference, "reply": timing.text,
+          "ttft": String(format: "%.2f", timing.firstToken),
+          "firstSentence": String(format: "%.2f", timing.firstAnswerSentence),
+          "total": String(format: "%.2f", timing.total),
+        ])
+        harness.record("probe09_voiceTurn", ["results": results], in: self)
+      }
+    }
+    // (B) Re-reading history: 8 short text turns, then a short message.
+    let reseed = try await Self.timeReseed(engine: engine, system: plain)
+    harness.record(
+      "probe09_voiceTurn",
+      ["results": results, "reseed8TurnsTTFT": reseed.0, "freshTTFT": reseed.1], in: self)
+  }
+
+  struct VoiceTiming: Sendable {
+    var firstToken: Double
+    var firstAnswerSentence: Double
+    var total: Double
+    var text: String
+  }
+
+  nonisolated static func timeVoiceTurn(engine: Engine, system: String, audio: URL) async throws
+    -> VoiceTiming
+  {
+    let config = ConversationConfig(
+      systemMessage: LiteRTLM.Message(system),
+      samplerConfig: try SamplerConfig(topK: 64, topP: 0.95, temperature: 0.7))
+    let conversation = try await engine.createConversation(with: config)
+    let started = Date()
+    var first: Double?
+    var sentence: Double?
+    var text = ""
+    for try await chunk in conversation.sendMessageStream(
+      LiteRTLM.Message(contents: [.audioFile(audio.path)]), maxOutputTokens: 160)
+    {
+      if first == nil { first = Date().timeIntervalSince(started) }
+      text += chunk.toString
+      // The answer starts after the transcript, if any.
+      let answer = text.components(separatedBy: "⟧").last ?? text
+      if sentence == nil, text.contains("⟧") || !text.contains("⟦"),
+        answer.range(of: #"[.!?](\s|$)"#, options: .regularExpression) != nil
+      {
+        sentence = Date().timeIntervalSince(started)
+      }
+    }
+    let total = Date().timeIntervalSince(started)
+    return VoiceTiming(firstToken: first ?? total, firstAnswerSentence: sentence ?? total, total: total, text: text)
+  }
+
+  nonisolated static func timeReseed(engine: Engine, system: String) async throws -> (Double, Double) {
+    var history: [LiteRTLM.Message] = []
+    for index in 0..<4 {
+      history.append(LiteRTLM.Message("Tell me fact number \(index) about lighthouses, briefly.", role: .user))
+      history.append(LiteRTLM.Message(
+        "Lighthouses guide ships with bright lights from tall towers along dangerous coasts, and many were automated in the twentieth century.",
+        role: .model))
+    }
+    func ttft(_ messages: [LiteRTLM.Message]) async throws -> Double {
+      let conversation = try await engine.createConversation(
+        with: ConversationConfig(systemMessage: LiteRTLM.Message(system), initialMessages: messages))
+      let started = Date()
+      for try await _ in conversation.sendMessageStream(LiteRTLM.Message("And one more?"), maxOutputTokens: 8) {
+        return Date().timeIntervalSince(started)
+      }
+      return Date().timeIntervalSince(started)
+    }
+    let reseeded = try await ttft(history)
+    let fresh = try await ttft([])
+    return (reseeded, fresh)
   }
 
   nonisolated static func greedyWhole(engine: Engine, prompt: String, maxOutputTokens: Int = 160)
