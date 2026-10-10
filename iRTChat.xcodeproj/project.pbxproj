@@ -60,6 +60,7 @@
 		400000000000000000000043 /* Exceptions for "iRTChat" folder in "iRTChat" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Info.plist,
 				iRTChat.entitlements,
 			);
 			target = 100000000000000000000002 /* iRTChat */;
@@ -454,6 +455,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = iRTChat;
 				INFOPLIST_KEY_LSRequiresIPhoneOS = YES;
+				INFOPLIST_FILE = iRTChat/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "iRTChat uses the camera to take photos for the on-device model to see.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "iRTChat uses the microphone to record voice messages for the on-device model.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "iRTChat lets you attach photos for the on-device model to see.";
@@ -485,6 +487,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = iRTChat;
 				INFOPLIST_KEY_LSRequiresIPhoneOS = YES;
+				INFOPLIST_FILE = iRTChat/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "iRTChat uses the camera to take photos for the on-device model to see.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "iRTChat uses the microphone to record voice messages for the on-device model.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "iRTChat lets you attach photos for the on-device model to see.";

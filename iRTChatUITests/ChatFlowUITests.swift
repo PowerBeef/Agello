@@ -370,6 +370,24 @@ final class ChatFlowUITests: XCTestCase {
     XCTAssertTrue(element("chat.input").waitForExistence(timeout: 5), "Didn't return to the chat")
   }
 
+  /// Deep links (widgets, Control Center, Shortcuts use them): "ask" opens a
+  /// new chat and sends the question; "voice" opens voice mode.
+  func testDeepLinks() throws {
+    app.terminate()
+    app.launchArguments.append("--uitest-fake-mic")
+    app.launch()
+    try openNewChat()
+    XCUIDevice.shared.system.open(URL(string: "irtchat://ask?q=What%20is%202%2B2%3F")!)
+    XCTAssertTrue(element("message.user").waitForExistence(timeout: 15), "Question not sent")
+    XCTAssertEqual(element("message.user").label, "What is 2+2?")
+    try waitForReplyToFinish(timeout: 120)
+
+    XCUIDevice.shared.system.open(URL(string: "irtchat://voice")!)
+    XCTAssertTrue(element("voice.state").waitForExistence(timeout: 15), "Voice mode didn't open")
+    element("voice.end").tap()
+    XCTAssertTrue(element("chat.input").waitForExistence(timeout: 5))
+  }
+
   /// Memory: turn it on and add a memory by hand.
   func testMemorySettings() throws {
     openSettings()

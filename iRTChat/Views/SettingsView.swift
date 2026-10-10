@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsView: View {
   @Environment(AppState.self) private var appState
   @Environment(\.dismiss) private var dismiss
+  @AppStorage(SpotlightIndex.enabledKey) private var spotlightEnabled = true
   @State private var systemDraft = ""
   @State private var draftLoaded = false
 
@@ -136,6 +137,13 @@ struct SettingsView: View {
         }
       }
       .accessibilityIdentifier("settings.web")
+      Toggle(isOn: $spotlightEnabled) {
+        Label("Show chats in Spotlight", systemImage: "magnifyingglass")
+      }
+      .onChange(of: spotlightEnabled) {
+        if let context = appState.modelContext { SpotlightIndex.refresh(in: context) }
+      }
+      .accessibilityIdentifier("settings.spotlight")
     }
   }
 

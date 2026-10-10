@@ -1,3 +1,4 @@
+import CoreSpotlight
 import SwiftData
 import SwiftUI
 
@@ -66,7 +67,17 @@ struct ContentView: View {
       }
       .simultaneousGesture(drawerDrag(width: width))
     }
+    .onContinueUserActivity(CSSearchableItemActionType) { activity in
+      if let id = SpotlightIndex.chatID(from: activity) { AppRouter.shared.handle(.openChat(id)) }
+    }
+    .onOpenURL { url in
+      if let action = AppRouter.action(for: url) { AppRouter.shared.handle(action) }
+    }
+    .onChange(of: AppRouter.shared.pending, initial: true) {
+      if let action = AppRouter.shared.take() { perform(action) }
+    }
     .task {
+      SpotlightIndex.refresh(in: context)
       appState.pruneEmptyThreads()
       presentOnboarding = OnboardingView.shouldShow(
         done: onboardingDone, isMock: appState.isMock,
@@ -185,6 +196,32 @@ struct ContentView: View {
         openProject = appState.newProject(named: String(localized: "New project"), in: context)
       },
       onMove: { thread, projectID in appState.move(thread, toProject: projectID) })
+  }
+
+  /// Carry out a request from Siri, Shortcuts, widgets, Spotlight, or a link.
+  private func perform(_ action: AppRouter.Action) {
+    showSettings = false
+    openProject = nil
+    setDrawer(open: false)
+    switch action {
+    case .newChat:
+      newChat()
+    case .voice:
+      newChat()
+      AppRouter.shared.voiceRequested = true
+    case .openChat(let id):
+      appState.newChatProjectID = nil
+      if threads.contains(where: { $0.id == id }) { appState.selectedThreadID = id }
+    case .ask(let question):
+      guard !appState.isBusy else {
+        appState.generationError = String(localized: "Finish or stop the current reply first.")
+        return
+      }
+      newChat()
+      let thread = appState.newThread(in: context)
+      appState.selectedThreadID = thread.id
+      Task { await appState.send(text: question, imageData: nil, audioFileURL: nil, in: thread) }
+    }
   }
 
   private func newChat() {

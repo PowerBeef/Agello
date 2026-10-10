@@ -78,6 +78,11 @@ struct ChatView: View {
       VoiceModeView(
         session: VoiceSession(appState: appState, thread: thread, makeThread: newThread))
     }
+    .onChange(of: AppRouter.shared.voiceRequested, initial: true) { _, requested in
+      guard requested else { return }
+      AppRouter.shared.voiceRequested = false
+      showVoice = true
+    }
     .onChange(of: recorder.isRecording) { wasRecording, isRecording in
       if wasRecording, !isRecording, dictating { finishDictation() }
     }

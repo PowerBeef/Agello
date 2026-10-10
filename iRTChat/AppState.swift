@@ -684,6 +684,7 @@ final class AppState {
     }
     await learnMemories(from: voiceTurn?.text ?? prompt, reply: reply, in: thread)
     await generateTitleIfNeeded(for: thread)
+    SpotlightIndex.index([thread])
     return true
   }
 
@@ -1250,6 +1251,7 @@ final class AppState {
     if selectedThreadID == thread.id { selectedThreadID = nil }
     if conversationThreadID == thread.id { conversationThreadID = nil }
     knowledge.deleteDocuments(threadID: thread.id)
+    SpotlightIndex.remove([thread.id])
     context.delete(thread)
     try? context.save()
   }
