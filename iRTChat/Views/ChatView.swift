@@ -24,6 +24,9 @@ struct ChatView: View {
   @State private var readingFiles = 0
   /// Search the web for the next message.
   @State private var searchWeb = false
+  /// The recording in progress is dictation (text for the composer), not a
+  /// voice message.
+  @State private var dictating = false
   @State private var reader = SpeechReader()
   /// The user message being edited in the composer, if any.
   @State private var editingTurn: ChatTurn?
@@ -69,6 +72,9 @@ struct ChatView: View {
       Button("OK", role: .cancel) {}
     } message: {
       Text("Enable microphone access in Settings to send voice messages.")
+    }
+    .onChange(of: recorder.isRecording) { wasRecording, isRecording in
+      if wasRecording, !isRecording, dictating { finishDictation() }
     }
     .onChange(of: recorder.errorMessage) { _, message in
       if let message { appState.generationError = "Recording failed: \(message)" }
@@ -390,14 +396,24 @@ struct ChatView: View {
           }
           if recorder.isRecording {
             Label(
-              String(format: "%.0fs / %.0fs", recorder.elapsed, AudioRecorder.maxDuration),
-              systemImage: "record.circle"
+              dictating
+                ? String(format: String(localized: "Listening… %.0fs"), recorder.elapsed)
+                : String(format: "%.0fs / %.0fs", recorder.elapsed, AudioRecorder.maxDuration),
+              systemImage: dictating ? "waveform" : "record.circle"
             )
             .font(.caption)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .glassEffect(.regular.tint(.red), in: .capsule)
-          } else if recorder.finishedURL != nil {
+            .accessibilityIdentifier("composer.recording")
+            if !dictating {
+              Button("Stop") { recorder.stop() }
+                .font(.caption)
+                .buttonStyle(.glass)
+                .controlSize(.small)
+                .accessibilityIdentifier("composer.stopVoice")
+            }
+          } else if recorder.finishedURL != nil, !dictating, !appState.isTranscribing {
             Label("Voice ready (\(Int(recorder.elapsed))s)", systemImage: "waveform")
               .font(.caption)
               .padding(.horizontal, 10)
@@ -524,6 +540,10 @@ struct ChatView: View {
       Button("Files", systemImage: "folder") { showFiles = true }
       Button("Scan document", systemImage: "doc.viewfinder") { showScanner = true }
         .disabled(!DocumentScanner.isAvailable)
+      Button("Voice message", systemImage: "waveform") {
+        dictating = false
+        Task { await recorder.toggle() }
+      }
     } label: {
       Image(systemName: "plus")
         .font(.body.weight(.medium))
@@ -580,17 +600,50 @@ struct ChatView: View {
     .accessibilityIdentifier("composer.think")
   }
 
+  /// Dictation: speak, then the text lands in the composer for review.
   private var micButton: some View {
-    Button(action: { Task { await recorder.toggle() } }) {
-      Image(systemName: recorder.isRecording ? "stop.fill" : "mic")
-        .frame(width: DS.controlTarget, height: DS.controlTarget)
-        .glassEffect(
-          recorder.isRecording ? .regular.tint(.red).interactive() : .regular.interactive(),
-          in: .circle)
+    let listening = recorder.isRecording && dictating
+    return Button {
+      if listening {
+        recorder.stop()  // transcribed in onChange(of: isRecording)
+      } else {
+        dictating = true
+        Task {
+          await recorder.toggle()
+          if !recorder.isRecording { dictating = false }
+        }
+      }
+    } label: {
+      Group {
+        if appState.isTranscribing {
+          ProgressView()
+        } else {
+          Image(systemName: listening ? "checkmark" : "mic")
+        }
+      }
+      .frame(width: DS.controlTarget, height: DS.controlTarget)
+      .glassEffect(
+        listening ? .regular.tint(.red).interactive() : .regular.interactive(), in: .circle)
     }
-    .disabled(attachDisabled)
-    .accessibilityLabel(recorder.isRecording ? "Stop recording" : "Record voice message")
+    .disabled(
+      appState.isBusy || appState.isTranscribing || (recorder.isRecording && !dictating))
+    .accessibilityLabel(listening ? "Finish dictation" : "Dictate")
+    .accessibilityValue(appState.isTranscribing ? "Transcribing" : listening ? "Listening" : "")
     .accessibilityIdentifier("composer.mic")
+  }
+
+  /// The dictation recording became text: append it to the draft.
+  private func finishDictation() {
+    dictating = false
+    guard let url = recorder.finishedURL else { return }
+    Task {
+      let text = await appState.transcribe(url)
+      recorder.discard()
+      if let text, !text.isEmpty {
+        draft = Dictation.insert(text, into: draft)
+        inputFocused = true
+      }
+    }
   }
 
   @ViewBuilder
@@ -619,10 +672,15 @@ struct ChatView: View {
     }
   }
 
+  /// A finished voice message (not a dictation being transcribed).
+  private var voiceMessageURL: URL? {
+    dictating || appState.isTranscribing ? nil : recorder.finishedURL
+  }
+
   private var canSend: Bool {
-    guard readingFiles == 0 else { return false }
+    guard readingFiles == 0, !recorder.isRecording, !appState.isTranscribing else { return false }
     return !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      || pendingImage != nil || recorder.finishedURL != nil || !pendingFiles.isEmpty
+      || pendingImage != nil || voiceMessageURL != nil || !pendingFiles.isEmpty
   }
 
   private func send() {
@@ -644,7 +702,7 @@ struct ChatView: View {
     }
     let text = draft
     let image = pendingImage
-    let audioURL = recorder.finishedURL
+    let audioURL = voiceMessageURL
     let files = pendingFiles
     let webSearch = searchWeb
     draft = ""

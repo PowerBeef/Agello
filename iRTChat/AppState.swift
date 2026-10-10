@@ -730,6 +730,43 @@ final class AppState {
     return hasImage ? "Photo" : "Voice message"
   }
 
+  // MARK: - Dictation
+
+  /// A recording is being turned into text for the composer.
+  var isTranscribing = false
+
+  /// Dictation: the recording's text (Gemma's audio input), or nil with
+  /// `generationError` set.
+  func transcribe(_ audioFileURL: URL) async -> String? {
+    guard !isBusy else { return nil }
+    isTranscribing = true
+    defer { isTranscribing = false }
+    let result: Result<String, Error> = await serialized {
+      guard await self.loadIfNeeded() else {
+        return .failure(ChatError.engineNotReady)
+      }
+      defer {
+        // The transcription replaced the engine's conversation.
+        self.conversationThreadID = nil
+        self.conversationIsEmpty = true
+      }
+      do {
+        return .success(try await self.engine.transcribe(audioFileURL: audioFileURL))
+      } catch {
+        return .failure(error)
+      }
+    }
+    switch result {
+    case .success(let text):
+      if text.isEmpty { generationError = String(localized: "No speech was recognized.") }
+      return text
+    case .failure(let error):
+      generationError = String(
+        localized: "Dictation failed: \((error as? ChatError)?.displayMessage ?? error.localizedDescription)")
+      return nil
+    }
+  }
+
   // MARK: - Web search
 
   enum WebOutcome: Sendable {

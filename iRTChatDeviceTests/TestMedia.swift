@@ -18,8 +18,8 @@ enum TestMedia {
 
   /// Speak `text` with the system voice and write it as 16 kHz mono 16-bit
   /// WAV (the format the app's recorder produces).
-  static func spokenWAV(_ text: String) async throws -> URL {
-    let raw = try await synthesize(text)
+  static func spokenWAV(_ text: String, language: String = "en-US") async throws -> URL {
+    let raw = try await synthesize(text, language: language)
     defer { try? FileManager.default.removeItem(at: raw) }
     return try convertTo16kMonoWAV(raw)
   }
@@ -29,12 +29,12 @@ enum TestMedia {
     var finished = false
   }
 
-  private static func synthesize(_ text: String) async throws -> URL {
+  private static func synthesize(_ text: String, language: String) async throws -> URL {
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent("harness-tts-\(UUID().uuidString).caf")
     let synthesizer = AVSpeechSynthesizer()
     let utterance = AVSpeechUtterance(string: text)
-    utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+    utterance.voice = AVSpeechSynthesisVoice(language: language)
     let state = SynthesisState()
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
       synthesizer.write(utterance) { buffer in

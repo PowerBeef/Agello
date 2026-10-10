@@ -381,6 +381,37 @@ final class InferenceScenarioTests: DeviceTestCase {
     XCTAssertFalse(later.text.hasPrefix(ChatTurn.errorPrefix), later.text)
   }
 
+  /// Dictation through Gemma's audio input: synthesized speech in English
+  /// and French, scored by word error rate.
+  func test13_Dictation() async throws {
+    try await requireLoadedModel()
+    guard appState.resolved?.enableAudio == true else {
+      throw XCTSkip("Session has no audio: \(harness.resolvedSummary())")
+    }
+    let samples = [
+      ("en-US", "Please book a table for four people at seven thirty tomorrow evening, near the train station."),
+      ("en-US", "Remind me to call the dentist on Monday and to buy milk, eggs, and coffee on the way home."),
+      ("fr-CA", "Peux-tu m'aider à planifier une fin de semaine à Québec avec deux enfants en octobre?"),
+    ]
+    var results: [[String: Any]] = []
+    for (language, sentence) in samples {
+      let audio = try await TestMedia.spokenWAV(sentence, language: language)
+      defer { try? FileManager.default.removeItem(at: audio) }
+      let started = Date()
+      let text = await appState.transcribe(audio) ?? ""
+      let wer = Dictation.wordErrorRate(reference: sentence, hypothesis: text)
+      results.append([
+        "language": language, "reference": sentence, "transcript": text, "wer": wer,
+        "seconds": Date().timeIntervalSince(started),
+      ])
+      harness.record("13_dictation", ["results": results], in: self)
+      XCTAssertLessThanOrEqual(wer, language.hasPrefix("en") ? 0.15 : 0.25, "\(language): \(text)")
+    }
+    // Chat still works after dictation replaced the conversation.
+    let after = await harness.ask("Say 'ready'.", in: harness.newThread())
+    XCTAssertFalse(after.text.hasPrefix(ChatTurn.errorPrefix), after.text)
+  }
+
   func test90_Benchmark() async throws {
     _ = try await harness.ensureDownloaded(ModelCatalog.e4b, timeout: 5400)
     await appState.runBenchmark()

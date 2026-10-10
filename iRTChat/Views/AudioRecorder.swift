@@ -17,9 +17,17 @@ final class AudioRecorder: NSObject {
   private var timer: Timer?
   private var autoStopTask: Task<Void, Never>?
 
+  /// UI tests: XCTest can't answer the system microphone prompt on device,
+  /// so `--uitest-fake-mic` "records" a second of silence without it.
+  private static let fakeMic = ProcessInfo.processInfo.arguments.contains("--uitest-fake-mic")
+
   func toggle() async {
     if isRecording {
       stop()
+      return
+    }
+    if Self.fakeMic {
+      startFake()
       return
     }
     let granted = await AVAudioApplication.requestRecordPermission()
@@ -32,6 +40,10 @@ final class AudioRecorder: NSObject {
 
   func stop() {
     guard isRecording else { return }
+    if Self.fakeMic {
+      stopFake()
+      return
+    }
     autoStopTask?.cancel()
     autoStopTask = nil
     timer?.invalidate()
@@ -52,6 +64,35 @@ final class AudioRecorder: NSObject {
     }
     finishedURL = nil
     elapsed = 0
+  }
+
+  private func startFake() {
+    discard()
+    isRecording = true
+    elapsed = 0
+    timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+      Task { @MainActor in self?.elapsed += 0.25 }
+    }
+  }
+
+  private func stopFake() {
+    timer?.invalidate()
+    timer = nil
+    isRecording = false
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("irt-audio-\(UUID().uuidString).wav")
+    if let format = AVAudioFormat(
+      commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false),
+      let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_000),
+      // Processing format must match the buffer (the default is Float32).
+      let file = try? AVAudioFile(
+        forWriting: url, settings: format.settings, commonFormat: .pcmFormatInt16,
+        interleaved: false)
+    {
+      buffer.frameLength = 16_000
+      try? file.write(from: buffer)
+      finishedURL = url
+    }
   }
 
   private func start() {

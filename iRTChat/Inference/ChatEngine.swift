@@ -50,6 +50,9 @@ protocol ChatEngineProtocol: Sendable {
   func helperTexts(
     _ prompts: [String], maxOutputTokens: Int, progress: @Sendable (Int) async -> Void
   ) async throws -> [String]
+  /// Transcribe a recording (dictation) in a throwaway conversation with
+  /// greedy decoding. Leaves the main conversation empty, like the helpers.
+  func transcribe(audioFileURL: URL) async throws -> String
 }
 
 // MARK: - Live engine
@@ -474,6 +477,33 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     return outputs
   }
 
+  func transcribe(audioFileURL: URL) async throws -> String {
+    guard let engine, let resolved, let options else { throw ChatError.engineNotReady }
+    guard resolved.enableAudio else {
+      throw ChatError.underlying(message: "Audio input is off in this session.")
+    }
+    guard !generating else { throw ChatError.underlying(message: "Busy generating.") }
+    generating = true
+    defer { generating = false }
+    let started = Date()
+    conversation = nil
+    let helper = try await engine.createConversation(
+      with: ConversationConfig(
+        samplerConfig: try SamplerConfig(topK: 1, topP: 1, temperature: 0),
+        enableSpeculativeDecoding: resolved.enableSpeculativeDecoding))
+    let reply = try await helper.sendMessage(
+      LiteRTLM.Message(contents: [
+        .text(Dictation.instruction), .audioFile(audioFileURL.path),
+      ]), maxOutputTokens: Dictation.maxOutputTokens)
+    conversation = try await Self.makeConversation(
+      engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
+      history: [])
+    pendingSeedTokens = preambleTokens
+    Log.engine.info(
+      "transcribe: \(reply.toString.count) chars in \(Date().timeIntervalSince(started), format: .fixed(precision: 2))s")
+    return Dictation.clean(reply.toString)
+  }
+
   // MARK: Send
 
   nonisolated func send(
@@ -833,6 +863,16 @@ actor MockChatEngine: ChatEngineProtocol {
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data {
     helperPrompts.append(prompt)
     return helperResponse
+  }
+
+  /// Test instrumentation: recordings transcribed.
+  private(set) var transcribed: [URL] = []
+  var transcript = "Dictated text."
+  func setTranscript(_ text: String) { transcript = text }
+
+  func transcribe(audioFileURL: URL) async throws -> String {
+    transcribed.append(audioFileURL)
+    return transcript
   }
 
   /// Test instrumentation: every plain-text helper prompt.

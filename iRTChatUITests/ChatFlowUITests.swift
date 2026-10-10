@@ -330,6 +330,28 @@ final class ChatFlowUITests: XCTestCase {
     attachScreenshot("web-search")
   }
 
+  /// Dictation: the mic listens, then transcribes and goes back to idle
+  /// (the test room is silent, so the text itself isn't checked).
+  func testDictationButtonFlow() throws {
+    // XCTest can't answer the system microphone prompt on device: record
+    // silence through the app's test microphone instead.
+    app.terminate()
+    app.launchArguments.append("--uitest-fake-mic")
+    app.launch()
+    try openNewChat()
+    let mic = element("composer.mic")
+    mic.tap()
+    XCTAssertTrue(element("composer.recording").waitForExistence(timeout: 10), "Not listening")
+    XCTAssertEqual(mic.value as? String, "Listening")
+    sleep(2)
+    mic.tap()
+    let deadline = Date().addingTimeInterval(90)
+    while (mic.value as? String) != "", Date() < deadline { usleep(300_000) }
+    XCTAssertEqual(mic.value as? String, "", "Mic stuck in \(mic.value ?? "")")
+    XCTAssertFalse(element("composer.recording").exists)
+    XCTAssertTrue(element("chat.send").exists)
+  }
+
   /// Memory: turn it on and add a memory by hand.
   func testMemorySettings() throws {
     openSettings()
