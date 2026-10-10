@@ -7,6 +7,8 @@ struct DrawerView: View {
   @Query(sort: \ChatThread.updatedAt, order: .reverse) private var threads: [ChatThread]
   @Query(sort: \Project.updatedAt, order: .reverse) private var projects: [Project]
   @State private var query = ""
+  /// Chats related in meaning to the search (beyond the text matches).
+  @State private var related: [Row] = []
   @FocusState private var searchFocused: Bool
 
   var onSelect: (ChatThread) -> Void
@@ -39,12 +41,13 @@ struct DrawerView: View {
 
   var body: some View {
     let rows = rows
+    let relatedRows = query.isEmpty ? [] : related.filter { hit in !rows.contains { $0.id == hit.id } }
     VStack(spacing: 0) {
       header
       if query.isEmpty {
         projectsSection
       }
-      if rows.isEmpty {
+      if rows.isEmpty, relatedRows.isEmpty {
         Spacer()
         if query.isEmpty {
           ContentUnavailableView(
@@ -55,9 +58,25 @@ struct DrawerView: View {
         }
         Spacer()
       } else {
-        list(rows)
+        list(rows, related: relatedRows)
       }
       footer
+    }
+    .onAppear {
+      // Ready for search by meaning by the time the user types.
+      appState.knowledge.indexChats(threads.filter { !$0.turns.isEmpty })
+    }
+    .task(id: query) {
+      // Results for the previous query must not linger while typing.
+      related = []
+      let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard text.count >= 3 else { return }
+      try? await Task.sleep(for: .milliseconds(350))
+      guard !Task.isCancelled else { return }
+      let hits = await appState.knowledge.relatedChats(
+        text, in: threads.filter { !$0.turns.isEmpty }, limit: 6)
+      guard !Task.isCancelled else { return }
+      related = hits.map { Row(thread: $0.thread) }
     }
   }
 
@@ -129,12 +148,15 @@ struct DrawerView: View {
     .padding(.horizontal, 8)
   }
 
-  private func list(_ rows: [Row]) -> some View {
-    ScrollView {
+  private func list(_ rows: [Row], related: [Row] = []) -> some View {
+    var groups = ThreadGrouping.groups(
+      rows, date: { $0.thread.updatedAt }, pinned: { $0.thread.isPinned })
+    if !related.isEmpty {
+      groups.append(.init(title: String(localized: "Related chats"), items: related))
+    }
+    return ScrollView {
       LazyVStack(alignment: .leading, spacing: 2) {
-        ForEach(
-          ThreadGrouping.groups(rows, date: { $0.thread.updatedAt }, pinned: { $0.thread.isPinned })
-        ) { group in
+        ForEach(groups) { group in
           Text(group.title)
             .font(.footnote.weight(.semibold))
             .foregroundStyle(.secondary)

@@ -6,6 +6,12 @@ import LiteRTLM
 protocol TextEmbedder: Sendable {
   /// Stored with indexed data; a different identifier means "re-index".
   var identifier: String { get }
+  /// Cosine similarity above which a chat can count as related to a search…
+  var relatedThreshold: Float { get }
+  /// …when it also beats the median chat by this much (0: threshold only).
+  /// Short, generic chats score fairly high against any query, so a raw
+  /// threshold alone shows unrelated chats.
+  var relatedMargin: Float { get }
   func embed(documents: [(title: String, text: String)]) async throws -> [[Float]]
   func embed(query: String) async throws -> [Float]
   func unload() async
@@ -16,6 +22,11 @@ protocol TextEmbedder: Sendable {
 actor LiteRTEmbedder: TextEmbedder {
   static let dimensions = 256
   nonisolated let identifier = "embeddinggemma-2-text-270m@\(LiteRTEmbedder.dimensions)"
+  /// Calibrated on device (KnowledgeScenarioTests.test03): matching chats
+  /// scored 0.67-0.78 and stood 0.09-0.15 above the median chat; unrelated
+  /// ones scored up to 0.61 but only 0.02 above it.
+  nonisolated let relatedThreshold: Float = 0.60
+  nonisolated let relatedMargin: Float = 0.08
 
   private let modelURL: URL
   private var engine: EmbeddingEngine?
@@ -87,6 +98,8 @@ actor LiteRTEmbedder: TextEmbedder {
 /// retrieval working with the mock engine and in unit tests, no model needed.
 struct HashingEmbedder: TextEmbedder {
   let identifier = "hashing@256"
+  let relatedThreshold: Float = 0.15
+  let relatedMargin: Float = 0
   static let dimensions = 256
 
   func embed(documents: [(title: String, text: String)]) async throws -> [[Float]] {

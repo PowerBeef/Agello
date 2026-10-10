@@ -149,7 +149,8 @@ final class ChatFlowUITests: XCTestCase {
     search.tap()
     search.typeText("one")
     XCTAssertEqual(rows().count, 1)
-    search.typeText("zzz")
+    search.clearAndType("quantum chromodynamics")
+    sleep(2)  // let search by meaning settle
     XCTAssertEqual(rows().count, 0)
   }
 

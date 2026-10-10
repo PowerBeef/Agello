@@ -134,4 +134,63 @@ final class KnowledgeScenarioTests: DeviceTestCase {
         "footprintGB": Double(MemoryProbe.footprintBytes()) / 1e9,
       ], in: self)
   }
+
+  /// Search by meaning across chats: each paraphrased query (sharing no
+  /// words with its chat) must rank its chat first. Records the full score
+  /// matrix to calibrate the "related" threshold. Also indexes while a reply
+  /// streams (embedding and chat model on the GPU at once).
+  func test03_ChatsByMeaning() async throws {
+    try await requireLoadedModel()
+    _ = try await freshEmbedding()
+    let chats: [(String, String, String)] = [
+      ("Weeknight carbonara", "How do I make carbonara without cream?",
+        "Whisk eggs and pecorino, toss with hot spaghetti and crispy guanciale."),
+      ("Car making a grinding noise", "My car grinds when I brake, what is it?",
+        "Worn brake pads are the usual cause; have the rotors checked too."),
+      ("Kyoto itinerary", "Plan three days in Kyoto in spring.",
+        "Day 1: Fushimi Inari and Gion; day 2: Arashiyama; day 3: temples in Higashiyama."),
+      ("Filing my tax return", "When is the filing deadline and what forms do I need?",
+        "Collect your T4 slips and file by April 30 to avoid penalties."),
+    ]
+    var threads: [ChatThread] = []
+    for (title, user, reply) in chats {
+      let thread = harness.newThread()
+      thread.title = title
+      thread.append(ChatTurn(role: .user, text: user))
+      thread.append(ChatTurn(role: .model, text: reply))
+      threads.append(thread)
+    }
+
+    // Index while a long reply streams.
+    let streaming = Task { @MainActor in
+      await self.harness.ask("Write about 200 words on how tides work.", in: self.harness.newThread())
+        .text
+    }
+    try await Task.sleep(for: .seconds(2))
+    let indexStarted = Date()
+    appState.knowledge.indexChats(threads)
+    await appState.knowledge.waitForChatIndexing()
+    let indexSeconds = Date().timeIntervalSince(indexStarted)
+    let tides = await streaming.value
+    XCTAssertFalse(tides.hasPrefix(ChatTurn.errorPrefix), tides)
+    XCTAssertGreaterThan(tides.count, 300, "Reply cut short while indexing")
+
+    let queries = [
+      ("Italian pasta dinner", 0), ("vehicle stopping problem", 1),
+      ("Japan vacation plans", 2), ("money owed to the government", 3),
+    ]
+    var matrix: [[String: Any]] = []
+    for (query, expected) in queries {
+      let scores = await appState.knowledge.chatScores(query, in: threads)
+      matrix.append([
+        "query": query, "expected": chats[expected].0,
+        "scores": scores.map { "\($0.thread.title): \(String(format: "%.3f", $0.score))" },
+      ])
+      XCTAssertEqual(scores.first?.thread.id, threads[expected].id, "\(query): \(scores.map(\.thread.title))")
+    }
+    harness.record(
+      "knowledge03_chatsByMeaning",
+      ["matrix": matrix, "indexSecondsWhileStreaming": indexSeconds, "tidesChars": tides.count],
+      in: self)
+  }
 }

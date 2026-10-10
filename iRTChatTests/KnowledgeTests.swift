@@ -105,3 +105,57 @@ final class KnowledgeTests: XCTestCase {
     XCTAssertEqual(try container.mainContext.fetch(FetchDescriptor<DocumentChunk>()).count, 0)
   }
 }
+
+// MARK: - Chats by meaning
+
+extension KnowledgeTests {
+  private func chat(_ title: String, _ user: String, _ reply: String) -> ChatThread {
+    let thread = ChatThread(title: title)
+    container.mainContext.insert(thread)
+    thread.append(ChatTurn(role: .user, text: user))
+    thread.append(ChatTurn(role: .model, text: reply))
+    return thread
+  }
+
+  func testChatsAreIndexedOnceAndFoundByRelatedWords() async {
+    let lighthouse = chat(
+      "Lighthouse keepers", "How did lighthouse keepers live?", "Keepers lived in small cottages.")
+    let tax = chat("Tax return", "When is the tax deadline?", "Usually April 30.")
+    XCTAssertTrue(KnowledgeBase.needsSearchEmbedding(lighthouse))
+    knowledge.indexChats([lighthouse, tax])
+    await knowledge.waitForChatIndexing()
+    XCTAssertNotNil(lighthouse.searchEmbedding)
+    XCTAssertFalse(KnowledgeBase.needsSearchEmbedding(lighthouse))
+
+    let hits = await knowledge.relatedChats("cottages of keepers", in: [lighthouse, tax], limit: 5)
+    XCTAssertEqual(hits.first?.thread.id, lighthouse.id)
+    XCTAssertFalse(hits.contains { $0.thread.id == tax.id })
+  }
+
+  func testShortChatsAreReindexedAfterNewMessages() async throws {
+    let thread = chat("Garden", "Tomatoes?", "Plant in May.")
+    knowledge.indexChats([thread])
+    await knowledge.waitForChatIndexing()
+    try await Task.sleep(for: .milliseconds(20))
+    thread.append(ChatTurn(role: .user, text: "And peppers?"))
+    XCTAssertTrue(KnowledgeBase.needsSearchEmbedding(thread))
+    XCTAssertFalse(KnowledgeBase.needsSearchEmbedding(ChatThread()), "Empty chats are skipped")
+  }
+}
+
+extension KnowledgeTests {
+  /// Device scores from KnowledgeScenarioTests.test03 ("Italian pasta dinner").
+  func testRelatedNeedsToStandOutFromTheMedian() {
+    let scores: [(thread: String, score: Float)] = [
+      ("carbonara", 0.743), ("tax", 0.608), ("kyoto", 0.575), ("car", 0.562),
+    ]
+    let hits = KnowledgeBase.related(scores, threshold: 0.60, margin: 0.08, limit: 5)
+    XCTAssertEqual(hits.map(\.thread), ["carbonara"])
+    // Nothing stands out: no related chats (a generic chat scored 0.65).
+    let flat: [(thread: String, score: Float)] = [("a", 0.65), ("b", 0.62), ("c", 0.61)]
+    XCTAssertTrue(KnowledgeBase.related(flat, threshold: 0.60, margin: 0.08, limit: 5).isEmpty)
+    // Too few chats for a median.
+    XCTAssertTrue(
+      KnowledgeBase.related([("a", 0.9)], threshold: 0.60, margin: 0.08, limit: 5).isEmpty)
+  }
+}

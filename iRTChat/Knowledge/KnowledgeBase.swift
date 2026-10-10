@@ -158,6 +158,95 @@ final class KnowledgeBase {
     }
   }
 
+  // MARK: - Chats by meaning
+
+  /// What represents a chat in search: its title and opening turns.
+  static func searchText(for thread: ChatThread) -> String {
+    let opening = thread.orderedTurns.prefix(Self.searchTurns)
+      .map { $0.text }
+      .filter { !$0.isEmpty && !$0.hasPrefix(ChatTurn.errorPrefix) }
+      .joined(separator: "\n")
+    return String((thread.title + "\n" + opening).prefix(1_500))
+  }
+
+  /// Turns that make up a chat's search text.
+  static let searchTurns = 6
+
+  /// Whether a chat's search vector is missing or out of date (it changes
+  /// only while the chat is short; later turns don't affect it).
+  static func needsSearchEmbedding(_ thread: ChatThread) -> Bool {
+    guard !thread.turns.isEmpty else { return false }
+    guard let embeddedAt = thread.searchEmbeddedAt, thread.searchEmbedding != nil else { return true }
+    return thread.updatedAt > embeddedAt && thread.turns.count <= searchTurns + 1
+  }
+
+  /// Chats being indexed for search right now.
+  @ObservationIgnored private var chatIndexTask: Task<Void, Never>?
+
+  /// Embed chats that need it, in the background (drawer opening).
+  func indexChats(_ threads: [ChatThread]) {
+    guard chatIndexTask == nil, let embedder = currentEmbedder() else { return }
+    let pending = threads.filter(Self.needsSearchEmbedding)
+    guard !pending.isEmpty else { return }
+    let inputs = pending.map { (title: "none", text: Self.searchText(for: $0)) }
+    chatIndexTask = Task {
+      defer { chatIndexTask = nil }
+      guard let vectors = try? await embedder.embed(documents: inputs), vectors.count == pending.count
+      else { return }
+      let now = Date()
+      for (thread, vector) in zip(pending, vectors) where thread.modelContext != nil {
+        thread.searchEmbedding = VectorIndex.encode(vector)
+        thread.searchEmbeddedAt = now
+      }
+      try? modelContext?.save()
+      Log.engine.info("knowledge: indexed \(pending.count) chats for search")
+    }
+  }
+
+  /// Chats related in meaning to `query`, best first (indexed ones only).
+  func relatedChats(_ query: String, in threads: [ChatThread], limit: Int) async -> [(
+    thread: ChatThread, score: Float
+  )] {
+    guard let embedder = currentEmbedder() else { return [] }
+    let scores = await chatScores(query, in: threads)
+    return Self.related(
+      scores, threshold: embedder.relatedThreshold, margin: embedder.relatedMargin, limit: limit)
+  }
+
+  /// Scores (best first) that pass the threshold and, with a margin, beat
+  /// the median by it (needs 3+ chats to have a meaningful median).
+  static func related<Item>(
+    _ scores: [(thread: Item, score: Float)], threshold: Float, margin: Float, limit: Int
+  ) -> [(thread: Item, score: Float)] {
+    var floor = threshold
+    if margin > 0 {
+      guard scores.count >= 3 else { return [] }
+      let sorted = scores.map(\.score).sorted()
+      floor = max(threshold, sorted[sorted.count / 2] + margin)
+    }
+    return Array(scores.filter { $0.score >= floor }.prefix(limit))
+  }
+
+  /// Similarity of every indexed chat to `query`, best first.
+  func chatScores(_ query: String, in threads: [ChatThread]) async -> [(
+    thread: ChatThread, score: Float
+  )] {
+    await chatIndexTask?.value
+    guard let embedder = currentEmbedder(),
+      let queryVector = try? await embedder.embed(query: query)
+    else { return [] }
+    let candidates = threads.compactMap { thread in
+      thread.searchEmbedding.map { (thread, VectorIndex.decode($0)) }
+    }
+    return VectorIndex.top(candidates.count, query: queryVector, candidates: candidates)
+      .map { (thread: $0.item, score: $0.score) }
+  }
+
+  /// Wait for chat indexing started by ``indexChats(_:)``.
+  func waitForChatIndexing() async {
+    await chatIndexTask?.value
+  }
+
   // MARK: - Search
 
   /// The `limit` most relevant passages of `documents` for `query`.
