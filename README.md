@@ -45,7 +45,7 @@ No account, no API key, no cloud: after a one-time model download, every convers
 ### Private by design
 
 - **Fully on-device.** Gemma 4 E4B runs on the iPhone's GPU (Metal), with automatic CPU fallback. Chats, photos, and voice never leave the phone.
-- **Works offline.** The network is used only to download the model, once.
+- **Works offline.** The network is used to download the models once, and for web searches you ask for. Searches send only the queries and page requests, never your conversation.
 - **Local history.** Conversations are stored with SwiftData on the device, and each chat keeps its own context.
 
 ### Conversations
@@ -72,11 +72,13 @@ No account, no API key, no cloud: after a one-time model download, every convers
 
 - **One composer** in the style of ChatGPT: the message on top; a `+` menu (Camera, Photos, Files, Scan document), the **Think** toggle, the microphone, and Send/Stop below. You can type your next message while a reply streams.
 - **Vision:** take a photo or pick one from your library, with adjustable image detail.
-- **Voice:** record voice messages of up to 30 seconds; Gemma understands the audio directly.
+- **Dictation:** tap the mic, speak, and Gemma transcribes your words into the composer for review (about a second for a sentence, in your language).
+- **Voice messages:** send up to 30 seconds of audio that Gemma listens to directly.
 
 ### Intelligence
 
 - **Think.** Turn on step-by-step reasoning per message; the model's reasoning streams into a collapsible card above the answer.
+- **Web search with sources.** Tap **Search** to look something up for one message: iRTChat searches (DuckDuckGo by default, with Wikipedia as a fallback, or your own SearXNG, Brave, or Tavily), reads the top pages, picks the relevant parts, and answers with `[1]`-style citations linked to the sources. Follow-up questions get their own queries. An optional automatic mode lets the model search when a question needs it.
 - **On-device tools.** The model can check the current date and time and evaluate arithmetic, with a live status line while a tool runs.
 - **Personalization.** Tell iRTChat your name, about yourself, how it should respond, and a response style (Default, Concise, Detailed, Friendly, Professional).
 - **Memory (opt-in).** iRTChat can remember lasting facts you share ("Is vegetarian", "Lives in Montreal") and use them in new chats. Every memory is visible, editable, and deletable in Settings, and a reply that saved one says so.
@@ -92,7 +94,7 @@ SwiftUI with Liquid Glass surfaces, haptics, VoiceOver labels, and accessibility
 | --- | --- |
 | **First launch** | A welcome screen explains iRTChat and downloads Gemma 4 E4B (3.7 GB). You can leave the app while it downloads. |
 | **Chat screen** | ☰ (or a swipe from the left edge) opens the drawer; the pencil starts a new chat; `⋯` renames or deletes the current chat. |
-| **Composer** | `+` adds a photo, a file, or a scanned document · **Think** turns reasoning on for the next messages · 🎙 records a voice message · ↑ sends, ■ stops. |
+| **Composer** | `+` adds a photo, a file, a scanned document, or a voice message · **Think** turns reasoning on · **Search** searches the web for the next message · 🎙 dictates · ↑ sends, ■ stops. |
 | **A reply** | Use the row under it to copy, read aloud, regenerate, or share; ‹ › switches between versions. |
 | **Your message** | Long-press to copy or edit it; editing loads it back into the composer. |
 | **Drawer** | Search all chats; open or create a project; long-press a chat to pin, rename, move to a project, or delete it; Settings sits at the bottom. |
@@ -107,7 +109,7 @@ SwiftUI with Liquid Glass surfaces, haptics, VoiceOver labels, and accessibility
 | **Storage** | About 4.4 GB free: the 3.7 GB chat model, the 165 MB search model, plus headroom |
 | **Development** | A Mac with Xcode 27 and the iOS 27 SDK |
 | **Signing** | An Apple Developer account with the **Extended Virtual Addressing** and **Increased Memory Limit** capabilities |
-| **Network** | Only to download the models |
+| **Network** | To download the models, and for web searches you ask for |
 
 iRTChat runs on a physical iPhone only: the simulator has no Metal path for LiteRT-LM.
 
@@ -151,6 +153,7 @@ Settings opens from the bottom of the drawer.
 | --- | --- |
 | **Personalization** | Name · about you · how to respond · response style. Stored separately and added to the system prompt. |
 | **Memory** | On or off (off by default) · review, edit, add, or delete memories · delete all |
+| **Web search** | Allow web search · search automatically (off by default) · provider: DuckDuckGo, Wikipedia, SearXNG (your instance), Brave or Tavily (your API key, kept in the Keychain) |
 | **Models** | Download, pause, resume, or delete Gemma 4 E4B and EmbeddingGemma |
 | **Performance** | GPU or CPU backend · speculative decoding (MTP) · compact reasoning cache (keeps reasoning out of the KV cache, for a longer effective context) |
 | **Reasoning & Memory** | Thinking on or off, and its token budget · automatic or manual KV-cache size |
@@ -199,6 +202,8 @@ Settings opens from the bottom of the drawer.
 | `DocumentIngestor`, `Chunker` | Pure, tested file reading (PDFKit, Vision text recognition, text formats) and splitting into ~400-token passages that keep their page numbers. |
 | `FileContext` | Pure, tested choice of what the model reads: whole files, cited excerpts, or a cached section-by-section summary, within half the context window. |
 | `SystemPrompt` | Base prompt, personalization, memories, and project instructions, composed; any change rebuilds the conversation before the next message. |
+| `WebResearch` | Provider chain with fallback (bot-check and rate-limit detection), parallel page reading with a built-in readable-text extractor, passage ranking with EmbeddingGemma, and numbered sources; `WebSearchTool` exposes it to the model in automatic mode. |
+| `Dictation` | Transcription through Gemma's audio input in a throwaway conversation, with greedy decoding. |
 | `ModelStore` | Background model downloads, verification, and storage. |
 | `DeviceProfile` | Device memory policy, based on the app's real memory limit. |
 
@@ -235,6 +240,8 @@ Gemma 4 E4B measured on an iPhone 17 Pro (12 GB, iOS 27), GPU, with MTP enabled.
 | Cited follow-up question on the same report | 11 s (includes the switch to 32-bit precision) |
 | Long context in 32-bit precision | about half the decode speed |
 | Memory extraction after a personal message | ~2.2 s |
+| Web search answer (search, read 5 pages, rank, answer) | ~25 s |
+| Dictation of a spoken sentence | ~1 s (word error rate 0–0.13 in English and French) |
 | App memory footprint (8K context, with vision and audio) | ~1.4–2.5 GB |
 
 For reference, Google reports 1,189 prefill and 25 decode tokens per second for E4B on the iPhone 17 Pro GPU without speculative decoding.
@@ -243,9 +250,9 @@ For reference, Google reports 1,189 prefill and 25 decode tokens per second for 
 
 | Target | Runs on | Covers |
 | --- | --- | --- |
-| `iRTChatTests` (168 tests) | iPhone | Planner, context budgeting, precision switching, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, chat grouping and search, personalization, titles, downloads, and the app pipeline through the scripted engine |
-| `iRTChatDeviceTests` (34 scenarios) | iPhone | The real models in-process: download, load, text, chat isolation, stop and continue, tools, thinking, image, audio, settings rebuilds, context limits, titles, memory, benchmark; files (EmbeddingGemma indexing, "summarize this 40-page PDF", cited follow-up, search chats by meaning). Opt-in suites: long Thinking, 8 GB memory simulation, context calibration, and LiteRT-LM probes. |
-| `iRTChatUITests` (15 flows) | iPhone | Real taps: send, Stop, Home button mid-reply, leaving and returning mid-reply, rapid settings changes, drawer and search, pin / rename / delete, projects, attached files, regenerate / edit / versions, Think, memory settings, markdown, keyboard clearance, Models |
+| `iRTChatTests` (184 tests) | iPhone | Planner, context budgeting, precision switching, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers and page extraction (recorded fixtures), citations, dictation, chat grouping and search, personalization, titles, downloads, and the app pipeline through the scripted engine |
+| `iRTChatDeviceTests` (37 scenarios) | iPhone | The real models in-process: download, load, text, chat isolation, stop and continue, tools, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, benchmark; files (EmbeddingGemma indexing, "summarize this 40-page PDF", cited follow-up, search chats by meaning); live web search (cited answer, planned follow-up, automatic mode). Opt-in suites: long Thinking, 8 GB memory simulation, context calibration, and LiteRT-LM probes. |
+| `iRTChatUITests` (17 flows) | iPhone | Real taps: send, Stop, Home button mid-reply, leaving and returning mid-reply, rapid settings changes, drawer and search, pin / rename / delete, projects, attached files, web search, dictation, regenerate / edit / versions, Think, memory settings, markdown, keyboard clearance, Models |
 
 All suites run on a connected, unlocked iPhone through the harness (it downloads E4B and EmbeddingGemma if missing). The simulator isn't used.
 
@@ -259,8 +266,9 @@ cp .mobilebuildmcp/config.example.yaml .mobilebuildmcp/config.yaml
 scripts/device-harness.sh unit        # unit tests
 scripts/device-harness.sh inference   # engine scenarios
 scripts/device-harness.sh files       # files and search with the real models
+scripts/device-harness.sh web         # live web search (needs internet)
 scripts/device-harness.sh ui          # real-tap UI flows
-scripts/device-harness.sh all         # unit, inference + files, then UI
+scripts/device-harness.sh all         # unit, inference + files + web, then UI
 scripts/device-harness.sh thinking    # long Thinking-mode scenarios, compact reasoning cache
 scripts/device-harness.sh memory      # 8 GB iPhone memory simulation
 scripts/device-harness.sh calibrate   # speed and memory at 4K–32K context
@@ -305,7 +313,10 @@ Vendor/LiteRT-LM/             LiteRT-LM v0.18.0 Swift package
 | **0. Foundations** | Versioned schema with branches, tool budgets, model-written titles, calibrated context sizes | Done |
 | **1. Core experience** | Drawer navigation, rich markdown, message actions, composer, personalization, onboarding, background downloads | Done |
 | **2. Files, projects, memory** | Attach PDFs and documents, scan with the camera, cited answers and summaries, projects with shared files and instructions, pinned chats, memory, search by meaning with EmbeddingGemma | Done |
-| **3. Web and voice** | Opt-in web search (per message or automatic) with cited sources, and dictation through Gemma's audio input | Planned |
+| **3. Web and voice** | Opt-in web search (per message or automatic) with cited sources, and dictation through Gemma's audio input | Done |
+| **First release** | App icon, privacy manifest, App Store metadata, accessibility pass, performance and battery budgets | Next |
+| **4. Voice mode and camera** | Hands-free, interruptible voice conversations; ask about what the camera sees | Planned |
+| **5. System integration** | Siri and Shortcuts, Control Center, Action Button, widgets, Spotlight, share sheet | Planned |
 
 ## Troubleshooting
 
@@ -316,6 +327,8 @@ Vendor/LiteRT-LM/             LiteRT-LM v0.18.0 Swift package
 | UI tests fail with *"Timed out while enabling automation mode"* | Unlock the iPhone and keep it unlocked during the run. |
 | The download stopped | Tap **Resume** in **Settings → Models**. Downloads continue in the background, but force-quitting the app cancels them. |
 | *"Older messages were dropped from the model's memory"* | Expected in long chats. Raise the KV-cache size under **Settings → Reasoning & Memory**, or start a new chat. |
+| *"Web search failed … Answered without it"* | Offline, or the provider refused (rate limit). Try again, or choose another provider in **Settings → Web search**. |
+| UI tests stall on a system alert | XCTest can't answer system permission prompts on device; the tests use `--uitest-fake-mic` and the scripted engine where needed. |
 
 ## Known limitations
 
@@ -325,6 +338,8 @@ Vendor/LiteRT-LM/             LiteRT-LM v0.18.0 Swift package
 - LiteRT-LM's Swift API does not yet support saving and restoring KV sessions, so reopening a long chat replays its history.
 - Up to 60 pages per file are read with text recognition; the 25 most recent memories are used in chats.
 - Search by meaning needs at least three chats; with fewer, search matches words only.
+- Web pages are read without running JavaScript, so pages that build their content with scripts contribute only their search snippet.
+- DuckDuckGo results come from its HTML page (an unofficial interface); if it asks for a bot check, searches fall back to Wikipedia, or use your own SearXNG, Brave, or Tavily.
 
 ## Vendored LiteRT-LM
 
