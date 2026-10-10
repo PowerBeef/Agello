@@ -27,17 +27,17 @@ final class AppRouterTests: XCTestCase {
 
   @MainActor
   func testIntentsHandOffToTheApp() async throws {
+    // The host app's chat screen carries requests out as they arrive, so
+    // check what the router received rather than what's still pending.
     let router = AppRouter.shared
-    _ = router.take()
     var ask = AskIRTChatIntent()
     ask.question = "Hello"
     _ = try await ask.perform()
-    XCTAssertEqual(router.take(), .ask("Hello"))
+    XCTAssertEqual(router.lastHandled, .ask("Hello"))
     _ = try await StartVoiceModeIntent().perform()
-    XCTAssertEqual(router.take(), .voice)
+    XCTAssertEqual(router.lastHandled, .voice)
     _ = try await NewChatIntent().perform()
-    XCTAssertEqual(router.take(), .newChat)
-    XCTAssertNil(router.take())
+    XCTAssertEqual(router.lastHandled, .newChat)
   }
 }
 

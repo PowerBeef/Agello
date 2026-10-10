@@ -17,32 +17,6 @@ struct AskIRTChatIntent: AppIntent {
   }
 }
 
-/// Open a new, empty chat.
-struct NewChatIntent: AppIntent {
-  static let title: LocalizedStringResource = "New Chat"
-  static let description = IntentDescription("Start a new chat in iRTChat.")
-  static let supportedModes: IntentModes = .foreground(.immediate)
-
-  @MainActor
-  func perform() async throws -> some IntentResult {
-    AppRouter.shared.handle(.newChat)
-    return .result()
-  }
-}
-
-/// Talk hands-free (voice mode).
-struct StartVoiceModeIntent: AppIntent {
-  static let title: LocalizedStringResource = "Talk to iRTChat"
-  static let description = IntentDescription("Start a hands-free voice conversation.")
-  static let supportedModes: IntentModes = .foreground(.immediate)
-
-  @MainActor
-  func perform() async throws -> some IntentResult {
-    AppRouter.shared.handle(.voice)
-    return .result()
-  }
-}
-
 /// Siri phrases, the Shortcuts app, Spotlight, and the Action Button.
 struct IRTChatShortcuts: AppShortcutsProvider {
   static var appShortcuts: [AppShortcut] {

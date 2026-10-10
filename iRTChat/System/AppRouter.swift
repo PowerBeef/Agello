@@ -26,7 +26,11 @@ final class AppRouter {
   /// Voice mode should open over the current (new) chat.
   var voiceRequested = false
 
+  /// The most recent request (kept after it's carried out; diagnostics).
+  private(set) var lastHandled: Action?
+
   func handle(_ action: Action) {
+    lastHandled = action
     pending = action
   }
 
