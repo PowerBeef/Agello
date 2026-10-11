@@ -74,6 +74,7 @@ No account, no API key, no cloud: after a one-time model download, every convers
 - **Vision:** take a photo or pick one from your library, with adjustable image detail.
 - **Dictation:** tap the mic, speak, and Gemma transcribes your words into the composer for review (about a second for a sentence, in your language).
 - **Voice messages:** send up to 30 seconds of audio that Gemma listens to directly.
+- **Voice mode.** When the composer is empty, Send becomes a waveform button: a hands-free conversation with a live orb, captions, and an optional camera feed. Speak naturally and Gemma puts what you said into the chat and answers in short spoken sentences; talk over it, or tap the orb, to interrupt.
 
 ### Intelligence
 
@@ -86,7 +87,13 @@ No account, no API key, no cloud: after a one-time model download, every convers
 
 ### Native iOS
 
-SwiftUI with Liquid Glass surfaces, haptics, VoiceOver labels, and accessibility identifiers throughout. Model downloads continue in the background.
+SwiftUI with Liquid Glass surfaces, haptics, VoiceOver labels, and accessibility identifiers throughout. Model downloads continue in the background, and a long document summary keeps running when you leave the app (background GPU, on iPhones that support it).
+
+- **Siri and Shortcuts.** "Ask iRTChat", "New Chat", and "Talk to iRTChat" work from Siri, the Shortcuts app, the Action Button, and Spotlight.
+- **Widgets and Control Center.** Home Screen and Lock Screen widgets ("Ask iRTChat", "Talk"), and Control Center controls for a new chat or a voice conversation.
+- **Spotlight.** Your chats appear in system search (a toggle in Settings), and tapping a result opens that chat.
+- **Share sheet.** "Ask iRTChat" from any app with text, a link, an image, or a file; iRTChat answers when the app opens next.
+- **Links.** `irtchat://new`, `irtchat://ask?q=…`, and `irtchat://voice` work from anywhere on the system.
 
 ## A quick tour
 
@@ -94,12 +101,14 @@ SwiftUI with Liquid Glass surfaces, haptics, VoiceOver labels, and accessibility
 | --- | --- |
 | **First launch** | A welcome screen explains iRTChat and downloads Gemma 4 E4B (3.7 GB). You can leave the app while it downloads. |
 | **Chat screen** | ☰ (or a swipe from the left edge) opens the drawer; the pencil starts a new chat; `⋯` renames or deletes the current chat. |
-| **Composer** | `+` adds a photo, a file, a scanned document, or a voice message · **Think** turns reasoning on · **Search** searches the web for the next message · 🎙 dictates · ↑ sends, ■ stops. |
+| **Composer** | `+` adds a photo, a file, a scanned document, or a voice message · **Think** turns reasoning on · **Search** searches the web · 🎙 dictates · ↑ sends, or the waveform starts voice mode when the composer is empty · ■ stops. |
+| **Talk** | In voice mode, just speak: the answer arrives as text and speech. The camera button sends what you're looking at with your question. |
 | **A reply** | Use the row under it to copy, read aloud, regenerate, or share; ‹ › switches between versions. |
 | **Your message** | Long-press to copy or edit it; editing loads it back into the composer. |
 | **Drawer** | Search all chats; open or create a project; long-press a chat to pin, rename, move to a project, or delete it; Settings sits at the bottom. |
 | **A project** | Name, instructions, shared files, its chats, and "New chat in this project". |
-| **Settings** | Personalization, Memory, the models, and advanced engine options (see [Settings](#settings)). |
+| **Outside the app** | Siri ("Ask iRTChat…", "Talk to iRTChat"), the widgets, Control Center, Spotlight, or another app's share sheet ("Ask iRTChat"). |
+| **Settings** | Personalization, Memory, Web search, Spotlight, the models, and advanced engine options (see [Settings](#settings)). |
 
 ## Requirements
 
@@ -108,7 +117,7 @@ SwiftUI with Liquid Glass surfaces, haptics, VoiceOver labels, and accessibility
 | **iPhone** | iPhone 15 Pro or later (8 GB of memory or more), on iOS 27. The App Store requirement `iphone-performance-gaming-tier` enforces this. |
 | **Storage** | About 4.4 GB free: the 3.7 GB chat model, the 165 MB search model, plus headroom |
 | **Development** | A Mac with Xcode 27 and the iOS 27 SDK |
-| **Signing** | An Apple Developer account with the **Extended Virtual Addressing** and **Increased Memory Limit** capabilities |
+| **Signing** | An Apple Developer account with the **Extended Virtual Addressing**, **Increased Memory Limit**, **Background GPU Access**, and **App Groups** capabilities |
 | **Network** | To download the models, and for web searches you ask for |
 
 iRTChat runs on a physical iPhone only: the simulator has no Metal path for LiteRT-LM.
@@ -118,7 +127,7 @@ iRTChat runs on a physical iPhone only: the simulator has no Metal path for Lite
 ### Run on an iPhone
 
 1. Open `iRTChat.xcodeproj`. Swift Package Manager resolves `swift-markdown` and `SwiftMath`; LiteRT-LM is vendored.
-2. The project is configured for team `FK2D8X36G2` and bundle ID `com.patricedery.irtchat`. On another account, change both under **Signing & Capabilities**.
+2. The project is configured for team `FK2D8X36G2` and bundle IDs `com.patricedery.irtchat`, `com.patricedery.irtchat.widgets` (widgets and controls) and `com.patricedery.irtchat.share` (share sheet), which share the App Group `group.com.patricedery.irtchat`. On another account, change the team and the bundle IDs under **Signing & Capabilities**.
 3. Select the `iRTChat` scheme and your iPhone, then run. Use the **Release** configuration for representative speed.
 4. On the welcome screen, download **Gemma 4 E4B**. The download continues if you leave the app.
 5. Start chatting.
@@ -154,6 +163,7 @@ Settings opens from the bottom of the drawer.
 | **Personalization** | Name · about you · how to respond · response style. Stored separately and added to the system prompt. |
 | **Memory** | On or off (off by default) · review, edit, add, or delete memories · delete all |
 | **Web search** | Allow web search · search automatically (off by default) · provider: DuckDuckGo, Wikipedia, SearXNG (your instance), Brave or Tavily (your API key, kept in the Keychain) |
+| **Spotlight** | Show chats in system search (on by default) |
 | **Models** | Download, pause, resume, or delete Gemma 4 E4B and EmbeddingGemma |
 | **Performance** | GPU or CPU backend · speculative decoding (MTP) · compact reasoning cache (keeps reasoning out of the KV cache, for a longer effective context) |
 | **Reasoning & Memory** | Thinking on or off, and its token budget · automatic or manual KV-cache size |
@@ -168,24 +178,25 @@ Settings opens from the bottom of the drawer.
 ```text
 ┌──────────────────────────────── SwiftUI ─────────────────────────────────┐
 │ ContentView ── DrawerView (search, projects, recency groups)             │
-│   └─ ChatView ── MessageBubbleView ── MarkdownView (code, tables, math)  │
-│        └─ composer (+, Think, mic, Send)    Settings · Project · Memory  │
+│   ├─ ChatView ── MessageBubbleView ── MarkdownView (code, tables, math)  │
+│   │    └─ composer (+, Think, Search, mic)     Settings · Project        │
+│   └─ VoiceModeView (orb, captions, camera)     Memory · Onboarding       │
 └─────────────────────────────────────┬────────────────────────────────────┘
                                       ▼
-                     AppState  (@MainActor, @Observable)
+                    AppState  (@MainActor, @Observable)
    engine lifecycle queue · chat ↔ conversation binding · send / regenerate /
-   edit · file context · system prompt (personalization, memory, project) ·
-   precision switch · title and memory helpers · streaming at ~10 Hz
-                │                         │
-                │              KnowledgeBase ── EmbeddingGemma (actor)
-                │              files → passages → vectors · chat vectors
-                │                                          │
-                ▼                                          ▼
-   LiteRTChatEngine  (actor)                  SwiftData  (versioned schema)
-   load ladder · validation · context budget  ChatThread ─ ChatTurn tree
-   tool budgets · JSON helpers                (parentID branches, active leaf)
-                │
-                ▼
+   edit · files, web, memory · system prompt · precision switch · streaming
+        │                       │                        │
+        │           KnowledgeBase ── EmbeddingGemma     │   AppRouter (Siri,
+        │           files → passages → vectors          │   Shortcuts, widgets,
+        │           chat vectors (search by meaning)    │   Spotlight, links)
+        ▼                       ▼                        ▼
+   LiteRTChatEngine   SwiftData (versioned schema)   VoiceSession (mic, VAD,
+   load ladder        ChatThread ─ ChatTurn tree     speech, camera)
+   validation         parentID branches, active leaf BackgroundWork
+   context budget
+        │
+        ▼
      LiteRT-LM  Engine + Conversation  ──▶  Metal GPU / CPU
 ```
 
@@ -204,6 +215,10 @@ Settings opens from the bottom of the drawer.
 | `SystemPrompt` | Base prompt, personalization, memories, and project instructions, composed; any change rebuilds the conversation before the next message. |
 | `WebResearch` | Provider chain with fallback (bot-check and rate-limit detection), parallel page reading with a built-in readable-text extractor, passage ranking with EmbeddingGemma, and numbered sources; `WebSearchTool` exposes it to the model in automatic mode. |
 | `Dictation` | Transcription through Gemma's audio input in a throwaway conversation, with greedy decoding. |
+| `VoiceSession` | Hands-free conversation: microphone with voice-activity turn detection, one audio engine for both capture (echo-cancelled) and sentence-by-sentence speech, barge-in, and the camera frame attached to each utterance. |
+| `AppRouter`, App Intents | "Ask iRTChat", "New Chat", "Talk to iRTChat", widgets, Control Center, Spotlight, and `irtchat://` links all hand off to the app, which does the work in the foreground (extensions can't load the model). |
+| `BackgroundWork` | A continued processing task around long document summaries: the reply keeps running (background GPU, where the device supports it), with iOS showing progress in a Live Activity that can cancel it. |
+| `ShareInbox`, `SpotlightIndex` | Items shared from other apps wait in an App Group inbox for the app to answer; chats are indexed for system search. |
 | `ModelStore` | Background model downloads, verification, and storage. |
 | `DeviceProfile` | Device memory policy, based on the app's real memory limit. |
 
@@ -215,7 +230,7 @@ These safeguards come from failures reproduced on device by the test harness.
 - **Branching.** Regenerate and edit rebuild the model's context from the history *before* the changed turn, so abandoned versions never leak into the next answer. Switching versions rebuilds the context on the next message.
 - **Engine validation.** LiteRT-LM can report a successful load after failing to map parts of the model file. Each new engine must complete a one-token generation before the app uses it.
 - **Stop and resume.** A cancelled LiteRT-LM conversation rejects the next message. Stopped replies keep their partial text, and the chat's conversation is rebuilt from history before the next send.
-- **Background.** iOS doesn't allow GPU work in the background. A reply in progress stops cleanly when the app leaves the foreground.
+- **Background.** A reply in progress normally stops cleanly when the app leaves the foreground, since iOS doesn't allow GPU work in the background. Long file summaries are the exception: they run as a continued processing task (background GPU, where the device supports it), keep going when you leave the app, and show their progress in a Live Activity that can cancel them.
 - **Memory.** The memory entitlements raise the app's limit to about 8.6 GB on a 12 GB iPhone 17 Pro and prevent address-space exhaustion when engines are rebuilt. A reply stops only when available memory falls below 400 MB, not at the first memory warning.
 - **Capability flags.** The model file's *thinking* and *function-calling* flags are not trusted: Gemma 4 files report both as unsupported, yet the model reasons and calls tools on device.
 - **Tool budgets.** LiteRT-LM runs tools automatically while streaming, so each generation round gets a share of the remaining context. A streaming guard ends a reply cleanly before it can overflow the window.
@@ -242,6 +257,7 @@ Gemma 4 E4B measured on an iPhone 17 Pro (12 GB, iOS 27), GPU, with MTP enabled.
 | Memory extraction after a personal message | ~2.2 s |
 | Web search answer (search, read 5 pages, rank, answer) | ~25 s |
 | Dictation of a spoken sentence | ~1 s (word error rate 0–0.13 in English and French) |
+| Voice mode: first spoken sentence, after you stop talking | ~1.2–1.5 s (transcript included) |
 | App memory footprint (8K context, with vision and audio) | ~1.4–2.5 GB |
 
 For reference, Google reports 1,189 prefill and 25 decode tokens per second for E4B on the iPhone 17 Pro GPU without speculative decoding.
@@ -250,9 +266,9 @@ For reference, Google reports 1,189 prefill and 25 decode tokens per second for 
 
 | Target | Runs on | Covers |
 | --- | --- | --- |
-| `iRTChatTests` (184 tests) | iPhone | Planner, context budgeting, precision switching, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers and page extraction (recorded fixtures), citations, dictation, chat grouping and search, personalization, titles, downloads, and the app pipeline through the scripted engine |
-| `iRTChatDeviceTests` (37 scenarios) | iPhone | The real models in-process: download, load, text, chat isolation, stop and continue, tools, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, benchmark; files (EmbeddingGemma indexing, "summarize this 40-page PDF", cited follow-up, search chats by meaning); live web search (cited answer, planned follow-up, automatic mode). Opt-in suites: long Thinking, 8 GB memory simulation, context calibration, and LiteRT-LM probes. |
-| `iRTChatUITests` (17 flows) | iPhone | Real taps: send, Stop, Home button mid-reply, leaving and returning mid-reply, rapid settings changes, drawer and search, pin / rename / delete, projects, attached files, web search, dictation, regenerate / edit / versions, Think, memory settings, markdown, keyboard clearance, Models |
+| `iRTChatTests` (204 tests) | iPhone | Planner, context budgeting, precision switching, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers and page extraction (recorded fixtures), citations, dictation, voice text and voice-activity detection, deep links and intents, Spotlight entries, the share inbox, chat grouping and search, personalization, titles, downloads, and the app pipeline through the scripted engine |
+| `iRTChatDeviceTests` (39 scenarios) | iPhone | The real models in-process: download, load, text, chat isolation, stop and continue, tools, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, voice turns (transcript and spoken answer), benchmark; files (EmbeddingGemma indexing, "summarize this 40-page PDF", cited follow-up, search chats by meaning); live web search (cited answer, planned follow-up, automatic mode). Opt-in suites: long Thinking, 8 GB memory simulation, context calibration, and LiteRT-LM probes. |
+| `iRTChatUITests` (20 flows) | iPhone | Real taps: send, Stop, Home button mid-reply, leaving and returning mid-reply, rapid settings changes, drawer and search, pin / rename / delete, projects, attached files, web search, dictation, voice mode, deep links, a long summary while the app is in the background, regenerate / edit / versions, Think, memory settings, markdown, keyboard clearance, Models |
 
 All suites run on a connected, unlocked iPhone through the harness (it downloads E4B and EmbeddingGemma if missing). The simulator isn't used.
 
@@ -287,18 +303,27 @@ Results are written to `build/device-harness/`: result bundles, per-scenario JSO
 iRTChat/
 ├── iRTChatApp.swift          App entry, SwiftData container, background-download hook
 ├── AppState.swift            Engine lifecycle, chat binding, generation pipeline
-├── iRTChat.entitlements      Extended virtual addressing, increased memory limit
+├── Info.plist                URL scheme (irtchat://), background task identifiers
+├── iRTChat.entitlements      Extended virtual addressing, memory limit, background
+│                             GPU, App Group (with the share sheet)
 ├── Inference/                Engine actor, planner, context budget, device policy,
 │                             tools, title and memory helpers, personalization
 ├── Knowledge/                File reading, chunking, embeddings, vector index,
-│                             knowledge base, file context
+│                             knowledge base, file context, web parsers and research
 ├── Markdown/                 Markdown parsing, code highlighting, rendering
 ├── ModelHub/                 Model catalog and background download store
 ├── Persistence/              Versioned SwiftData schema, branching, store loading
+├── System/                   App Intents, deep links and router, Spotlight,
+│                             share inbox, continued processing tasks
+├── Voice/                    Voice mode: capture and speech, turn detection,
+│                             camera feed, voice text
 ├── Views/                    Chat, drawer, composer, message actions, projects,
 │                             memory, settings, personalization, onboarding,
-│                             camera, scanner, speech
+│                             camera, scanner, voice mode, speech
 └── Support/                  Design tokens, haptics, image preparation, diagnostics
+iRTChatWidgets/               Widget extension: Home/Lock Screen widgets and
+                              Control Center controls
+iRTChatShare/                 Share extension: "Ask iRTChat"
 iRTChatTests/                 Unit tests
 iRTChatDeviceTests/           On-device engine scenarios
 iRTChatUITests/               UI flows
@@ -314,9 +339,9 @@ Vendor/LiteRT-LM/             LiteRT-LM v0.18.0 Swift package
 | **1. Core experience** | Drawer navigation, rich markdown, message actions, composer, personalization, onboarding, background downloads | Done |
 | **2. Files, projects, memory** | Attach PDFs and documents, scan with the camera, cited answers and summaries, projects with shared files and instructions, pinned chats, memory, search by meaning with EmbeddingGemma | Done |
 | **3. Web and voice** | Opt-in web search (per message or automatic) with cited sources, and dictation through Gemma's audio input | Done |
+| **4. Voice mode and camera** | Hands-free, interruptible voice conversations; ask about what the camera sees | Done |
+| **5. System integration** | Siri and Shortcuts, Control Center, Action Button, widgets, Spotlight, share sheet, background file jobs | Done |
 | **First release** | App icon, privacy manifest, App Store metadata, accessibility pass, performance and battery budgets | Next |
-| **4. Voice mode and camera** | Hands-free, interruptible voice conversations; ask about what the camera sees | Planned |
-| **5. System integration** | Siri and Shortcuts, Control Center, Action Button, widgets, Spotlight, share sheet | Planned |
 
 ## Troubleshooting
 
@@ -340,6 +365,8 @@ Vendor/LiteRT-LM/             LiteRT-LM v0.18.0 Swift package
 - Search by meaning needs at least three chats; with fewer, search matches words only.
 - Web pages are read without running JavaScript, so pages that build their content with scripts contribute only their search snippet.
 - DuckDuckGo results come from its HTML page (an unofficial interface); if it asks for a bot check, searches fall back to Wikipedia, or use your own SearXNG, Brave, or Tavily.
+- Only long document summaries keep running when you leave the app, and only on iPhones that support background GPU use; other replies stop, as before.
+- Something shared to iRTChat is answered in a new chat the next time the app opens, not inside the share sheet.
 
 ## Vendored LiteRT-LM
 
