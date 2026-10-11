@@ -135,7 +135,11 @@ final class AppState {
   let knowledge: KnowledgeBase
   /// What's happening before a reply starts (e.g. "Reading report.pdf ·
   /// part 3 of 11"); nil otherwise.
-  var preparingStatus: String?
+  var preparingStatus: String? {
+    didSet {
+      if let preparingStatus { BackgroundWork.shared.update(subtitle: preparingStatus) }
+    }
+  }
   /// Reading files before a reply (cancelled by Stop).
   @ObservationIgnored private var preparationTask: Task<FileContextResult?, Never>?
 
@@ -534,6 +538,7 @@ final class AppState {
       isPreparing = false
       preparingThreadID = nil
       preparingStatus = nil
+      BackgroundWork.shared.end(success: generationError == nil)
     }
     // A just-changed setting (e.g. the composer's Think toggle) applies to
     // this message, not after it.
@@ -1002,6 +1007,11 @@ final class AppState {
     let prompts = sections.map { FileContext.sectionPrompt($0, of: document.name) }
     let name = document.name
     let count = sections.count
+    // Only long, user-requested file summaries request background GPU time.
+    BackgroundWork.shared.onExpire = { [weak self] in self?.stop() }
+    BackgroundWork.shared.begin(
+      title: String(localized: "Summarizing \(name)"),
+      subtitle: String(localized: "Reading \(count) sections"))
     preparingStatus = "Reading \(name)…"
     let outputs: [String]? = await serialized {
       defer {
@@ -1014,6 +1024,7 @@ final class AppState {
       ) { done in
         await MainActor.run {
           self.preparingStatus = "Reading \(name) · part \(min(done + 1, count)) of \(count)"
+          BackgroundWork.shared.sectionProgress(completed: done, total: count)
         }
       }
     }
@@ -1059,6 +1070,7 @@ final class AppState {
         reply.parts = parts
       }
       lastFlush = .now
+      BackgroundWork.shared.replyProgress(characters: reply.text.count)
     }
     toolStatus = nil
     defer { toolStatus = nil }
@@ -1106,6 +1118,7 @@ final class AppState {
   }
 
   func stop() {
+    BackgroundWork.shared.end(success: false)
     preparationTask?.cancel()
     webTask?.cancel()
     Task { await engine.cancel() }
@@ -1115,7 +1128,12 @@ final class AppState {
   /// deliberately (keeping the partial text) instead of letting Metal
   /// command buffers fail or the app be terminated.
   func enterBackground() {
-    guard isGenerating else { return }
+    guard isBusy else { return }
+    // A continued task with background GPU access lets the reply finish.
+    if BackgroundWork.shared.isActive {
+      Log.lifecycle.info("background: reply continues as a continued processing task")
+      return
+    }
     Log.lifecycle.info("background: stopping generation")
     stop()
     generationError = "Reply stopped because iRTChat moved to the background."

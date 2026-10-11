@@ -108,17 +108,39 @@ struct ChatView: View {
     .onDisappear { reader.stop() }
     .onAppear {
       // UI tests: the system file picker can't be driven, so attach a sample.
-      if thread == nil, pendingFiles.isEmpty,
-        ProcessInfo.processInfo.arguments.contains("--uitest-sample-file")
-      {
-        pendingFiles = [
-          ExtractedDocument(
-            name: "trip-notes.md", kind: .text, byteCount: 120,
-            pages: [
-              "Hiking trip notes.\n\nThe trailhead parking opens at 6 am. Bring a tent, a stove, "
-                + "and three litres of water per person."
-            ])
-        ]
+      let arguments = ProcessInfo.processInfo.arguments
+      if thread == nil, pendingFiles.isEmpty {
+        if arguments.contains("--uitest-sample-file") {
+          pendingFiles = [
+            ExtractedDocument(
+              name: "trip-notes.md", kind: .text, byteCount: 120,
+              pages: [
+                "Hiking trip notes.\n\nThe trailhead parking opens at 6 am. Bring a tent, a stove, "
+                  + "and three litres of water per person."
+              ])
+          ]
+        } else if arguments.contains("--uitest-sample-report") {
+          // A long report, so "Summarize this" reads it section by section.
+          let topics = [
+            "harbour maintenance", "coastal erosion", "lighthouse operations", "fisheries",
+            "visitor services", "storm preparedness", "habitat restoration", "water quality",
+          ]
+          let pages = (1...30).map { page -> String in
+            let topic = topics[page % topics.count]
+            return [
+              "Section \(page): \(topic.capitalized).",
+              "This section reviews \(topic) during the reporting period. Teams in district "
+                + "\(page % 5 + 1) completed scheduled inspections, logged their findings, and "
+                + "filed follow-up requests where repairs were needed.",
+              "Most indicators for \(topic) stayed within normal ranges. Seasonal variation was "
+                + "observed, and staff recommend continuing the current monitoring programme.",
+            ].joined(separator: "\n\n")
+          }
+          pendingFiles = [
+            ExtractedDocument(
+              name: "coastal-report.pdf", kind: .pdf, byteCount: 200_000, pages: pages)
+          ]
+        }
       }
     }
   }

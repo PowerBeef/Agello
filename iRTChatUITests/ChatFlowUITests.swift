@@ -289,6 +289,34 @@ final class ChatFlowUITests: XCTestCase {
     }
   }
 
+  /// A long document summary keeps running while the app is in the
+  /// background (a continued processing task with background GPU access on
+  /// devices that support it; otherwise the reply stops with a notice).
+  func testLongSummarySurvivesBackgrounding() throws {
+    try XCTSkipIf(Self.isSimulator, "Needs real GPU generation")
+    app.terminate()
+    app.launchArguments.append("--uitest-sample-report")
+    app.launch()
+    try openNewChat()
+    XCTAssertTrue(element("message.file").waitForExistence(timeout: 5), "No pending file chip")
+    send("Summarize this report in a few bullet points.")
+    // Reading starts with the first section; leave while it's working.
+    XCTAssertTrue(
+      element("chat.preparing").waitForExistence(timeout: 60), "The summary never started")
+    XCUIDevice.shared.press(.home)
+    sleep(45)
+    app.activate()
+    XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
+    try waitForReplyToFinish(timeout: 240)
+    attachScreenshot("summary-after-background")
+    XCTAssertFalse(
+      lastModelText().hasPrefix("Error:"), "Backgrounding broke the summary: \(lastModelText())")
+    XCTAssertFalse(
+      element("chat.banner.notice").exists,
+      "The summary stopped when the app moved to the background")
+    XCTAssertGreaterThan(lastModelText().count, 200, lastModelText())
+  }
+
   /// A project: create it, start a chat in it; the chat lives in the
   /// project, not in the drawer's recent chats.
   func testProjectChat() throws {
