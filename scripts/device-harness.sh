@@ -23,6 +23,9 @@
 #   all        unit, inference + files, then ui.
 #
 # Env: DEVICE_ID (default: deviceId from the git-ignored .mobilebuildmcp/config.yaml),
+#      ONLY (run part of a suite: comma- or space-separated test identifiers
+#      inside it, e.g. ONLY=iRTChatTests/AppStateTests/testMockModeSendsWithoutDownloadedModel
+#      scripts/device-harness.sh unit; not with `all`),
 #      OUT (default: build/device-harness),
 #      XCBEAUTIFY (path to xcbeautify, or "off" for raw output; default:
 #      Homebrew's, looked up directly so other xcbeautify copies in PATH are ignored).
@@ -33,18 +36,9 @@ set -eu
 SUITE="${1:-all}"
 [ $# -gt 0 ] && shift
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-LOCAL_CONFIG="$ROOT/.mobilebuildmcp/config.yaml"
-if [ -z "${DEVICE_ID:-}" ] && [ -f "$LOCAL_CONFIG" ]; then
-  DEVICE_ID="$(sed -n 's/^[[:space:]]*deviceId:[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}[[:space:]]*$/\1/p' \
-    "$LOCAL_CONFIG" | head -n 1)"
-fi
-case "${DEVICE_ID:-}" in
-  "" | "<your-iphone-udid>")
-    echo "No device. Set DEVICE_ID=<udid>, or copy .mobilebuildmcp/config.example.yaml" >&2
-    echo "to .mobilebuildmcp/config.yaml and set deviceId (xcrun devicectl list devices)." >&2
-    exit 2
-    ;;
-esac
+# shellcheck source=scripts/lib/device.sh
+. "$ROOT/scripts/lib/device.sh"
+resolve_device_id "$ROOT"
 OUT="${OUT:-$ROOT/build/device-harness}"
 BUNDLE_ID="com.patricedery.irtchat"
 mkdir -p "$OUT"
@@ -103,30 +97,55 @@ pull_report() {
     >/dev/null 2>&1 && echo "Report: $OUT/harness-report.json" || echo "No harness report on device"
 }
 
+# -only-testing filters for the suite's scopes, or for ONLY's tests, which
+# must be inside those scopes (opt-in suites set their environment above).
+filters() {
+  if [ -z "${ONLY:-}" ]; then
+    for scope in "$@"; do printf ' -only-testing:%s' "$scope"; done
+    return 0
+  fi
+  for test in $(echo "$ONLY" | tr ',' ' '); do
+    in_suite=no
+    for scope in "$@"; do
+      case "$test" in "$scope" | "$scope"/*) in_suite=yes ;; esac
+    done
+    if [ "$in_suite" = no ]; then
+      echo "ONLY: $test is not in the $SUITE suite ($*)" >&2
+      return 2
+    fi
+    printf ' -only-testing:%s' "$test"
+  done
+}
+
 status=0
+scopes=""
 case "$SUITE" in
-  inference) run_suite inference -only-testing:iRTChatDeviceTests/InferenceScenarioTests "$@" || status=$? ;;
-  unit) run_suite unit -only-testing:iRTChatTests "$@" || status=$? ;;
-  ui) run_suite ui -only-testing:iRTChatUITests "$@" || status=$? ;;
-  files) run_suite files -only-testing:iRTChatDeviceTests/KnowledgeScenarioTests "$@" || status=$? ;;
-  web) run_suite web -only-testing:iRTChatDeviceTests/WebScenarioTests "$@" || status=$? ;;
+  unit) scopes="iRTChatTests" ;;
+  inference) scopes="iRTChatDeviceTests/InferenceScenarioTests" ;;
+  files) scopes="iRTChatDeviceTests/KnowledgeScenarioTests" ;;
+  web) scopes="iRTChatDeviceTests/WebScenarioTests" ;;
+  ui) scopes="iRTChatUITests" ;;
   thinking)
     export TEST_RUNNER_HARNESS_THINKING=1
-    run_suite thinking -only-testing:iRTChatDeviceTests/ThinkingScenarioTests "$@" || status=$?
+    scopes="iRTChatDeviceTests/ThinkingScenarioTests"
     ;;
   memory)
     export TEST_RUNNER_HARNESS_MEMORY=1
-    run_suite memory -only-testing:iRTChatDeviceTests/MemoryEnvelopeScenarioTests "$@" || status=$?
+    scopes="iRTChatDeviceTests/MemoryEnvelopeScenarioTests"
     ;;
   probes)
     export TEST_RUNNER_HARNESS_PROBES=1
-    run_suite probes -only-testing:iRTChatDeviceTests/ProbeScenarioTests "$@" || status=$?
+    scopes="iRTChatDeviceTests/ProbeScenarioTests"
     ;;
   calibrate)
     export TEST_RUNNER_HARNESS_CALIBRATE=1
-    run_suite calibrate -only-testing:iRTChatDeviceTests/CalibrationScenarioTests "$@" || status=$?
+    scopes="iRTChatDeviceTests/CalibrationScenarioTests"
     ;;
   all)
+    if [ -n "${ONLY:-}" ]; then
+      echo "ONLY needs a single suite (unit, inference, ui…), not all." >&2
+      exit 2
+    fi
     run_suite unit -only-testing:iRTChatTests "$@" || status=$?
     inference_status=0
     run_suite inference -only-testing:iRTChatDeviceTests/InferenceScenarioTests \
@@ -139,5 +158,11 @@ case "$SUITE" in
     ;;
   *) echo "Unknown suite: $SUITE" >&2; exit 2 ;;
 esac
+if [ -n "$scopes" ]; then
+  # shellcheck disable=SC2086 # scopes and filters are space-separated words
+  only="$(filters $scopes)" || exit 2
+  # shellcheck disable=SC2086
+  run_suite "$SUITE" $only "$@" || status=$?
+fi
 pull_report
 exit $status
