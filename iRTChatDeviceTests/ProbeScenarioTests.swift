@@ -482,6 +482,136 @@ final class ProbeScenarioTests: DeviceTestCase {
     return (reseeded, fresh)
   }
 
+  /// LiteRT-LM #3913. Are the GPU float16 copy errors tied to absolute
+  /// position 2048 (where float16 stops representing every integer; the model
+  /// computes rotary angles in the graph from a float position), or to how
+  /// much context is attended? A 48-digit reference sits near the start, at
+  /// exact positions; digit-free filler after it is sized so the reply's
+  /// digits are generated across position 2048. Controls: the reference at
+  /// the end (its own positions past 2048), and float32 activations.
+  func test10_PositionBoundary() async throws {
+    ExperimentalFlags.optIntoExperimentalAPIs()
+    ExperimentalFlags.enableBenchmark = true
+    ExperimentalFlags.enableSpeculativeDecoding = false
+    var results: [[String: Any]] = []
+    func run(_ engine: Engine, arm: String, seed: Int, sentences: Int, late: Bool = false) async throws -> CopyRun {
+      let result = try await Self.copyRun(
+        engine: engine, digits: Self.referenceDigits(seed: seed), sentences: sentences, late: late)
+      results.append(result.record(arm: arm, seed: seed, sentences: sentences, late: late))
+      harness.record("probe10_positionBoundary", ["results": results], in: self)
+      print("probe10 \(arm) late=\(late) seed=\(seed) prefill=\(result.prefill) \(result.summary)")
+      return result
+    }
+
+    // One engine at a time: each is released (deinit) before the next loads.
+    var perSentence = 0.0
+    var base = 0.0
+    func sentences(for prefill: Int) -> Int { Int(((Double(prefill) - base) / perSentence).rounded()) }
+    do {
+      let engine = try await gemmaEngine()
+      // Filler calibration: prompt tokens per sentence.
+      let small = try await run(engine, arm: "fp16-calibration", seed: 0, sentences: 40)
+      let large = try await run(engine, arm: "fp16-calibration", seed: 0, sentences: 140)
+      perSentence = Double(large.prefill - small.prefill) / 100
+      base = Double(small.prefill) - 40 * perSentence
+
+      let targets = [1_700, 1_900, 1_960, 1_990, 2_000, 2_010, 2_020, 2_030, 2_040, 2_060, 2_100, 2_300, 2_600]
+      for target in targets {
+        for seed in 1...3 { _ = try await run(engine, arm: "fp16", seed: seed, sentences: sentences(for: target)) }
+      }
+      for target in [1_900, 2_300] {
+        for seed in 1...3 {
+          _ = try await run(engine, arm: "fp16", seed: seed, sentences: sentences(for: target), late: true)
+        }
+      }
+    }
+    do {
+      let engine = try await gemmaEngine(activations: .float32)
+      for target in [2_010, 2_030, 2_300] {
+        for seed in 1...3 { _ = try await run(engine, arm: "fp32", seed: seed, sentences: sentences(for: target)) }
+      }
+    }
+  }
+
+  struct CopyRun: Sendable {
+    let expected: String
+    let output: String
+    let prefill: Int
+    let decode: Int
+    /// Index of the first wrong digit in the reply (nil when exact).
+    var firstMismatch: Int? {
+      let got = Array(output.filter(\.isNumber))
+      let want = Array(expected)
+      if got == want { return nil }
+      return zip(got, want).enumerated().first { $0.element.0 != $0.element.1 }?.offset
+        ?? min(got.count, want.count)
+    }
+    var summary: String {
+      firstMismatch.map { "WRONG at digit \($0) (position ~\(prefill + $0)): \(output)" } ?? "exact"
+    }
+    func record(arm: String, seed: Int, sentences: Int, late: Bool) -> [String: Any] {
+      var entry: [String: Any] = [
+        "arm": arm, "seed": seed, "sentences": sentences, "late": late, "prefill": prefill,
+        "decode": decode, "exact": firstMismatch == nil, "expected": expected, "output": output,
+      ]
+      if let index = firstMismatch {
+        entry["firstMismatch"] = index
+        // Token k is predicted at position prefill - 1 + k (one digit per token).
+        entry["firstMismatchPosition"] = prefill - 1 + index
+      }
+      return entry
+    }
+  }
+
+  nonisolated static func referenceDigits(seed: Int) -> String {
+    var state = UInt64(seed) &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+    return String((0..<48).map { _ -> Character in
+      state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+      return Character(String((state >> 33) % 10))
+    })
+  }
+
+  /// Digit-free prose, so the only digits in the prompt are the reference's.
+  nonisolated static func filler(sentences: Int) -> String {
+    let subjects = [
+      "The harbour master", "A visiting engineer", "The night ferry", "Every lighthouse keeper",
+      "The council archive", "A quiet fishing village", "The coastal railway", "Old stone breakwaters",
+      "The weather station", "A crew of volunteers", "The market square", "Seasonal tourists",
+    ]
+    let actions = [
+      "kept careful notes about the tides and the changing colour of the sea",
+      "described how fog rolled in from the bay long before sunrise",
+      "noticed that the gulls gathered near the pier whenever storms approached",
+      "repaired the wooden walkway after a winter of strong easterly winds",
+      "spoke about the slow work of rebuilding the eastern quay",
+      "watched cargo ships wait outside the channel for the evening tide",
+      "planted hardy grasses along the dunes to hold the sand in place",
+      "painted the signal tower white again before the summer festival",
+      "explained why the old canal locks were opened only at high water",
+    ]
+    return (0..<sentences).map { i in
+      "\(subjects[i % subjects.count]) \(actions[(i / subjects.count + i) % actions.count])."
+    }.joined(separator: " ")
+  }
+
+  nonisolated static func copyRun(engine: Engine, digits: String, sentences: Int, late: Bool)
+    async throws -> CopyRun
+  {
+    let reference = "REFERENCE: \(digits)"
+    let body = late
+      ? filler(sentences: sentences) + "\n\n" + reference
+      : reference + "\n\n" + filler(sentences: sentences)
+    let prompt = body
+      + "\n\nCopy the REFERENCE number exactly, digit for digit. Reply with only the digits."
+    let conversation = try await engine.createConversation(
+      with: ConversationConfig(samplerConfig: try SamplerConfig(topK: 1, topP: 1, temperature: 0)))
+    let reply = try await conversation.sendMessage(LiteRTLM.Message(prompt), maxOutputTokens: 80)
+    let info = try conversation.getBenchmarkInfo()
+    return CopyRun(
+      expected: digits, output: reply.toString, prefill: info.lastPrefillTokenCount,
+      decode: info.lastDecodeTokenCount)
+  }
+
   nonisolated static func greedyWhole(engine: Engine, prompt: String, maxOutputTokens: Int = 160)
     async throws -> String
   {
