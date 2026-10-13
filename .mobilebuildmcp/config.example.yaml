@@ -3,9 +3,11 @@
 # read by scripts/device-harness.sh to pick the default device.
 schemaVersion: 1
 
-# On-device inference can only be validated on a physical iPhone; the
-# simulator is kept for unit tests and the --mock-engine UI.
-enabledWorkflows: ["simulator", "device", "debugging"]
+# Physical iPhone only (see AGENTS.md): the simulator has no Metal path for
+# LiteRT-LM, so its workflows stay off. `device` includes project discovery,
+# schemes, build settings, clean, and coverage; session tools are always on.
+# (`debugging` is left out: it only attaches to simulators.)
+enabledWorkflows: ["device"]
 
 # Default profile: build/run on the iPhone in Release (real performance).
 sessionDefaults:
