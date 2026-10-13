@@ -36,9 +36,37 @@ scripts/device-harness.sh thinking | memory | calibrate | probes
 
 Pick the narrowest suite that covers the change: `unit` for pure logic
 (planner, budgets, schema, markdown, parsers), `inference` or `files` for
-engine and retrieval changes, `ui` for views and flows. Extra arguments are
-passed to `xcodebuild` (for example `-only-testing:...`), but they add to the
-suite's own `-only-testing`, so they can't narrow it.
+engine and retrieval changes, `ui` for views and flows.
+
+Run part of a suite with `ONLY` (comma- or space-separated test identifiers
+inside that suite; not with `all`). Use the suite the test belongs to, so
+opt-in suites get their environment:
+
+```sh
+ONLY=iRTChatTests/AppStateTests scripts/device-harness.sh unit
+ONLY=iRTChatDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-harness.sh inference
+```
+
+Other extra arguments go to `xcodebuild` as is.
+
+## Outside test runs
+
+`scripts/device-run.sh` looks at the installed app directly (results in
+`build/device-run/`):
+
+```sh
+scripts/device-run.sh logs 20                 # relaunch, save its logs for 20 s
+scripts/device-run.sh logs 20 --mock-engine   # with launch arguments
+scripts/device-run.sh screenshot settings     # the iPhone's screen as a PNG
+scripts/device-run.sh crashes                 # iRTChat crash/resource reports
+scripts/device-run.sh crashes pull            # copy them, then symbolicate
+                                              # with Axiom's xcsym tools
+```
+
+`logs` relaunches the app, which brings it to the front on the phone.
+Screenshots show whatever is on screen, so only take them when the user expects
+it. `log collect` and Axiom's `xclog_show` need root for a physical device;
+use `logs` instead.
 
 ## Reading results
 

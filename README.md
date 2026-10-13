@@ -291,7 +291,10 @@ scripts/device-harness.sh calibrate   # speed and memory at 4K–32K context
 scripts/device-harness.sh probes      # LiteRT-LM feature probes
 
 DEVICE_ID=<udid> scripts/device-harness.sh all   # a specific iPhone
+ONLY=iRTChatTests/AppStateTests scripts/device-harness.sh unit   # part of a suite
 ```
+
+Outside test runs, `scripts/device-run.sh` relaunches the installed app and saves its logs (`logs [seconds]`), captures the iPhone's screen (`screenshot`), and lists or copies iRTChat's crash reports (`crashes [pull]`), all into `build/device-run/`.
 
 Results are written to `build/device-harness/`: result bundles, the raw `xcodebuild` log of each suite (`<suite>.log`), per-scenario JSON metrics and screenshots, and `harness-report.json` pulled from the device. Console output goes through Homebrew's [xcbeautify](https://github.com/cpisciotta/xcbeautify) when it's installed (`brew install xcbeautify`); set `XCBEAUTIFY=off` for raw output, or `XCBEAUTIFY=<path>` to use another copy. The app logs under the subsystem `com.patricedery.irtchat` with the categories `engine`, `generation`, and `lifecycle`.
 
