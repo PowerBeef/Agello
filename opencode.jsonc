@@ -1,0 +1,36 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Project-scoped OpenCode config. These entries replace the global ones with
+  // the same name. General-purpose servers (github, context7, sosumi,
+  // huggingface) stay in the global config; github holds a token and must
+  // never be added here.
+  "mcp": {
+    "servers": {
+      // Pinned: .mobilebuildmcp/config.yaml relies on its workflow names
+      // (device only; see AGENTS.md).
+      "mobilebuildmcp": {
+        "type": "local",
+        "command": ["npx", "-y", "mobilebuildmcp@2.7.1", "mcp"],
+        "environment": { "MOBILEBUILDMCP_SENTRY_DISABLED": "true" }
+      },
+      // Snapshots and console logs go to the git-ignored build/ folder.
+      "playwright": {
+        "type": "local",
+        "command": ["npx", "-y", "@playwright/mcp@latest", "--output-dir", "build/playwright-mcp"]
+      },
+      // Apple-platform skills, crash symbolication, and Instruments traces.
+      "axiom": {
+        "type": "local",
+        "command": ["npx", "-y", "axiom-mcp"]
+      }
+    }
+  },
+  "permissions": [
+    // The app runs LiteRT-LM and Gemma only (no MLX).
+    { "action": "skill", "resource": "swift-mlx*", "effect": "deny" },
+    // Screenshots come from the device harness, never the simulator.
+    { "action": "skill", "resource": "asc-shots-pipeline", "effect": "deny" },
+    // macOS only.
+    { "action": "skill", "resource": "asc-notarization", "effect": "deny" }
+  ]
+}
