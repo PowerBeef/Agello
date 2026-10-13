@@ -34,7 +34,7 @@ git lfs install --local --skip-smudge
 git remote add upstream https://github.com/google-ai-edge/LiteRT-LM.git
 git remote set-url --push upstream DISABLED
 git fetch upstream --tags
-git switch -c irtchat v0.18.0   # or: git switch irtchat, once pushed to the fork
+git switch irtchat   # tracks origin/irtchat
 ```
 
 Sync the fork's `main`: `git fetch upstream && git push origin upstream/main:main`.
