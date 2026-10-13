@@ -31,3 +31,6 @@ fastlane/test_output
 
 # Local MobileBuildMCP config (contains device UDIDs); see config.example.yaml
 .mobilebuildmcp/config.yaml
+
+# Playwright MCP page snapshots and console logs
+.playwright-mcp/
