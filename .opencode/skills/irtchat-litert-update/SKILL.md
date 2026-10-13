@@ -55,6 +55,19 @@ pull requests have been closed, not merged. So:
 
 Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
 
+### Issue #3913 (float16 rotary positions)
+
+- Analysis posted on 2026-10-13:
+  https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598
+  (pointer on #2814).
+- Reproduction: the fork's `research/3913` branch, `research/issue-3913/`
+  (graph-patch script, macOS runner, raw results, `summarize.py`).
+- Re-test every new release or re-exported model on the iPhone:
+  `ONLY=iRTChatDeviceTests/ProbeScenarioTests/test10_PositionBoundary scripts/device-harness.sh probes`.
+  Once FP16 copies exactly past position 2,048, the app's FP32 switch can go.
+  `test11_ShiftedRotaryPositions` needs a patched model copied to the app's
+  `Documents/lab/ishift-2048.litertlm` (`patch_rope.py … -2048 … --int`).
+
 ### Using patches in iRTChat
 
 - **Swift wrapper patches** (`swift/`): the refresh script below always

@@ -63,9 +63,14 @@ and the simulator can't catch any of them.
 ## Precision and decoding
 
 - With 16-bit GPU activations, digits duplicate in long contexts ("2026"
-  becomes "202026"; LiteRT-LM #3913). `AppState` switches to FP32 activations
-  at 2,500 context tokens and back below 1,500 (hysteresis); the footer shows
-  `GPU·FP32`. FP32 is an engine reload.
+  becomes "202026"; LiteRT-LM #3913). Root cause, proven by probes 10–11: the
+  model computes rotary angles from a float copy of the position, and in FP16
+  positions above **2,048** collide. What matters is the highest position a
+  call reaches (system prompt + history + input + reply, thinking included),
+  not the prompt size. `AppState` switches to FP32 activations at an
+  estimated 2,500 context tokens (back below 1,500); the footer shows
+  `GPU·FP32`; FP32 is an engine reload. Known gaps: that trigger can fire
+  after position 2,048, and file summaries run before it.
 - Speculative decoding (MTP) breaks JSON-schema constrained decoding on
   device. `helperJSON` turns MTP off; plain-text helpers keep it.
 - Don't trust the model file's `thinking` or `functionCalling` flags: Gemma 4
