@@ -293,7 +293,7 @@ scripts/device-harness.sh probes      # LiteRT-LM feature probes
 DEVICE_ID=<udid> scripts/device-harness.sh all   # a specific iPhone
 ```
 
-Results are written to `build/device-harness/`: result bundles, per-scenario JSON metrics and screenshots, and `harness-report.json` pulled from the device. The app logs under the subsystem `com.patricedery.irtchat` with the categories `engine`, `generation`, and `lifecycle`.
+Results are written to `build/device-harness/`: result bundles, the raw `xcodebuild` log of each suite (`<suite>.log`), per-scenario JSON metrics and screenshots, and `harness-report.json` pulled from the device. Console output goes through Homebrew's [xcbeautify](https://github.com/cpisciotta/xcbeautify) when it's installed (`brew install xcbeautify`); set `XCBEAUTIFY=off` for raw output, or `XCBEAUTIFY=<path>` to use another copy. The app logs under the subsystem `com.patricedery.irtchat` with the categories `engine`, `generation`, and `lifecycle`.
 
 [MobileBuildMCP](https://github.com/getsentry/xcodebuildmcp.com) reads the same `.mobilebuildmcp/config.yaml` for project defaults, including a `device-tests` profile.
 

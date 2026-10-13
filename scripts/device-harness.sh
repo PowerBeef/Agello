@@ -23,8 +23,11 @@
 #   all        unit, inference + files, then ui.
 #
 # Env: DEVICE_ID (default: deviceId from the git-ignored .mobilebuildmcp/config.yaml),
-#      OUT (default: build/device-harness).
-# Outputs: $OUT/<suite>.xcresult, $OUT/attachments/, $OUT/harness-report.json
+#      OUT (default: build/device-harness),
+#      XCBEAUTIFY (path to xcbeautify, or "off" for raw output; default:
+#      Homebrew's, looked up directly so other xcbeautify copies in PATH are ignored).
+# Outputs: $OUT/<suite>.xcresult, $OUT/<suite>.log (raw xcodebuild output),
+#          $OUT/attachments/, $OUT/harness-report.json
 set -eu
 
 SUITE="${1:-all}"
@@ -48,23 +51,49 @@ mkdir -p "$OUT"
 # Lets the in-app report survive crash relaunches within this run only.
 export TEST_RUNNER_HARNESS_RUN_ID="run-$(date +%s)"
 
+# Homebrew's xcbeautify, by absolute path: PATH may list another copy first.
+if [ "${XCBEAUTIFY:-}" = off ]; then
+  XCBEAUTIFY=""
+elif [ -z "${XCBEAUTIFY:-}" ]; then
+  XCBEAUTIFY="$(brew --prefix 2>/dev/null || echo /opt/homebrew)/bin/xcbeautify"
+fi
+[ -n "$XCBEAUTIFY" ] && [ ! -x "$XCBEAUTIFY" ] && XCBEAUTIFY=""
+
+format_output() {
+  if [ -z "$XCBEAUTIFY" ]; then
+    cat
+  elif [ -t 1 ]; then
+    "$XCBEAUTIFY"
+  else
+    "$XCBEAUTIFY" --disable-colored-output
+  fi
+}
+
+xcodebuild_test() {
+  xcodebuild test \
+    -project "$ROOT/iRTChat.xcodeproj" -scheme iRTChat -configuration Debug \
+    -destination "id=$DEVICE_ID" -allowProvisioningUpdates \
+    -resultBundlePath "$result" "$@"
+}
+
 run_suite() {
   name="$1"
   shift
   result="$OUT/$name.xcresult"
   rm -rf "$result"
   echo "==> $name"
+  # sh has no pipefail: keep xcodebuild's exit status in a file.
+  status_file="$OUT/.$name.status"
   set +e
-  xcodebuild test \
-    -project "$ROOT/iRTChat.xcodeproj" -scheme iRTChat -configuration Debug \
-    -destination "id=$DEVICE_ID" -allowProvisioningUpdates \
-    -resultBundlePath "$result" "$@"
-  suite_status=$?
+  { xcodebuild_test "$@" 2>&1; echo $? >"$status_file"; } \
+    | tee "$OUT/$name.log" | format_output
+  suite_status="$(cat "$status_file")"
+  rm -f "$status_file"
   set -e
   mkdir -p "$OUT/attachments/$name"
   xcrun xcresulttool export attachments --path "$result" \
     --output-path "$OUT/attachments/$name" >/dev/null 2>&1 || true
-  return $suite_status
+  return "$suite_status"
 }
 
 pull_report() {
