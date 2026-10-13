@@ -16,11 +16,11 @@ final class ProbeScenarioTests: DeviceTestCase {
 
   private func gemmaEngine(
     maxNumTokens: Int = 8_192, gpu: Bool = true, activations: ActivationDataType? = nil,
-    audio: Bool = false
+    audio: Bool = false, modelURL: URL? = nil
   ) async throws -> Engine {
     _ = try await harness.ensureDownloaded(ModelCatalog.e4b)
     await appState.engine.unload()
-    let url = try XCTUnwrap(appState.store.localURL(for: ModelCatalog.e4b))
+    let url = try modelURL ?? XCTUnwrap(appState.store.localURL(for: ModelCatalog.e4b))
     let engine = Engine(
       engineConfig: try EngineConfig(
         modelPath: url.path, backend: gpu ? .gpu : .cpu(), audioBackend: audio ? .cpu() : nil,
@@ -529,6 +529,38 @@ final class ProbeScenarioTests: DeviceTestCase {
       let engine = try await gemmaEngine(activations: .float32)
       for target in [2_010, 2_030, 2_300] {
         for seed in 1...3 { _ = try await run(engine, arm: "fp32", seed: seed, sentences: sentences(for: target)) }
+      }
+    }
+  }
+
+  /// LiteRT-LM #3913, intervention. A copy of E4B whose rotary positions are
+  /// shifted by -2048 in INT32, before the float cast, keeps every float
+  /// position inside float16's exact range for contexts up to 4,096 tokens;
+  /// in exact arithmetic it is the same model. Copy it by hand to
+  /// Documents/lab/ishift-2048.litertlm (devicectl). If float16 position
+  /// precision is the cause, it copies exactly where the original fails.
+  func test11_ShiftedRotaryPositions() async throws {
+    let documents = try FileManager.default.url(
+      for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+    let patched = documents.appendingPathComponent("lab/ishift-2048.litertlm")
+    guard FileManager.default.fileExists(atPath: patched.path) else {
+      throw XCTSkip("Copy the patched model to Documents/lab/ishift-2048.litertlm")
+    }
+    ExperimentalFlags.optIntoExperimentalAPIs()
+    ExperimentalFlags.enableBenchmark = true
+    ExperimentalFlags.enableSpeculativeDecoding = false
+    var results: [[String: Any]] = []
+    for (arm, url) in [("original", nil as URL?), ("ishift-2048", patched)] {
+      // One engine at a time: released at the end of each iteration.
+      let engine = try await gemmaEngine(modelURL: url)
+      for sentences in [129, 142, 161, 190, 250] {
+        for seed in 1...5 {
+          let run = try await Self.copyRun(
+            engine: engine, digits: Self.referenceDigits(seed: seed), sentences: sentences, late: false)
+          results.append(run.record(arm: arm, seed: seed, sentences: sentences, late: false))
+          harness.record("probe11_shiftedRotary", ["results": results], in: self)
+          print("probe11 \(arm) seed=\(seed) prefill=\(run.prefill) \(run.summary)")
+        }
       }
     }
   }
