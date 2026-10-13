@@ -25,7 +25,16 @@
       }
     }
   },
+  // The full LiteRT-LM source: a clone of the PowerBeef/LiteRT-LM fork beside
+  // this repo (see the irtchat-litert-update skill to set it up).
+  "references": {
+    "litert-lm": {
+      "path": "../LiteRT-LM",
+      "description": "LiteRT-LM source (C++ runtime and Swift API), branch irtchat = the vendored v0.18.0. Use to understand engine behavior and to prepare fixes for upstream."
+    }
+  },
   "permissions": [
+    { "action": "external_directory", "resource": "~/Coding projects/LiteRT-LM/*", "effect": "allow" },
     // The app runs LiteRT-LM and Gemma only (no MLX).
     { "action": "skill", "resource": "swift-mlx*", "effect": "deny" },
     // Screenshots come from the device harness, never the simulator.

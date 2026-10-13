@@ -13,5 +13,5 @@ Read the matching skill in `.opencode/skills/` before the work it covers:
 
 - `irtchat-device-testing`: running and reading the harness, known failures.
 - `irtchat-inference-rules`: before changing the engine, `AppState` generation, budgets, or helpers.
-- `irtchat-litert-update`: updating the vendored LiteRT-LM.
+- `irtchat-litert-update`: updating the vendored LiteRT-LM, and the `PowerBeef/LiteRT-LM` fork in `../LiteRT-LM`.
 - `irtchat-release`: TestFlight and App Store preparation.

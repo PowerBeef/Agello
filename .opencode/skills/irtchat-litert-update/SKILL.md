@@ -1,6 +1,6 @@
 ---
 name: iRTChat LiteRT-LM update
-description: Update the vendored LiteRT-LM package (Vendor/LiteRT-LM) to a new upstream release, or check whether one is available. Use when asked about LiteRT-LM versions, upgrades, or upstream fixes.
+description: Update the vendored LiteRT-LM package (Vendor/LiteRT-LM), work in the PowerBeef/LiteRT-LM fork (../LiteRT-LM), or report and prepare fixes for upstream. Use when asked about LiteRT-LM versions, upgrades, patches, the fork, or upstream issues.
 ---
 
 # Updating LiteRT-LM
@@ -10,6 +10,63 @@ description: Update the vendored LiteRT-LM package (Vendor/LiteRT-LM) to a new u
 `CLiteRTLM.xcframework` release download), `swift/`, and `LICENSE`. It's
 vendored because upstream Git LFS breaks Swift Package Manager resolution.
 
+## The fork
+
+`PowerBeef/LiteRT-LM` is a fork of `google-ai-edge/LiteRT-LM`, cloned beside
+this repo at `../LiteRT-LM` (the OpenCode reference `litert-lm`):
+
+| Item | Value |
+| --- | --- |
+| `origin` | `PowerBeef/LiteRT-LM` (push here) |
+| `upstream` | `google-ai-edge/LiteRT-LM` (fetch only; push is disabled) |
+| `irtchat` branch | Starts at tag `v0.18.0`, the version vendored here. Patches iRTChat needs go on it. |
+| Release tags | Live on `release/vX.Y.Z` branches, not on `main` |
+
+Set it up on a new machine. The partial clone keeps full history but fetches
+file contents on demand, and LFS stays skipped: upstream's LFS holds GBs of
+prebuilt binaries that nothing here needs.
+
+```sh
+cd ..   # beside the iRT repo
+GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/PowerBeef/LiteRT-LM.git
+cd LiteRT-LM
+git lfs install --local --skip-smudge
+git remote add upstream https://github.com/google-ai-edge/LiteRT-LM.git
+git remote set-url --push upstream DISABLED
+git fetch upstream --tags
+git switch -c irtchat v0.18.0   # or: git switch irtchat, once pushed to the fork
+```
+
+Sync the fork's `main`: `git fetch upstream && git push origin upstream/main:main`.
+
+### Contributing upstream
+
+As of 2026-10-13, upstream's CONTRIBUTING.md says the repository is **not
+accepting code contributions**: it asks for GitHub issues instead. All merged
+pull requests come from Google's internal mirror (`copybara-service`); outside
+pull requests have been closed, not merged. So:
+
+1. Reproduce the bug on the iPhone (harness probes) and fix it on a branch
+   off `upstream/main` (or off `irtchat` when it only matters here).
+2. Push the branch to the fork and open an **issue** upstream with the
+   reproduction, measurements, and a link to the branch or commit.
+3. Open a pull request only after re-reading CONTRIBUTING.md on
+   `upstream/main`, in case the policy has changed.
+
+Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
+
+### Using patches in iRTChat
+
+- **Swift wrapper patches** (`swift/`): the refresh script below always
+  downloads Google's tag, which would drop them. Vendor from the fork's
+  `irtchat` branch instead; the script will need a repository and branch
+  option for that.
+- **C++ runtime patches** reach the app only through a rebuilt
+  `CLiteRTLM.xcframework` (upstream builds it with Bazel). `Package.swift`
+  points at Google's checksummed release binary, so using a patched runtime
+  means building and hosting our own. That's a bigger commitment: decide with
+  the user first.
+
 ## 1. Check upstream
 
 - Latest release: GitHub MCP `get_latest_release` for
@@ -17,7 +74,10 @@ vendored because upstream Git LFS breaks Swift Package Manager resolution.
 - Read the release notes, and check issues the app works around, especially
   #3913 (GPU float16 digit duplication).
 - Note any Swift API changes in `swift/` (Engine, Conversation, Config,
-  ResponseFormat, Tool, EmbeddingEngine, ExperimentalFlags).
+  ResponseFormat, Tool, EmbeddingEngine, ExperimentalFlags). In the fork:
+  `git fetch upstream --tags && git diff v0.18.0 vX.Y.Z -- swift/`.
+- After updating, move the fork's `irtchat` branch to the new tag, re-applying
+  any patches on it.
 
 ## 2. Refresh
 
