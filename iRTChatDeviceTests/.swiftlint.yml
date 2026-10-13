@@ -1,0 +1,14 @@
+# Tests: force casts/tries fail the test loudly, which is what we want, and
+# scenario suites are naturally long. Merged into the root .swiftlint.yml.
+disabled_rules:
+  - force_cast
+  - force_try
+file_length:
+  warning: 800
+  error: 1500
+type_body_length:
+  warning: 700
+  error: 1200
+function_body_length:
+  warning: 100
+  error: 200

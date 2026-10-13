@@ -31,6 +31,7 @@ enum ChatStoreLoader {
         // Last resort: keep the app usable for this session.
         let memory = ModelConfiguration(schema: ChatStore.schema, isStoredInMemoryOnly: true)
         return Opened(
+          // swiftlint:disable:next force_try - an in-memory store has no file to fail on
           container: try! makeContainer(memory),
           recoveryNotice: "Chat history is unavailable right now; chats won't be saved this session.")
       }

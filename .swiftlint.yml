@@ -1,0 +1,69 @@
+# SwiftLint for iRTChat. Run from the repo root: `swiftlint` (or `swiftlint --fix`).
+# The code follows swift-format conventions (2-space indent, trailing commas,
+# `{` on its own line after a wrapped condition); the rules below match that.
+# Test folders relax a few rules in their own .swiftlint.yml.
+
+included:
+  - iRTChat
+  - iRTChatWidgets
+  - iRTChatShare
+  - iRTChatTests
+  - iRTChatDeviceTests
+  - iRTChatUITests
+excluded:
+  - Vendor
+  - build
+
+disabled_rules:
+  - trailing_comma # swift-format keeps trailing commas in multi-line lists
+  - opening_brace # wrapped conditions put `{` on its own line
+  - multiple_closures_with_trailing_closure # SwiftUI `Button { } label: { }`
+  - closure_parameter_position # long calls wrap `[weak self] task in` to the next line
+  - implicit_optional_initialization # `= nil` documents Codable defaults
+  - optional_data_string_conversion # lossy UTF-8 decoding is intended for web pages
+
+opt_in_rules:
+  - contains_over_first_not_nil
+  - empty_count
+  - first_where
+  - last_where
+  - sorted_first_last
+  - toggle_bool
+
+identifier_name:
+  min_length: 1 # math and closure-local names like `c`, `p`, `a`, `b`
+  max_length: 50
+  allowed_symbols: ["_"] # keyword-like names such as `where_`
+type_name:
+  excluded:
+    - iRTChatApp
+    - DS # design tokens namespace
+large_tuple:
+  warning: 4
+  error: 6
+
+# Long strings (prompts, help text, JSON schemas, log lines) are kept on one line.
+line_length:
+  warning: 160
+  error: 300
+  ignores_urls: true
+  ignores_comments: true
+  ignores_interpolated_strings: true
+
+# Sizes: warnings flag the known large types (AppState, ChatView, the engine)
+# without failing the lint; errors catch new outliers.
+file_length:
+  warning: 500
+  error: 1500
+type_body_length:
+  warning: 400
+  error: 1200
+function_body_length:
+  warning: 80
+  error: 200
+cyclomatic_complexity:
+  warning: 15
+  error: 30
+  ignores_case_statements: true
+
+reporter: xcode

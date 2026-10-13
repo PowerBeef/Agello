@@ -124,6 +124,27 @@
 			);
 			target = 700000000000000000000002 /* iRTChatShare */;
 		};
+		400000000000000000000044 /* Exceptions for "iRTChatTests" folder in "iRTChatTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				.swiftlint.yml,
+			);
+			target = 100000000000000000000003 /* iRTChatTests */;
+		};
+		400000000000000000000045 /* Exceptions for "iRTChatDeviceTests" folder in "iRTChatDeviceTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				.swiftlint.yml,
+			);
+			target = 400000000000000000000003 /* iRTChatDeviceTests */;
+		};
+		400000000000000000000046 /* Exceptions for "iRTChatUITests" folder in "iRTChatUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				.swiftlint.yml,
+			);
+			target = 400000000000000000000013 /* iRTChatUITests */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -139,16 +160,25 @@
 		};
 		400000000000000000000042 /* iRTChatTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				400000000000000000000044 /* Exceptions for "iRTChatTests" folder in "iRTChatTests" target */,
+			);
 			path = iRTChatTests;
 			sourceTree = "<group>";
 		};
 		400000000000000000000002 /* iRTChatDeviceTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				400000000000000000000045 /* Exceptions for "iRTChatDeviceTests" folder in "iRTChatDeviceTests" target */,
+			);
 			path = iRTChatDeviceTests;
 			sourceTree = "<group>";
 		};
 		400000000000000000000012 /* iRTChatUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				400000000000000000000046 /* Exceptions for "iRTChatUITests" folder in "iRTChatUITests" target */,
+			);
 			path = iRTChatUITests;
 			sourceTree = "<group>";
 		};
