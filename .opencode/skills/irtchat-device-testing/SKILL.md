@@ -60,9 +60,9 @@ App logs use subsystem `com.patricedery.irtchat`, categories `engine`,
 
 ## Known issues
 
-- `AppStateTests/testThinkToggleAppliesToTheVeryNextMessage` fails when the
-  app's saved settings on the phone have Think on: the test doesn't clear
-  `inferenceOptions` in `setUp`. It doesn't indicate a regression.
+- Unit tests share the app's settings (UserDefaults) on the phone. A test that
+  depends on default settings must clear the keys it reads in `setUp` and
+  restore them in `tearDown`, as `AppStateTests` does.
 - "Failed to create a bundle instance … iRTChatDeviceTests.xctest": run
   `xcrun devicectl device uninstall app --device <udid> com.patricedery.irtchat`
   and retry. This also deletes the downloaded models (about 3.8 GB to

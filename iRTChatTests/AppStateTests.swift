@@ -10,6 +10,7 @@ import XCTest
 final class AppStateTests: XCTestCase {
   private static let defaultsKeys = [
     "selectedThreadID", "inferenceOptions", "personalization", "memoryEnabled",
+    "enableTools", "webSearch",
   ]
   private var savedDefaults: [String: Any] = [:]
   private var container: ModelContainer!
@@ -18,8 +19,11 @@ final class AppStateTests: XCTestCase {
   private var context: ModelContext { container.mainContext }
 
   override func setUp() async throws {
+    // Start from default settings, whatever the app saved on the device
+    // (restored in tearDown).
     for key in Self.defaultsKeys {
       savedDefaults[key] = UserDefaults.standard.object(forKey: key)
+      UserDefaults.standard.removeObject(forKey: key)
     }
     container = try ModelContainer(
       for: ChatStore.schema,
