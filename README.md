@@ -220,7 +220,7 @@ Phases 0–5 have shipped: foundations, the core chat experience, files, project
 
 ## Vendored LiteRT-LM
 
-`Vendor/LiteRT-LM` holds the Swift package surface of [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) v0.18.0, from our fork's [`agello` branch](https://github.com/PowerBeef/LiteRT-LM/tree/agello) with one patch to the Swift wrapper: a tool call that fails is answered with an error the model can read, instead of ending the reply. Upstream stores prebuilt binaries in Git LFS, which intermittently breaks Swift Package Manager resolution; the iOS build uses only Google's checksummed release XCFramework. To update, move the fork's branch, run `REF=<commit> ./Vendor/refresh-litert-lm.sh`, then update `Vendor/README.md` and run the test suites.
+`Vendor/LiteRT-LM` holds the Swift package surface of [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) v0.18.0, from our fork's [`agello` branch](https://github.com/PowerBeef/agello-litert-lm/tree/agello) with one patch to the Swift wrapper: a tool call that fails is answered with an error the model can read, instead of ending the reply. Upstream stores prebuilt binaries in Git LFS, which intermittently breaks Swift Package Manager resolution; the iOS build uses only Google's checksummed release XCFramework. To update, move the fork's branch, run `REF=<commit> ./Vendor/refresh-litert-lm.sh`, then update `Vendor/README.md` and run the test suites.
 
 ## Contributing
 

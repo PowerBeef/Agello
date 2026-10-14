@@ -2,15 +2,15 @@
 # Refresh the vendored LiteRT-LM Swift package surface (Package.swift, swift/,
 # LICENSE) from a GitHub ref.
 # Usage:
-#   REF=a3c0d0ef ./Vendor/refresh-litert-lm.sh      # the fork's agello branch, pinned (default repo)
+#   REF=7c4ee32d ./Vendor/refresh-litert-lm.sh      # the fork's agello branch, pinned (default repo)
 #   REPO=google-ai-edge/LiteRT-LM REF=v0.19.0 ./Vendor/refresh-litert-lm.sh   # an upstream tag
 # REF can be a branch, a tag or a commit; pin a commit for reproducible builds.
 # TAG=... still works as an alias for REF.
 set -eu
-REPO="${REPO:-PowerBeef/LiteRT-LM}"
+REPO="${REPO:-PowerBeef/agello-litert-lm}"
 REF="${REF:-${TAG:-}}"
 if [ -z "$REF" ]; then
-  echo "Set REF to a branch, tag or commit, e.g. REF=a3c0d0ef $0" >&2
+  echo "Set REF to a branch, tag or commit, e.g. REF=7c4ee32d $0" >&2
   exit 2
 fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

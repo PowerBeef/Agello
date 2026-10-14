@@ -26,7 +26,7 @@ struct FailingLookupTool: Tool {
 
 extension ProbeScenarioTests {
   /// Probe 15: a failing tool call doesn't end the reply. The wrapper
-  /// vendored from PowerBeef/LiteRT-LM (agello) answers it with an error the
+  /// vendored from PowerBeef/agello-litert-lm (agello) answers it with an error the
   /// model reads; LiteRT-LM v0.18.0 threw toolExecutionError and the reply
   /// ended there.
   func test15_FailingToolCallKeepsTheReply() async throws {

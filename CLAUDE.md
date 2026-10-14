@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Use the project skills in `.claude/skills/` before the work they cover:
   - `agello-device-testing`: running and reading the harness, writing scenarios, known failures.
   - `agello-inference-rules`: before changing the engine, `AppState` generation, budgets, or helpers.
-  - `agello-litert-update`: the vendored LiteRT-LM, and the `PowerBeef/LiteRT-LM` fork in `../LiteRT-LM`.
+  - `agello-litert-update`: the vendored LiteRT-LM, and the `PowerBeef/agello-litert-lm` fork of LiteRT-LM, cloned at `../LiteRT-LM`.
   - `agello-release`: TestFlight and App Store preparation.
 
 ## Project

@@ -1,8 +1,8 @@
 # Vendored LiteRT-LM (Swift package surface only)
 
 `Vendor/LiteRT-LM` is a pruned copy of LiteRT-LM **v0.18.0** from our fork,
-https://github.com/PowerBeef/LiteRT-LM, branch `agello`, at commit
-**a3c0d0ef** (v0.18.0 plus the patches below). It contains only what the Xcode
+https://github.com/PowerBeef/agello-litert-lm, branch `agello`, at commit
+**7c4ee32d** (v0.18.0 plus the patches below). It contains only what the Xcode
 build needs:
 
 - `Package.swift` (pins Google's `CLiteRTLM.xcframework.zip` release binary, checksummed)

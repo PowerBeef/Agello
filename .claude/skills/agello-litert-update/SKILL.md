@@ -1,6 +1,6 @@
 ---
 name: agello-litert-update
-description: Update the vendored LiteRT-LM package (Vendor/LiteRT-LM), work in the PowerBeef/LiteRT-LM fork (../LiteRT-LM), or report and prepare fixes for upstream. Use when asked about LiteRT-LM versions, upgrades, patches, the fork, or upstream issues.
+description: Update the vendored LiteRT-LM package (Vendor/LiteRT-LM), work in the PowerBeef/agello-litert-lm fork (../LiteRT-LM), or report and prepare fixes for upstream. Use when asked about LiteRT-LM versions, upgrades, patches, the fork, or upstream issues.
 ---
 
 # Updating LiteRT-LM
@@ -12,14 +12,15 @@ vendored because upstream Git LFS breaks Swift Package Manager resolution.
 
 ## The fork
 
-`PowerBeef/LiteRT-LM` is a fork of `google-ai-edge/LiteRT-LM`, cloned beside
+`PowerBeef/agello-litert-lm` (renamed from `PowerBeef/LiteRT-LM` on 2026-10-14; old
+URLs redirect) is a fork of `google-ai-edge/LiteRT-LM`, cloned beside
 this repo at `../LiteRT-LM`. `.claude/settings.json` lists it in
 `additionalDirectories`, so its C++ and Swift sources are readable from this
 project (its own CLAUDE.md and skills don't load):
 
 | Item | Value |
 | --- | --- |
-| `origin` | `PowerBeef/LiteRT-LM` (push here) |
+| `origin` | `PowerBeef/agello-litert-lm` (push here) |
 | `upstream` | `google-ai-edge/LiteRT-LM` (fetch only; push is disabled) |
 | `agello` branch | Tag `v0.18.0` plus Agello's Swift patches (see below); `Vendor/LiteRT-LM` is vendored from it. |
 | Release tags | Live on `release/vX.Y.Z` branches, not on `main` |
@@ -30,7 +31,7 @@ prebuilt binaries that nothing here needs.
 
 ```sh
 cd ..   # beside this repo
-GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/PowerBeef/LiteRT-LM.git
+GIT_LFS_SKIP_SMUDGE=1 git clone --filter=blob:none https://github.com/PowerBeef/agello-litert-lm.git LiteRT-LM
 cd LiteRT-LM
 git lfs install --local --skip-smudge
 git remote add upstream https://github.com/google-ai-edge/LiteRT-LM.git
@@ -105,8 +106,8 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
 
 - **Swift wrapper patches** (`swift/`) are commits on the fork's `agello`
   branch; the app vendors that branch pinned to a commit
-  (`REF=<commit> ./Vendor/refresh-litert-lm.sh`, `PowerBeef/LiteRT-LM` by
-  default). Current patches (as of 2026-10-14, commit `a3c0d0ef`):
+  (`REF=<commit> ./Vendor/refresh-litert-lm.sh`, `PowerBeef/agello-litert-lm` by
+  default). Current patches (as of 2026-10-14, commit `7c4ee32d`):
   1. `Conversation.handleToolCalls`: a failed tool call (an invented tool
      name, arguments that don't decode, a tool that throws) is answered with
      an `error` tool response instead of throwing `toolExecutionError`, which
