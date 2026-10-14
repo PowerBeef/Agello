@@ -28,9 +28,10 @@ uploading, submitting) needs the user's go-ahead first.
 
 1. **Bundle IDs and capabilities** (`asc:asc-signing-setup`). The app was
    renamed from iRTChat on 2026-10-14; its old `com.patricedery.irtchat` IDs
-   are unused and can be removed from the portal. Confirm the IDs above and
-   the app ID's capabilities (Xcode's automatic signing registers
-   development IDs on the first device build).
+   are unused and can be removed from the portal. The first device build on
+   2026-10-14 registered the app, share and widgets IDs, the App Group and
+   the app's capabilities through automatic signing (development only);
+   confirm them in the portal before the first distribution build.
 2. **App record** (`asc:asc-app-create-ui`, driven through Claude in Chrome in
    the user's own visible Chrome; the user signs in to Apple themselves).
    There was no record for the app (under either name) as of 2026-10-14.
