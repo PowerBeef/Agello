@@ -40,3 +40,6 @@ fastlane/test_output
 
 # SourceKit-LSP build server config (machine-local; xcode-build-server config)
 buildServer.json
+
+# A local LiteRT-LM build (Vendor/use-local-litert.sh)
+Vendor/LiteRT-LM/dist/
