@@ -1,5 +1,5 @@
 #!/bin/sh
-# Look at iRTChat on the physical iPhone outside of test runs.
+# Look at Agello on the physical iPhone outside of test runs.
 #
 # Usage:
 #   scripts/device-run.sh logs [seconds] [app arguments...]
@@ -10,7 +10,7 @@
 #   scripts/device-run.sh screenshot [name]
 #       Save the iPhone's screen as a PNG.
 #   scripts/device-run.sh crashes [pull]
-#       List iRTChat's crash and resource reports on the iPhone; `pull` copies
+#       List Agello's crash and resource reports on the iPhone; `pull` copies
 #       them. Symbolicate with Axiom's xcsym tools.
 #
 # The app must already be installed (a harness run or an Xcode build installs it).
@@ -38,7 +38,7 @@ case "$COMMAND" in
       *) seconds="$1"; shift ;;
     esac
     log="$OUT/logs-$STAMP.log"
-    echo "Logging iRTChat for ${seconds}s (keep the iPhone unlocked)..."
+    echo "Logging Agello for ${seconds}s (keep the iPhone unlocked)..."
     # OS_ACTIVITY_DT_MODE mirrors os_log to the console, as when Xcode runs the app.
     DEVICECTL_CHILD_OS_ACTIVITY_DT_MODE=1 xcrun devicectl device process launch \
       --device "$DEVICE_ID" --console --terminate-existing "$BUNDLE_ID" "$@" \
@@ -66,11 +66,11 @@ case "$COMMAND" in
     xcrun devicectl device info files --device "$DEVICE_ID" \
       --domain-type systemCrashLogs --quiet --json-output "$listing" >/dev/null
     reports="$(jq -r '.result.files[]
-      | select((.resources.isDirectory | not) and (.name | startswith("iRTChat")))
+      | select((.resources.isDirectory | not) and (.name | startswith("Agello")))
       | "\(.metadata.lastModDate)\t\(.relativePath)"' "$listing" | sort -r)"
     rm -f "$listing"
     if [ -z "$reports" ]; then
-      echo "No iRTChat reports on the iPhone."
+      echo "No Agello reports on the iPhone."
       exit 0
     fi
     if [ "${1:-}" = pull ]; then

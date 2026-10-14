@@ -1,5 +1,5 @@
 #!/bin/sh
-# On-device test harness for iRTChat (physical iPhone only).
+# On-device test harness for Agello (physical iPhone only).
 #
 # Usage:
 #   scripts/device-harness.sh [unit|inference|files|web|ui|all|thinking|memory|calibrate|probes|screenshots] [extra xcodebuild args...]
@@ -26,7 +26,7 @@
 #
 # Env: DEVICE_ID (default: deviceId from the git-ignored .mobilebuildmcp/config.yaml),
 #      ONLY (run part of a suite: comma- or space-separated test identifiers
-#      inside it, e.g. ONLY=iRTChatTests/AppStateTests/testMockModeSendsWithoutDownloadedModel
+#      inside it, e.g. ONLY=AgelloTests/AppStateTests/testMockModeSendsWithoutDownloadedModel
 #      scripts/device-harness.sh unit; not with `all`),
 #      OUT (default: build/device-harness),
 #      XCBEAUTIFY (path to xcbeautify, or "off" for raw output; default:
@@ -67,7 +67,7 @@ format_output() {
 
 xcodebuild_test() {
   xcodebuild test \
-    -project "$ROOT/iRTChat.xcodeproj" -scheme iRTChat -configuration Debug \
+    -project "$ROOT/Agello.xcodeproj" -scheme Agello -configuration Debug \
     -destination "id=$DEVICE_ID" -allowProvisioningUpdates \
     -resultBundlePath "$result" "$@"
 }
@@ -124,44 +124,44 @@ filters() {
 status=0
 scopes=""
 case "$SUITE" in
-  unit) scopes="iRTChatTests" ;;
-  inference) scopes="iRTChatDeviceTests/InferenceScenarioTests" ;;
-  files) scopes="iRTChatDeviceTests/KnowledgeScenarioTests" ;;
-  web) scopes="iRTChatDeviceTests/WebScenarioTests" ;;
-  ui) scopes="iRTChatUITests" ;;
+  unit) scopes="AgelloTests" ;;
+  inference) scopes="AgelloDeviceTests/InferenceScenarioTests" ;;
+  files) scopes="AgelloDeviceTests/KnowledgeScenarioTests" ;;
+  web) scopes="AgelloDeviceTests/WebScenarioTests" ;;
+  ui) scopes="AgelloUITests" ;;
   thinking)
     export TEST_RUNNER_HARNESS_THINKING=1
-    scopes="iRTChatDeviceTests/ThinkingScenarioTests"
+    scopes="AgelloDeviceTests/ThinkingScenarioTests"
     ;;
   memory)
     export TEST_RUNNER_HARNESS_MEMORY=1
-    scopes="iRTChatDeviceTests/MemoryEnvelopeScenarioTests"
+    scopes="AgelloDeviceTests/MemoryEnvelopeScenarioTests"
     ;;
   probes)
     export TEST_RUNNER_HARNESS_PROBES=1
-    scopes="iRTChatDeviceTests/ProbeScenarioTests"
+    scopes="AgelloDeviceTests/ProbeScenarioTests"
     ;;
   calibrate)
     export TEST_RUNNER_HARNESS_CALIBRATE=1
-    scopes="iRTChatDeviceTests/CalibrationScenarioTests"
+    scopes="AgelloDeviceTests/CalibrationScenarioTests"
     ;;
   screenshots)
     export TEST_RUNNER_HARNESS_SCREENSHOTS=1
-    scopes="iRTChatUITests/ScreenshotTourUITests"
+    scopes="AgelloUITests/ScreenshotTourUITests"
     ;;
   all)
     if [ -n "${ONLY:-}" ]; then
       echo "ONLY needs a single suite (unit, inference, ui…), not all." >&2
       exit 2
     fi
-    run_suite unit -only-testing:iRTChatTests "$@" || status=$?
+    run_suite unit -only-testing:AgelloTests "$@" || status=$?
     inference_status=0
-    run_suite inference -only-testing:iRTChatDeviceTests/InferenceScenarioTests \
-      -only-testing:iRTChatDeviceTests/KnowledgeScenarioTests \
-      -only-testing:iRTChatDeviceTests/WebScenarioTests "$@" || inference_status=$?
+    run_suite inference -only-testing:AgelloDeviceTests/InferenceScenarioTests \
+      -only-testing:AgelloDeviceTests/KnowledgeScenarioTests \
+      -only-testing:AgelloDeviceTests/WebScenarioTests "$@" || inference_status=$?
     [ "$status" -eq 0 ] && status=$inference_status
     ui_status=0
-    run_suite ui -only-testing:iRTChatUITests "$@" || ui_status=$?
+    run_suite ui -only-testing:AgelloUITests "$@" || ui_status=$?
     [ "$status" -eq 0 ] && status=$ui_status
     ;;
   *) echo "Unknown suite: $SUITE" >&2; exit 2 ;;

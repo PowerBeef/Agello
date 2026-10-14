@@ -1,0 +1,1092 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		300000000000000000000024 /* LiteRTLM in Frameworks */ = {isa = PBXBuildFile; productRef = 100000000000000000000006 /* LiteRTLM */; };
+		500000000000000000000003 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 500000000000000000000002 /* Markdown */; };
+		500000000000000000000006 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 500000000000000000000005 /* SwiftMath */; };
+		60000000000000000000000C /* AgelloWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 600000000000000000000001 /* AgelloWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		70000000000000000000000C /* AgelloShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 700000000000000000000001 /* AgelloShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		100000000000000000000022 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		60000000000000000000000D /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				60000000000000000000000C /* AgelloWidgets.appex in Embed Foundation Extensions */,
+				70000000000000000000000C /* AgelloShare.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		100000000000000000000021 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 100000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 100000000000000000000002;
+			remoteInfo = Agello;
+		};
+		400000000000000000000008 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 100000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 100000000000000000000002;
+			remoteInfo = Agello;
+		};
+		400000000000000000000018 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 100000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 100000000000000000000002;
+			remoteInfo = Agello;
+		};
+		60000000000000000000000E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 100000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 600000000000000000000002;
+			remoteInfo = AgelloWidgets;
+		};
+		70000000000000000000000E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 100000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 700000000000000000000002;
+			remoteInfo = AgelloShare;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		100000000000000000000016 /* Agello.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Agello.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		100000000000000000000017 /* AgelloTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgelloTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		400000000000000000000001 /* AgelloDeviceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgelloDeviceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		400000000000000000000011 /* AgelloUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgelloUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		600000000000000000000001 /* AgelloWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AgelloWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		700000000000000000000001 /* AgelloShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AgelloShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		400000000000000000000043 /* Exceptions for "Agello" folder in "Agello" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				Agello.entitlements,
+			);
+			target = 100000000000000000000002 /* Agello */;
+		};
+		600000000000000000000007 /* Exceptions for "AgelloWidgets" folder in "AgelloWidgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 600000000000000000000002 /* AgelloWidgets */;
+		};
+		600000000000000000000008 /* Exceptions for "Agello" folder in "AgelloWidgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				System/SharedIntents.swift,
+			);
+			target = 600000000000000000000002 /* AgelloWidgets */;
+		};
+		700000000000000000000007 /* Exceptions for "AgelloShare" folder in "AgelloShare" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				AgelloShare.entitlements,
+			);
+			target = 700000000000000000000002 /* AgelloShare */;
+		};
+		700000000000000000000008 /* Exceptions for "Agello" folder in "AgelloShare" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				System/ShareInbox.swift,
+			);
+			target = 700000000000000000000002 /* AgelloShare */;
+		};
+		400000000000000000000044 /* Exceptions for "AgelloTests" folder in "AgelloTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				.swiftlint.yml,
+			);
+			target = 100000000000000000000003 /* AgelloTests */;
+		};
+		400000000000000000000045 /* Exceptions for "AgelloDeviceTests" folder in "AgelloDeviceTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				.swiftlint.yml,
+			);
+			target = 400000000000000000000003 /* AgelloDeviceTests */;
+		};
+		400000000000000000000046 /* Exceptions for "AgelloUITests" folder in "AgelloUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				.swiftlint.yml,
+			);
+			target = 400000000000000000000013 /* AgelloUITests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		400000000000000000000041 /* Agello */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				400000000000000000000043 /* Exceptions for "Agello" folder in "Agello" target */,
+				600000000000000000000008 /* Exceptions for "Agello" folder in "AgelloWidgets" target */,
+				700000000000000000000008 /* Exceptions for "Agello" folder in "AgelloShare" target */,
+			);
+			path = Agello;
+			sourceTree = "<group>";
+		};
+		400000000000000000000042 /* AgelloTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				400000000000000000000044 /* Exceptions for "AgelloTests" folder in "AgelloTests" target */,
+			);
+			path = AgelloTests;
+			sourceTree = "<group>";
+		};
+		400000000000000000000002 /* AgelloDeviceTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				400000000000000000000045 /* Exceptions for "AgelloDeviceTests" folder in "AgelloDeviceTests" target */,
+			);
+			path = AgelloDeviceTests;
+			sourceTree = "<group>";
+		};
+		400000000000000000000012 /* AgelloUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				400000000000000000000046 /* Exceptions for "AgelloUITests" folder in "AgelloUITests" target */,
+			);
+			path = AgelloUITests;
+			sourceTree = "<group>";
+		};
+		600000000000000000000006 /* AgelloWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				600000000000000000000007 /* Exceptions for "AgelloWidgets" folder in "AgelloWidgets" target */,
+			);
+			path = AgelloWidgets;
+			sourceTree = "<group>";
+		};
+		700000000000000000000006 /* AgelloShare */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				700000000000000000000007 /* Exceptions for "AgelloShare" folder in "AgelloShare" target */,
+			);
+			path = AgelloShare;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		100000000000000000000008 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				300000000000000000000024 /* LiteRTLM in Frameworks */,
+				500000000000000000000003 /* Markdown in Frameworks */,
+				500000000000000000000006 /* SwiftMath in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		10000000000000000000000B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		400000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		400000000000000000000015 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		600000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		700000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		10000000000000000000000D /* Main */ = {
+			isa = PBXGroup;
+			children = (
+				400000000000000000000041 /* Agello */,
+				400000000000000000000042 /* AgelloTests */,
+				400000000000000000000002 /* AgelloDeviceTests */,
+				400000000000000000000012 /* AgelloUITests */,
+				600000000000000000000006 /* AgelloWidgets */,
+				700000000000000000000006 /* AgelloShare */,
+				100000000000000000000015 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		100000000000000000000015 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000016 /* Agello.app */,
+				100000000000000000000017 /* AgelloTests.xctest */,
+				400000000000000000000001 /* AgelloDeviceTests.xctest */,
+				400000000000000000000011 /* AgelloUITests.xctest */,
+				600000000000000000000001 /* AgelloWidgets.appex */,
+				700000000000000000000001 /* AgelloShare.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		100000000000000000000002 /* Agello */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 10000000000000000000001B /* Build configuration list for PBXNativeTarget "Agello" */;
+			buildPhases = (
+				100000000000000000000007 /* Sources */,
+				100000000000000000000008 /* Frameworks */,
+				100000000000000000000009 /* Resources */,
+				100000000000000000000022 /* Embed Frameworks */,
+				60000000000000000000000D /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				60000000000000000000000F /* PBXTargetDependency */,
+				70000000000000000000000F /* PBXTargetDependency */,
+			);
+			name = Agello;
+			packageProductDependencies = (
+				100000000000000000000006 /* LiteRTLM */,
+				500000000000000000000002 /* Markdown */,
+				500000000000000000000005 /* SwiftMath */,
+			);
+			fileSystemSynchronizedGroups = (
+				400000000000000000000041 /* Agello */,
+			);
+			productName = Agello;
+			productReference = 100000000000000000000016 /* Agello.app */;
+			productType = "com.apple.product-type.application";
+		};
+		100000000000000000000003 /* AgelloTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 10000000000000000000001E /* Build configuration list for PBXNativeTarget "AgelloTests" */;
+			buildPhases = (
+				10000000000000000000000A /* Sources */,
+				10000000000000000000000B /* Frameworks */,
+				10000000000000000000000C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				100000000000000000000004 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				400000000000000000000042 /* AgelloTests */,
+			);
+			name = AgelloTests;
+			productName = AgelloTests;
+			productReference = 100000000000000000000017 /* AgelloTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		400000000000000000000003 /* AgelloDeviceTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 400000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloDeviceTests" */;
+			buildPhases = (
+				400000000000000000000004 /* Sources */,
+				400000000000000000000005 /* Frameworks */,
+				400000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				400000000000000000000007 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				400000000000000000000002 /* AgelloDeviceTests */,
+			);
+			name = AgelloDeviceTests;
+			productName = AgelloDeviceTests;
+			productReference = 400000000000000000000001 /* AgelloDeviceTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		400000000000000000000013 /* AgelloUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 400000000000000000000019 /* Build configuration list for PBXNativeTarget "AgelloUITests" */;
+			buildPhases = (
+				400000000000000000000014 /* Sources */,
+				400000000000000000000015 /* Frameworks */,
+				400000000000000000000016 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				400000000000000000000017 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				400000000000000000000012 /* AgelloUITests */,
+			);
+			name = AgelloUITests;
+			productName = AgelloUITests;
+			productReference = 400000000000000000000011 /* AgelloUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		600000000000000000000002 /* AgelloWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 600000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloWidgets" */;
+			buildPhases = (
+				600000000000000000000003 /* Sources */,
+				600000000000000000000004 /* Frameworks */,
+				600000000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				600000000000000000000006 /* AgelloWidgets */,
+			);
+			name = AgelloWidgets;
+			productName = AgelloWidgets;
+			productReference = 600000000000000000000001 /* AgelloWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		700000000000000000000002 /* AgelloShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 700000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloShare" */;
+			buildPhases = (
+				700000000000000000000003 /* Sources */,
+				700000000000000000000004 /* Frameworks */,
+				700000000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				700000000000000000000006 /* AgelloShare */,
+			);
+			name = AgelloShare;
+			productName = AgelloShare;
+			productReference = 700000000000000000000001 /* AgelloShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		100000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1700;
+				LastUpgradeCheck = 1700;
+				TargetAttributes = {
+					100000000000000000000002 = {
+						CreatedOnToolsVersion = 17.0;
+					};
+					100000000000000000000003 = {
+						CreatedOnToolsVersion = 17.0;
+						TestTargetID = 100000000000000000000002;
+					};
+					400000000000000000000003 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 100000000000000000000002;
+					};
+					400000000000000000000013 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 100000000000000000000002;
+					};
+					600000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					700000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = 100000000000000000000018 /* Build configuration list for PBXProject "Agello" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 10000000000000000000000D;
+			packageReferences = (
+				100000000000000000000005 /* XCLocalSwiftPackageReference "Vendor/LiteRT-LM" */,
+				500000000000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */,
+				500000000000000000000004 /* XCRemoteSwiftPackageReference "SwiftMath" */,
+			);
+			productRefGroup = 100000000000000000000015 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				100000000000000000000002 /* Agello */,
+				100000000000000000000003 /* AgelloTests */,
+				400000000000000000000003 /* AgelloDeviceTests */,
+				400000000000000000000013 /* AgelloUITests */,
+				600000000000000000000002 /* AgelloWidgets */,
+				700000000000000000000002 /* AgelloShare */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		100000000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		10000000000000000000000C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		400000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		400000000000000000000016 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		600000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		700000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		100000000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		10000000000000000000000A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		400000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		400000000000000000000014 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		600000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		700000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		100000000000000000000004 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 100000000000000000000002 /* Agello */;
+			targetProxy = 100000000000000000000021 /* PBXContainerItemProxy */;
+		};
+		400000000000000000000007 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 100000000000000000000002 /* Agello */;
+			targetProxy = 400000000000000000000008 /* PBXContainerItemProxy */;
+		};
+		400000000000000000000017 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 100000000000000000000002 /* Agello */;
+			targetProxy = 400000000000000000000018 /* PBXContainerItemProxy */;
+		};
+		60000000000000000000000F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 600000000000000000000002 /* AgelloWidgets */;
+			targetProxy = 60000000000000000000000E /* PBXContainerItemProxy */;
+		};
+		70000000000000000000000F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 700000000000000000000002 /* AgelloShare */;
+			targetProxy = 70000000000000000000000E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		100000000000000000000019 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		10000000000000000000001A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = s;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		10000000000000000000001C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_ENTITLEMENTS = Agello/Agello.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Agello;
+				INFOPLIST_KEY_LSRequiresIPhoneOS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				INFOPLIST_FILE = Agello/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos for the on-device model to see.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone to record voice messages for the on-device model.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Agello lets you attach photos for the on-device model to see.";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "iphone-performance-gaming-tier";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.irtchat;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+			};
+			name = Debug;
+		};
+		10000000000000000000001D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CODE_SIGN_ENTITLEMENTS = Agello/Agello.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Agello;
+				INFOPLIST_KEY_LSRequiresIPhoneOS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				INFOPLIST_FILE = Agello/Info.plist;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos for the on-device model to see.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone to record voice messages for the on-device model.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Agello lets you attach photos for the on-device model to see.";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "iphone-performance-gaming-tier";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.irtchat;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+			};
+			name = Release;
+		};
+		10000000000000000000001F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.patricedery.irtchat.tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agello.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Agello";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/../Frameworks",
+				);
+			};
+			name = Debug;
+		};
+		100000000000000000000020 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.patricedery.irtchat.tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agello.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Agello";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/../Frameworks",
+				);
+			};
+			name = Release;
+		};
+		40000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.patricedery.irtchat.devicetests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agello.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Agello";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/../Frameworks",
+				);
+			};
+			name = Debug;
+		};
+		40000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.patricedery.irtchat.devicetests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agello.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Agello";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/../Frameworks",
+				);
+			};
+			name = Release;
+		};
+		40000000000000000000001A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.patricedery.irtchat.uitests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Agello;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+			};
+			name = Debug;
+		};
+		40000000000000000000001B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.patricedery.irtchat.uitests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Agello;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+			};
+			name = Release;
+		};
+		60000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AgelloWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Agello;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.irtchat.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "WIDGET_EXTENSION $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		60000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AgelloWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Agello;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.irtchat.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "WIDGET_EXTENSION $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		70000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = AgelloShare/AgelloShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AgelloShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Agello;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.irtchat.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "SHARE_EXTENSION $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		70000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = AgelloShare/AgelloShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AgelloShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Agello;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.irtchat.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "SHARE_EXTENSION $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		100000000000000000000018 /* Build configuration list for PBXProject "Agello" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				100000000000000000000019 /* Debug */,
+				10000000000000000000001A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		10000000000000000000001B /* Build configuration list for PBXNativeTarget "Agello" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				10000000000000000000001C /* Debug */,
+				10000000000000000000001D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		10000000000000000000001E /* Build configuration list for PBXNativeTarget "AgelloTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				10000000000000000000001F /* Debug */,
+				100000000000000000000020 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		400000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloDeviceTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				40000000000000000000000A /* Debug */,
+				40000000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		400000000000000000000019 /* Build configuration list for PBXNativeTarget "AgelloUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				40000000000000000000001A /* Debug */,
+				40000000000000000000001B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		600000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				60000000000000000000000A /* Debug */,
+				60000000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		700000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				70000000000000000000000A /* Debug */,
+				70000000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		100000000000000000000005 /* XCLocalSwiftPackageReference "Vendor/LiteRT-LM" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Vendor/LiteRT-LM";
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		500000000000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swiftlang/swift-markdown.git";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.9.0;
+			};
+		};
+		500000000000000000000004 /* XCRemoteSwiftPackageReference "SwiftMath" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mgriebling/SwiftMath.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.7.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		100000000000000000000006 /* LiteRTLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 100000000000000000000005 /* XCLocalSwiftPackageReference "Vendor/LiteRT-LM" */;
+			productName = LiteRTLM;
+		};
+		500000000000000000000002 /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 500000000000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
+		};
+		500000000000000000000005 /* SwiftMath */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 500000000000000000000004 /* XCRemoteSwiftPackageReference "SwiftMath" */;
+			productName = SwiftMath;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 100000000000000000000001 /* Project object */;
+}

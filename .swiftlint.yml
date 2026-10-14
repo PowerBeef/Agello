@@ -1,15 +1,15 @@
-# SwiftLint for iRTChat. Run from the repo root: `swiftlint` (or `swiftlint --fix`).
+# SwiftLint for Agello. Run from the repo root: `swiftlint` (or `swiftlint --fix`).
 # The code follows swift-format conventions (2-space indent, trailing commas,
 # `{` on its own line after a wrapped condition); the rules below match that.
 # Test folders relax a few rules in their own .swiftlint.yml.
 
 included:
-  - iRTChat
-  - iRTChatWidgets
-  - iRTChatShare
-  - iRTChatTests
-  - iRTChatDeviceTests
-  - iRTChatUITests
+  - Agello
+  - AgelloWidgets
+  - AgelloShare
+  - AgelloTests
+  - AgelloDeviceTests
+  - AgelloUITests
 excluded:
   - Vendor
   - build
@@ -36,7 +36,7 @@ identifier_name:
   allowed_symbols: ["_"] # keyword-like names such as `where_`
 type_name:
   excluded:
-    - iRTChatApp
+    - AgelloApp
     - DS # design tokens namespace
 large_tuple:
   warning: 4
