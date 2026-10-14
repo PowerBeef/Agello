@@ -1143,7 +1143,9 @@ final class AppState {
     }
     do {
       let useGPU = options.backendPreference == .gpu
-      let cacheDir = try LiteRTChatEngine.cacheDirectory()
+      // A one-off 1,312-token engine: caching it would keep another 2.2 GB
+      // copy of the weights (see EngineCache).
+      let cacheDir = EngineCache.disabled
       // Extract Sendable scalars inside the task: BenchmarkInfo itself is not Sendable.
       let result = try await Task.detached(priority: .userInitiated) {
         () -> (prefill: Double, decode: Double, ttft: Double) in

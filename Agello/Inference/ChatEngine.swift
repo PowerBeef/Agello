@@ -226,17 +226,6 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     generating = false
   }
 
-  static func cacheDirectory() throws -> String {
-    // Library/Caches persists across launches (unlike tmp), so compiled GPU
-    // kernels survive restarts and warm-start TTFT stays low.
-    let base = try FileManager.default.url(
-      for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-    )
-    let dir = base.appendingPathComponent("com.patricedery.agello.litertlm", isDirectory: true)
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    return dir.path
-  }
-
   /// Read model-file capabilities without initializing an engine.
   nonisolated static func inspect(modelURL: URL) -> ModelCapabilities? {
     guard let info = ModelInfo(modelPath: modelURL.path) else { return nil }
@@ -260,7 +249,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       visionBackend: resolved.enableVision ? .cpu() : nil,
       audioBackend: resolved.enableAudio ? .cpu() : nil,
       maxNumTokens: resolved.maxNumTokens,
-      cacheDir: try cacheDirectory()
+      cacheDir: try EngineCache.directory(maxNumTokens: resolved.maxNumTokens)
     )
     let engine = Engine(engineConfig: config)
     // initialize() blocks for a long time; keep it off the caller's context.

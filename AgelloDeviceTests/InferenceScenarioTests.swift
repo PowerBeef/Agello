@@ -174,7 +174,7 @@ final class InferenceScenarioTests: DeviceTestCase {
     await appState.engine.unload()
     let config = try EngineConfig(
       modelPath: url.path, backend: .gpu, maxNumTokens: 2048,
-      cacheDir: try LiteRTChatEngine.cacheDirectory())
+      cacheDir: try EngineCache.directory(maxNumTokens: 2048))
     let engine = Engine(engineConfig: config)
     try await engine.initialize()
     let conversation = try await engine.createConversation(

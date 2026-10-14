@@ -61,6 +61,12 @@ and the simulator can't catch any of them.
   them needs a full `load`. Everything else goes through
   `updateConversationOptions`, which reseeds the conversation.
 - Engine-level `ExperimentalFlags` must be set before creating the engine.
+- Engine caches go through `EngineCache`: `directory(maxNumTokens:)` for any
+  E4B engine (one folder per context size, the two most recently used kept),
+  `embeddingDirectory()` for EmbeddingGemma, `EngineCache.disabled` for
+  one-off engines like the benchmark. Never hand an engine the cache root:
+  LiteRT-LM keeps a 2.2 GB weight copy per context size in one file and never
+  trims it (probe 14).
 - Settings changed just before sending must apply to that message
   (`scheduleApplyOptions`, then send).
 

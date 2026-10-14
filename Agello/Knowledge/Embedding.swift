@@ -75,7 +75,7 @@ actor LiteRTEmbedder: TextEmbedder {
 
   private func loaded() async throws -> EmbeddingEngine {
     if let engine { return engine }
-    let cacheDir = try LiteRTChatEngine.cacheDirectory()
+    let cacheDir = try EngineCache.embeddingDirectory()
     var lastError: Error?
     for backend: Backend in [.gpu, .cpu()] {
       let candidate = EmbeddingEngine(

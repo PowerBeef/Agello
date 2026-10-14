@@ -25,7 +25,7 @@ final class ProbeScenarioTests: DeviceTestCase {
       engineConfig: try EngineConfig(
         modelPath: url.path, backend: gpu ? .gpu : .cpu(), audioBackend: audio ? .cpu() : nil,
         maxNumTokens: maxNumTokens,
-        cacheDir: try LiteRTChatEngine.cacheDirectory(), activationDataType: activations))
+        cacheDir: try EngineCache.directory(maxNumTokens: maxNumTokens), activationDataType: activations))
     try await engine.initialize()
     return engine
   }
@@ -122,7 +122,7 @@ final class ProbeScenarioTests: DeviceTestCase {
     let loadStarted = Date()
     let engine = EmbeddingEngine(
       config: EmbeddingEngineConfig(
-        modelPath: url.path, backend: .gpu, cacheDir: try LiteRTChatEngine.cacheDirectory()))
+        modelPath: url.path, backend: .gpu, cacheDir: try EngineCache.embeddingDirectory()))
     try await engine.initialize()
     let loadSeconds = Date().timeIntervalSince(loadStarted)
     let afterLoad = MemoryProbe.footprintBytes()
