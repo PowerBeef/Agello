@@ -68,8 +68,12 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   `gh api repos/google-ai-edge/LiteRT-LM/issues/3913/comments`.
 - The follow-up also describes two WebGPU delegate bugs found while building
   the patch (FULLY_CONNECTED with float weights; REDUCE_MAX over a non-last
-  axis). Neither is filed as its own issue yet; filing needs the user's
-  go-ahead.
+  axis). They don't reproduce as single ops: on 2026-10-13, standalone models
+  with those exact patterns were exact on v0.18.0's WebGPU accelerator, fully
+  accelerated, up to N=2048 and F=256. The failures came from the surrounding
+  graph (INT32/BOOL producers: broadcast ADD, comparisons, CAST, SELECT_V2).
+  The user decided not to file them. The check lives in the fork's
+  `research/issue-3913/webgpu-op-check/` (uncommitted).
 - Reproduction: the fork's `research/3913` branch, `research/issue-3913/`
   (graph-patch script, macOS runner, raw results, `summarize.py`).
 - **The app ships our fix.** `ModelCatalog.e4b` downloads
