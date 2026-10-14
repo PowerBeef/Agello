@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "skillOverrides": {
+    "swift-mlx": "off",
+    "swift-mlx-lm": "off"
+  },
+  "permissions": {
+    "additionalDirectories": ["../LiteRT-LM"],
+    "deny": [
+      "Skill(asc:asc-shots-pipeline)",
+      "Skill(asc:asc-notarization)"
+    ]
+  }
+}

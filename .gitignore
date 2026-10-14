@@ -34,3 +34,6 @@ fastlane/test_output
 
 # Playwright MCP page snapshots and console logs
 .playwright-mcp/
+
+# Claude Code personal settings (prompt approvals, MCP approvals)
+.claude/settings.local.json

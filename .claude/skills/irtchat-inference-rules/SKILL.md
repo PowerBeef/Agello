@@ -1,5 +1,5 @@
 ---
-name: iRTChat inference rules
+name: irtchat-inference-rules
 description: Rules that keep LiteRT-LM from crashing or misbehaving in iRTChat. Read before changing ChatEngine.swift, AppState's generation or engine lifecycle, ContextBudget, InferencePlanner, helper tasks, tools, or anything that sends to the model.
 ---
 

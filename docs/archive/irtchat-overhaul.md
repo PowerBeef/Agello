@@ -4,7 +4,7 @@
 > **Archived plan, superseded.** Phases 0–5 have shipped; [README.md](../../README.md) describes the app as it is now. Kept for the reasoning behind its decisions and risks. Where the implementation differs:
 >
 > - **Models:** Gemma 4 E4B only; E2B and the model picker were dropped.
-> - **Testing:** on the physical iPhone only, with no simulator (see [AGENTS.md](../../AGENTS.md)).
+> - **Testing:** on the physical iPhone only, with no simulator (see [CLAUDE.md](../../CLAUDE.md)).
 > - **Structure:** one app target organized in folders (`Inference/`, `Knowledge/`, `Voice/`…), not separate modules.
 > - **Tools:** LiteRT-LM runs tool calls automatically while streaming, with app-side budgets, rather than an app-controlled tool loop.
 > - **Web pages:** read with a built-in readable-text extractor, not `WebPage` plus Readability.js.

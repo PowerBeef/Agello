@@ -1,5 +1,5 @@
 ---
-name: iRTChat LiteRT-LM update
+name: irtchat-litert-update
 description: Update the vendored LiteRT-LM package (Vendor/LiteRT-LM), work in the PowerBeef/LiteRT-LM fork (../LiteRT-LM), or report and prepare fixes for upstream. Use when asked about LiteRT-LM versions, upgrades, patches, the fork, or upstream issues.
 ---
 
@@ -13,7 +13,9 @@ vendored because upstream Git LFS breaks Swift Package Manager resolution.
 ## The fork
 
 `PowerBeef/LiteRT-LM` is a fork of `google-ai-edge/LiteRT-LM`, cloned beside
-this repo at `../LiteRT-LM` (the OpenCode reference `litert-lm`):
+this repo at `../LiteRT-LM`. `.claude/settings.json` lists it in
+`additionalDirectories`, so its C++ and Swift sources are readable from this
+project (its own CLAUDE.md and skills don't load):
 
 | Item | Value |
 | --- | --- |
@@ -59,7 +61,15 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
 
 - Analysis posted on 2026-10-13:
   https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598
-  (pointer on #2814).
+  (pointer on #2814). Follow-up with the model-side fix:
+  https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6159684389
+- As of 2026-10-13 the issue is open and Google hasn't replied to either
+  comment. Check for replies with
+  `gh api repos/google-ai-edge/LiteRT-LM/issues/3913/comments`.
+- The follow-up also describes two WebGPU delegate bugs found while building
+  the patch (FULLY_CONNECTED with float weights; REDUCE_MAX over a non-last
+  axis). Neither is filed as its own issue yet; filing needs the user's
+  go-ahead.
 - Reproduction: the fork's `research/3913` branch, `research/issue-3913/`
   (graph-patch script, macOS runner, raw results, `summarize.py`).
 - **The app ships our fix.** `ModelCatalog.e4b` downloads
@@ -99,8 +109,8 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
 
 ## 1. Check upstream
 
-- Latest release: GitHub MCP `get_latest_release` for
-  `google-ai-edge/LiteRT-LM`. The current version is in `Vendor/README.md`.
+- Latest release: `gh release view --repo google-ai-edge/LiteRT-LM`. The
+  current version is in `Vendor/README.md`.
 - Read the release notes, and check issues the app works around, especially
   #3913 (GPU float16 digit duplication).
 - Note any Swift API changes in `swift/` (Engine, Conversation, Config,
