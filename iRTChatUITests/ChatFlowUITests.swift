@@ -447,6 +447,38 @@ final class ChatFlowUITests: XCTestCase {
     attachScreenshot("models")
   }
 
+  /// Think and Search are either titled or icon-only, never truncated (they
+  /// used to render as "T…" / "S…", about 52–70 pt wide), and at a large
+  /// accessibility text size every composer control still fits inside the
+  /// composer and can be tapped.
+  func testComposerControlsFit() throws {
+    let think = element("composer.think")
+    let search = element("composer.search")
+    XCTAssertTrue(think.waitForExistence(timeout: 10))
+    XCTAssertTrue(search.exists)
+    for pill in [think, search] {
+      let width = pill.frame.width
+      XCTAssertGreaterThanOrEqual(width, 44, "\(pill.label) below the touch target")
+      XCTAssertFalse((53..<70).contains(width), "\(pill.label) truncated (\(width) pt)")
+    }
+    attachScreenshot("composer-default")
+
+    app.terminate()
+    app.launchArguments += [
+      "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL",
+    ]
+    app.launch()
+    let composer = element("chat.composer")
+    XCTAssertTrue(composer.waitForExistence(timeout: 10))
+    for id in ["composer.attach", "composer.think", "composer.search", "composer.mic", "composer.voice"] {
+      let control = element(id)
+      XCTAssertTrue(control.waitForExistence(timeout: 5), id)
+      XCTAssertTrue(control.isHittable, "\(id) not hittable")
+      XCTAssertTrue(composer.frame.insetBy(dx: -1, dy: -1).contains(control.frame), "\(id) outside the composer")
+    }
+    attachScreenshot("composer-accessibility-L")
+  }
+
   // MARK: - Helpers
 
   private func element(_ identifier: String) -> XCUIElement {

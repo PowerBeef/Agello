@@ -486,10 +486,13 @@ struct ChatView: View {
         .accessibilityIdentifier("chat.input")
       HStack(spacing: DS.spaceMD) {
         attachMenu
-        thinkToggle
-        if appState.webSettings.allowed {
-          searchToggle
+        // Titled pills when they fit, icons otherwise; priority over the
+        // spacer so the titles never truncate to "T…".
+        ViewThatFits(in: .horizontal) {
+          modeToggles(iconOnly: false)
+          modeToggles(iconOnly: true)
         }
+        .layoutPriority(1)
         Spacer(minLength: 0)
         micButton
         actionButton
@@ -587,13 +590,23 @@ struct ChatView: View {
     .accessibilityIdentifier("composer.attach")
   }
 
+  private func modeToggles(iconOnly: Bool) -> some View {
+    HStack(spacing: DS.spaceMD) {
+      thinkToggle(iconOnly: iconOnly)
+      if appState.webSettings.allowed {
+        searchToggle(iconOnly: iconOnly)
+      }
+    }
+  }
+
   /// Web search for the next message only.
-  private var searchToggle: some View {
+  private func searchToggle(iconOnly: Bool) -> some View {
     Button {
       searchWeb.toggle()
       Haptics.complete()
     } label: {
       Label("Search", systemImage: "globe")
+        .labelStyle(PillLabelStyle(iconOnly: iconOnly))
         .font(.subheadline.weight(.medium))
         .foregroundStyle(searchWeb ? Color.accentColor : .secondary)
         .padding(.horizontal, 12)
@@ -605,12 +618,14 @@ struct ChatView: View {
     }
     .buttonStyle(.plain)
     .disabled(appState.isBusy || editingTurn != nil)
+    .accessibilityLabel("Search")
     .accessibilityValue(searchWeb ? "On" : "Off")
+    .accessibilityAddTraits(.isToggle)
     .accessibilityIdentifier("composer.search")
   }
 
   /// Reasoning for the next messages (applies before the next send).
-  private var thinkToggle: some View {
+  private func thinkToggle(iconOnly: Bool) -> some View {
     let isOn = appState.options.enableThinking
     return Button {
       appState.options.enableThinking.toggle()
@@ -618,6 +633,7 @@ struct ChatView: View {
       Haptics.complete()
     } label: {
       Label("Think", systemImage: "lightbulb")
+        .labelStyle(PillLabelStyle(iconOnly: iconOnly))
         .font(.subheadline.weight(.medium))
         .foregroundStyle(isOn ? Color.accentColor : .secondary)
         .padding(.horizontal, 12)
@@ -628,7 +644,9 @@ struct ChatView: View {
     }
     .buttonStyle(.plain)
     .disabled(appState.isBusy)
+    .accessibilityLabel("Think")
     .accessibilityValue(isOn ? "On" : "Off")
+    .accessibilityAddTraits(.isToggle)
     .accessibilityIdentifier("composer.think")
   }
 
@@ -683,6 +701,7 @@ struct ChatView: View {
     if appState.isBusy {
       Button(action: { appState.stop() }) {
         Image(systemName: "stop.fill")
+          .foregroundStyle(.white)
           .frame(width: DS.controlTarget, height: DS.controlTarget)
           .glassEffect(.regular.tint(.red).interactive(), in: .circle)
           .glassEffectID("action", in: inputNamespace)
@@ -696,6 +715,7 @@ struct ChatView: View {
       } label: {
         Image(systemName: "waveform")
           .font(.headline)
+          .foregroundStyle(.white)
           .frame(width: DS.controlTarget, height: DS.controlTarget)
           .glassEffect(.regular.tint(.accentColor).interactive(), in: .circle)
           .glassEffectID("action", in: inputNamespace)
@@ -706,6 +726,7 @@ struct ChatView: View {
       Button(action: send) {
         Image(systemName: "arrow.up")
           .font(.headline)
+          .foregroundStyle(.white)
           .frame(width: DS.controlTarget, height: DS.controlTarget)
           .glassEffect(.regular.tint(.accentColor).interactive(), in: .circle)
           .glassEffectID("action", in: inputNamespace)
@@ -777,6 +798,27 @@ struct ChatView: View {
         if pendingFiles.isEmpty { pendingFiles = files }
         searchWeb = webSearch
       }
+    }
+  }
+}
+
+
+/// Think / Search pill content: the title never truncates; icon-only is the
+/// compact fallback (the title stays the VoiceOver label).
+private struct PillLabelStyle: LabelStyle {
+  let iconOnly: Bool
+
+  func makeBody(configuration: Configuration) -> some View {
+    if iconOnly {
+      configuration.icon
+        .frame(minWidth: DS.controlTarget - 24)
+    } else {
+      HStack(spacing: 6) {
+        configuration.icon
+        configuration.title
+      }
+      .lineLimit(1)
+      .fixedSize()
     }
   }
 }
