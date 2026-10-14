@@ -12,14 +12,15 @@ No account, no API key, no cloud. After a one-time download, every conversation 
 [![LiteRT-LM 0.18.0](https://img.shields.io/badge/LiteRT--LM-0.18.0-4285F4)](#vendored-litert-lm)
 [![Gemma 4 E4B](https://img.shields.io/badge/Model-Gemma%204%20E4B-8E75FF)](docs/USER_GUIDE.md#the-models)
 [![On-device](https://img.shields.io/badge/100%25-on--device-2EA44F)](#why-irtchat)
-[![Tests](https://img.shields.io/badge/tests-276%20on%20iPhone-2EA44F)](docs/TESTING.md)
+[![Tests](https://img.shields.io/badge/tests-277%20on%20iPhone-2EA44F)](docs/TESTING.md)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
 
 <br>
 
-<img src="docs/images/models.png" width="230" alt="The Models screen: Gemma 4 E4B and EmbeddingGemma downloaded and ready">&nbsp;&nbsp;
-<img src="docs/images/voice-mode.png" width="230" alt="Voice mode: a glowing orb listening, with camera, microphone and close buttons">&nbsp;&nbsp;
-<img src="docs/images/settings.png" width="230" alt="Settings: Gemma 4 E4B ready on the GPU, personalization, memory, web search and performance options">
+<img src="docs/images/chat.jpg" width="190" alt="A streamed answer explaining Bloom filters, with bold terms, a heading and a numbered list">&nbsp;
+<img src="docs/images/web-search.jpg" width="190" alt="A web answer naming the 2026 Tour de France winner, with numbered citations and a 5 sources pill">&nbsp;
+<img src="docs/images/document.jpg" width="190" alt="A 60-page PDF summarized in three bullet points, each citing its pages">&nbsp;
+<img src="docs/images/voice-mode.jpg" width="190" alt="Voice mode: a glowing gold orb listening, with camera, microphone and end buttons">
 
 **[Features](#features)** · **[Performance](#performance)** · **[How it works](#how-it-works)** · **[Engineering](#engineering-highlights)** · **[Get started](#get-started)** · **[Docs](#documentation)**
 
@@ -66,7 +67,15 @@ Text, vision and audio in one model, with reasoning, tools, document Q&A with pa
 
 **Personal.** Tell iRTChat about yourself and how to respond. Opt-in memory remembers lasting facts ("Lives in Montreal"), and every memory is visible and editable.
 
-**Built for iOS.** SwiftUI with Liquid Glass. Siri and Shortcuts ("Ask iRTChat", "Talk to iRTChat"), the Action Button, Home and Lock Screen widgets, Control Center, Spotlight, the share sheet, and `irtchat://` links. Model downloads continue in the background.
+**Built for iOS.** SwiftUI with Liquid Glass chrome on a warm dark design whose accent follows what you're doing: glacier for chat, lavender for Think, teal for search, gold for voice. Siri and Shortcuts ("Ask iRTChat", "Talk to iRTChat"), the Action Button, Home and Lock Screen widgets, Control Center, Spotlight, the share sheet, and `irtchat://` links. Model downloads continue in the background.
+
+<p align="center">
+<img src="docs/images/new-chat.jpg" width="150" alt="A new chat: the greeting, four suggestions and the composer with Think and Search">&nbsp;
+<img src="docs/images/think.jpg" width="150" alt="Think: a lavender reasoning card above an answer that used the calculator">&nbsp;
+<img src="docs/images/drawer.jpg" width="150" alt="The drawer: search, projects and today's chats">&nbsp;
+<img src="docs/images/settings.jpg" width="150" alt="Settings: Gemma 4 E4B ready on the GPU, then personalization, memory, web search, Spotlight, models and tools">&nbsp;
+<img src="docs/images/models.jpg" width="150" alt="Models: Gemma 4 E4B and EmbeddingGemma downloaded and ready">
+</p>
 
 → The [user guide](docs/USER_GUIDE.md) covers every screen and setting.
 
@@ -153,8 +162,8 @@ Voice-activity turn detection, and one audio engine for echo-cancelled capture a
 </td>
 <td valign="top">
 
-#### ✅ 276 tests on a real iPhone
-209 unit tests, 45 scenarios with the real models in-process, and 22 real-tap UI flows. They run through a device harness that also simulates 8 GB iPhones and probes the runtime directly. No simulator: the failures that matter only happen on hardware.
+#### ✅ 277 tests on a real iPhone
+209 unit tests, 45 scenarios with the real models in-process, and 23 real-tap UI flows. They run through a device harness that also simulates 8 GB iPhones and probes the runtime directly. No simulator: the failures that matter only happen on hardware.
 
 </td>
 </tr>

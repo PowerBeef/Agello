@@ -85,7 +85,7 @@ iRTChat/
 ├── System/             App Intents, deep links, Spotlight, share inbox, background work
 ├── Voice/              voice mode: capture, speech, turn detection, camera
 ├── Views/              chat, drawer, composer, settings, projects, onboarding
-└── Support/            design tokens, haptics, image preparation, diagnostics
+└── Support/            the design system (Theme/), haptics, image preparation, diagnostics
 iRTChatWidgets/         Home/Lock Screen widgets and Control Center controls
 iRTChatShare/           share extension: "Ask iRTChat"
 Vendor/LiteRT-LM/       LiteRT-LM v0.18.0 Swift package (prebuilt runtime)
