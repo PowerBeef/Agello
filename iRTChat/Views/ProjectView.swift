@@ -30,37 +30,59 @@ struct ProjectView: View {
     NavigationStack {
       Form {
         Section {
-          TextField("Project name", text: $name)
-            .font(.headline)
+          HStack(spacing: Theme.Spacing.md) {
+            TintTile(symbol: "folder.fill", tint: Theme.Brand.glacier, size: 40)
+            TextField(
+              "Project name", text: $name,
+              prompt: Text("Project name").foregroundStyle(Theme.Text.placeholder)
+            )
+            .font(.system(.title3, weight: .semibold))
+            .foregroundStyle(Theme.Text.primary)
             .accessibilityIdentifier("project.name")
+          }
+          .padding(.vertical, Theme.Spacing.xs)
           Button {
             save()
             onNewChat()
           } label: {
             Label("New chat in this project", systemImage: "square.and.pencil")
+              .foregroundStyle(Theme.Brand.glacier)
           }
           .accessibilityIdentifier("project.newChat")
         }
+        .themedRow()
 
         Section {
           TextEditor(text: $instructions)
             .frame(minHeight: 100)
+            .scrollContentBackground(.hidden)
+            .foregroundStyle(Theme.Text.primary)
+            .overlay(alignment: .topLeading) {
+              if instructions.isEmpty {
+                Text("Answer as a travel planner; I prefer trains.")
+                  .foregroundStyle(Theme.Text.placeholder)
+                  .padding(.top, Theme.Spacing.sm)
+                  .padding(.leading, Theme.Spacing.xs)
+                  .allowsHitTesting(false)
+                  .accessibilityHidden(true)
+              }
+            }
             .accessibilityIdentifier("project.instructions")
         } header: {
-          Text("Instructions")
+          Text("Instructions").eyebrowStyle()
         } footer: {
-          Text("Every chat in this project follows these, e.g. \"Answer as a travel planner; I prefer trains.\"")
+          Text("Every chat in this project follows these.")
         }
+        .themedRow()
 
         Section {
           ForEach(files) { file in
-            HStack {
-              Image(systemName: (DocumentKind(rawValue: file.kindRaw) ?? .text).symbol)
-                .foregroundStyle(Color.accentColor)
+            HStack(spacing: Theme.Spacing.md) {
+              TintTile(symbol: (DocumentKind(rawValue: file.kindRaw) ?? .text).symbol)
               VStack(alignment: .leading) {
-                Text(file.name).lineLimit(1)
+                Text(file.name).lineLimit(1).foregroundStyle(Theme.Text.primary)
                 if file.pageCount > 0 {
-                  Text("\(file.pageCount) pages").font(.caption).foregroundStyle(.secondary)
+                  Text("\(file.pageCount) pages").font(.caption).foregroundStyle(Theme.Text.tertiary)
                 }
               }
               Spacer()
@@ -77,45 +99,61 @@ struct ProjectView: View {
           if readingFiles > 0 {
             HStack {
               ProgressView().controlSize(.small)
-              Text("Reading…").foregroundStyle(.secondary)
+              Text("Reading…").foregroundStyle(Theme.Text.secondary)
             }
           }
           Button {
             showFiles = true
           } label: {
             Label("Add files", systemImage: "plus")
+              .foregroundStyle(Theme.Brand.glacier)
           }
           .accessibilityIdentifier("project.addFiles")
         } header: {
-          Text("Files")
+          Text("Files").eyebrowStyle()
         } footer: {
           Text("Shared by every chat in this project.")
         }
+        .themedRow()
 
         if !chats.isEmpty {
-          Section("Chats") {
+          Section {
             ForEach(chats) { thread in
               Button {
                 save()
                 onOpenChat(thread)
               } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                  Text(thread.title).foregroundStyle(.primary).lineLimit(1)
-                  Text(thread.updatedAt.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack {
+                  VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text(thread.title)
+                      .font(.rowTitle)
+                      .foregroundStyle(Theme.Text.primary)
+                      .lineLimit(1)
+                    Text(thread.updatedAt.formatted(date: .abbreviated, time: .omitted))
+                      .font(.caption)
+                      .foregroundStyle(Theme.Text.tertiary)
+                  }
+                  Spacer()
+                  Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.Text.tertiary)
                 }
               }
               .accessibilityIdentifier("project.chat")
             }
+          } header: {
+            Text("Chats").eyebrowStyle()
           }
+          .themedRow()
         }
 
         Section {
           Button("Delete project", role: .destructive) { confirmDelete = true }
             .accessibilityIdentifier("project.delete")
         }
+        .themedRow()
       }
+      .themedList(Theme.Brand.glacier)
       .navigationTitle(name.isEmpty ? String(localized: "Project") : name)
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {

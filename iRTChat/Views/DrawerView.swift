@@ -1,7 +1,8 @@
 import SwiftData
 import SwiftUI
 
-/// The side drawer: search, new chat, chats grouped by date, settings.
+/// The side drawer: the wordmark, search, projects, chats grouped by date,
+/// and Settings, on a warm panel.
 struct DrawerView: View {
   @Environment(AppState.self) private var appState
   @Query(sort: \ChatThread.updatedAt, order: .reverse) private var threads: [ChatThread]
@@ -44,22 +45,32 @@ struct DrawerView: View {
     let relatedRows = query.isEmpty ? [] : related.filter { hit in !rows.contains { $0.id == hit.id } }
     VStack(spacing: 0) {
       header
-      if query.isEmpty {
-        projectsSection
-      }
-      if rows.isEmpty, relatedRows.isEmpty {
-        Spacer()
-        if query.isEmpty {
-          ContentUnavailableView(
-            "No chats yet", systemImage: "bubble.left.and.bubble.right",
-            description: Text("Your conversations stay on this iPhone."))
-        } else {
-          ContentUnavailableView.search(text: query)
+      ScrollView {
+        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+          if query.isEmpty {
+            projectsSection
+          }
+          if rows.isEmpty, relatedRows.isEmpty {
+            Group {
+              if query.isEmpty {
+                EmptyStateView(
+                  symbol: "bubble.left.and.bubble.right", title: "No chats yet",
+                  message: "Your conversations stay on this iPhone.")
+              } else {
+                EmptyStateView(
+                  symbol: "magnifyingglass", title: "No results",
+                  message: "Nothing matches \u{201C}\(query)\u{201D}.")
+              }
+            }
+            .padding(.top, Theme.Spacing.sm)
+          } else {
+            chatGroups(rows, related: relatedRows)
+          }
         }
-        Spacer()
-      } else {
-        list(rows, related: relatedRows)
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.bottom, Theme.Spacing.lg)
       }
+      .scrollDismissesKeyboard(.immediately)
       footer
     }
     .onAppear {
@@ -80,98 +91,134 @@ struct DrawerView: View {
     }
   }
 
+  // MARK: - Header
+
   private var header: some View {
-    HStack(spacing: DS.spaceMD) {
-      HStack(spacing: 6) {
+    VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+      HStack(spacing: Theme.Spacing.sm) {
+        Image(systemName: "sparkles")
+          .font(.system(.subheadline, weight: .semibold))
+          .foregroundStyle(Theme.Brand.glacier)
+          .accessibilityHidden(true)
+        Text("iRTChat")
+          .font(.wordmark)
+          .foregroundStyle(Theme.Text.primary)
+          .accessibilityAddTraits(.isHeader)
+        Spacer()
+        Button(action: onNewChat) {
+          Image(systemName: "square.and.pencil")
+        }
+        .buttonStyle(QuietCircleButtonStyle())
+        .accessibilityLabel("New chat")
+        .accessibilityIdentifier("drawer.new")
+      }
+      HStack(spacing: Theme.Spacing.sm) {
         Image(systemName: "magnifyingglass")
-          .foregroundStyle(.secondary)
-        TextField("Search chats", text: $query)
-          .focused($searchFocused)
-          .submitLabel(.search)
-          .accessibilityIdentifier("drawer.search")
+          .foregroundStyle(Theme.Text.tertiary)
+          .accessibilityHidden(true)
+        TextField(
+          "Search chats", text: $query,
+          prompt: Text("Search chats").foregroundStyle(Theme.Text.placeholder)
+        )
+        .foregroundStyle(Theme.Text.primary)
+        .focused($searchFocused)
+        .submitLabel(.search)
+        .accessibilityIdentifier("drawer.search")
         if !query.isEmpty {
           Button {
             query = ""
           } label: {
             Image(systemName: "xmark.circle.fill")
-              .foregroundStyle(.tertiary)
+              .foregroundStyle(Theme.Text.tertiary)
           }
+          .buttonStyle(.plain)
           .accessibilityLabel("Clear search")
         }
       }
-      .padding(.horizontal, 12)
-      .padding(.vertical, 10)
-      .glassEffect(.regular, in: .capsule)
-      Button(action: onNewChat) {
-        Image(systemName: "square.and.pencil")
-          .frame(width: DS.controlTarget, height: DS.controlTarget)
-          .glassEffect(.regular.interactive(), in: .circle)
+      .padding(.horizontal, Theme.Spacing.md)
+      .frame(minHeight: Theme.Size.target)
+      .background {
+        RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+          .fill(Color.white.opacity(0.06))
       }
-      .accessibilityLabel("New chat")
-      .accessibilityIdentifier("drawer.new")
+      .overlay {
+        RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+          .stroke(Theme.Surface.hairline, lineWidth: Theme.Stroke.hairline)
+      }
     }
-    .padding(.horizontal)
-    .padding(.vertical, 8)
+    .padding(.horizontal, Theme.Spacing.lg)
+    .padding(.top, Theme.Spacing.sm)
+    .padding(.bottom, Theme.Spacing.md)
   }
 
+  // MARK: - Projects
+
   private var projectsSection: some View {
-    VStack(alignment: .leading, spacing: 2) {
+    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
       HStack {
-        Text("Projects")
-          .font(.footnote.weight(.semibold))
-          .foregroundStyle(.secondary)
+        Text("Projects").eyebrowStyle().accessibilityAddTraits(.isHeader)
         Spacer()
         Button(action: onNewProject) {
-          Image(systemName: "folder.badge.plus")
+          Image(systemName: "plus")
+            .font(.system(.footnote, weight: .semibold))
+            .foregroundStyle(Theme.Brand.glacier)
+            .frame(width: Theme.Size.target, height: Theme.Size.glyph)
+            .contentShape(.rect)
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("New project")
         .accessibilityIdentifier("drawer.newProject")
       }
-      .padding(.horizontal, 12)
-      .padding(.top, 6)
-      .padding(.bottom, 4)
+      .padding(.leading, Theme.Spacing.sm)
+      if projects.isEmpty {
+        Text("Group chats with shared instructions and files.")
+          .font(.footnote)
+          .foregroundStyle(Theme.Text.tertiary)
+          .padding(.horizontal, Theme.Spacing.sm)
+      }
       ForEach(projects.prefix(6)) { project in
         Button {
           onOpenProject(project)
         } label: {
-          Label(project.name, systemImage: "folder")
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .contentShape(.rect)
+          HStack(spacing: Theme.Spacing.md) {
+            TintTile(symbol: "folder.fill", tint: Theme.Brand.glacier)
+            Text(project.name)
+              .font(.rowTitle)
+              .foregroundStyle(Theme.Text.primary)
+              .lineLimit(1)
+            Spacer(minLength: 0)
+          }
+          .drawerRow(selected: false)
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("drawer.project")
       }
     }
-    .padding(.horizontal, 8)
   }
 
-  private func list(_ rows: [Row], related: [Row] = []) -> some View {
+  // MARK: - Chats
+
+  private func chatGroups(_ rows: [Row], related: [Row] = []) -> some View {
     var groups = ThreadGrouping.groups(
       rows, date: { $0.thread.updatedAt }, pinned: { $0.thread.isPinned })
     if !related.isEmpty {
       groups.append(.init(title: String(localized: "Related chats"), items: related))
     }
-    return ScrollView {
-      LazyVStack(alignment: .leading, spacing: 2) {
-        ForEach(groups) { group in
-          Text(group.title)
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.top, 14)
-            .padding(.bottom, 4)
-          ForEach(group.items) { row in
-            rowView(row)
-          }
+    return LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+      ForEach(groups) { group in
+        Text(group.title)
+          .eyebrowStyle()
+          // Tests and VoiceOver read the title as written ("Pinned").
+          .accessibilityLabel(group.title)
+          .accessibilityAddTraits(.isHeader)
+          .padding(.horizontal, Theme.Spacing.sm)
+          .padding(.top, Theme.Spacing.md)
+          .padding(.bottom, Theme.Spacing.xs)
+        ForEach(group.items) { row in
+          rowView(row)
         }
       }
-      .padding(.horizontal, 8)
-      .padding(.bottom)
     }
-    .scrollDismissesKeyboard(.immediately)
   }
 
   private func rowView(_ row: Row) -> some View {
@@ -181,37 +228,35 @@ struct DrawerView: View {
       searchFocused = false
       onSelect(thread)
     } label: {
-      VStack(alignment: .leading, spacing: 2) {
-        HStack(spacing: 6) {
+      VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+        HStack(spacing: Theme.Spacing.tight) {
           Text(thread.title)
+            .font(.rowTitle)
+            .foregroundStyle(selected ? Theme.Text.primary : Theme.Text.secondary)
             .lineLimit(1)
           if appState.generatingThreadID == thread.id {
             ProgressView().controlSize(.mini)
           }
           if thread.isPinned {
-            Spacer(minLength: 4)
+            Spacer(minLength: Theme.Spacing.xs)
             Image(systemName: "pin.fill")
               .font(.caption2)
-              .foregroundStyle(.tertiary)
+              .foregroundStyle(Theme.Text.tertiary)
               .accessibilityLabel("Pinned")
           }
         }
         if let snippet = row.snippet {
           Text(snippet)
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Theme.Text.tertiary)
             .lineLimit(2)
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.horizontal, 12)
-      .padding(.vertical, 10)
-      .background(
-        selected ? Color.primary.opacity(0.08) : .clear, in: .rect(cornerRadius: DS.radiusInner)
-      )
-      .contentShape(.rect)
+      .drawerRow(selected: selected)
     }
     .buttonStyle(.plain)
+    .accessibilityAddTraits(selected ? .isSelected : [])
     .contextMenu {
       Button(
         thread.isPinned ? "Unpin" : "Pin", systemImage: thread.isPinned ? "pin.slash" : "pin"
@@ -237,23 +282,49 @@ struct DrawerView: View {
     .accessibilityIdentifier("drawer.row")
   }
 
+  // MARK: - Footer
+
   private var footer: some View {
     VStack(spacing: 0) {
-      Divider()
+      Rectangle().fill(Theme.Surface.hairline).frame(height: Theme.Stroke.hairline)
       Button(action: onSettings) {
-        HStack(spacing: DS.spaceMD) {
-          Image(systemName: "gearshape")
-            .frame(width: DS.iconLG, height: DS.iconLG)
-            .glassEffect(.regular, in: .circle)
+        HStack(spacing: Theme.Spacing.md) {
+          TintTile(symbol: "gearshape.fill", tint: Theme.Brand.silver)
           Text("Settings")
+            .font(.rowTitle)
+            .foregroundStyle(Theme.Text.primary)
           Spacer()
+          Image(systemName: "chevron.right")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Theme.Text.tertiary)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
+        .padding(.horizontal, Theme.Spacing.xl)
+        .frame(minHeight: Theme.Size.target + Theme.Spacing.md)
         .contentShape(.rect)
       }
       .buttonStyle(.plain)
       .accessibilityIdentifier("drawer.settings")
     }
+  }
+}
+
+private extension View {
+  /// A drawer row: generous hit area; the open chat sits on a glacier pill.
+  func drawerRow(selected: Bool) -> some View {
+    self
+      .padding(.horizontal, Theme.Spacing.sm)
+      .padding(.vertical, Theme.Spacing.snug)
+      .frame(minHeight: Theme.Size.target)
+      .background {
+        if selected {
+          RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+            .fill(Theme.Brand.glacier.opacity(0.12))
+            .overlay {
+              RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .stroke(Theme.Brand.glacier.opacity(0.22), lineWidth: Theme.Stroke.hairline)
+            }
+        }
+      }
+      .contentShape(.rect)
   }
 }
