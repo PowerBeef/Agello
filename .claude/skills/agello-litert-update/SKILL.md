@@ -21,7 +21,7 @@ project (its own CLAUDE.md and skills don't load):
 | --- | --- |
 | `origin` | `PowerBeef/LiteRT-LM` (push here) |
 | `upstream` | `google-ai-edge/LiteRT-LM` (fetch only; push is disabled) |
-| `agello` branch | Starts at tag `v0.18.0`, the version vendored here. Patches Agello needs go on it. |
+| `agello` branch | Tag `v0.18.0` plus Agello's Swift patches (see below); `Vendor/LiteRT-LM` is vendored from it. |
 | Release tags | Live on `release/vX.Y.Z` branches, not on `main` |
 
 Set it up on a new machine. The partial clone keeps full history but fetches
@@ -103,10 +103,17 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
 
 ### Using patches in Agello
 
-- **Swift wrapper patches** (`swift/`): the refresh script below always
-  downloads Google's tag, which would drop them. Vendor from the fork's
-  `agello` branch instead; the script will need a repository and branch
-  option for that.
+- **Swift wrapper patches** (`swift/`) are commits on the fork's `agello`
+  branch; the app vendors that branch pinned to a commit
+  (`REF=<commit> ./Vendor/refresh-litert-lm.sh`, `PowerBeef/LiteRT-LM` by
+  default). Current patches (as of 2026-10-14, commit `a3c0d0ef`):
+  1. `Conversation.handleToolCalls`: a failed tool call (an invented tool
+     name, arguments that don't decode, a tool that throws) is answered with
+     an `error` tool response instead of throwing `toolExecutionError`, which
+     ended the reply. Probe 15 (`test15_FailingToolCallKeepsTheReply`)
+     checks it. Worth offering upstream as an issue, with the user's go-ahead.
+  Each patched file carries a modification notice (Apache 2.0, section 4),
+  and `NOTICE` lists the change.
 - **C++ runtime patches** reach the app only through a rebuilt
   `CLiteRTLM.xcframework` (upstream builds it with Bazel). `Package.swift`
   points at Google's checksummed release binary, so using a patched runtime
@@ -122,16 +129,18 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
 - Note any Swift API changes in `swift/` (Engine, Conversation, Config,
   ResponseFormat, Tool, EmbeddingEngine, ExperimentalFlags). In the fork:
   `git fetch upstream --tags && git diff v0.18.0 vX.Y.Z -- swift/`.
-- After updating, move the fork's `agello` branch to the new tag, re-applying
-  any patches on it.
+- After updating, rebase the fork's `agello` branch onto the new tag
+  (`git rebase --onto vX.Y.Z v0.18.0 agello`), resolve the patches, push it,
+  and vendor the new commit.
 
 ## 2. Refresh
 
 ```sh
-TAG=v0.19.0 ./Vendor/refresh-litert-lm.sh
+REF=<agello commit> ./Vendor/refresh-litert-lm.sh
 ```
 
-Then update the tag in `Vendor/README.md`, the README badge and the
+Never vendor Google's tag directly (`REPO=google-ai-edge/LiteRT-LM REF=…`):
+it drops the patches. Then update the version and commit in `Vendor/README.md`, the README badge and the
 "Vendored LiteRT-LM" section, the code map in `docs/ARCHITECTURE.md`, and
 `NOTICE` if the license or copyright changed.
 

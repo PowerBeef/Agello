@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Agello is an iPhone-only SwiftUI app (iOS 27.0, Swift 6 language mode, no default MainActor isolation) that runs Gemma 4 E4B on-device through LiteRT-LM, with EmbeddingGemma for search by meaning. `README.md` is the project page (features, performance, highlights); `docs/` holds the user guide, architecture, engineering notes (the #3913 fix, reliability safeguards) and testing; `docs/archive/` is a superseded plan.
 
 - One shared scheme, `Agello`, builds the app, the `AgelloWidgets` and `AgelloShare` extensions, and the test targets `AgelloTests` (unit), `AgelloDeviceTests` (real-model scenarios) and `AgelloUITests`.
-- Packages: `Vendor/LiteRT-LM` (local: the Swift wrapper plus Google's checksummed prebuilt `CLiteRTLM.xcframework`), `swift-markdown`, `SwiftMath`. Record any new dependency's license in `NOTICE`.
+- Packages: `Vendor/LiteRT-LM` (local: the Swift wrapper from the fork's `agello` branch, v0.18.0 plus one tool-call patch, and Google's checksummed prebuilt `CLiteRTLM.xcframework`), `swift-markdown`, `SwiftMath`. Record any new dependency's license in `NOTICE`.
 - `../LiteRT-LM` is a clone of the fork with the full C++ runtime source; `.claude/settings.json` makes it readable from here.
 
 ## Commands
