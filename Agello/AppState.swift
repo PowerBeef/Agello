@@ -1120,9 +1120,9 @@ final class AppState {
 
   // MARK: - Benchmark
 
-  /// Run a text benchmark (1024 prefill / 256 decode) on the active model.
-  /// Unloads the chat engine first so the benchmark has full memory; the
-  /// engine reloads lazily on the next chat.
+  /// Run a text benchmark (1024 prefill / 256 decode, without MTP) on the
+  /// active model. Unloads the chat engine first so the benchmark has full
+  /// memory; the engine reloads lazily on the next chat.
   func runBenchmark() async {
     await serialized { await self.runBenchmarkLocked() }
   }
@@ -1146,6 +1146,13 @@ final class AppState {
       // A one-off 1,312-token engine: caching it would keep another 2.2 GB
       // copy of the weights (see EngineCache).
       let cacheDir = EngineCache.disabled
+      // A new engine reads the global MTP flag, which still holds the last
+      // chat load's value: measure without MTP every time (its drafts don't
+      // fit synthetic tokens), then put the flag back.
+      ExperimentalFlags.optIntoExperimentalAPIs()
+      let chatMTP = ExperimentalFlags.enableSpeculativeDecoding
+      ExperimentalFlags.enableSpeculativeDecoding = false
+      defer { ExperimentalFlags.enableSpeculativeDecoding = chatMTP }
       // Extract Sendable scalars inside the task: BenchmarkInfo itself is not Sendable.
       let result = try await Task.detached(priority: .userInitiated) {
         () -> (prefill: Double, decode: Double, ttft: Double) in
