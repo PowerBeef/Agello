@@ -1,5 +1,6 @@
 #!/bin/sh
-# On-device test harness for Agello (physical iPhone only).
+# On-device test harness for Agello: the physical iPhone, or this Mac running
+# the iPhone app (PLATFORM=mac). Never the simulator.
 #
 # Usage:
 #   scripts/device-harness.sh [unit|inference|files|web|ui|all|thinking|memory|calibrate|probes|screenshots] [extra xcodebuild args...]
@@ -24,11 +25,14 @@
 #              screen (attachments/screenshots/) for the README and App Store.
 #   all        unit, inference + files, then ui.
 #
-# Env: DEVICE_ID (default: deviceId from the git-ignored .mobilebuildmcp/config.yaml),
+# Env: PLATFORM (iphone, the default, or mac: this Mac runs the iPhone app
+#      "Designed for iPad/iPhone" through its Metal path; ui, screenshots and
+#      memory stay iPhone-only, and `all` skips ui),
+#      DEVICE_ID (iPhone only; default: deviceId from the git-ignored .mobilebuildmcp/config.yaml),
 #      ONLY (run part of a suite: comma- or space-separated test identifiers
 #      inside it, e.g. ONLY=AgelloTests/AppStateTests/testMockModeSendsWithoutDownloadedModel
 #      scripts/device-harness.sh unit; not with `all`),
-#      OUT (default: build/device-harness),
+#      OUT (default: build/device-harness, or build/mac-harness with PLATFORM=mac),
 #      XCBEAUTIFY (path to xcbeautify, or "off" for raw output; default:
 #      Homebrew's, looked up directly so other xcbeautify copies in PATH are ignored).
 # Outputs: $OUT/<suite>.xcresult, $OUT/<suite>.log (raw xcodebuild output),
@@ -38,10 +42,29 @@ set -eu
 SUITE="${1:-all}"
 [ $# -gt 0 ] && shift
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# shellcheck source=scripts/lib/device.sh
-. "$ROOT/scripts/lib/device.sh"
-resolve_device_id "$ROOT"
-OUT="${OUT:-$ROOT/build/device-harness}"
+PLATFORM="${PLATFORM:-iphone}"
+case "$PLATFORM" in
+  iphone)
+    # shellcheck source=scripts/lib/device.sh
+    . "$ROOT/scripts/lib/device.sh"
+    resolve_device_id "$ROOT"
+    OUT="${OUT:-$ROOT/build/device-harness}"
+    ;;
+  mac)
+    case "$SUITE" in
+      ui | screenshots | memory)
+        echo "The $SUITE suite runs on the iPhone only, not with PLATFORM=mac." >&2
+        exit 2
+        ;;
+    esac
+    # The Mac's destination id is its provisioning UDID.
+    DEVICE_ID="$(system_profiler SPHardwareDataType | sed -n 's/.*Provisioning UDID: *//p')"
+    OUT="${OUT:-$ROOT/build/mac-harness}"
+    # Keep the Mac awake until this script exits.
+    caffeinate -dims -w $$ &
+    ;;
+  *) echo "Unknown PLATFORM: $PLATFORM (iphone or mac)" >&2; exit 2 ;;
+esac
 BUNDLE_ID="com.patricedery.agello"
 mkdir -p "$OUT"
 # Lets the in-app report survive crash relaunches within this run only.
@@ -68,7 +91,7 @@ format_output() {
 xcodebuild_test() {
   xcodebuild test \
     -project "$ROOT/Agello.xcodeproj" -scheme Agello -configuration Debug \
-    -destination "id=$DEVICE_ID" -allowProvisioningUpdates \
+    -destination "id=$DEVICE_ID" -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
     -resultBundlePath "$result" "$@"
 }
 
@@ -86,6 +109,9 @@ run_suite() {
   suite_status="$(cat "$status_file")"
   rm -f "$status_file"
   set -e
+  # Device suites print where the app wrote its report (copied on a Mac).
+  printed="$(sed -n 's/^HARNESS_REPORT_PATH=//p' "$OUT/$name.log" | tail -n 1)"
+  [ -n "$printed" ] && REPORT_PATH="$printed"
   # This run's attachments only (the manifest is rewritten each time).
   rm -rf "$OUT/attachments/$name"
   mkdir -p "$OUT/attachments/$name"
@@ -95,6 +121,14 @@ run_suite() {
 }
 
 pull_report() {
+  if [ "$PLATFORM" = mac ]; then
+    if [ -n "${REPORT_PATH:-}" ] && cp "$REPORT_PATH" "$OUT/harness-report.json" 2>/dev/null; then
+      echo "Report: $OUT/harness-report.json"
+    else
+      echo "No harness report on this Mac"
+    fi
+    return 0
+  fi
   xcrun devicectl device copy from --device "$DEVICE_ID" \
     --domain-type appDataContainer --domain-identifier "$BUNDLE_ID" \
     --source Documents/harness-report.json --destination "$OUT/harness-report.json" \
@@ -160,9 +194,11 @@ case "$SUITE" in
       -only-testing:AgelloDeviceTests/KnowledgeScenarioTests \
       -only-testing:AgelloDeviceTests/WebScenarioTests "$@" || inference_status=$?
     [ "$status" -eq 0 ] && status=$inference_status
-    ui_status=0
-    run_suite ui -only-testing:AgelloUITests "$@" || ui_status=$?
-    [ "$status" -eq 0 ] && status=$ui_status
+    if [ "$PLATFORM" = iphone ]; then
+      ui_status=0
+      run_suite ui -only-testing:AgelloUITests "$@" || ui_status=$?
+      [ "$status" -eq 0 ] && status=$ui_status
+    fi
     ;;
   *) echo "Unknown suite: $SUITE" >&2; exit 2 ;;
 esac

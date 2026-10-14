@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Ground rules
 
-- The physical iPhone is the only test device. Never build, test, or take screenshots in the simulator: it has no Metal path for LiteRT-LM.
+- Test on the physical iPhone, or on this Mac running the iPhone app (`PLATFORM=mac`, "Designed for iPad/iPhone", same Metal path). Never build, test, or take screenshots in the simulator: it has no Metal path for LiteRT-LM.
+- The Mac is the development bed while the phone is away. Its speed and memory aren't the iPhone's, and every change that ships still needs an iPhone run.
 - Run tests with `scripts/device-harness.sh` (below). The iPhone must be connected and unlocked for the whole run.
 - Don't edit files in the target folders (`Agello*/`) while a harness run is building: stage changes elsewhere and apply them after the run.
 - Commit after each verified chunk, directly on `main`. Push only when asked.
@@ -28,6 +29,7 @@ Once per machine, `cp .mobilebuildmcp/config.example.yaml .mobilebuildmcp/config
 
 ```sh
 scripts/device-harness.sh unit      # AgelloTests, ~3 min, scripted engine
+PLATFORM=mac scripts/device-harness.sh inference   # on this Mac; not ui, screenshots or memory
 ONLY=AgelloTests/AppStateTests scripts/device-harness.sh unit
 ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-harness.sh inference
 swiftlint                           # repo root; keep 0 errors (size warnings on the big types are expected)
@@ -45,7 +47,7 @@ scripts/device-run.sh logs 20       # relaunch the installed app, save 20 s of i
 | `thinking` / `memory` / `probes` / `calibrate` (opt-in) | `AgelloDeviceTests/` `ThinkingScenarioTests` / `MemoryEnvelopeScenarioTests` / `ProbeScenarioTests` / `CalibrationScenarioTests` |
 | `screenshots` (opt-in) | `AgelloUITests/ScreenshotTourUITests`: a guided tour with the real model, one screenshot per screen |
 
-- Suites take 3–15 minutes: run them with the Bash tool's `run_in_background` and wait for the notification. Results land in `build/device-harness/`; the exit code is 65 when tests fail.
+- Suites take 3–15 minutes: run them with the Bash tool's `run_in_background` and wait for the notification. Results land in `build/device-harness/` (`build/mac-harness/` on the Mac); the exit code is 65 when tests fail.
 - Tests build Debug (`@testable import`); measure speed in Release. MobileBuildMCP (from your user-scope MCP config; `.mobilebuildmcp/config.yaml` keeps it to device workflows) reads the same `config.yaml`, but run tests through the harness: it sets each suite's environment and collects the results.
 - `--mock-engine` (or the `AGELLO_MOCK_ENGINE` environment variable) runs the whole UI on the scripted engine, without a model.
 

@@ -1,6 +1,6 @@
 # Testing
 
-Agello is tested on a physical iPhone only. The simulator has no Metal path for LiteRT-LM, and the failures that matter (native heap corruption, GPU precision, memory pressure, background termination) only show up on real hardware.
+Agello is tested on a physical iPhone, and on an Apple silicon Mac running the iPhone app. The simulator has no Metal path for LiteRT-LM, and the failures that matter (native heap corruption, GPU precision, memory pressure, background termination) only show up on real hardware.
 
 ## The suites
 
@@ -30,6 +30,17 @@ scripts/device-harness.sh screenshots # opt-in tour with the real model (README 
 
 ONLY=AgelloTests/AppStateTests scripts/device-harness.sh unit   # part of a suite
 ```
+
+### On a Mac
+
+`PLATFORM=mac` runs the suites on the Mac itself: it runs the iPhone app ("Designed for iPad/iPhone") through the same Metal path and the iOS build of LiteRT-LM, which makes it a development bed when no iPhone is at hand. The UI suites and the memory simulation stay iPhone-only, and the Mac's speed and memory aren't an iPhone's: every change still gets an iPhone run before it ships.
+
+```sh
+PLATFORM=mac scripts/device-harness.sh unit
+PLATFORM=mac scripts/device-harness.sh inference
+```
+
+The first run registers the Mac for development with the signing team. Results land in `build/mac-harness/`; app logs come from `log stream --predicate 'subsystem == "com.patricedery.agello"'` and crash reports from `~/Library/Logs/DiagnosticReports/`.
 
 ## Results
 

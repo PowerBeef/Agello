@@ -1,13 +1,14 @@
 ---
 name: agello-device-testing
-description: Run and read Agello's tests on the physical iPhone with scripts/device-harness.sh, and write new tests. Use before running any build or test, when a harness run fails, or when adding or changing tests.
+description: Run and read Agello's tests on the physical iPhone, or on this Mac running the iPhone app, with scripts/device-harness.sh, and write new tests. Use before running any build or test, when a harness run fails, or when adding or changing tests.
 ---
 
 # Agello device testing
 
-Agello is tested on a physical iPhone only. The simulator has no Metal path
-for LiteRT-LM: never build, test, or take screenshots there. MobileBuildMCP is
-configured with the `device` workflow only.
+Agello is tested on a physical iPhone, and on this Mac running the iPhone
+app while the phone is away (see "On this Mac"). The simulator has no Metal
+path for LiteRT-LM: never build, test, or take screenshots there.
+MobileBuildMCP is configured with the `device` workflow only.
 
 ## Before a run
 
@@ -57,6 +58,37 @@ ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-har
 
 Other extra arguments go to `xcodebuild` as is.
 
+## On this Mac
+
+`PLATFORM=mac` runs the suites on this Mac, which runs the iPhone app
+("Designed for iPad/iPhone") through the same Metal path and the iOS slice of
+`CLiteRTLM`. It's the development bed while the iPhone is away. Its speed and
+memory aren't the iPhone's, and a change still needs an iPhone run before it
+ships.
+
+```sh
+PLATFORM=mac scripts/device-harness.sh unit
+PLATFORM=mac ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-harness.sh inference
+```
+
+- `ui`, `screenshots` and `memory` stay iPhone-only: the script refuses them,
+  and `all` skips `ui`. The Mac has no jetsam limit to simulate.
+- The destination is the Mac's provisioning UDID (`system_profiler
+  SPHardwareDataType`). The first run registers the Mac for development.
+- Results land in `build/mac-harness/`. Device suites print
+  `HARNESS_REPORT_PATH=` in their log, and the script copies
+  `harness-report.json` from there.
+- The app's data lives in its sandbox container,
+  `~/Library/Containers/<uuid>/Data/`. Find it with
+  `for d in ~/Library/Containers/*/; do [ "$(plutil -extract MCMMetadataIdentifier raw "$d.com.apple.containermanagerd.metadata.plist" 2>/dev/null)" = com.patricedery.agello ] && echo "$d"; done`.
+  - Skip downloads: clone the models from `~/Models/agello/` into
+    `Data/Library/Application Support/Models/` with `cp -c`.
+  - Lab models for the probes go in `Data/Documents/lab/`.
+  - Settings: `defaults read <container>/Data/Library/Preferences/com.patricedery.agello`.
+- Logs: `log stream --level debug --predicate 'subsystem == "com.patricedery.agello"'`.
+  Crash reports: `~/Library/Logs/DiagnosticReports/Agello-*.ips`.
+- The script keeps the Mac awake (`caffeinate`) until it exits.
+
 ## Outside test runs
 
 `scripts/device-run.sh` looks at the installed app directly (results in
@@ -80,7 +112,7 @@ scripts/device-run.sh crashes pull            # copy them to build/device-run/cr
 
 ## Reading results
 
-Everything lands in `build/device-harness/`:
+Everything lands in `build/device-harness/` (`build/mac-harness/` on the Mac):
 
 | File | Use |
 | --- | --- |
@@ -88,7 +120,7 @@ Everything lands in `build/device-harness/`:
 | `<suite>.log` | Full raw `xcodebuild` output: grep it for `error:` |
 | `<suite>.xcresult` | `xcrun xcresulttool get test-results summary --path <bundle>` gives counts and `testFailures` as JSON |
 | `attachments/<suite>/` | Per-scenario JSON metrics (device suites) and screenshots (UI tests) |
-| `harness-report.json` | In-app report pulled from the device: every recorded scenario of the last run |
+| `harness-report.json` | In-app report pulled from the device: every recorded scenario of the last run, and the device (hardware, `isiOSAppOnMac`, GPU family, Metal working set) |
 
 The script's exit code is `xcodebuild`'s (65 = test failures).
 

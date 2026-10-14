@@ -1,3 +1,4 @@
+import Metal
 import SwiftData
 import UIKit
 import XCTest
@@ -41,6 +42,7 @@ final class DeviceHarness {
   ]
   private var savedDefaults: [String: Any] = [:]
   private var report: [String: Any] = [:]
+  private var announcedReport = false
 
   var context: ModelContext { container.mainContext }
   var liveEngine: LiteRTChatEngine? { appState.engine as? LiteRTChatEngine }
@@ -61,11 +63,19 @@ final class DeviceHarness {
     appState.webSettings = baselineWeb
     // Long downloads and generations must not be interrupted by auto-lock.
     UIApplication.shared.isIdleTimerDisabled = true
+    let gpu = MTLCreateSystemDefaultDevice()
     report["device"] = [
       "model": UIDevice.current.model,
+      "hwMachine": Self.sysctl("hw.machine"),
+      "hwModel": Self.sysctl("hw.model"),
+      // A Mac running the iPhone app (scripts/device-harness.sh PLATFORM=mac).
+      "isiOSAppOnMac": ProcessInfo.processInfo.isiOSAppOnMac,
       "system": "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
       "memoryGB": DeviceProfile.current.memoryGB,
       "profile": DeviceProfile.current.summary,
+      "gpu": gpu?.name ?? "none",
+      "gpuAppleFamily": gpu.map(Self.appleFamily) ?? 0,
+      "gpuWorkingSetGB": Double(gpu?.recommendedMaxWorkingSetSize ?? 0) / 1e9,
     ]
     report["startedAt"] = ISO8601DateFormatter().string(from: Date())
     // XCTest relaunches the app after a crash and continues with the next
@@ -88,6 +98,21 @@ final class DeviceHarness {
   private static var reportURL: URL? {
     FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
       .appendingPathComponent("harness-report.json")
+  }
+
+  private static func sysctl(_ name: String) -> String {
+    var size = 0
+    guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return "" }
+    var value = [CChar](repeating: 0, count: size)
+    guard sysctlbyname(name, &value, &size, nil, 0) == 0 else { return "" }
+    return value.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
+  }
+
+  /// The newest Apple GPU family the device supports: 7 for A14 and M1, 9
+  /// for A17 Pro and M3, and so on.
+  private static func appleFamily(_ device: any MTLDevice) -> Int {
+    let family = (1001...1020).last { MTLGPUFamily(rawValue: $0).map(device.supportsFamily) ?? false }
+    return family.map { $0 - 1000 } ?? 0
   }
 
   func restoreUserDefaults() {
@@ -222,6 +247,11 @@ final class DeviceHarness {
         withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
     else { return }
     try? data.write(to: url, options: .atomic)
+    // scripts/device-harness.sh copies the report from here on a Mac.
+    if !announcedReport {
+      announcedReport = true
+      FileHandle.standardError.write(Data("HARNESS_REPORT_PATH=\(url.path)\n".utf8))
+    }
   }
 
   func resolvedSummary() -> [String: Any] {
