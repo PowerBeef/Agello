@@ -35,8 +35,8 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | **Spotlight** | Show chats in system search (on by default) |
 | **Models** | Download, pause, resume, or delete Gemma 4 E4B and EmbeddingGemma |
 | **On-device tools** | Turn the tools (date and time, calculator) on or off |
-| **Advanced → Performance** | GPU or CPU backend · speculative decoding (MTP) · compact reasoning cache (keeps reasoning out of the KV cache, for a longer effective context) · show performance details under each reply (off by default) |
-| **Advanced → Reasoning & Memory** | Thinking on or off, and its token budget · automatic or manual KV-cache size |
+| **Advanced → Performance** | GPU or CPU backend · speculative decoding (MTP) · show performance details under each reply (off by default) |
+| **Advanced → Reasoning & Memory** | Thinking on or off, and its token budget · automatic or manual KV-cache size. Reasoning leaves the model's memory once the reply is done, so it never uses up a chat's context. |
 | **Advanced → Sampling** | Precise (temperature 0.2) · Balanced (0.7) · Creative (1.0) |
 | **Advanced → Voice & Vision** | Image and audio input · image detail (140 / 280 / 560 visual tokens) |
 | **Advanced → System prompt** | The base instructions for every conversation |

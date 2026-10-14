@@ -15,7 +15,6 @@ struct ResolvedInference: Sendable, Equatable {
   var visualTokenBudget: Int32?
   var enableSpeculativeDecoding: Bool
   var maxOutputTokens: Int?
-  var filterThoughtFromCache: Bool
 
   var backendLabel: String { useGPU ? "GPU" : "CPU" }
 }
@@ -212,8 +211,7 @@ enum InferencePlanner {
       temperature: options.samplerPreset.temperature,
       visualTokenBudget: options.enableVision ? options.visualDetail.tokenBudget : nil,
       enableSpeculativeDecoding: options.enableSpeculativeDecoding,
-      maxOutputTokens: options.maxOutputTokens,
-      filterThoughtFromCache: options.compactReasoningCache
+      maxOutputTokens: options.maxOutputTokens
     )
   }
 
@@ -266,7 +264,6 @@ enum InferencePlanner {
     out.topP = plan.topP
     out.temperature = plan.temperature
     out.maxOutputTokens = plan.maxOutputTokens
-    out.filterThoughtFromCache = plan.filterThoughtFromCache
     out.visualTokenBudget = engine.enableVision ? plan.visualTokenBudget : nil
     return out
   }

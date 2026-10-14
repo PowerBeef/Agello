@@ -60,19 +60,51 @@ final class ThinkingScenarioTests: DeviceTestCase {
     XCTAssertFalse(after.text.hasPrefix(ChatTurn.errorPrefix), after.text)
   }
 
-  /// "Compact reasoning cache" keeps thought tokens out of the KV cache.
-  /// Multi-turn chat must keep working (and remember earlier answers).
-  func test02_CompactReasoningCache() async throws {
+  /// Reasoning never stays in the KV cache. Two Think turns on the live
+  /// conversation: the second keeps the first answer but drops its reasoning
+  /// (the runtime rewinds and refills the answer). Then multi-turn chat keeps
+  /// working and remembers earlier answers.
+  func test02_ReasoningStaysOutOfCache() async throws {
     try await requireLoadedModel()
     appState.options.enableThinking = true
     appState.options.thinkingBudget = 512
-    appState.options.compactReasoningCache = true
     await appState.applyCurrentOptions()
-    defer {
-      appState.options.enableThinking = false
-      appState.options.compactReasoningCache = false
-    }
-    XCTAssertEqual(appState.resolved?.filterThoughtFromCache, true, "Compact cache not applied")
+    defer { appState.options.enableThinking = false }
+
+    // Straight to the engine: AppState's helpers (titles) would empty the
+    // conversation between turns and reseed it from history.
+    let engine = try XCTUnwrap(harness.liveEngine)
+    try await engine.reseed(history: [])
+    let first = try await Self.collect(
+      engine.send(
+        text: "What is 17 * 23? Think it through, then give the number.", imageData: nil,
+        audioFileURL: nil))
+    let afterFirst = await engine.cachedTokenCount()
+    let second = try await Self.collect(
+      engine.send(
+        text: "Add 9 to that result. Reply with the number.", imageData: nil, audioFileURL: nil))
+    let afterSecond = await engine.cachedTokenCount()
+    // Kept, the first reasoning would leave the cache growing by at least the
+    // second reply plus its reasoning (the decode count leaves reasoning out;
+    // reasoning runs ≤ 4 bytes per token). Dropped, the growth is that minus
+    // the first reasoning. Measured on the iPhone 17 Pro: 22 tokens with the
+    // filter against a floor of 43; with it off, 159 against 78.
+    let secondOutput = second.outputTokens ?? 0
+    let growth = afterSecond - afterFirst
+    let floorIfKept = secondOutput + second.thought.utf8.count / 4
+    harness.record(
+      "e4b_03_reasoning_cache",
+      [
+        "afterFirst": afterFirst, "afterSecond": afterSecond, "secondOutput": secondOutput,
+        "growth": growth, "floorIfKept": floorIfKept,
+        "firstThoughtBytes": first.thought.utf8.count, "secondThoughtBytes": second.thought.utf8.count,
+        "firstAnswer": String(first.text.prefix(120)), "secondAnswer": String(second.text.prefix(120)),
+      ], in: self)
+    XCTAssertGreaterThan(afterFirst, 0, "No token count after the first turn")
+    XCTAssertGreaterThan(first.thought.utf8.count, 160, "Too little reasoning to measure: \(first.thought)")
+    XCTAssertLessThan(
+      growth, floorIfKept, "The first reasoning stayed in the cache (grew \(growth), floor \(floorIfKept))")
+    XCTAssertTrue(second.text.contains("400"), "Expected 400: \(second.text)")
 
     let thread = harness.newThread()
     let turns = [
@@ -89,10 +121,33 @@ final class ThinkingScenarioTests: DeviceTestCase {
         "inputTokens": exchange.reply?.stats?.inputTokens ?? -1,
         "error": appState.generationError ?? "",
       ])
-      harness.record("e4b_03_compact_cache", ["results": results], in: self)
+      harness.record("e4b_03_reasoning_chat", ["results": results], in: self)
       XCTAssertFalse(exchange.text.hasPrefix(ChatTurn.errorPrefix), exchange.text)
       XCTAssertFalse(exchange.reply?.thought.isEmpty ?? true, "No reasoning streamed: \(prompt)")
       XCTAssertTrue(exchange.text.contains(expected), "Expected \(expected): \(exchange.text)")
     }
+  }
+
+  private struct StreamedReply {
+    var text = ""
+    var thought = ""
+    var outputTokens: Int?
+  }
+
+  /// Run one streamed reply to its end.
+  private static func collect(_ stream: AsyncThrowingStream<ChatEvent, Error>) async throws
+    -> StreamedReply
+  {
+    var reply = StreamedReply()
+    for try await event in stream {
+      switch event {
+      case .chunk(let chunk):
+        reply.text += chunk.textDelta
+        reply.thought += chunk.thoughtDelta ?? ""
+      case .finished(let stats):
+        reply.outputTokens = stats.outputTokens
+      }
+    }
+    return reply
   }
 }

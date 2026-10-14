@@ -103,9 +103,6 @@ struct InferenceOptions: Codable, Sendable, Equatable {
   /// Multi-Token Prediction / speculative decoding. Faster decode, same quality.
   var enableSpeculativeDecoding: Bool = true
   var maxOutputTokens: Int? = nil
-  /// Drop reasoning-channel tokens from the KV cache. Longer effective
-  /// context when thinking is on; the thought text still streams to the UI.
-  var compactReasoningCache: Bool = false
   /// Offer the model the `web_search` tool (automatic web search; runtime
   /// only, from the web settings).
   var webSearchTool: Bool = false
@@ -114,7 +111,7 @@ struct InferenceOptions: Codable, Sendable, Equatable {
   private enum CodingKeys: String, CodingKey {
     case backendPreference, maxNumTokensOverride, enableThinking, thinkingBudget, samplerPreset
     case systemPrompt, enableVision, enableAudio, visualDetail, enableSpeculativeDecoding
-    case maxOutputTokens, compactReasoningCache
+    case maxOutputTokens
   }
 }
 

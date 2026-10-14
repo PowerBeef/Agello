@@ -92,6 +92,10 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 
   var isLoaded: Bool { engine != nil && conversation != nil }
 
+  /// Tokens the live conversation holds in the KV cache, as the runtime
+  /// counts them (0 until the first send; device tests).
+  func cachedTokenCount() -> Int { (try? conversation?.getTokenCount()) ?? 0 }
+
   /// Tokens currently held by the KV cache (measured once anything was sent).
   private func usedTokens() -> Int {
     let measured = (try? conversation?.getTokenCount()) ?? 0
@@ -123,6 +127,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     // Stats collection for the per-reply footer (TTFT, tok/s).
     ExperimentalFlags.optIntoExperimentalAPIs()
     ExperimentalFlags.enableBenchmark = true
+    // Reasoning never stays in the KV cache: at the next message the runtime
+    // rewinds and refills the answer without it. That keeps the room for
+    // the conversation, and matches a reseed from saved history (which has
+    // no reasoning). LiteRT-LM defaults to this too; set it explicitly.
+    ExperimentalFlags.filterChannelContentFromKvCache = true
 
     guard FileManager.default.fileExists(atPath: modelURL.path) else {
       throw ChatError.modelFileMissing
@@ -150,8 +159,6 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     // Engine-level flags must be set before the engine is created. The
     // conversation-level MTP flag (set in makeConversation) inherits these.
     ExperimentalFlags.enableSpeculativeDecoding = plan.enableSpeculativeDecoding
-    ExperimentalFlags.filterChannelContentFromKvCache =
-      plan.filterThoughtFromCache ? true : nil
 
     // Attempt ladder: preferred backend first, then the other; multimodal
     // before text-only on each. Degrades gracefully when the model file
@@ -397,8 +404,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       built: builtPlan, requested: plan(for: newOptions, model: spec.id))
   }
 
-  /// Apply conversation-level options (sampler, thinking, tools, cache
-  /// compaction, visual budget) by recreating the conversation. The caller
+  /// Apply conversation-level options (sampler, thinking, tools, visual
+  /// budget) by recreating the conversation. The caller
   /// must use `load` instead when ``engineSettingsChanged(for:)`` is true.
   func updateConversationOptions(
     _ newOptions: InferenceOptions, enableTools: Bool, history: [(role: ChatRole, text: String)]
@@ -409,8 +416,6 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     options = newOptions
     resolved = updated
     toolsEnabled = enableTools
-    ExperimentalFlags.filterChannelContentFromKvCache =
-      updated.filterThoughtFromCache ? true : nil
     try await reseed(history: history)
     return updated
   }

@@ -36,6 +36,14 @@ and the simulator can't catch any of them.
 - The token estimate is about 3 bytes per token, learned upward from exact
   runtime counts (`estimateCalibration`, clamped 1–3). Estimates must stay
   conservative.
+- Reasoning never stays in the KV cache: `load` sets
+  `ExperimentalFlags.filterChannelContentFromKvCache = true` explicitly (the
+  runtime's builder defaults to true; an unset flag means that default, not
+  off). At the next message the runtime rewinds and refills the answer
+  without its reasoning, which matches a reseed from SwiftData history.
+  Measured on the iPhone (two Think turns): 399 cached tokens with the
+  filter, 536 with it explicitly off; `ThinkingScenarioTests/test02`
+  guards it with `cachedTokenCount()`.
 - Chat uses an 8K cache. Settings can raise it to 16K, or 32K when the app
   may use at least 6.5 GB; nothing raises it automatically. A bigger cache
   slows every reply, so don't raise the default.

@@ -43,8 +43,6 @@ struct AdvancedSettingsView: View {
       .themedRow()
       Toggle("Speculative decoding (MTP)", isOn: bindable.options.enableSpeculativeDecoding)
         .themedRow()
-      Toggle("Compact reasoning cache", isOn: bindable.options.compactReasoningCache)
-        .themedRow()
       Toggle("Show performance details", isOn: $showStats)
         .themedRow()
         .accessibilityIdentifier("settings.showStats")
@@ -54,7 +52,6 @@ struct AdvancedSettingsView: View {
       Text(
         "The GPU decodes about twice as fast and falls back to the CPU automatically. "
           + "Speculative decoding doubles GPU decode speed with no quality change. "
-          + "The compact cache keeps reasoning out of the KV cache for a longer context. "
           + "Performance details show time to first token, speed and backend under each reply."
       )
       .foregroundStyle(Theme.Text.tertiary)
@@ -89,7 +86,7 @@ struct AdvancedSettingsView: View {
       Text("Reasoning & Memory").eyebrowStyle()
     } footer: {
       Text(
-        "Reasoning streams into a card above each reply. "
+        "Reasoning streams into a card above each reply, then leaves the model's memory, so it doesn't use up the context. "
           + "Automatic context uses \(DeviceProfile.current.defaultMaxTokens(model: appState.store.activeModelID)) tokens; "
           + "a bigger cache fits longer messages but slows every reply."
       )

@@ -134,17 +134,6 @@ final class InferencePlannerTests: XCTestCase {
     XCTAssertEqual(InferencePlanner.applyCapabilities(.full, to: plan), plan)
   }
 
-  func testCompactReasoningCachePassthrough() {
-    XCTAssertFalse(
-      InferencePlanner.resolve(options: InferenceOptions(), model: .e4b, memoryBytes: roomy)
-        .filterThoughtFromCache)
-    var options = InferenceOptions()
-    options.compactReasoningCache = true
-    XCTAssertTrue(
-      InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: roomy)
-        .filterThoughtFromCache)
-  }
-
   // MARK: - Engine reload vs. conversation update (audit #4)
 
   func testEngineLevelChangesRequireReload() {
@@ -171,7 +160,6 @@ final class InferencePlannerTests: XCTestCase {
     options.samplerPreset = .creative
     options.enableThinking = true
     options.visualDetail = .detailed
-    options.compactReasoningCache = true
     options.systemPrompt = "Be terse."
     let requested = InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: roomy)
     XCTAssertFalse(InferencePlanner.requiresEngineReload(built: base, requested: requested))
