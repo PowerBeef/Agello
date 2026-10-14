@@ -68,7 +68,7 @@ Web search follows the same shape: a provider chain with bot-check and rate-limi
 ## Memory, background and lifecycle
 
 - **Memory limits.** The memory entitlements raise the app's limit to about 8.6 GB on a 12 GB iPhone 17 Pro and prevent address-space exhaustion when engines are rebuilt. A reply stops only when available memory falls below 400 MB, not at the first memory warning. The 8 GB floor (iPhone 15 Pro) was validated by simulating 5.0, 4.0 and 3.5 GB of usable memory.
-- **Background GPU.** iOS doesn't allow GPU work in the background, so a reply stops cleanly when the app leaves the foreground, except long document summaries: they run as a continued processing task with background GPU, where the device supports it, with progress in a Live Activity that can cancel them.
+- **Background GPU.** iOS doesn't allow GPU work in the background, so a reply stops cleanly when the app leaves the foreground, except long document summaries: they run as a continued processing task with background GPU, where the device supports it, with progress in a Live Activity that can cancel them. The iPhone 17 Pro on iOS 27 doesn't (`BGTaskScheduler.supportedResources` is empty, with the entitlement signed in), so there a summary stops with a notice like any other reply.
 - **Extensions hand off.** Widgets, Control Center, Siri and the share sheet can't load a 3.7 GB model, so they hand their request to the app (App Intents, `irtchat://` links, and an App Group inbox for shared items).
 
 ## Model quirks we don't trust

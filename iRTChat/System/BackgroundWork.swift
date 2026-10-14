@@ -13,6 +13,8 @@ final class BackgroundWork {
 
   /// Called when iOS or the user cancels the task.
   var onExpire: (() -> Void)?
+  /// Why the last task didn't start (diagnostics and tests).
+  private(set) var lastFailure: String?
 
   private var task: BGContinuedProcessingTask?
   private var identifier: String?
@@ -30,7 +32,12 @@ final class BackgroundWork {
 
   /// Start a continued task for the reply the user just asked for.
   func begin(title: String, subtitle: String) {
-    guard identifier == nil, Self.supportsBackgroundGPU else { return }
+    guard identifier == nil else { return }
+    guard Self.supportsBackgroundGPU else {
+      lastFailure = "no background GPU"
+      return
+    }
+    lastFailure = nil
     let identifier = Self.identifierPrefix + UUID().uuidString
     self.identifier = identifier
     self.title = title
@@ -60,6 +67,7 @@ final class BackgroundWork {
     }
     guard registered else {
       self.identifier = nil
+      lastFailure = "registration refused"
       return
     }
     let request = BGContinuedProcessingTaskRequest(
@@ -71,6 +79,7 @@ final class BackgroundWork {
       try BGTaskScheduler.shared.submit(request)
     } catch {
       self.identifier = nil
+      lastFailure = String(describing: error)
       Log.lifecycle.error("continued task: \(error.localizedDescription, privacy: .public)")
     }
   }

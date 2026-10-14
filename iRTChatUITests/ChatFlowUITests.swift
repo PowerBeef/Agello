@@ -1,3 +1,4 @@
+import BackgroundTasks
 import XCTest
 
 /// Real-tap flows on the device. Each test launches the app from a clean
@@ -291,7 +292,8 @@ final class ChatFlowUITests: XCTestCase {
 
   /// A long document summary keeps running while the app is in the
   /// background (a continued processing task with background GPU access on
-  /// devices that support it; otherwise the reply stops with a notice).
+  /// devices that support it; otherwise the reply stops cleanly, with a
+  /// notice). The iPhone 17 Pro on iOS 27 has no background GPU.
   func testLongSummarySurvivesBackgrounding() throws {
     try XCTSkipIf(Self.isSimulator, "Needs real GPU generation")
     app.terminate()
@@ -311,9 +313,13 @@ final class ChatFlowUITests: XCTestCase {
     attachScreenshot("summary-after-background")
     XCTAssertFalse(
       lastModelText().hasPrefix("Error:"), "Backgrounding broke the summary: \(lastModelText())")
-    XCTAssertFalse(
-      element("chat.banner.notice").exists,
-      "The summary stopped when the app moved to the background")
+    let notice = element("chat.banner.notice")
+    guard BGTaskScheduler.supportedResources.contains(.gpu) else {
+      XCTAssertTrue(notice.exists, "No notice after the summary stopped in the background")
+      XCTAssertTrue(notice.label.contains("background"), notice.label)
+      return
+    }
+    XCTAssertFalse(notice.exists, "The summary stopped when the app moved to the background")
     XCTAssertGreaterThan(lastModelText().count, 200, lastModelText())
   }
 
