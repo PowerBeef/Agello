@@ -43,6 +43,7 @@ scripts/device-run.sh logs 20       # relaunch the installed app, save 20 s of i
 | `unit` / `ui` | `iRTChatTests` / `iRTChatUITests` |
 | `inference` / `files` / `web` | `iRTChatDeviceTests/` `InferenceScenarioTests` / `KnowledgeScenarioTests` / `WebScenarioTests` |
 | `thinking` / `memory` / `probes` / `calibrate` (opt-in) | `iRTChatDeviceTests/` `ThinkingScenarioTests` / `MemoryEnvelopeScenarioTests` / `ProbeScenarioTests` / `CalibrationScenarioTests` |
+| `screenshots` (opt-in) | `iRTChatUITests/ScreenshotTourUITests`: a guided tour with the real model, one screenshot per screen |
 
 - Suites take 3–15 minutes: run them with the Bash tool's `run_in_background` and wait for the notification. Results land in `build/device-harness/`; the exit code is 65 when tests fail.
 - Tests build Debug (`@testable import`); measure speed in Release. MobileBuildMCP (pinned in `.mcp.json`, device workflows only) reads the same `config.yaml`, but run tests through the harness: it sets each suite's environment and collects the results.
@@ -57,6 +58,7 @@ scripts/device-run.sh logs 20       # relaunch the installed app, save 20 s of i
 - **Persistence.** SwiftData `VersionedSchema`s in `Persistence/Schema/` (current: V3) with `ChatMigrationPlan`; code uses the typealiases in `Persistence/ChatHistory.swift`. Turns form a tree (`parentID`), and the thread's `activeLeafID` selects the visible branch: that's how edit, regenerate and the version switcher work.
 - **Knowledge.** `KnowledgeBase`: `DocumentIngestor` (PDFKit, Vision OCR) → `Chunker` (page-aware passages) → `LiteRTEmbedder` (EmbeddingGemma) → float16 vectors stored in SwiftData and searched by brute force (`VectorIndex`), with BM25 as the fallback. `FileContext` chooses whole files, a cached summary, or cited passages. `Knowledge/Web/` holds `WebResearch` (the chosen provider, then DuckDuckGo, then Wikipedia) and `WebSearchTool` for automatic mode.
 - **Outside the app.** Extensions can't run the model, so everything hands off to the app: App Intents and `irtchat://` links → `AppRouter.shared.pending` → `ContentView`; the share extension leaves items in the App Group `ShareInbox`, which the app answers on launch and activation. Long document summaries run under `BackgroundWork` (`BGContinuedProcessingTask` with background GPU); other replies stop when the app leaves the foreground.
+- **Design system.** `Support/Theme/`, adapted from the Vocello app: one dark palette (warm neutrals on a navy canvas, forced app-wide) and four mode accents (chat glacier, Think lavender, Search teal, Voice gold) that tint the backdrop glow, the pills and the send button. Liquid Glass stays on chrome (`chromeSurface`: composer, banners) and falls back to solid under Reduce Transparency; content uses `surfaceCard`; the primary action uses `LitButtonStyle` / `LitCircleButtonStyle`; motion goes through `Theme.Motion` and `appAnimation` (off under Reduce Motion). Build UI from these tokens and components: no system blue, no literal sizes.
 - **Models.** `ModelHub/ModelCatalog.swift` describes each download (Hugging Face repo, file, exact size). `ModelStore` downloads in a background `URLSession`, checks the size, and deletes any file in its folder the catalog doesn't list, so renaming a catalog file makes every user download it again.
 
 ## Gotchas
@@ -65,6 +67,7 @@ scripts/device-run.sh logs 20       # relaunch the installed app, save 20 s of i
 - **Tests run inside the app on the phone** and share its UserDefaults and Documents; `irtchat-device-testing` covers the isolation rules.
 - **Settings decoding.** `InferenceOptions` uses synthesized `Codable`: a new non-optional stored key makes saved settings fail to decode and silently resets every option. Make new keys optional, or decode tolerantly as `Personalization` does.
 - **Schema changes** need a new frozen `SchemaV4` (new properties optional or defaulted), a migration stage, repointed typealiases and `ChatStore.schema`, and an on-disk migration test like those in `ChatSchemaTests`. `ChatStoreLoader` moves a store that won't open aside and starts empty, so a broken migration wipes history instead of crashing. New `MessageParts` fields need no new version (decoded with `decodeIfPresent`).
+- **Settings → Advanced** (`AdvancedSettingsView`) holds the engine's developer controls; "Show performance details" (`showPerformanceDetails`) turns on the stats line under replies, which is hidden by default.
 - **Accessibility identifiers** follow `screen.element` (`chat.stop`, `composer.think`, `models.ready.<id>`). UI tests find elements by them, so keep them stable.
 
 ## Style

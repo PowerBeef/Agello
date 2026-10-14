@@ -2,7 +2,7 @@
 # On-device test harness for iRTChat (physical iPhone only).
 #
 # Usage:
-#   scripts/device-harness.sh [unit|inference|files|web|ui|all|thinking|memory|calibrate|probes] [extra xcodebuild args...]
+#   scripts/device-harness.sh [unit|inference|files|web|ui|all|thinking|memory|calibrate|probes|screenshots] [extra xcodebuild args...]
 #
 #   unit       Unit tests (planner, budgets, schema, markdown, files, projects,
 #              the app pipeline through the scripted engine), on the iPhone.
@@ -20,6 +20,8 @@
 #   calibrate  Context-size calibration: memory and speed at 4K-32K KV caches.
 #   probes     LiteRT-LM feature probes (helper conversation, JSON, embeddings).
 #   memory     8 GB iPhone memory simulation (E4B at 5.0/4.0/3.5 GB usable).
+#   screenshots  A guided UI tour with the real model: one screenshot per
+#              screen (attachments/screenshots/) for the README and App Store.
 #   all        unit, inference + files, then ui.
 #
 # Env: DEVICE_ID (default: deviceId from the git-ignored .mobilebuildmcp/config.yaml),
@@ -140,6 +142,10 @@ case "$SUITE" in
   calibrate)
     export TEST_RUNNER_HARNESS_CALIBRATE=1
     scopes="iRTChatDeviceTests/CalibrationScenarioTests"
+    ;;
+  screenshots)
+    export TEST_RUNNER_HARNESS_SCREENSHOTS=1
+    scopes="iRTChatUITests/ScreenshotTourUITests"
     ;;
   all)
     if [ -n "${ONLY:-}" ]; then

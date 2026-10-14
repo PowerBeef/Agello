@@ -34,6 +34,7 @@ scripts/device-harness.sh ui          # real-tap flows; needs E4B downloaded
 scripts/device-harness.sh all         # unit, then inference+files+web, then ui
 # Opt-in:
 scripts/device-harness.sh thinking | memory | calibrate | probes
+scripts/device-harness.sh screenshots # UI tour, one screenshot per screen
 ```
 
 Start suites with the Bash tool's `run_in_background: true` and send the
@@ -126,6 +127,18 @@ App logs use subsystem `com.patricedery.irtchat`, categories `engine`,
 - **Target membership.** New files in a test folder join its target
   automatically; non-Swift files become bundle resources unless excluded in
   `project.pbxproj` (as each `.swiftlint.yml` is).
+
+## UI tests and the design
+
+- Reply stats (`message.stats`) are hidden unless Settings → Advanced →
+  Show performance details is on.
+- The sampler presets ("Precise"…) live in Settings → Advanced
+  (`settings.advanced`).
+- `--uitest-reset` wipes chats, projects, files, memories and all settings
+  (models are kept): the dev install's own data on the phone goes too.
+- Screenshots for the README and App Store come from
+  `scripts/device-harness.sh screenshots` (`attachments/screenshots/`,
+  names `tour-NN-…` in its `manifest.json`), never the simulator.
 
 ## Known issues
 

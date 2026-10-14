@@ -17,6 +17,22 @@ final class ChatFlowUITests: XCTestCase {
     #endif
   }
 
+  /// Every failure carries a screenshot of the app at that moment.
+  nonisolated override func record(_ issue: XCTIssue) {
+    // XCTest records failures on the main thread.
+    nonisolated(unsafe) var issue = issue
+    nonisolated(unsafe) let test = self
+    MainActor.assumeIsolated {
+      if let app = test.app, app.state == .runningForeground {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "failure"
+        attachment.lifetime = .keepAlways
+        issue.add(attachment)
+      }
+    }
+    super.record(issue)
+  }
+
   override func setUp() async throws {
     continueAfterFailure = false
     app = XCUIApplication()
@@ -37,7 +53,8 @@ final class ChatFlowUITests: XCTestCase {
     if !Self.isSimulator {
       XCTAssertTrue(reply.localizedCaseInsensitiveContains("Paris"), reply)
     }
-    XCTAssertTrue(element("message.stats").waitForExistence(timeout: 5), "Stats footer missing")
+    // Performance details are off by default (Settings → Advanced).
+    XCTAssertFalse(element("message.stats").exists, "Stats shown without the setting")
   }
 
   /// Audit #10.
@@ -106,14 +123,24 @@ final class ChatFlowUITests: XCTestCase {
     send("Say 'one'.")
     try waitForReplyToFinish(timeout: 120)
     openSettings()
-    // Settings is a lazily loaded Form: scroll the sampler presets into view.
+    // The sampler presets live in Settings → Advanced, a lazily loaded Form:
+    // scroll them into view.
+    let advanced = element("settings.advanced")
+    for _ in 0..<6 where !advanced.isHittable {
+      app.swipeUp()
+    }
+    advanced.tap()
     let precise = app.buttons["Precise"].firstMatch
+    XCTAssertTrue(precise.waitForExistence(timeout: 5), "Advanced settings did not open")
     for _ in 0..<8 where !precise.isHittable {
       app.swipeUp()
     }
     for preset in ["Precise", "Creative", "Balanced", "Creative", "Precise"] {
       app.buttons[preset].firstMatch.tap()
     }
+    // Back to Settings: Settings' own bar (with Done) stays in the hierarchy
+    // underneath, so ask for Advanced's bar specifically.
+    app.navigationBars["Advanced"].buttons.element(boundBy: 0).tap()
     for _ in 0..<8 where !element("settings.status").isHittable {
       app.swipeDown()
     }
