@@ -37,3 +37,6 @@ fastlane/test_output
 
 # Claude Code personal settings (prompt approvals, MCP approvals)
 .claude/settings.local.json
+
+# SourceKit-LSP build server config (machine-local; xcode-build-server config)
+buildServer.json
