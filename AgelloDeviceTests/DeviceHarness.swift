@@ -221,6 +221,7 @@ final class DeviceHarness {
     var entry = values
     entry["memory.footprintGB"] = Double(MemoryProbe.footprintBytes()) / 1e9
     entry["memory.availableGB"] = Double(MemoryProbe.availableBytes()) / 1e9
+    if let telemetry = EngineTelemetry.snapshot() { entry["telemetry"] = telemetry }
     entry["recordedAt"] = ISO8601DateFormatter().string(from: Date())
     var scenarios = report["scenarios"] as? [String: Any] ?? [:]
     scenarios[scenario] = entry
@@ -292,6 +293,7 @@ class DeviceTestCase: XCTestCase {
       throw XCTSkip("On-device inference only: run on a physical iPhone.")
     #else
       continueAfterFailure = true
+      EngineTelemetry.reset()
     #endif
   }
 
@@ -312,5 +314,33 @@ class DeviceTestCase: XCTestCase {
       XCTFail("E4B failed to load: \(appState.engineState)")
       throw XCTSkip("Engine not loaded")
     }
+  }
+}
+
+/// The engine's own telemetry (agello/telemetry in our LiteRT-LM builds): counters, span timings,
+/// GPU time, anomalies and memory since the scenario started. Looked up at run time, so the
+/// harness also runs against Google's binary, which doesn't have it. The harness script sets
+/// the level (AGELLO_TELEMETRY, default 2).
+enum EngineTelemetry {
+  private typealias Snapshot = @convention(c) () -> UnsafeMutablePointer<CChar>?
+  private typealias Free = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void
+  private typealias Reset = @convention(c) () -> Void
+
+  private static func symbol<T>(_ name: String, as _: T.Type) -> T? {
+    guard let handle = dlopen(nil, RTLD_NOW), let address = dlsym(handle, name) else { return nil }
+    return unsafeBitCast(address, to: T.self)
+  }
+
+  static func reset() {
+    symbol("litert_lm_telemetry_reset", as: Reset.self)?()
+  }
+
+  static func snapshot() -> [String: Any]? {
+    guard let take = symbol("litert_lm_telemetry_snapshot_json", as: Snapshot.self),
+      let free = symbol("litert_lm_telemetry_free_string", as: Free.self),
+      let text = take()
+    else { return nil }
+    defer { free(text) }
+    return (try? JSONSerialization.jsonObject(with: Data(String(cString: text).utf8))) as? [String: Any]
   }
 }

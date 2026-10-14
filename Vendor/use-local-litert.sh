@@ -7,6 +7,9 @@
 #   Vendor/use-local-litert.sh [path/to/LiteRT-LM]   # default: ../agello-arms/next/LiteRT-LM
 # Back to the committed (released) package:
 #   git checkout -- Vendor/LiteRT-LM && git clean -fdq Vendor/LiteRT-LM && rm -rf Vendor/LiteRT-LM/dist
+#   (then delete DerivedData's CLiteRTLM-*.pcm as below, and use Google's caches again)
+# LiteRT-LM's cache keys ignore the build: move the app's engine caches aside when switching
+# builds (Library/Caches/com.patricedery.agello.litertlm in the app's container).
 # Don't commit Vendor/LiteRT-LM while it points at dist/: nobody else has that build.
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -22,5 +25,9 @@ mkdir -p "$DEST/dist"
 cp "$SRC/Package.swift" "$SRC/LICENSE" "$DEST/"
 cp -R "$SRC/swift" "$DEST/swift"
 cp -R "$SRC/dist/CLiteRTLM.xcframework" "$SRC/dist/BUILD-INFO.txt" "$DEST/dist/"
+# A different CLiteRTLM.framework under the same module name leaves a stale precompiled module
+# in DerivedData ("module.modulemap has been modified since the module file was built").
+rm -rf "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/CLiteRTLM-*.pcm \
+  "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Products/Debug-*/CLiteRTLM.framework
 echo "Agello now builds against the local LiteRT-LM in $SRC:"
 cat "$DEST/dist/BUILD-INFO.txt"

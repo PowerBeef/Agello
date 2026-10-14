@@ -33,6 +33,7 @@
 #      inside it, e.g. ONLY=AgelloTests/AppStateTests/testMockModeSendsWithoutDownloadedModel
 #      scripts/device-harness.sh unit; not with `all`),
 #      OUT (default: build/device-harness, or build/mac-harness with PLATFORM=mac),
+#      AGELLO_TELEMETRY (engine telemetry level in our LiteRT-LM builds, default 2),
 #      XCBEAUTIFY (path to xcbeautify, or "off" for raw output; default:
 #      Homebrew's, looked up directly so other xcbeautify copies in PATH are ignored).
 # Outputs: $OUT/<suite>.xcresult, $OUT/<suite>.log (raw xcodebuild output),
@@ -69,6 +70,9 @@ BUNDLE_ID="com.patricedery.agello"
 mkdir -p "$OUT"
 # Lets the in-app report survive crash relaunches within this run only.
 export TEST_RUNNER_HARNESS_RUN_ID="run-$(date +%s)"
+# Engine telemetry level for our LiteRT-LM builds (ignored by Google's): 2 records span timings
+# and GPU time at no measurable cost; each scenario's snapshot lands in its report entry.
+export TEST_RUNNER_AGELLO_TELEMETRY="${AGELLO_TELEMETRY:-2}"
 
 # Homebrew's xcbeautify, by absolute path: PATH may list another copy first.
 if [ "${XCBEAUTIFY:-}" = off ]; then
