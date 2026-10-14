@@ -31,18 +31,10 @@ struct iRTChatApp: App {
     let opened = ChatStoreLoader.open()
     container = opened.container
 
-    // `--uitest-reset`: start UI tests from a clean slate (no chats, default
-    // settings). Downloaded models are kept.
+    // `--uitest-reset`: start UI tests from a clean slate (see AppReset).
+    // Downloaded models are kept.
     if args.contains("--uitest-reset") {
-      try? container.mainContext.delete(model: ChatTurn.self)
-      try? container.mainContext.delete(model: ChatThread.self)
-      try? container.mainContext.save()
-      for key in [
-        "inferenceOptions", "enableTools", "selectedThreadID", "activeModelID", "personalization",
-        "memoryEnabled",
-      ] {
-        UserDefaults.standard.removeObject(forKey: key)
-      }
+      AppReset.perform(context: container.mainContext)
     }
 
     let state = AppState(useMockEngine: useMock)
