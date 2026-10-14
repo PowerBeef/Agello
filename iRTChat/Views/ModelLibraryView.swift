@@ -12,7 +12,7 @@ struct ModelLibraryView: View {
           ModelCardView(spec: spec)
         }
         Text(
-          "Models download from Hugging Face (litert-community) and stay on-device. Keep the app open while downloading."
+          "Models download once from Hugging Face and stay on this iPhone. Downloads continue if you leave the app."
         )
         .font(.caption)
         .foregroundStyle(.secondary)
