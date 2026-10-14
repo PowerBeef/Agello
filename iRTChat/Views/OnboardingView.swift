@@ -20,76 +20,88 @@ struct OnboardingView: View {
   var body: some View {
     VStack(spacing: 0) {
       ScrollView {
-        VStack(alignment: .leading, spacing: 28) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xxxl) {
           header
           features
         }
-        .padding(.horizontal, 28)
-        .padding(.top, 48)
-        .padding(.bottom, 24)
+        .padding(.horizontal, Theme.Spacing.xxl)
+        .padding(.top, Theme.Spacing.xxxl + Theme.Spacing.lg)
+        .padding(.bottom, Theme.Spacing.xxl)
       }
       footer
-        .padding(.horizontal, 24)
-        .padding(.bottom, 12)
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.bottom, Theme.Spacing.md)
     }
-    .background(
-      LinearGradient(
-        colors: [.accentColor.opacity(0.12), .clear], startPoint: .top, endPoint: .center
-      )
-      .ignoresSafeArea()
-    )
+    .ambientBackdrop(Theme.Brand.glacier, intensity: .loud)
     .onAppear { appState.store.refreshStates() }
   }
 
   private var header: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: Theme.Spacing.md) {
       Image(systemName: "sparkles")
-        .font(.title)
-        .frame(width: 64, height: 64)
-        .glassEffect(.regular.tint(.accentColor), in: .circle)
-      Text("Welcome to iRTChat")
-        .font(.largeTitle.bold())
-      Text("A capable AI assistant that runs entirely on your iPhone.")
-        .font(.title3)
-        .foregroundStyle(.secondary)
+        .font(.system(.title, weight: .semibold))
+        .foregroundStyle(Theme.Text.primary)
+        .frame(width: Theme.Size.hero, height: Theme.Size.hero)
+        .background {
+          LitTintBackground(
+            shape: RoundedRectangle(cornerRadius: Theme.Radius.group + 2, style: .continuous),
+            tint: Theme.Brand.glacier)
+        }
+        .accessibilityHidden(true)
+        .padding(.bottom, Theme.Spacing.xs)
+      Text("iRTChat")
+        .font(.wordmark)
+        .foregroundStyle(Theme.Brand.glacier)
+      Text("Your own AI, entirely on this iPhone.")
+        .font(.system(.largeTitle, weight: .bold))
+        .tracking(-0.6)
+        .foregroundStyle(Theme.Text.primary)
+        .fixedSize(horizontal: false, vertical: true)
+      Text("Gemma 4 runs on the iPhone's GPU. No account, no cloud, no data leaving your phone.")
+        .font(.body)
+        .foregroundStyle(Theme.Text.secondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
   }
 
   private var features: some View {
-    VStack(alignment: .leading, spacing: 20) {
+    VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
       feature(
-        "lock.shield", "Private by design",
+        "lock.shield.fill", Theme.Brand.glacier, "Private by design",
         "Your chats, photos and voice never leave this iPhone.")
       feature(
-        "airplane", "Works offline",
+        "airplane", Theme.Brand.teal, "Works offline",
         "Once downloaded, the model needs no connection or account.")
       feature(
-        "photo.on.rectangle.angled", "Sees and listens",
-        "Ask about photos, or send a voice message.")
+        "eye.fill", Theme.Brand.gold, "Sees and listens",
+        "Ask about photos, read documents, or just talk.")
       feature(
-        "lightbulb", "Thinks it through",
+        "lightbulb.fill", Theme.Brand.lavender, "Thinks it through",
         "Turn on Think for step-by-step reasoning on harder questions.")
     }
   }
 
-  private func feature(_ symbol: String, _ title: LocalizedStringKey, _ detail: LocalizedStringKey)
-    -> some View
-  {
-    HStack(alignment: .top, spacing: 16) {
-      Image(systemName: symbol)
-        .font(.title3)
-        .foregroundStyle(Color.accentColor)
-        .frame(width: 32)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title).font(.headline)
-        Text(detail).font(.subheadline).foregroundStyle(.secondary)
+  private func feature(
+    _ symbol: String, _ tint: Color, _ title: LocalizedStringKey, _ detail: LocalizedStringKey
+  ) -> some View {
+    HStack(alignment: .top, spacing: Theme.Spacing.lg) {
+      TintTile(symbol: symbol, tint: tint, size: 36)
+      VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+        Text(title)
+          .font(.headline)
+          .foregroundStyle(Theme.Text.primary)
+        Text(detail)
+          .font(.subheadline)
+          .foregroundStyle(Theme.Text.secondary)
+          .fixedSize(horizontal: false, vertical: true)
       }
     }
+    .accessibilityElement(children: .combine)
   }
 
   @ViewBuilder
   private var footer: some View {
-    VStack(spacing: 12) {
+    VStack(spacing: Theme.Spacing.md) {
       switch state {
       case .notDownloaded:
         note("\(spec.displayName) · \(spec.sizeDisplay) one-time download. Wi-Fi recommended.")
@@ -101,14 +113,18 @@ struct OnboardingView: View {
           HStack {
             Text("Downloading \(spec.displayName)…")
             Spacer()
-            Text("\(Int(progress * 100))%").monospacedDigit()
+            Text("\(Int(progress * 100))%")
+              .monospacedDigit()
+              .contentTransition(.numericText())
           }
           .font(.subheadline)
+          .foregroundStyle(Theme.Text.secondary)
         }
+        .tint(Theme.Brand.glacier)
         .accessibilityIdentifier("onboarding.progress")
         note("You can leave the app: the download continues in the background.")
         Button("Pause") { appState.store.pauseDownload(spec) }
-          .buttonStyle(.glass)
+          .buttonStyle(QuietCapsuleButtonStyle())
       case .paused(let progress):
         note("Paused at \(Int(progress * 100))%.")
         primary("Resume download", id: "onboarding.download") {
@@ -116,7 +132,7 @@ struct OnboardingView: View {
         }
       case .failed(let message):
         note(message)
-          .foregroundStyle(.red)
+          .foregroundStyle(Theme.Status.critical)
         primary("Try again", id: "onboarding.download") { appState.store.startDownload(spec) }
       case .ready:
         note("\(spec.displayName) is ready.")
@@ -124,7 +140,9 @@ struct OnboardingView: View {
       }
       if state != .ready {
         Button("Not now", action: onFinish)
-          .font(.subheadline)
+          .font(.system(.subheadline, weight: .medium))
+          .foregroundStyle(Theme.Text.secondary)
+          .frame(minHeight: Theme.Size.target)
           .accessibilityIdentifier("onboarding.skip")
       }
     }
@@ -133,7 +151,7 @@ struct OnboardingView: View {
   private func note(_ text: String) -> some View {
     Text(text)
       .font(.footnote)
-      .foregroundStyle(.secondary)
+      .foregroundStyle(Theme.Text.tertiary)
       .multilineTextAlignment(.center)
       .frame(maxWidth: .infinity)
   }
@@ -141,12 +159,8 @@ struct OnboardingView: View {
   private func primary(_ title: String, id: String, action: @escaping () -> Void) -> some View {
     Button(action: action) {
       Text(title)
-        .font(.headline)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
     }
-    .buttonStyle(.glassProminent)
-    .controlSize(.large)
+    .buttonStyle(LitButtonStyle(tint: Theme.Brand.glacier))
     .accessibilityIdentifier(id)
   }
 }

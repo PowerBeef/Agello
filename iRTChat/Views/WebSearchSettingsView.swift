@@ -21,6 +21,7 @@ struct WebSearchSettingsView: View {
           "Use the Search button in the composer to search for one message. With automatic search, the model searches on its own when a question needs current information. Only search queries and the pages read are sent; your conversation stays on this iPhone."
         )
       }
+      .themedRow()
 
       Section {
         Picker("Search with", selection: $appState.webSettings.provider) {
@@ -49,8 +50,10 @@ struct WebSearchSettingsView: View {
       } footer: {
         Text(providerFooter)
       }
+      .themedRow()
       .disabled(!appState.webSettings.allowed)
     }
+    .themedList(Theme.Brand.teal)
     .navigationTitle("Web search")
     .onAppear {
       guard !loaded else { return }

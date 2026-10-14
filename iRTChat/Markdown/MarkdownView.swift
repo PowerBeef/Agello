@@ -13,6 +13,8 @@ struct MarkdownView: View {
 
   var body: some View {
     BlocksView(blocks: document.blocks)
+      .foregroundStyle(Theme.Text.primary)
+      .tint(Theme.Brand.glacier)
   }
 }
 
@@ -43,7 +45,7 @@ private struct BlocksView: View {
   let blocks: [MarkdownDocument.Block]
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: Theme.Spacing.md) {
       ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
         BlockView(block: block)
       }
@@ -68,12 +70,12 @@ private struct BlockView: View {
     case .code(let language, let code):
       CodeBlockView(language: language, code: code)
     case .quote(let blocks):
-      HStack(alignment: .top, spacing: 10) {
-        RoundedRectangle(cornerRadius: 1.5)
-          .fill(.tertiary)
+      HStack(alignment: .top, spacing: Theme.Spacing.md) {
+        Capsule()
+          .fill(Theme.Brand.glacier.opacity(0.5))
           .frame(width: 3)
         BlocksView(blocks: blocks)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(Theme.Text.secondary)
       }
       .fixedSize(horizontal: false, vertical: true)
     case .table(let header, let rows, let alignments):
@@ -81,7 +83,10 @@ private struct BlockView: View {
     case .math(let latex):
       MathBlockView(latex: latex)
     case .rule:
-      Divider().padding(.vertical, 4)
+      Rectangle()
+        .fill(Theme.Surface.stroke)
+        .frame(height: Theme.Stroke.hairline)
+        .padding(.vertical, Theme.Spacing.xs)
     }
   }
 
@@ -101,21 +106,27 @@ private struct ListBlockView: View {
   let items: [MarkdownDocument.ListItem]
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
+    VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
       ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-          Text(marker(index, item))
-            .monospacedDigit()
-            .foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+          marker(index, item)
           BlocksView(blocks: item.blocks)
         }
       }
     }
   }
 
-  private func marker(_ index: Int, _ item: MarkdownDocument.ListItem) -> String {
-    if let checked = item.checked { return checked ? "☑" : "☐" }
-    return ordered ? "\(start + index)." : "•"
+  @ViewBuilder
+  private func marker(_ index: Int, _ item: MarkdownDocument.ListItem) -> some View {
+    if let checked = item.checked {
+      Image(systemName: checked ? "checkmark.circle.fill" : "circle")
+        .foregroundStyle(checked ? Theme.Status.healthy : Theme.Text.tertiary)
+        .accessibilityLabel(checked ? "Done" : "Not done")
+    } else {
+      Text(ordered ? "\(start + index)." : "•")
+        .monospacedDigit()
+        .foregroundStyle(Theme.Text.tertiary)
+    }
   }
 }
 
@@ -129,10 +140,11 @@ struct CodeBlockView: View {
       HStack {
         Text(language ?? "code")
           .font(.caption.monospaced())
-          .foregroundStyle(.secondary)
+          .foregroundStyle(Theme.Text.tertiary)
         Spacer()
         Button {
           UIPasteboard.general.string = code
+          Haptics.complete()
           copied = true
           Task {
             try? await Task.sleep(for: .seconds(1.5))
@@ -140,14 +152,17 @@ struct CodeBlockView: View {
           }
         } label: {
           Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-            .font(.caption)
+            .font(.system(.caption, weight: .medium))
+            .foregroundStyle(Theme.Text.secondary)
+            .contentTransition(.symbolEffect(.replace))
+            .frame(minHeight: Theme.Size.glyph)
         }
         .buttonStyle(.borderless)
         .accessibilityIdentifier("code.copy")
       }
-      .padding(.horizontal, 12)
-      .padding(.vertical, 8)
-      Divider()
+      .padding(.horizontal, Theme.Spacing.md)
+      .padding(.vertical, Theme.Spacing.xxs)
+      Rectangle().fill(Theme.Surface.hairline).frame(height: Theme.Stroke.hairline)
       ScrollView(.horizontal, showsIndicators: false) {
         Text(CodeHighlighter.highlight(code, language: language))
           .font(.callout.monospaced())
@@ -155,10 +170,10 @@ struct CodeBlockView: View {
           // Ideal size in both axes: inside a horizontal scroll view the
           // text would otherwise be clipped to a single line.
           .fixedSize()
-          .padding(12)
+          .padding(Theme.Spacing.md)
       }
     }
-    .background(.fill.quaternary, in: .rect(cornerRadius: DS.radiusInner))
+    .surfaceCard(radius: Theme.Radius.card, fill: Theme.Surface.card)
     // A container keeps the Copy button's own identifier.
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("message.code")
@@ -172,13 +187,14 @@ private struct TableBlockView: View {
 
   var body: some View {
     ScrollView(.horizontal, showsIndicators: false) {
-      Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+      Grid(alignment: .leading, horizontalSpacing: Theme.Spacing.lg, verticalSpacing: Theme.Spacing.sm) {
         GridRow {
           ForEach(Array(header.enumerated()), id: \.offset) { column, cell in
             Text(cell).bold().gridColumnAlignment(alignment(column))
           }
         }
-        Divider()
+        Rectangle().fill(Theme.Surface.stroke).frame(height: Theme.Stroke.hairline)
+          .gridCellUnsizedAxes(.horizontal)
         ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
           GridRow {
             ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
@@ -188,9 +204,9 @@ private struct TableBlockView: View {
         }
       }
       .font(.callout)
-      .padding(12)
+      .padding(Theme.Spacing.md)
     }
-    .background(.fill.quaternary, in: .rect(cornerRadius: DS.radiusInner))
+    .surfaceCard(radius: Theme.Radius.card, fill: Theme.Surface.card)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("message.table")
   }

@@ -24,19 +24,23 @@ struct MemoryView: View {
           "iRTChat remembers lasting facts you share, like preferences or where you live, and uses them in new chats. Memories stay on this iPhone."
         )
       }
+      .themedRow()
 
       Section {
         if memories.isEmpty {
           Text("Nothing saved yet.")
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Theme.Text.tertiary)
         }
         ForEach(memories) { memory in
           Button {
             draft = memory.text
             editing = memory
           } label: {
-            Text(memory.text)
-              .foregroundStyle(.primary)
+            HStack(spacing: Theme.Spacing.md) {
+              TintTile(symbol: "brain.head.profile", tint: Theme.Brand.lavender)
+              Text(memory.text)
+                .foregroundStyle(Theme.Text.primary)
+            }
               .frame(maxWidth: .infinity, alignment: .leading)
           }
           .accessibilityIdentifier("memory.row")
@@ -50,6 +54,7 @@ struct MemoryView: View {
           adding = true
         } label: {
           Label("Add memory", systemImage: "plus")
+            .foregroundStyle(Theme.Brand.lavender)
         }
         .accessibilityIdentifier("memory.add")
       } header: {
@@ -59,14 +64,17 @@ struct MemoryView: View {
           Text("The \(SystemPrompt.memoryLimit) most recent memories are used in chats.")
         }
       }
+      .themedRow()
 
       if !memories.isEmpty {
         Section {
           Button("Delete all memories", role: .destructive) { confirmDeleteAll = true }
             .accessibilityIdentifier("memory.deleteAll")
         }
+        .themedRow()
       }
     }
+    .themedList(Theme.Brand.lavender)
     .navigationTitle("Memory")
     .alert("Add memory", isPresented: $adding) {
       TextField("e.g. Prefers metric units", text: $draft)

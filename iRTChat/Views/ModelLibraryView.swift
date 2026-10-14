@@ -7,20 +7,23 @@ struct ModelLibraryView: View {
   /// download banner presents it in a sheet).
   var body: some View {
     ScrollView {
-      LazyVStack(spacing: DS.spaceLG) {
+      LazyVStack(spacing: Theme.Spacing.md) {
         ForEach(ModelCatalog.all) { spec in
           ModelCardView(spec: spec)
         }
         Text(
           "Models download once from Hugging Face and stay on this iPhone. Downloads continue if you leave the app."
         )
-        .font(.caption)
-        .foregroundStyle(.secondary)
+        .font(.footnote)
+        .foregroundStyle(Theme.Text.tertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 4)
+        .padding(.horizontal, Theme.Spacing.xs)
+        .padding(.top, Theme.Spacing.xs)
       }
-      .padding()
+      .padding(.horizontal, Theme.Spacing.lg)
+      .padding(.vertical, Theme.Spacing.md)
     }
+    .ambientBackdrop(Theme.Brand.glacier, intensity: .whisper)
     .navigationTitle("Models")
     .onAppear { appState.store.refreshStates() }
   }
@@ -34,76 +37,86 @@ private struct ModelCardView: View {
     appState.store.states[spec.id] ?? .notDownloaded
   }
 
-  var body: some View {
-    VStack(alignment: .leading, spacing: DS.spaceMD) {
-      HStack(spacing: 12) {
-        Image(systemName: "sparkles")
-          .font(.callout)
-          .frame(width: DS.iconLG, height: DS.iconLG)
-          .glassEffect(.regular.tint(.accentColor), in: .circle)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(spec.displayName).font(.headline)
-          Text(spec.tagline).font(.caption).foregroundStyle(.secondary)
-        }
-        Spacer()
-      }
-      Text(spec.sizeDisplay).font(.caption).foregroundStyle(.secondary)
+  /// The chat model sparkles; the search model finds passages.
+  private var symbol: String { spec.id == ModelCatalog.embeddingGemma.id ? "text.magnifyingglass" : "sparkles" }
+  private var tint: Color { spec.id == ModelCatalog.embeddingGemma.id ? Theme.Brand.teal : Theme.Brand.glacier }
 
+  var body: some View {
+    VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+      HStack(alignment: .top, spacing: Theme.Spacing.md) {
+        TintTile(symbol: symbol, tint: tint, size: 40)
+        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+          Text(spec.displayName)
+            .font(.headline)
+            .foregroundStyle(Theme.Text.primary)
+          Text(spec.tagline)
+            .font(.footnote)
+            .foregroundStyle(Theme.Text.secondary)
+          Text(spec.sizeDisplay)
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(Theme.Text.tertiary)
+        }
+        Spacer(minLength: 0)
+      }
       controls
     }
-    .padding()
-    .glassEffect(.regular, in: .rect(cornerRadius: DS.radiusCard))
+    .padding(Theme.Spacing.lg)
+    .surfaceCard(radius: Theme.Radius.group)
   }
 
   @ViewBuilder
   private var controls: some View {
     switch state {
     case .notDownloaded:
-      Button("Download") { appState.store.startDownload(spec) }
-        .buttonStyle(.glassProminent)
-        .controlSize(.regular)
-        .accessibilityIdentifier("models.download.\(spec.id.rawValue)")
+      Button {
+        appState.store.startDownload(spec)
+      } label: {
+        Label("Download", systemImage: "arrow.down")
+      }
+      .buttonStyle(LitButtonStyle(tint: tint))
+      .accessibilityIdentifier("models.download.\(spec.id.rawValue)")
     case .downloading(let progress):
-      VStack(alignment: .leading, spacing: 8) {
-        ProgressView(value: progress) {
+      VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+        ProgressView(value: progress)
+          .tint(tint)
+        HStack {
           Text("Downloading… \(Int(progress * 100))%")
             .font(.caption)
-        }
-        HStack {
+            .monospacedDigit()
+            .foregroundStyle(Theme.Text.secondary)
+            .contentTransition(.numericText())
+          Spacer()
           Button("Pause") { appState.store.pauseDownload(spec) }
+            .buttonStyle(QuietCapsuleButtonStyle())
           Button("Cancel", role: .cancel) { appState.store.cancelDownload(spec) }
+            .buttonStyle(QuietCapsuleButtonStyle(tint: Theme.Text.secondary))
         }
-        .buttonStyle(.glass)
-        .controlSize(.small)
       }
     case .paused(let progress):
       HStack {
-        Button("Resume") { appState.store.startDownload(spec) }
-          .buttonStyle(.glassProminent)
-          .controlSize(.small)
-        Button("Cancel", role: .cancel) { appState.store.cancelDownload(spec) }
-          .buttonStyle(.glass)
-          .controlSize(.small)
+        StatusBadge(text: String(localized: "Paused at \(Int(progress * 100))%"), tone: Theme.Status.guarded)
         Spacer()
-        Text("\(Int(progress * 100))%").font(.caption).foregroundStyle(.secondary)
+        Button("Resume") { appState.store.startDownload(spec) }
+          .buttonStyle(QuietCapsuleButtonStyle(tint: tint))
+        Button("Cancel", role: .cancel) { appState.store.cancelDownload(spec) }
+          .buttonStyle(QuietCapsuleButtonStyle(tint: Theme.Text.secondary))
       }
     case .ready:
       HStack {
-        Label("Ready", systemImage: "checkmark.circle.fill")
-          .font(.caption)
-          .foregroundStyle(.green)
+        StatusBadge(text: String(localized: "Ready"), tone: Theme.Status.healthy)
           .accessibilityIdentifier("models.ready.\(spec.id.rawValue)")
         Spacer()
         Button("Delete", role: .destructive) { Task { await appState.deleteModel(spec) } }
-          .buttonStyle(.glass)
-          .controlSize(.small)
+          .buttonStyle(QuietCapsuleButtonStyle(tint: Theme.Status.critical))
       }
     case .failed(let message):
-      VStack(alignment: .leading, spacing: 8) {
-        Text(message).font(.caption).foregroundStyle(.red)
+      VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+        Text(message)
+          .font(.footnote)
+          .foregroundStyle(Theme.Status.critical)
         Button("Retry") { appState.store.startDownload(spec) }
-          .buttonStyle(.glass)
-          .controlSize(.small)
+          .buttonStyle(QuietCapsuleButtonStyle(tint: tint))
       }
     }
   }

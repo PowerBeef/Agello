@@ -15,6 +15,7 @@ struct PersonalizationView: View {
       } footer: {
         Text("Shared only with the on-device model, in every new reply.")
       }
+      .themedRow()
 
       Section("Response style") {
         Picker("Style", selection: $draft.style) {
@@ -24,6 +25,7 @@ struct PersonalizationView: View {
         }
         .accessibilityIdentifier("personalization.style")
       }
+      .themedRow()
       .disabled(!draft.enabled)
 
       Section("What should iRTChat call you?") {
@@ -31,6 +33,7 @@ struct PersonalizationView: View {
           .textContentType(.givenName)
           .accessibilityIdentifier("personalization.name")
       }
+      .themedRow()
       .disabled(!draft.enabled)
 
       Section {
@@ -40,6 +43,7 @@ struct PersonalizationView: View {
       } footer: {
         Text("Interests, values, what you do. \(counter(draft.aboutYou))")
       }
+      .themedRow()
       .disabled(!draft.enabled)
 
       Section {
@@ -49,8 +53,10 @@ struct PersonalizationView: View {
       } footer: {
         Text("Language, format, tone. \(counter(draft.instructions))")
       }
+      .themedRow()
       .disabled(!draft.enabled)
     }
+    .themedList(Theme.Brand.glacier)
     .navigationTitle("Personalization")
     .onAppear {
       guard !loaded else { return }

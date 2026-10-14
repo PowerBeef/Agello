@@ -1,14 +1,13 @@
 import SwiftUI
 
-/// Premium grouped settings: a live status hero on top, icon-led sections,
-/// explanations as footers, and full-width action buttons. Everything applies
-/// live (via `onChange`); the system prompt applies through its button.
+/// Settings: the model's status on top, then what most people change
+/// (personalization, memory, web search, Spotlight, models, tools), with the
+/// engine's developer controls one level down in Advanced. Everything
+/// applies live (via `onChange`).
 struct SettingsView: View {
   @Environment(AppState.self) private var appState
   @Environment(\.dismiss) private var dismiss
   @AppStorage(SpotlightIndex.enabledKey) private var spotlightEnabled = true
-  @State private var systemDraft = ""
-  @State private var draftLoaded = false
 
   private var bindable: Bindable<AppState> { Bindable(appState) }
 
@@ -16,31 +15,21 @@ struct SettingsView: View {
     NavigationStack {
       Form {
         statusSection
-        personalizationSection
+        youSection
         modelSection
-        performanceSection
-        reasoningSection
-        samplingSection
-        multimodalSection
-        systemPromptSection
-        benchmarkSection
-        toolsSection
-        deviceSection
+        advancedSection
       }
+      .themedList(Theme.Brand.glacier)
       .navigationTitle("Settings")
-      .navigationBarTitleDisplayMode(.inline)
+      .navigationBarTitleDisplayMode(.large)
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
           Button("Done") { dismiss() }
             .accessibilityIdentifier("settings.done")
         }
       }
-      .onAppear {
-        if !draftLoaded {
-          systemDraft = appState.options.systemPrompt
-          draftLoaded = true
-        }
-      }
+      // Advanced edits options too: it is pushed on this stack, so these
+      // stay alive while it shows.
       .onChange(of: appState.options) {
         appState.scheduleApplyOptions()
       }
@@ -50,100 +39,104 @@ struct SettingsView: View {
     }
   }
 
-  // MARK: - Status hero
+  // MARK: - Status
 
   private var statusSection: some View {
     Section {
-      HStack(spacing: DS.spaceMD) {
-        Image(systemName: "sparkles")
-          .font(.callout)
-          .frame(width: DS.iconLG, height: DS.iconLG)
-          .glassEffect(.regular.tint(.accentColor), in: .circle)
-        VStack(alignment: .leading, spacing: 2) {
+      HStack(spacing: Theme.Spacing.md) {
+        TintTile(symbol: "sparkles", tint: Theme.Brand.glacier, size: 44)
+        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
           Text(activeSpec.displayName)
             .font(.headline)
+            .foregroundStyle(Theme.Text.primary)
           Text(statusLine)
             .font(.caption)
+            .foregroundStyle(Theme.Text.tertiary)
             .accessibilityIdentifier("settings.status")
-            .foregroundStyle(.secondary)
         }
-        Spacer()
-        Circle()
-          .fill(statusColor)
-          .frame(width: 10, height: 10)
+        Spacer(minLength: Theme.Spacing.sm)
+        StatusBadge(text: status.word, tone: status.tone)
       }
-      .padding(.vertical, 4)
+      .padding(.vertical, Theme.Spacing.xs)
+      .themedRow()
     }
   }
 
   private var activeSpec: ModelSpec { appState.store.activeSpec }
 
-  private var statusLine: String {
+  private var status: (word: String, tone: Color) {
     switch appState.engineState {
-    case .ready:
-      if let resolved = appState.resolved { return "Ready · \(resolvedSummary(resolved))" }
-      return "Ready"
-    case .generating: return "Generating…"
-    case .loading(let progress): return progress
-    case .failed: return "Engine error — see the chat for details"
+    case .ready: (String(localized: "Ready"), Theme.Status.healthy)
+    case .generating: (String(localized: "Working"), Theme.Status.healthy)
+    case .loading: (String(localized: "Loading"), Theme.Status.guarded)
+    case .failed: (String(localized: "Error"), Theme.Status.critical)
     case .idle:
-      return appState.store.isDownloaded(appState.store.activeSpec)
-        ? "Downloaded — loads on your next chat"
-        : "Not downloaded — get it in Models below"
+      appState.store.isDownloaded(activeSpec)
+        ? (String(localized: "Idle"), Theme.Text.tertiary)
+        : (String(localized: "Not downloaded"), Theme.Status.guarded)
     }
   }
 
-  private var statusColor: Color {
+  private var statusLine: String {
     switch appState.engineState {
-    case .ready, .generating: return .green
-    case .loading: return .orange
-    case .failed: return .red
+    case .ready:
+      guard let resolved = appState.resolved else { return String(localized: "On this iPhone") }
+      return String(
+        localized: "On this iPhone · \(resolved.backendLabel) · \(resolved.maxNumTokens / 1024)K context")
+    case .generating: return String(localized: "Writing a reply…")
+    case .loading(let progress): return progress
+    case .failed: return String(localized: "See the chat for details")
     case .idle:
-      return appState.store.isDownloaded(appState.store.activeSpec) ? .secondary : .orange
+      return appState.store.isDownloaded(activeSpec)
+        ? String(localized: "Loads when you start a chat")
+        : String(localized: "Download it in Models below")
     }
   }
 
   // MARK: - Sections
 
-  private var personalizationSection: some View {
+  private var youSection: some View {
     Section {
       NavigationLink {
         PersonalizationView()
       } label: {
-        LabeledContent {
-          Text(personalizationSummary)
-        } label: {
-          Label("Personalization", systemImage: "person.crop.circle")
-        }
+        RowLabel(
+          title: String(localized: "Personalization"), symbol: "person.crop.circle.fill",
+          tint: Theme.Brand.glacier, value: personalizationSummary)
       }
+      .themedRow()
       .accessibilityIdentifier("settings.personalization")
       NavigationLink {
         MemoryView()
       } label: {
-        LabeledContent {
-          Text(appState.memoryEnabled ? String(localized: "On") : String(localized: "Off"))
-        } label: {
-          Label("Memory", systemImage: "brain.head.profile")
-        }
+        RowLabel(
+          title: String(localized: "Memory"), symbol: "brain.head.profile",
+          tint: Theme.Brand.lavender,
+          value: appState.memoryEnabled ? String(localized: "On") : String(localized: "Off"))
       }
+      .themedRow()
       .accessibilityIdentifier("settings.memory")
       NavigationLink {
         WebSearchSettingsView()
       } label: {
-        LabeledContent {
-          Text(webSummary)
-        } label: {
-          Label("Web search", systemImage: "globe")
-        }
+        RowLabel(
+          title: String(localized: "Web search"), symbol: "globe", tint: Theme.Brand.teal,
+          value: webSummary)
       }
+      .themedRow()
       .accessibilityIdentifier("settings.web")
       Toggle(isOn: $spotlightEnabled) {
-        Label("Show chats in Spotlight", systemImage: "magnifyingglass")
+        RowLabel(
+          title: String(localized: "Show chats in Spotlight"), symbol: "magnifyingglass",
+          tint: Theme.Brand.silver)
       }
+      .themedRow()
       .onChange(of: spotlightEnabled) {
         if let context = appState.modelContext { SpotlightIndex.refresh(in: context) }
       }
       .accessibilityIdentifier("settings.spotlight")
+    } header: {
+      Text("You").eyebrowStyle()
     }
   }
 
@@ -165,210 +158,45 @@ struct SettingsView: View {
       NavigationLink {
         ModelLibraryView()
       } label: {
-        LabeledContent("Models", value: activeSpec.displayName)
+        RowLabel(
+          title: String(localized: "Models"), symbol: "cube.fill", tint: Theme.Brand.glacier,
+          value: activeSpec.displayName)
       }
+      .themedRow()
       .accessibilityIdentifier("settings.models")
-    } header: {
-      Label("Model", systemImage: "cube")
-    } footer: {
-      if let resolved = appState.resolved {
-        Text(resolvedSummary(resolved)).monospacedDigit()
-      } else {
-        Text("Download the model in Models to start chatting.")
+      Toggle(isOn: bindable.enableTools) {
+        RowLabel(
+          title: String(localized: "On-device tools"), symbol: "wrench.and.screwdriver.fill",
+          tint: Theme.Brand.gold)
       }
+      .themedRow()
+    } header: {
+      Text("Model").eyebrowStyle()
+    } footer: {
+      Text("Tools let the assistant check the date and calculate, fully on this iPhone.")
+        .foregroundStyle(Theme.Text.tertiary)
     }
   }
 
-  private var performanceSection: some View {
+  private var advancedSection: some View {
     Section {
-      Picker("Backend", selection: bindable.options.backendPreference) {
-        Text("GPU (Metal)").tag(BackendPreference.gpu)
-        Text("CPU").tag(BackendPreference.cpu)
+      NavigationLink {
+        AdvancedSettingsView()
+      } label: {
+        RowLabel(
+          title: String(localized: "Advanced"), symbol: "slider.horizontal.3",
+          tint: Theme.Brand.silver)
       }
-      .pickerStyle(.segmented)
-      Toggle(
-        "Speculative decoding (MTP)",
-        isOn: bindable.options.enableSpeculativeDecoding)
-      Toggle(
-        "Compact reasoning cache",
-        isOn: bindable.options.compactReasoningCache)
-    } header: {
-      Label("Performance", systemImage: "gauge")
+      .themedRow()
+      .accessibilityIdentifier("settings.advanced")
     } footer: {
-      Text(
-        "GPU decode is ~2x faster and falls back to CPU automatically. "
-          + "Speculative decoding doubles GPU decode speed with no quality change when the model file supports it. "
-          + "Compact cache keeps thought tokens out of the KV cache for longer effective context."
-      )
-    }
-  }
-
-  private var reasoningSection: some View {
-    Section {
-      Toggle("Enable reasoning", isOn: bindable.options.enableThinking)
-      if appState.options.enableThinking {
-        Stepper(
-          "Budget: \(appState.options.thinkingBudget) tokens",
-          value: bindable.options.thinkingBudget, in: 128...4096, step: 128)
-      }
-      Toggle("Automatic context", isOn: autoContextBinding)
-      if appState.options.maxNumTokensOverride != nil {
-        Stepper(
-          "KV cache: \(appState.options.maxNumTokensOverride ?? 2048) tokens",
-          value: contextBinding,
-          in: 256...DeviceProfile.current.maxContextTokens(model: appState.store.activeModelID),
-          step: 1024)
-      }
-    } header: {
-      Label("Reasoning & Memory", systemImage: "brain")
-    } footer: {
-      Text(
-        "Reasoning shows its work in a Reasoning card under each reply. "
-          + "Automatic context picks the largest KV cache safe for this device "
-          + "(\(DeviceProfile.current.defaultMaxTokens(model: appState.store.activeModelID)) tokens)."
-      )
-    }
-  }
-
-  private var samplingSection: some View {
-    Section {
-      Picker("Preset", selection: bindable.options.samplerPreset) {
-        ForEach(SamplerPreset.allCases, id: \.self) { preset in
-          Text(preset.displayName).tag(preset)
-        }
-      }
-      .pickerStyle(.segmented)
-    } header: {
-      Label("Sampling", systemImage: "dice")
-    } footer: {
-      Text("Precise is factual (temp 0.2), Balanced the default (0.7), Creative the most varied (1.0).")
-    }
-  }
-
-  private var multimodalSection: some View {
-    Section {
-      Toggle("Vision (images)", isOn: bindable.options.enableVision)
-      Toggle("Audio (voice)", isOn: bindable.options.enableAudio)
-      if appState.options.enableVision {
-        Picker("Image detail", selection: bindable.options.visualDetail) {
-          ForEach(VisualDetail.allCases, id: \.self) { detail in
-            Text(detail.displayName).tag(detail)
-          }
-        }
-      }
-    } header: {
-      Label("Voice & Vision", systemImage: "eye")
-    } footer: {
-      Text("Images and voice are processed on-device. Higher detail answers better but uses more context.")
-    }
-  }
-
-  private var systemPromptSection: some View {
-    Section {
-      TextEditor(text: $systemDraft)
-        .frame(minHeight: 80)
-      Button(action: {
-        // Applied through the `options` onChange above.
-        appState.options.systemPrompt = systemDraft
-      }) {
-        Text("Apply system prompt")
+      VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+        Text("Performance, reasoning, sampling, voice and vision, the system prompt, and the benchmark.")
+        Text(appVersion)
+          .font(.caption2)
           .frame(maxWidth: .infinity)
       }
-      .buttonStyle(.glass)
-      .controlSize(.regular)
-      .disabled(systemDraft == appState.options.systemPrompt)
-    } header: {
-      Label("System Prompt", systemImage: "text.quote")
-    } footer: {
-      Text("Applies immediately to the active conversation.")
-    }
-  }
-
-  private var benchmarkSection: some View {
-    Section {
-      if appState.isBenchmarking {
-        HStack {
-          ProgressView().controlSize(.small)
-          Text("Benchmarking 1024 prefill / 256 decode…")
-            .font(.caption)
-        }
-      } else {
-        Button(action: { Task { await appState.runBenchmark() } }) {
-          Text("Run benchmark")
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(.glassProminent)
-        .controlSize(.regular)
-        .disabled(!appState.store.isDownloaded(appState.store.activeSpec))
-        .accessibilityIdentifier("settings.benchmark")
-      }
-      if let report = appState.benchmarkReport {
-        benchmarkStats(report)
-      }
-    } header: {
-      Label("Benchmark", systemImage: "speedometer")
-    } footer: {
-      Text(
-        "1024 prefill / 256 decode tokens. Google reports 1189 prefill / 25 decode tok/s for E4B on iPhone 17 Pro GPU (without speculative decoding)."
-      )
-    }
-  }
-
-  private func benchmarkStats(_ report: BenchmarkReport) -> some View {
-    VStack(alignment: .leading, spacing: DS.spaceSM) {
-      HStack(spacing: DS.spaceLG) {
-        benchmarkStat(
-          value: String(format: "%.0f", report.prefillTokensPerSecond), label: "prefill tok/s")
-        benchmarkStat(
-          value: String(format: "%.0f", report.decodeTokensPerSecond), label: "decode tok/s")
-        benchmarkStat(
-          value: String(format: "%.1fs", report.timeToFirstToken), label: "first token")
-        Spacer()
-      }
-      Text(
-        "\(ModelCatalog.spec(for: report.modelID).displayName) · \(report.backend) · \(report.date.formatted(date: .abbreviated, time: .omitted))"
-      )
-      .font(.caption2)
-      .foregroundStyle(.tertiary)
-    }
-    .padding(.vertical, 4)
-  }
-
-  private func benchmarkStat(value: String, label: String) -> some View {
-    VStack(alignment: .leading, spacing: 1) {
-      Text(value)
-        .font(.title3)
-        .bold()
-        .monospacedDigit()
-      Text(label)
-        .font(.caption2)
-        .foregroundStyle(.secondary)
-    }
-  }
-
-  private var toolsSection: some View {
-    Section {
-      Toggle("On-device tools", isOn: bindable.enableTools)
-    } header: {
-      Label("Tools", systemImage: "wrench.and.screwdriver")
-    } footer: {
-      Text("The assistant can check the time and calculate, fully on-device.")
-    }
-  }
-
-  private var deviceSection: some View {
-    Section {
-      LabeledContent("This device", value: DeviceProfile.current.summary)
-      LabeledContent("Engine", value: appState.isMock ? "Mock" : "LiteRT-LM")
-      if appState.isMock {
-        Text("Mock engine active (--mock-engine). No model required.")
-          .font(.caption)
-          .foregroundStyle(.orange)
-      }
-    } header: {
-      Label("Device", systemImage: "iphone")
-    } footer: {
-      Text("\(appVersion) · Gemma 4 on-device via LiteRT-LM")
+      .foregroundStyle(Theme.Text.tertiary)
     }
   }
 
@@ -376,38 +204,6 @@ struct SettingsView: View {
     let info = Bundle.main.infoDictionary
     let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
     let build = info?["CFBundleVersion"] as? String ?? "1"
-    return "iRTChat \(version) (\(build))"
-  }
-
-  // MARK: - Bindings
-
-
-  private var autoContextBinding: Binding<Bool> {
-    Binding(
-      get: { appState.options.maxNumTokensOverride == nil },
-      set: { auto in
-        appState.options.maxNumTokensOverride = auto
-          ? nil
-          : DeviceProfile.current.defaultMaxTokens(model: appState.store.activeModelID)
-      }
-    )
-  }
-
-  private var contextBinding: Binding<Int> {
-    Binding(
-      get: { appState.options.maxNumTokensOverride ?? 2048 },
-      set: { appState.options.maxNumTokensOverride = $0 }
-    )
-  }
-
-  private func resolvedSummary(_ resolved: ResolvedInference) -> String {
-    var parts = ["Backend: \(resolved.backendLabel)", "KV: \(resolved.maxNumTokens)"]
-    parts.append(resolved.thinkingBudget == nil ? "Thinking: off" : "Thinking: on")
-    parts.append(resolved.enableSpeculativeDecoding ? "MTP: on" : "MTP: off")
-    let mm =
-      resolved.enableVision && resolved.enableAudio ? "Vision+Audio"
-      : resolved.enableVision ? "Vision" : resolved.enableAudio ? "Audio" : "Text-only"
-    parts.append(mm)
-    return parts.joined(separator: " · ")
+    return "iRTChat \(version) (\(build)) · Gemma 4 on-device via LiteRT-LM"
   }
 }

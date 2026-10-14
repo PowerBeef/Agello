@@ -19,7 +19,7 @@ struct QuickActionsWidget: Widget {
   var body: some WidgetConfiguration {
     StaticConfiguration(kind: "QuickActions", provider: QuickActionsProvider()) { _ in
       QuickActionsView()
-        .containerBackground(.fill.tertiary, for: .widget)
+        .containerBackground(for: .widget) { WidgetPalette.background }
     }
     .configurationDisplayName("iRTChat")
     .description("Start a chat or talk to your on-device assistant.")
@@ -40,6 +40,24 @@ struct QuickActionsProvider: TimelineProvider {
 
   func getTimeline(in context: Context, completion: @escaping (Timeline<QuickActionsEntry>) -> Void) {
     completion(Timeline(entries: [QuickActionsEntry(date: .now)], policy: .never))
+  }
+}
+
+/// The app's palette (see the app's Theme), for the widget extension.
+enum WidgetPalette {
+  static let canvas = Color(red: 0.086, green: 0.094, blue: 0.137)
+  static let canvasBottom = Color(red: 0.038, green: 0.044, blue: 0.056)
+  static let glacier = Color(red: 0.541, green: 0.690, blue: 0.784)
+  static let gold = Color(red: 0.929, green: 0.800, blue: 0.541)
+  static let text = Color(red: 0.95, green: 0.94, blue: 0.92)
+  static let secondary = Color(red: 0.78, green: 0.76, blue: 0.72)
+
+  static var background: some View {
+    ZStack {
+      LinearGradient(colors: [canvas, canvasBottom], startPoint: .top, endPoint: .bottom)
+      RadialGradient(
+        colors: [glacier.opacity(0.32), .clear], center: .top, startRadius: 0, endRadius: 180)
+    }
   }
 }
 
@@ -69,36 +87,46 @@ struct QuickActionsView: View {
       .widgetURL(WidgetLinks.newChat)
     case .systemMedium:
       HStack(spacing: 12) {
-        action("New chat", symbol: "square.and.pencil", url: WidgetLinks.newChat)
-        action("Talk", symbol: "waveform", url: WidgetLinks.voice)
+        action("New chat", symbol: "square.and.pencil", tint: WidgetPalette.glacier, url: WidgetLinks.newChat)
+        action("Talk", symbol: "waveform", tint: WidgetPalette.gold, url: WidgetLinks.voice)
       }
     default:
       VStack(alignment: .leading, spacing: 8) {
         Image(systemName: "sparkles")
-          .font(.title2)
-          .foregroundStyle(Color.accentColor)
+          .font(.title2.weight(.semibold))
+          .foregroundStyle(WidgetPalette.glacier)
         Spacer()
         Text("Ask iRTChat")
           .font(.headline)
+          .foregroundStyle(WidgetPalette.text)
         Text("Private, on-device")
           .font(.caption)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(WidgetPalette.secondary)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .widgetURL(WidgetLinks.newChat)
     }
   }
 
-  private func action(_ title: LocalizedStringKey, symbol: String, url: URL) -> some View {
+  private func action(_ title: LocalizedStringKey, symbol: String, tint: Color, url: URL) -> some View {
     Link(destination: url) {
       VStack(spacing: 8) {
         Image(systemName: symbol)
-          .font(.title2)
+          .font(.title2.weight(.semibold))
+          .foregroundStyle(tint)
         Text(title)
           .font(.subheadline.weight(.medium))
+          .foregroundStyle(WidgetPalette.text)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background(.fill.secondary, in: .rect(cornerRadius: 16))
+      .background {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+          .fill(LinearGradient(colors: [tint.opacity(0.26), tint.opacity(0.12)], startPoint: .top, endPoint: .bottom))
+      }
+      .overlay {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+          .stroke(Color.white.opacity(0.14), lineWidth: 0.8)
+      }
     }
   }
 }
