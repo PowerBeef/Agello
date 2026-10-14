@@ -31,6 +31,9 @@ struct ChatView: View {
   @State private var reader = SpeechReader()
   /// The user message being edited in the composer, if any.
   @State private var editingTurn: ChatTurn?
+  @State private var scrollPosition = ScrollPosition(edge: .bottom)
+  /// The list keeps the latest text in view (the user hasn't scrolled up).
+  @State private var followsLatest = true
   @FocusState private var inputFocused: Bool
   /// Settings → Advanced → Performance: time to first token, speed, backend.
   @AppStorage("showPerformanceDetails") private var showStats = false
@@ -108,6 +111,8 @@ struct ChatView: View {
       }
     }
     .onChange(of: thread?.id) { old, _ in
+      scrollPosition = ScrollPosition(edge: .bottom)
+      followsLatest = true
       // Switching chats (not saving a new one) starts with a clean composer.
       guard old != nil else { return }
       reader.stop()
@@ -210,31 +215,42 @@ struct ChatView: View {
       if turns.isEmpty {
         emptyState
       } else {
-        ScrollViewReader { proxy in
-          ScrollView {
-            LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
-              ForEach(turns) { turn in
-                MessageBubbleView(
-                  turn: turn, isStreaming: isLiveBubble(turn, in: turns),
-                  toolStatus: appState.toolStatus,
-                  versions: versions[VersionKey(turn)] ?? [],
-                  showsStats: showStats,
-                  actions: actions(for: turn))
-                  .id(turn.id)
-              }
-              Color.clear.frame(height: 1).id("bottom")
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
+            ForEach(turns) { turn in
+              MessageBubbleView(
+                turn: turn, isStreaming: isLiveBubble(turn, in: turns),
+                toolStatus: appState.toolStatus,
+                versions: versions[VersionKey(turn)] ?? [],
+                showsStats: showStats,
+                actions: actions(for: turn))
             }
-            .padding(.horizontal, Theme.Spacing.xl)
-            .padding(.top, Theme.Spacing.lg)
-            .padding(.bottom, Theme.Spacing.sm)
           }
-          .scrollDismissesKeyboard(.interactively)
-          .onChange(of: turns.count) {
-            withAppAnimation(Theme.Motion.easeOut) { proxy.scrollTo("bottom", anchor: .bottom) }
-          }
-          // Streaming text follows without animation: smoother, and cheaper
-          // than animating every token.
-          .onChange(of: scrollSignature(turns)) { proxy.scrollTo("bottom", anchor: .bottom) }
+          .padding(.horizontal, Theme.Spacing.xl)
+          .padding(.top, Theme.Spacing.lg)
+          .padding(.bottom, Theme.Spacing.sm)
+        }
+        .id(thread?.id)
+        .scrollPosition($scrollPosition)
+        .scrollDismissesKeyboard(.interactively)
+        // A chat opens on its latest message, and a short one sits at the
+        // top. At the bottom, growth (streaming text, a new message, the
+        // keyboard) keeps the latest line in view within the same layout
+        // pass: no scrollTo a frame late, so nothing jumps. Scrolled up, the
+        // text being read stays put.
+        .defaultScrollAnchor(.bottom, for: .initialOffset)
+        .defaultScrollAnchor(.top, for: .alignment)
+        .defaultScrollAnchor(followsLatest ? .bottom : .top, for: .sizeChanges)
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+          geometry.visibleRect.maxY >= geometry.contentSize.height - Theme.Spacing.xxxl
+        } action: { _, atBottom in
+          followsLatest = atBottom
+        }
+        .onChange(of: turns.count) { old, new in
+          // A new message brings the list back to the latest.
+          guard new > old else { return }
+          followsLatest = true
+          withAppAnimation(Theme.Motion.easeOut) { scrollPosition.scrollTo(edge: .bottom) }
         }
       }
     }
@@ -270,7 +286,7 @@ struct ChatView: View {
 
     var title: LocalizedStringKey {
       switch self {
-      case .explain: "Explain a concept"
+      case .explain: "Explain a topic"
       case .summarize: "Summarize a file"
       case .write: "Help me write"
       case .plan: "Plan a trip"
@@ -316,14 +332,18 @@ struct ChatView: View {
             Image(systemName: suggestion.symbol)
               .foregroundStyle(Theme.Brand.glacier)
               .accessibilityHidden(true)
+            // Wraps rather than truncating at larger text sizes.
             Text(suggestion.title)
               .foregroundStyle(Theme.Text.secondary)
-              .lineLimit(1)
-              .minimumScaleFactor(0.85)
+              .lineLimit(2)
+              .multilineTextAlignment(.leading)
+              .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
           }
           .font(.system(.subheadline, weight: .medium))
           .padding(.horizontal, Theme.Spacing.md)
+          .padding(.vertical, Theme.Spacing.xs)
+          .frame(maxHeight: .infinity)
           .frame(minHeight: Theme.Size.target + Theme.Spacing.xs)
           .surfaceCard(radius: Theme.Radius.card)
           .contentShape(.rect)
@@ -422,11 +442,6 @@ struct ChatView: View {
       }
       .padding(.horizontal, Theme.Spacing.xl)
     }
-  }
-
-  private func scrollSignature(_ turns: [ChatTurn]) -> String {
-    let last = turns.last
-    return "\(turns.count)-\(last?.text.count ?? 0)-\(last?.thought.count ?? 0)"
   }
 
   private func isLiveBubble(_ turn: ChatTurn, in turns: [ChatTurn]) -> Bool {

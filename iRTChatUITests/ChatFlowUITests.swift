@@ -57,6 +57,33 @@ final class ChatFlowUITests: XCTestCase {
     XCTAssertFalse(element("message.stats").exists, "Stats shown without the setting")
   }
 
+  /// While a long reply streams, the question and the reply only ever move
+  /// up: the list follows the text in layout, with no scroll a frame late
+  /// and no jump down and back.
+  func testStreamingNeverJumps() throws {
+    try XCTSkipIf(Self.isSimulator, "Needs real streaming")
+    try openNewChat()
+    send("Explain how a Bloom filter works, with a short Swift example and a comparison table.")
+    XCTAssertTrue(element("chat.stop").waitForExistence(timeout: 10), "The reply never started")
+    var lastTop: [String: CGFloat] = [:]
+    var samples = 0
+    let deadline = Date().addingTimeInterval(240)
+    while element("chat.stop").exists, Date() < deadline {
+      for identifier in ["message.user", "message.model"] {
+        // The list unloads rows that scroll away: read each in one snapshot.
+        guard let frame = try? element(identifier).snapshot().frame, frame.height > 0 else { continue }
+        if let previous = lastTop[identifier] {
+          XCTAssertLessThanOrEqual(
+            frame.minY, previous + 3, "\(identifier) jumped down \(Int(frame.minY - previous)) pt")
+        }
+        lastTop[identifier] = frame.minY
+      }
+      samples += 1
+    }
+    XCTAssertGreaterThan(samples, 10, "Too few samples while streaming")
+    XCTAssertGreaterThan(lastModelText().count, 400, "The reply was too short to scroll")
+  }
+
   /// Audit #10.
   func testStopMidReply() throws {
     try XCTSkipIf(Self.isSimulator, "Needs real generation")
