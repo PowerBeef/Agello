@@ -1,6 +1,8 @@
 <div align="center">
 
-# iRTChat
+<img src="docs/images/icon.png" width="128" alt="The Agello app icon: a white ribbon folding into ivory to form an A, with a glacier-blue crossbar, on charcoal">
+
+# Agello
 
 ### Your own AI assistant, running entirely on your iPhone.
 
@@ -11,7 +13,7 @@ No account, no API key, no cloud. After a one-time download, every conversation 
 [![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)](#get-started)
 [![LiteRT-LM 0.18.0](https://img.shields.io/badge/LiteRT--LM-0.18.0-4285F4)](#vendored-litert-lm)
 [![Gemma 4 E4B](https://img.shields.io/badge/Model-Gemma%204%20E4B-8E75FF)](docs/USER_GUIDE.md#the-models)
-[![On-device](https://img.shields.io/badge/100%25-on--device-2EA44F)](#why-irtchat)
+[![On-device](https://img.shields.io/badge/100%25-on--device-2EA44F)](#why-agello)
 [![Tests](https://img.shields.io/badge/tests-276%20on%20iPhone-2EA44F)](docs/TESTING.md)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
 
@@ -28,7 +30,7 @@ No account, no API key, no cloud. After a one-time download, every conversation 
 
 ---
 
-## Why iRTChat
+## Why Agello
 
 <table>
 <tr>
@@ -61,13 +63,13 @@ Text, vision and audio in one model, with reasoning, tools, document Q&A with pa
 
 **Documents.** Attach PDFs, text, Markdown, code, CSV, JSON or RTF, or scan paper with the camera. Long files are searched by meaning and answers cite their pages, like *(report.pdf, p. 23)*. "Summarize this" reads a long document section by section, and keeps going in the background on iPhones that support it.
 
-**Web search with sources.** One tap to look something up: iRTChat searches, reads the top pages, picks the relevant parts, and answers with `[1]`-style citations. DuckDuckGo by default, or your own SearXNG, Brave or Tavily.
+**Web search with sources.** One tap to look something up: Agello searches, reads the top pages, picks the relevant parts, and answers with `[1]`-style citations. DuckDuckGo by default, or your own SearXNG, Brave or Tavily.
 
 **Voice and vision.** Take or pick a photo; dictate into the composer in your language; send voice messages Gemma listens to directly; or start **voice mode**, a hands-free conversation with a live orb, captions and an optional camera feed. Talk over it to interrupt.
 
-**Personal.** Tell iRTChat about yourself and how to respond. Opt-in memory remembers lasting facts ("Lives in Montreal"), and every memory is visible and editable.
+**Personal.** Tell Agello about yourself and how to respond. Opt-in memory remembers lasting facts ("Lives in Montreal"), and every memory is visible and editable.
 
-**Built for iOS.** SwiftUI with Liquid Glass chrome on a warm dark design whose accent follows what you're doing: glacier for chat, lavender for Think, teal for search, gold for voice. Siri and Shortcuts ("Ask iRTChat", "Talk to iRTChat"), the Action Button, Home and Lock Screen widgets, Control Center, Spotlight, the share sheet, and `irtchat://` links. Model downloads continue in the background.
+**Built for iOS.** SwiftUI with Liquid Glass chrome on a warm dark design whose accent follows what you're doing: glacier for chat, lavender for Think, teal for search, gold for voice. Siri and Shortcuts ("Ask Agello", "Talk to Agello"), the Action Button, Home and Lock Screen widgets, Control Center, Spotlight, the share sheet, and `agello://` links. Model downloads continue in the background.
 
 <p align="center">
 <img src="docs/images/new-chat.jpg" width="150" alt="A new chat: the greeting, four suggestions and the composer with Think and Search">&nbsp;
@@ -124,7 +126,7 @@ Every message takes one path through `AppState`. Pending settings are applied, t
 <td width="50%" valign="top">
 
 #### 🔬 Fixing Gemma's long-context math on the GPU
-On the iPhone GPU, Gemma 4 duplicated digits once a chat passed ~2K tokens ("2026" became "202026"). Device probes traced it to **position 2,048**: the model computes rotary angles from a float16 copy of the position, which can't hold integers past 2,048. iRTChat ships a model whose graph splits every position as `2048·h + l`, so every float stays exact to 32,767. The result: **14/14 exact** copies up to 30K tokens, **1.7–2.1× faster prefill** than the float32 workaround, and **0.7 GB less memory**. [Analysis](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598) · [fix](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6159684389) · [model](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope)
+On the iPhone GPU, Gemma 4 duplicated digits once a chat passed ~2K tokens ("2026" became "202026"). Device probes traced it to **position 2,048**: the model computes rotary angles from a float16 copy of the position, which can't hold integers past 2,048. Agello ships a model whose graph splits every position as `2048·h + l`, so every float stays exact to 32,767. The result: **14/14 exact** copies up to 30K tokens, **1.7–2.1× faster prefill** than the float32 workaround, and **0.7 GB less memory**. [Analysis](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598) · [fix](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6159684389) · [model](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope)
 
 </td>
 <td width="50%" valign="top">
@@ -173,11 +175,11 @@ Voice-activity turn detection, and one audio engine for echo-cancelled capture a
 
 ## Get started
 
-**You'll need** an iPhone 15 Pro or later (8 GB of memory) on iOS 27 with about 4.4 GB free, and a Mac with Xcode 27. The Apple Developer account needs the **Extended Virtual Addressing**, **Increased Memory Limit**, **Background GPU Access** and **App Groups** capabilities. iRTChat runs on a physical iPhone only: the simulator has no Metal path for LiteRT-LM.
+**You'll need** an iPhone 15 Pro or later (8 GB of memory) on iOS 27 with about 4.4 GB free, and a Mac with Xcode 27. The Apple Developer account needs the **Extended Virtual Addressing**, **Increased Memory Limit**, **Background GPU Access** and **App Groups** capabilities. Agello runs on a physical iPhone only: the simulator has no Metal path for LiteRT-LM.
 
-1. Open `iRTChat.xcodeproj`. Swift Package Manager resolves `swift-markdown` and `SwiftMath`; LiteRT-LM is vendored.
-2. The project is set up for team `FK2D8X36G2` and bundle IDs `com.patricedery.irtchat` (plus `.widgets` and `.share`), sharing the App Group `group.com.patricedery.irtchat`. On another account, change the team and bundle IDs under **Signing & Capabilities**.
-3. Select the `iRTChat` scheme and your iPhone, and run. Use the **Release** configuration for representative speed.
+1. Open `Agello.xcodeproj`. Swift Package Manager resolves `swift-markdown` and `SwiftMath`; LiteRT-LM is vendored.
+2. The project is set up for team `FK2D8X36G2` and bundle IDs `com.patricedery.agello` (plus `.widgets` and `.share`), sharing the App Group `group.com.patricedery.agello`. On another account, change the team and bundle IDs under **Signing & Capabilities**.
+3. Select the `Agello` scheme and your iPhone, and run. Use the **Release** configuration for representative speed.
 4. On the welcome screen, download **Gemma 4 E4B** (3.7 GB), and start chatting.
 
 > [!TIP]
@@ -189,13 +191,13 @@ Voice-activity turn detection, and one audio engine for echo-cancelled capture a
 ## Project layout
 
 ```text
-iRTChat/            the app: AppState, Inference/, Knowledge/, Markdown/, ModelHub/,
+Agello/            the app: AppState, Inference/, Knowledge/, Markdown/, ModelHub/,
                     Persistence/, System/, Voice/, Views/, Support/
-iRTChatWidgets/     widgets and Control Center controls
-iRTChatShare/       share extension ("Ask iRTChat")
-iRTChatTests/       unit tests
-iRTChatDeviceTests/ on-device scenarios with the real models
-iRTChatUITests/     real-tap UI flows
+AgelloWidgets/     widgets and Control Center controls
+AgelloShare/       share extension ("Ask Agello")
+AgelloTests/       unit tests
+AgelloDeviceTests/ on-device scenarios with the real models
+AgelloUITests/     real-tap UI flows
 scripts/            device test harness and device tools
 Vendor/LiteRT-LM/   LiteRT-LM v0.18.0 Swift package
 docs/               architecture, engineering notes, testing, user guide
@@ -205,7 +207,7 @@ docs/               architecture, engineering notes, testing, user guide
 
 Phases 0–5 have shipped: foundations, the core chat experience, files, projects and memory, web search and dictation, voice mode with the camera, and system integration.
 
-**Next: the first release.** That means an app icon, App Store metadata, an accessibility pass, and performance and battery budgets, then TestFlight.
+**Next: the first release.** That means App Store metadata, an accessibility pass, and performance and battery budgets, then TestFlight.
 
 ## Documentation
 
@@ -226,7 +228,7 @@ Work happens directly on `main`. Keep the unit tests and the on-device harness g
 
 ## License
 
-iRTChat is licensed under the [Apache License 2.0](LICENSE). [NOTICE](NOTICE) covers the third-party components it uses and downloads:
+Agello is licensed under the [Apache License 2.0](LICENSE). [NOTICE](NOTICE) covers the third-party components it uses and downloads:
 
 | Component | Distribution | License |
 | --- | --- | --- |
@@ -238,5 +240,5 @@ iRTChat is licensed under the [Apache License 2.0](LICENSE). [NOTICE](NOTICE) co
 ## Acknowledgements
 
 - [LiteRT](https://github.com/google-ai-edge/litert) and [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) by Google, with the [Swift guide](https://developers.google.com/edge/litert-lm/swift) and [Gemma 4 on LiteRT-LM](https://developers.google.com/edge/litert-lm/models/gemma-4)
-- [Gemma 4 E4B](https://huggingface.co/google/gemma-4-E4B-it) by Google, with the [LiteRT-LM build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) by `litert-community`; iRTChat downloads [a copy with float16-exact rotary positions](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope)
+- [Gemma 4 E4B](https://huggingface.co/google/gemma-4-E4B-it) by Google, with the [LiteRT-LM build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) by `litert-community`; Agello downloads [a copy with float16-exact rotary positions](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope)
 - [swift-markdown](https://github.com/swiftlang/swift-markdown) by the Swift project, and [SwiftMath](https://github.com/mgriebling/SwiftMath) by Computer Inspirations

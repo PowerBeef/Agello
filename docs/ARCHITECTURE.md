@@ -1,6 +1,6 @@
 # Architecture
 
-iRTChat is one SwiftUI app target organized in folders, plus two small extensions. Everything that touches the model runs in the app.
+Agello is one SwiftUI app target organized in folders, plus two small extensions. Everything that touches the model runs in the app.
 
 ```mermaid
 flowchart TB
@@ -43,7 +43,7 @@ flowchart TB
 | `SystemPrompt` | Composes the base prompt, personalization, memories, project instructions and voice mode; any change rebuilds the conversation before the next message. |
 | `WebResearch` | Provider chain with fallback, parallel page reading with a built-in readable-text extractor, passage ranking with EmbeddingGemma, numbered sources. `WebSearchTool` exposes it to the model in automatic mode. |
 | `Dictation`, `VoiceSession` | Transcription through Gemma's audio input; hands-free conversation with voice-activity turn detection, one audio engine for echo-cancelled capture and sentence-by-sentence speech, barge-in, and a camera frame per utterance. |
-| `AppRouter`, App Intents | "Ask iRTChat", "New Chat", "Talk to iRTChat", widgets, Control Center, Spotlight and `irtchat://` links all hand off to the app, which does the work in the foreground. |
+| `AppRouter`, App Intents | "Ask Agello", "New Chat", "Talk to Agello", widgets, Control Center, Spotlight and `agello://` links all hand off to the app, which does the work in the foreground. |
 | `ShareInbox`, `SpotlightIndex` | Items shared from other apps wait in an App Group inbox for the app to answer; chats are indexed for system search. |
 | `BackgroundWork` | A continued processing task (background GPU) around long document summaries, with system progress UI that can cancel it. |
 | `ModelStore`, `ModelCatalog` | Pinned model downloads in a background `URLSession`, size verification, storage, and cleanup of retired files. |
@@ -75,7 +75,7 @@ Turns form a tree through `parentID`. Each thread stores its active leaf, and th
 ## Code map
 
 ```text
-iRTChat/
+Agello/
 ├── AppState.swift      the hub: generation pipeline, settings, engine lifecycle
 ├── Inference/          engine actor, planner, context budget, device policy, tools, helpers
 ├── Knowledge/          file reading, chunking, embeddings, vector index, web research
@@ -86,7 +86,7 @@ iRTChat/
 ├── Voice/              voice mode: capture, speech, turn detection, camera
 ├── Views/              chat, drawer, composer, settings, projects, onboarding
 └── Support/            the design system (Theme/), haptics, image preparation, diagnostics
-iRTChatWidgets/         Home/Lock Screen widgets and Control Center controls
-iRTChatShare/           share extension: "Ask iRTChat"
+AgelloWidgets/         Home/Lock Screen widgets and Control Center controls
+AgelloShare/           share extension: "Ask Agello"
 Vendor/LiteRT-LM/       LiteRT-LM v0.18.0 Swift package (prebuilt runtime)
 ```

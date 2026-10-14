@@ -1,9 +1,9 @@
 ---
-name: irtchat-inference-rules
-description: Rules that keep LiteRT-LM from crashing or misbehaving in iRTChat. Read before changing ChatEngine.swift, AppState's generation or engine lifecycle, ContextBudget, InferencePlanner, helper tasks, tools, or anything that sends to the model.
+name: agello-inference-rules
+description: Rules that keep LiteRT-LM from crashing or misbehaving in Agello. Read before changing ChatEngine.swift, AppState's generation or engine lifecycle, ContextBudget, InferencePlanner, helper tasks, tools, or anything that sends to the model.
 ---
 
-# iRTChat inference rules
+# Agello inference rules
 
 Each rule below comes from a failure reproduced on device. Breaking one
 usually crashes the app (native heap corruption) or silently corrupts output,
@@ -11,7 +11,7 @@ and the simulator can't catch any of them.
 
 ## Ownership
 
-- `LiteRTChatEngine` (actor, `iRTChat/Inference/ChatEngine.swift`) is the only
+- `LiteRTChatEngine` (actor, `Agello/Inference/ChatEngine.swift`) is the only
   code that touches LiteRT-LM's `Engine` and `Conversation`. Keep it that way.
 - `AppState.serialized { }` runs engine operations (load, settings change,
   benchmark, delete, helpers) one at a time. The actor is reentrant across its
@@ -85,7 +85,7 @@ and the simulator can't catch any of them.
   - Don't point the catalog at the unpatched file, and don't add precision
     switching back.
   - When the model is updated, re-apply `patch_rope.py --split` (see
-    `irtchat-litert-update`), then run `test15_LongContextDigitFidelity`
+    `agello-litert-update`), then run `test15_LongContextDigitFidelity`
     and probe 12.
 - Speculative decoding (MTP) breaks JSON-schema constrained decoding on
   device. `helperJSON` turns MTP off; plain-text helpers keep it.

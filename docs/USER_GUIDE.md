@@ -1,6 +1,6 @@
 # User guide
 
-Everything iRTChat can do, where to find it, and what to do when something goes wrong.
+Everything Agello can do, where to find it, and what to do when something goes wrong.
 
 - [A quick tour](#a-quick-tour)
 - [Settings](#settings)
@@ -13,7 +13,7 @@ Everything iRTChat can do, where to find it, and what to do when something goes 
 
 | Where | What you can do |
 | --- | --- |
-| **First launch** | A welcome screen explains iRTChat and downloads Gemma 4 E4B (3.7 GB). You can leave the app while it downloads. |
+| **First launch** | A welcome screen explains Agello and downloads Gemma 4 E4B (3.7 GB). You can leave the app while it downloads. |
 | **Chat screen** | ☰ (or a swipe from the left edge) opens the drawer; the pencil starts a new chat; `⋯` renames or deletes the current chat. A new chat is saved only when you send its first message. |
 | **Composer** | `+` adds a photo, a file, a scanned document, or a voice message · **Think** turns reasoning on (the screen glows lavender) · **Search** searches the web (teal) · 🎙 dictates · ↑ sends, or the waveform starts voice mode when the composer is empty · ■ stops. You can type your next message while a reply streams. |
 | **Talk** | In voice mode, just speak: the answer arrives as text and speech. Talk over it, or tap the orb, to interrupt. The camera button sends what you're looking at with your question. |
@@ -45,11 +45,11 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 
 ## Outside the app
 
-- **Siri and Shortcuts.** "Ask iRTChat", "New Chat", and "Talk to iRTChat" work from Siri, the Shortcuts app, the Action Button, and Spotlight.
-- **Widgets and Control Center.** Home Screen and Lock Screen widgets ("Ask iRTChat", "Talk"), and Control Center controls for a new chat or a voice conversation.
+- **Siri and Shortcuts.** "Ask Agello", "New Chat", and "Talk to Agello" work from Siri, the Shortcuts app, the Action Button, and Spotlight.
+- **Widgets and Control Center.** Home Screen and Lock Screen widgets ("Ask Agello", "Talk"), and Control Center controls for a new chat or a voice conversation.
 - **Spotlight.** Your chats appear in system search (a toggle in Settings), and tapping a result opens that chat.
-- **Share sheet.** "Ask iRTChat" from any app with text, a link, an image, or a file; iRTChat answers when the app opens next.
-- **Links.** `irtchat://new`, `irtchat://ask?q=…`, and `irtchat://voice` work from anywhere on the system.
+- **Share sheet.** "Ask Agello" from any app with text, a link, an image, or a file; Agello answers when the app opens next.
+- **Links.** `agello://new`, `agello://ask?q=…`, and `agello://voice` work from anywhere on the system.
 
 ## The models
 
@@ -67,7 +67,7 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | Symptom | Fix |
 | --- | --- |
 | Signing error *"PLA Update available"* | Accept the latest Program License Agreement at [developer.apple.com/account](https://developer.apple.com/account). |
-| *"Failed to create a bundle instance … iRTChatDeviceTests.xctest"* | The iPhone has an install from before that target existed. Run `xcrun devicectl device uninstall app --device <udid> com.patricedery.irtchat` and retry. This also removes downloaded models. |
+| *"Failed to create a bundle instance … AgelloDeviceTests.xctest"* | The iPhone has an install from before that target existed. Run `xcrun devicectl device uninstall app --device <udid> com.patricedery.agello` and retry. This also removes downloaded models. |
 | UI tests fail with *"Timed out while enabling automation mode"* | Unlock the iPhone and keep it unlocked during the run. |
 | The download stopped | Tap **Resume** in **Settings → Models**. Downloads continue in the background, but force-quitting the app cancels them. |
 | *"Older messages were dropped from the model's memory"* | Expected in long chats. Raise the KV-cache size under **Settings → Advanced → Reasoning & Memory**, or start a new chat. |
@@ -86,5 +86,5 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 - Web pages are read without running JavaScript, so pages that build their content with scripts contribute only their search snippet.
 - DuckDuckGo results come from its HTML page (an unofficial interface); if it asks for a bot check, searches fall back to Wikipedia, or use your own SearXNG, Brave, or Tavily.
 - Only long document summaries keep running when you leave the app, and only on iPhones that support background GPU use (the iPhone 17 Pro on iOS 27 doesn't: there the summary stops with a notice, like any other reply).
-- Something shared to iRTChat is answered in a new chat the next time the app opens, not inside the share sheet.
+- Something shared to Agello is answered in a new chat the next time the app opens, not inside the share sheet.
 - Speed on 8 GB iPhones (A17 Pro) is validated by simulation but not yet measured on hardware.

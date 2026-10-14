@@ -1,4 +1,4 @@
-# iRTChat overhaul — the best local alternative to the ChatGPT app
+# Agello overhaul — the best local alternative to the ChatGPT app
 
 > [!IMPORTANT]
 > **Archived plan, superseded.** Phases 0–5 have shipped; [README.md](../../README.md) describes the app as it is now. Kept for the reasoning behind its decisions and risks. Where the implementation differs:
@@ -68,7 +68,7 @@ LiteRT-LM / Gemma 4 capabilities to adopt (currently unused):
 
 ## 5. Target parity map
 
-| ChatGPT | iRTChat target | Phase |
+| ChatGPT | Agello target | Phase |
 | --- | --- | --- |
 | Streaming chat with rich markdown | Full markdown, code blocks (highlighted, copy), tables, LaTeX math | 1 |
 | Model picker | E2B / E4B, with capability hints | 1 |
@@ -84,7 +84,7 @@ LiteRT-LM / Gemma 4 capabilities to adopt (currently unused):
 | Voice mode | Hands-free, interruptible conversation | 4 |
 | Camera | Take photo, document scanner, ask about what the camera sees | 4 |
 | Siri / Shortcuts / widgets | App Intents, Control Center, Action Button, widgets, Spotlight | 5 |
-| Share sheet | "Ask iRTChat" share extension (hands off to app) | 5 |
+| Share sheet | "Ask Agello" share extension (hands off to app) | 5 |
 | Image generation | **Out of scope** (Gemma outputs text only) | — |
 
 ## 6. Architecture

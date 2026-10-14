@@ -1,11 +1,11 @@
 ---
-name: irtchat-device-testing
-description: Run and read iRTChat's tests on the physical iPhone with scripts/device-harness.sh, and write new tests. Use before running any build or test, when a harness run fails, or when adding or changing tests.
+name: agello-device-testing
+description: Run and read Agello's tests on the physical iPhone with scripts/device-harness.sh, and write new tests. Use before running any build or test, when a harness run fails, or when adding or changing tests.
 ---
 
-# iRTChat device testing
+# Agello device testing
 
-iRTChat is tested on a physical iPhone only. The simulator has no Metal path
+Agello is tested on a physical iPhone only. The simulator has no Metal path
 for LiteRT-LM: never build, test, or take screenshots there. MobileBuildMCP is
 configured with the `device` workflow only.
 
@@ -19,7 +19,7 @@ configured with the `device` workflow only.
    `.mobilebuildmcp/config.yaml` (copy `config.example.yaml`), or
    `DEVICE_ID=<udid>`. `xcrun devicectl list devices` shows whether it's
    connected.
-3. Don't edit files in the target folders (`iRTChat*/`) while a run is
+3. Don't edit files in the target folders (`Agello*/`) while a run is
    building: stage changes elsewhere and apply them after the run. Files
    outside them (docs, `.claude/`, `scripts/`) are safe to edit.
 
@@ -51,8 +51,8 @@ inside that suite; not with `all`). Use the suite the test belongs to, so
 opt-in suites get their environment:
 
 ```sh
-ONLY=iRTChatTests/AppStateTests scripts/device-harness.sh unit
-ONLY=iRTChatDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-harness.sh inference
+ONLY=AgelloTests/AppStateTests scripts/device-harness.sh unit
+ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-harness.sh inference
 ```
 
 Other extra arguments go to `xcodebuild` as is.
@@ -66,7 +66,7 @@ Other extra arguments go to `xcodebuild` as is.
 scripts/device-run.sh logs 20                 # relaunch, save its logs for 20 s
 scripts/device-run.sh logs 20 --mock-engine   # with launch arguments
 scripts/device-run.sh screenshot settings     # the iPhone's screen as a PNG
-scripts/device-run.sh crashes                 # iRTChat crash/resource reports
+scripts/device-run.sh crashes                 # Agello crash/resource reports
 scripts/device-run.sh crashes pull            # copy them to build/device-run/crashes/
 ```
 
@@ -92,25 +92,25 @@ Everything lands in `build/device-harness/`:
 
 The script's exit code is `xcodebuild`'s (65 = test failures).
 
-App logs use subsystem `com.patricedery.irtchat`, categories `engine`,
+App logs use subsystem `com.patricedery.agello`, categories `engine`,
 `generation`, and `lifecycle`. CoreData "database is corrupted" lines during
 `unit` come from tests that feed a corrupt store on purpose.
 
 ## Writing tests
 
-- **Unit tests** (`iRTChatTests`, XCTest): build `AppState(useMockEngine:
+- **Unit tests** (`AgelloTests`, XCTest): build `AppState(useMockEngine:
   true)` with an in-memory `ModelContainer(for: ChatStore.schema,
   configurations: ModelConfiguration(isStoredInMemoryOnly: true))`, set
   `appState.modelContext`, and script the engine through
   `appState.engine as! MockChatEngine` (`setScript`, `setHelperResponse`,
-  `setFitResult`, …). Fixtures live in `iRTChatTests/Fixtures/`.
+  `setFitResult`, …). Fixtures live in `AgelloTests/Fixtures/`.
 - **Shared state.** Tests run inside the app on the phone and share its
   UserDefaults and Documents. A test that reads settings clears those keys
   before creating `AppState` and restores them in `tearDown` (see
   `AppStateTests`). In device tests, add new settings keys to
   `DeviceHarness.defaultsKeys`.
 - **Device scenarios** subclass `DeviceTestCase`
-  (`iRTChatDeviceTests/DeviceHarness.swift`), call `requireLoadedModel()`, and
+  (`AgelloDeviceTests/DeviceHarness.swift`), call `requireLoadedModel()`, and
   call `harness.record(...)` before asserting, so the metrics survive a
   failure. Assert `exchange.accepted` (with `appState.generationError` as the
   message) so a rejected send can't pass for a wrong answer.
@@ -142,8 +142,8 @@ App logs use subsystem `com.patricedery.irtchat`, categories `engine`,
 
 ## Known issues
 
-- "Failed to create a bundle instance … iRTChatDeviceTests.xctest": run
-  `xcrun devicectl device uninstall app --device <udid> com.patricedery.irtchat`
+- "Failed to create a bundle instance … AgelloDeviceTests.xctest": run
+  `xcrun devicectl device uninstall app --device <udid> com.patricedery.agello`
   and retry. This also deletes the downloaded models (about 3.8 GB to
   download again).
 - XCTest can't answer system permission prompts on device, so UI tests use
@@ -153,7 +153,7 @@ App logs use subsystem `com.patricedery.irtchat`, categories `engine`,
 
 | Name | Effect |
 | --- | --- |
-| `--mock-engine` (or env `IRT_MOCK_ENGINE`) | Scripted engine: the whole UI without a model |
+| `--mock-engine` (or env `AGELLO_MOCK_ENGINE`) | Scripted engine: the whole UI without a model |
 | `--uitest-reset` | Fresh chats and default settings for a UI test; projects, memories and web-search settings persist |
 | `--uitest-fake-mic` | Fake microphone input (no permission prompt) |
 | `--uitest-sample-file`, `--uitest-sample-report` | Attach sample documents generated in code (`ChatView`) |
