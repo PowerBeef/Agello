@@ -72,7 +72,9 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   with those exact patterns were exact on v0.18.0's WebGPU accelerator, fully
   accelerated, up to N=2048 and F=256. The failures came from the surrounding
   graph (INT32/BOOL producers: broadcast ADD, comparisons, CAST, SELECT_V2).
-  The user decided not to file them. The check lives in the fork's
+  The user decided not to file them, and posted a correction:
+  https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6160403434
+  The check lives in the fork's
   `research/issue-3913/webgpu-op-check/` (uncommitted).
 - Reproduction: the fork's `research/3913` branch, `research/issue-3913/`
   (graph-patch script, macOS runner, raw results, `summarize.py`).
