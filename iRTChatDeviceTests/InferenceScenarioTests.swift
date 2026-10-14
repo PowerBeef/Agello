@@ -466,6 +466,43 @@ final class InferenceScenarioTests: DeviceTestCase {
     harness.record("14_voiceTurns", ["results": results, "title": thread.title, "after": after.text], in: self)
   }
 
+  /// LiteRT-LM #3913, fixed in the model file: through the app's pipeline
+  /// (GPU, 16-bit activations, speculative decoding), a 48-digit reference is
+  /// copied exactly from chats whose reply is generated past positions 2,048
+  /// and 4,096. The unpatched model duplicated digits past 2,048.
+  func test15_LongContextDigitFidelity() async throws {
+    try await requireLoadedModel()
+    let preset = appState.options.samplerPreset
+    defer { appState.options.samplerPreset = preset }
+    appState.options.samplerPreset = .precise  // keep sampling noise out of a fidelity test
+    // The app estimates 3 bytes per token and this prose averages ~5, so the
+    // longer cases don't fit chat's 8K window and would be rejected as too long.
+    appState.options.maxNumTokensOverride = 16_384
+    await appState.applyCurrentOptions()
+    XCTAssertEqual(appState.resolved?.maxNumTokens, 16_384)
+    var results: [[String: Any]] = []
+    // Filler sentences: ~2.3K, ~4.3K and ~6.2K prompt tokens (measured), past
+    // both 2,048 and 4,096.
+    for (sentences, seed) in [(129, 1), (255, 2), (379, 3)] {
+      let digits = ProbeScenarioTests.referenceDigits(seed: seed)
+      let prompt = "REFERENCE: \(digits)\n\n" + ProbeScenarioTests.filler(sentences: sentences)
+        + "\n\nCopy the REFERENCE number exactly, digit for digit. Reply with only the digits."
+      let exchange = await harness.ask(prompt, in: harness.newThread())
+      let got = exchange.text.filter(\.isNumber)
+      results.append([
+        "sentences": sentences, "accepted": exchange.accepted,
+        "generationError": appState.generationError ?? "",
+        "inputTokens": exchange.reply?.stats?.inputTokens ?? -1,
+        "backend": exchange.reply?.stats?.backend ?? "", "exact": got == digits,
+        "expected": digits, "reply": exchange.text,
+      ])
+      harness.record("15_longContextDigits", ["results": results], in: self)
+      XCTAssertTrue(exchange.accepted, appState.generationError ?? "")
+      XCTAssertEqual(got, digits, "Digits changed with ~\(sentences) filler sentences: \(exchange.text)")
+      XCTAssertEqual(exchange.reply?.stats?.backend, "GPU")
+    }
+  }
+
   func test90_Benchmark() async throws {
     _ = try await harness.ensureDownloaded(ModelCatalog.e4b, timeout: 5400)
     await appState.runBenchmark()

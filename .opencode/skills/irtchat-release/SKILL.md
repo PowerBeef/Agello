@@ -37,28 +37,33 @@ uploading, submitting) needs the user's go-ahead first.
    the LiteRT-LM part). The App Store privacy answers must match: "Data Not
    Collected". Web search sends only the query to the chosen provider, at the
    user's request; confirm the user agrees with that classification.
-4. **Export compliance.** The Info.plist has no
+4. **Model hosting.** The chat model downloads from
+   `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` (our patched copy of
+   litert-community's file, Apache 2.0, with a NOTICE). Keep that repo public,
+   and keep the app's licenses screen crediting Google, litert-community and the
+   modification.
+5. **Export compliance.** The Info.plist has no
    `ITSAppUsesNonExemptEncryption`. The app only uses HTTPS through
    URLSession, which normally qualifies as exempt. Confirm with the user, then
    set it to `NO` to skip the question on every build.
-5. **App icon.** Not in the repo yet.
-6. **Build and upload** (`asc-xcode-build`). Use the Release configuration;
+6. **App icon.** Not in the repo yet.
+7. **Build and upload** (`asc-xcode-build`). Use the Release configuration;
    all three targets must sign. Then follow `asc-build-lifecycle` until the
    build finishes processing.
-7. **TestFlight** (`asc-testflight-orchestration`). Testers need an iPhone
+8. **TestFlight** (`asc-testflight-orchestration`). Testers need an iPhone
    15 Pro or later on iOS 27 (`iphone-performance-gaming-tier`) and about
    4.4 GB free.
-8. **Screenshots** (`asc-screenshot-resize`, then `asc screenshots upload`).
+9. **Screenshots** (`asc-screenshot-resize`, then `asc screenshots upload`).
    Take them from the device harness (`build/device-harness/attachments/`,
    from the `ui` suite), never the simulator. `asc-shots-pipeline` is
    disabled for this project.
-9. **Metadata** (`asc-metadata-sync`, `asc-whats-new-writer`). Privacy is the
+10. **Metadata** (`asc-metadata-sync`, `asc-whats-new-writer`). Privacy is the
    core pitch: on-device, no account, no cloud. Mention the 3.7 GB model
    download.
-10. **Review** (`asc-submission-health`, `asc-release-flow`).
+11. **Review** (`asc-submission-health`, `asc-release-flow`).
     - Before submitting, review DuckDuckGo's terms for scraping its HTML
       results page; keep DuckDuckGo's attribution.
     - Explain the large model download and the memory entitlements in the
       review notes.
-11. **After release** (`asc-crash-triage`). TestFlight crashes may come from
+12. **After release** (`asc-crash-triage`). TestFlight crashes may come from
     LiteRT-LM's native code; symbolicate with Axiom's `xcsym` tools.

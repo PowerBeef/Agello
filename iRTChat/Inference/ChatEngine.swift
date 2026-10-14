@@ -253,8 +253,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       visionBackend: resolved.enableVision ? .cpu() : nil,
       audioBackend: resolved.enableAudio ? .cpu() : nil,
       maxNumTokens: resolved.maxNumTokens,
-      cacheDir: try cacheDirectory(),
-      activationDataType: resolved.useGPU && resolved.float32Activations ? .float32 : nil
+      cacheDir: try cacheDirectory()
     )
     let engine = Engine(engineConfig: config)
     // initialize() blocks for a long time; keep it off the caller's context.

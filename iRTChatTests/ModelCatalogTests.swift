@@ -17,19 +17,27 @@ final class ModelCatalogTests: XCTestCase {
     XCTAssertEqual(ModelID(storedValue: "something-else"), .e4b)
   }
 
-  func testDownloadURL() {
-    let url = ModelCatalog.e4b.downloadURL
-    XCTAssertEqual(url.scheme, "https")
-    XCTAssertEqual(url.host, "huggingface.co")
+  func testDownloadURLIsPinnedToACommit() {
+    let spec = ModelCatalog.e4b
+    // A commit hash, not a branch: the exact patched file (LiteRT-LM #3913).
+    XCTAssertNotNil(
+      spec.revision.wholeMatch(of: /[0-9a-f]{40}/), "Pin the chat model to a commit: \(spec.revision)")
+    XCTAssertEqual(spec.downloadURL.scheme, "https")
+    XCTAssertEqual(spec.downloadURL.host, "huggingface.co")
     XCTAssertEqual(
-      url.absoluteString,
-      "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm"
+      spec.downloadURL.absoluteString,
+      "https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope/resolve/\(spec.revision)/gemma-4-E4B-it-fp16-rope.litertlm"
     )
+  }
+
+  func testOriginalE4BFileIsRetired() {
+    // The unpatched file isn't in the catalog, so ModelStore deletes it.
+    XCTAssertFalse(ModelCatalog.all.map(\.fileName).contains("gemma-4-E4B-it.litertlm"))
   }
 
   func testVerifiedSize() {
     // Byte counts verified against the Hugging Face content-length header.
-    XCTAssertEqual(ModelCatalog.e4b.sizeBytes, 3_659_530_240)
+    XCTAssertEqual(ModelCatalog.e4b.sizeBytes, 3_659_988_992)
     XCTAssertEqual(ModelCatalog.embeddingGemma.sizeBytes, 164_626_432)
     XCTAssertEqual(
       ModelCatalog.embeddingGemma.downloadURL.absoluteString,

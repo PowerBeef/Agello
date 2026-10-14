@@ -256,38 +256,18 @@ final class AppStateTests: XCTestCase {
   }
 }
 
-// MARK: - Precision for long contexts (LiteRT-LM #3913)
+// MARK: - Long contexts (LiteRT-LM #3913, fixed in the model file)
 
 extension AppStateTests {
-  func testHighPrecisionThresholdsHaveHysteresis() {
-    XCTAssertFalse(AppState.wantsHighPrecision(contextTokens: 2_000, current: false))
-    XCTAssertTrue(AppState.wantsHighPrecision(contextTokens: 2_600, current: false))
-    XCTAssertTrue(AppState.wantsHighPrecision(contextTokens: 2_000, current: true), "Stays on")
-    XCTAssertFalse(AppState.wantsHighPrecision(contextTokens: 1_000, current: true))
-  }
-
-  func testLongChatsSwitchToFloat32AndShortOnesBack() async {
+  /// The patched model is exact at every position with 16-bit activations,
+  /// so a long chat keeps the engine it has: no precision switch, no rebuild.
+  func testLongChatsKeepTheEngine() async {
     await appState.ensureEngineLoaded()
-    XCTAssertEqual(appState.resolved?.float32Activations, false)
-
+    let before = appState.resolved
     let long = appState.newThread(in: context)
     let essay = String(repeating: "A long paragraph about lighthouses and their keepers. ", count: 180)
     await appState.send(text: essay, imageData: nil, audioFileURL: nil, in: long)
-    XCTAssertTrue(appState.highPrecision)
-    XCTAssertEqual(appState.resolved?.float32Activations, true)
-    XCTAssertTrue(appState.effectiveOptions.highPrecision)
-
-    let short = appState.newThread(in: context)
-    await appState.send(text: "Hi", imageData: nil, audioFileURL: nil, in: short)
-    XCTAssertFalse(appState.highPrecision)
-    XCTAssertEqual(appState.resolved?.float32Activations, false)
-  }
-
-  func testHighPrecisionIsNeverStored() throws {
-    var options = InferenceOptions()
-    options.highPrecision = true
-    let decoded = try JSONDecoder().decode(
-      InferenceOptions.self, from: try JSONEncoder().encode(options))
-    XCTAssertFalse(decoded.highPrecision)
+    XCTAssertEqual(appState.resolved, before)
+    XCTAssertEqual(appState.resolved?.backendLabel, "GPU")
   }
 }

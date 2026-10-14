@@ -106,15 +106,11 @@ struct InferenceOptions: Codable, Sendable, Equatable {
   /// Drop reasoning-channel tokens from the KV cache. Longer effective
   /// context when thinking is on; the thought text still streams to the UI.
   var compactReasoningCache: Bool = false
-  /// 32-bit GPU activations, chosen by the app for long contexts (not a
-  /// stored setting). The default 16-bit path corrupts digits once the
-  /// context reaches a few thousand tokens (LiteRT-LM issue #3913).
-  var highPrecision: Bool = false
   /// Offer the model the `web_search` tool (automatic web search; runtime
   /// only, from the web settings).
   var webSearchTool: Bool = false
 
-  /// Stored keys (``highPrecision`` is decided at runtime, never saved).
+  /// Stored keys (``webSearchTool`` is decided at runtime, never saved).
   private enum CodingKeys: String, CodingKey {
     case backendPreference, maxNumTokensOverride, enableThinking, thinkingBudget, samplerPreset
     case systemPrompt, enableVision, enableAudio, visualDetail, enableSpeculativeDecoding

@@ -16,13 +16,8 @@ struct ResolvedInference: Sendable, Equatable {
   var enableSpeculativeDecoding: Bool
   var maxOutputTokens: Int?
   var filterThoughtFromCache: Bool
-  /// 32-bit GPU activations (see ``InferenceOptions/highPrecision``).
-  var float32Activations: Bool = false
 
-  var backendLabel: String {
-    guard useGPU else { return "CPU" }
-    return float32Activations ? "GPU·FP32" : "GPU"
-  }
+  var backendLabel: String { useGPU ? "GPU" : "CPU" }
 }
 
 /// Model-file capabilities from `ModelInfo` introspection (no engine needed).
@@ -218,8 +213,7 @@ enum InferencePlanner {
       visualTokenBudget: options.enableVision ? options.visualDetail.tokenBudget : nil,
       enableSpeculativeDecoding: options.enableSpeculativeDecoding,
       maxOutputTokens: options.maxOutputTokens,
-      filterThoughtFromCache: options.compactReasoningCache,
-      float32Activations: options.highPrecision && options.backendPreference == .gpu
+      filterThoughtFromCache: options.compactReasoningCache
     )
   }
 
@@ -258,7 +252,6 @@ enum InferencePlanner {
       || built.enableVision != requested.enableVision
       || built.enableAudio != requested.enableAudio
       || built.enableSpeculativeDecoding != requested.enableSpeculativeDecoding
-      || built.float32Activations != requested.float32Activations
   }
 
   /// Conversation-level settings from `plan` applied on top of the engine

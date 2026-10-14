@@ -109,10 +109,11 @@ final class KnowledgeScenarioTests: DeviceTestCase {
       "What was the harbour renovation budget, and when was it approved?", in: thread)
     XCTAssertFalse(followUp.text.hasPrefix(ChatTurn.errorPrefix), followUp.text)
     XCTAssertTrue(followUp.text.contains("4.2"), followUp.text)
-    // LiteRT-LM #3913: 16-bit GPU activations duplicated digits here.
+    // LiteRT-LM #3913: the unpatched model duplicated digits here with 16-bit
+    // GPU activations; the patched model is exact at the default precision.
     XCTAssertFalse(followUp.text.contains("202026"), followUp.text)
     XCTAssertFalse(followUp.text.contains("222"), followUp.text)
-    XCTAssertEqual(followUp.reply?.stats?.backend, "GPU·FP32", "Long context should run in float32")
+    XCTAssertEqual(followUp.reply?.stats?.backend, "GPU")
     let sources = followUp.reply?.parts.sources.map(\.title) ?? []
     XCTAssertTrue(
       sources.first.map { Self.pages(in: $0).contains(23) } ?? false,

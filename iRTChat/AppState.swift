@@ -49,7 +49,6 @@ final class AppState {
     effective.systemPrompt = SystemPrompt.compose(
       base: options.systemPrompt, personalization: personalization, project: activeProject,
       memories: memoryEnabled ? memoryTexts() : [], voice: voiceModeActive)
-    effective.highPrecision = highPrecision
     effective.webSearchTool = webSettings.allowed && webSettings.automatic
     return effective
   }
@@ -79,18 +78,6 @@ final class AppState {
     }
   }
 
-  /// 32-bit GPU activations for long contexts, where the default 16-bit path
-  /// corrupts digits (LiteRT-LM #3913). Decided per message.
-  @ObservationIgnored private(set) var highPrecision = false
-  /// Switch to high precision at this many context tokens…
-  static let highPrecisionOnTokens = 2_500
-  /// …and back below this many (no reload ping-pong between similar chats).
-  static let highPrecisionOffTokens = 1_500
-
-  static func wantsHighPrecision(contextTokens: Int, current: Bool) -> Bool {
-    current ? contextTokens >= highPrecisionOffTokens : contextTokens >= highPrecisionOnTokens
-  }
-
   /// The project of the chat the engine's conversation belongs to.
   @ObservationIgnored private(set) var activeProject: ProjectContext?
   /// A new chat started from a project page joins that project on its
@@ -103,8 +90,8 @@ final class AppState {
   }
 
   var isGenerating = false
-  /// Preparing a reply (web search, reading files, precision switch): the
-  /// composer shows Stop from the first step until the reply ends.
+  /// Preparing a reply (web search, reading files): the composer shows Stop
+  /// from the first step until the reply ends.
   var isPreparing = false
   /// The chat a reply is being prepared for (its status line).
   var preparingThreadID: UUID?
@@ -590,18 +577,6 @@ final class AppState {
           question: prompt, sources: findings.sources, filePrompt: filePrompt)
         sources += findings.sources.map(\.record)
       }
-    }
-
-    // Long contexts need 32-bit GPU activations (an engine rebuild).
-    let contextTokens =
-      ContextBudget.estimateHistory(history) + ContextBudget.estimateTokens(enginePrompt)
-    let wantPrecision = Self.wantsHighPrecision(contextTokens: contextTokens, current: highPrecision)
-    if wantPrecision != highPrecision {
-      highPrecision = wantPrecision
-      Log.engine.info("precision: \(wantPrecision ? "float32" : "default", privacy: .public) at ~\(contextTokens) tokens")
-      if wantPrecision { preparingStatus = String(localized: "Switching to high precision…") }
-      await applyCurrentOptions()
-      preparingStatus = nil
     }
 
     let ready = await serialized {

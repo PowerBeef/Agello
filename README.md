@@ -145,14 +145,14 @@ iRTChat chats with **Gemma 4 E4B** (text, vision, audio, reasoning, and tool cal
 
 | Model | Size | Role | License |
 | --- | --- | --- | --- |
-| **Gemma 4 E4B** | 3.7 GB | Chat. Context: 8K tokens for chat; up to 16K or 32K for long inputs, depending on the device's memory | Apache 2.0 |
+| **Gemma 4 E4B** | 3.7 GB | Chat. Context: 8K tokens by default; up to 16K or 32K in Settings, depending on the device's memory | Apache 2.0 |
 | **EmbeddingGemma 2** (text, 270M) | 165 MB | Turns passages and chats into 256-dimension vectors for retrieval and search by meaning. Downloads automatically after the chat model; keyword search fills in until then | Apache 2.0 |
 
-- **Source.** The `.litertlm` builds from Hugging Face ([`litert-community`](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm)), downloaded at runtime without an account. It is not included in this repository.
+- **Source.** Downloaded at runtime from Hugging Face, without an account; not included in this repository. EmbeddingGemma is the [`litert-community`](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm) build. The chat model is [`litert-community`'s Gemma 4 E4B build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) with one fix: its rotary positions are rewritten to stay exact with 16-bit GPU activations, with the same weights ([`PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope), reproducible from the original). The download is pinned to a commit.
 - **Downloads** run in a background `URLSession`, so they continue while the app is in the background and resume after the app is relaunched. They support pause and resume, check free space first, and are verified by HTTP status and file size. The model is stored in Application Support and excluded from iCloud backup.
-- **Context policy.** A larger KV cache slows every reply, so chat uses 8K tokens; only long inputs get more (32K when the app may use at least 6.5 GB, otherwise 16K).
+- **Context policy.** A larger KV cache slows every reply, so chat uses 8K tokens. **Settings → Reasoning & Memory** can raise it to 16K, or 32K when the app may use at least 6.5 GB.
 - **The 8 GB floor.** E4B was validated for the iPhone 15 Pro with an 8 GB memory simulation: incompressible ballast shrank usable memory to 5.0, 4.0, and 3.5 GB, and text, image, audio, and 16K-token inputs all completed without the app being terminated. Speed on A17 Pro hardware is not yet measured.
-- **Earlier versions.** Chats created with Gemma 4 E2B continue on E4B, and the old E2B file is deleted automatically.
+- **Earlier versions.** Chats created with Gemma 4 E2B continue on E4B. Older model files (E2B, and the unpatched E4B) are deleted automatically, and the current file downloads once.
 
 ## Settings
 
@@ -185,7 +185,7 @@ Settings opens from the bottom of the drawer.
                                       ▼
                     AppState  (@MainActor, @Observable)
    engine lifecycle queue · chat ↔ conversation binding · send / regenerate /
-   edit · files, web, memory · system prompt · precision switch · streaming
+   edit · files, web, memory · system prompt · streaming
         │                       │                        │
         │           KnowledgeBase ── EmbeddingGemma     │   AppRouter (Siri,
         │           files → passages → vectors          │   Shortcuts, widgets,
@@ -234,7 +234,7 @@ These safeguards come from failures reproduced on device by the test harness.
 - **Memory.** The memory entitlements raise the app's limit to about 8.6 GB on a 12 GB iPhone 17 Pro and prevent address-space exhaustion when engines are rebuilt. A reply stops only when available memory falls below 400 MB, not at the first memory warning.
 - **Capability flags.** The model file's *thinking* and *function-calling* flags are not trusted: Gemma 4 files report both as unsupported, yet the model reasons and calls tools on device.
 - **Tool budgets.** LiteRT-LM runs tools automatically while streaming, so each generation round gets a share of the remaining context. A streaming guard ends a reply cleanly before it can overflow the window.
-- **GPU precision.** With default 16-bit activations, the GPU duplicated digits once the context reached a few thousand tokens ("March 2026" became "March 202026"); the CPU and 32-bit activations were correct ([LiteRT-LM #3913](https://github.com/google-ai-edge/LiteRT-LM/issues/3913)). The cause is in the model: it computes rotary positions from a float copy of the token position, which 16-bit floats can't represent exactly past 2,048 ([analysis](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598)). iRTChat switches to 32-bit activations from about 2,500 context tokens (back below 1,500), keeping short chats at full speed; the stats footer shows `GPU·FP32` in that mode.
+- **GPU precision.** With default 16-bit activations, Google's model file duplicated digits once the context passed 2,048 tokens ("March 2026" became "March 202026"; [LiteRT-LM #3913](https://github.com/google-ai-edge/LiteRT-LM/issues/3913)). It computes rotary positions from a float copy of the token position, which 16-bit floats can't represent exactly past 2,048 ([analysis](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598)). iRTChat's model file splits the position so every float stays exact up to 32,767 tokens. Its output with 16-bit activations is identical to the original's with 32-bit activations, so every chat runs at full 16-bit speed without switching precision.
 - **Structured helpers.** Titles and memories use JSON-schema constrained decoding with speculative decoding off (MTP corrupts the grammar mask on device), in a throwaway conversation. The chat is then rebuilt from history, since LiteRT-LM keeps one live conversation per engine.
 - **Settings take effect immediately.** A setting changed just before sending (like **Think**) is applied before that message, not after it.
 
@@ -251,9 +251,8 @@ Gemma 4 E4B measured on an iPhone 17 Pro (12 GB, iOS 27), GPU, with MTP enabled.
 | Decode, long reasoning answers (1,000+ tokens) | ~22 tok/s |
 | Chat title, after the first reply | ~2–3 s |
 | Index a 40-page PDF (20 passages) / search it | 1.7 s / 15 ms |
-| "Summarize this report" (40 pages, first time / again) | 31 s / 13 s |
-| Cited follow-up question on the same report | 11 s (includes the switch to 32-bit precision) |
-| Long context in 32-bit precision | about half the decode speed |
+| "Summarize this report" (40 pages, first time / again) | 37 s / 7.5 s |
+| Cited follow-up question on the same report | 5 s |
 | Memory extraction after a personal message | ~2.2 s |
 | Web search answer (search, read 5 pages, rank, answer) | ~25 s |
 | Dictation of a spoken sentence | ~1 s (word error rate 0–0.13 in English and French) |
@@ -266,8 +265,8 @@ For reference, Google reports 1,189 prefill and 25 decode tokens per second for 
 
 | Target | Runs on | Covers |
 | --- | --- | --- |
-| `iRTChatTests` (204 tests) | iPhone | Planner, context budgeting, precision switching, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers and page extraction (recorded fixtures), citations, dictation, voice text and voice-activity detection, deep links and intents, Spotlight entries, the share inbox, chat grouping and search, personalization, titles, downloads, and the app pipeline through the scripted engine |
-| `iRTChatDeviceTests` (39 scenarios) | iPhone | The real models in-process: download, load, text, chat isolation, stop and continue, tools, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, voice turns (transcript and spoken answer), benchmark; files (EmbeddingGemma indexing, "summarize this 40-page PDF", cited follow-up, search chats by meaning); live web search (cited answer, planned follow-up, automatic mode). Opt-in suites: long Thinking, 8 GB memory simulation, context calibration, and LiteRT-LM probes. |
+| `iRTChatTests` (203 tests) | iPhone | Planner, context budgeting, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers and page extraction (recorded fixtures), citations, dictation, voice text and voice-activity detection, deep links and intents, Spotlight entries, the share inbox, chat grouping and search, personalization, titles, downloads, and the app pipeline through the scripted engine |
+| `iRTChatDeviceTests` (44 scenarios) | iPhone | The real models in-process: download, load, text, chat isolation, stop and continue, tools, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, voice turns (transcript and spoken answer), exact digits past 2,048 and 4,096 tokens, benchmark; files (EmbeddingGemma indexing, "summarize this 40-page PDF", cited follow-up, search chats by meaning); live web search (cited answer, planned follow-up, automatic mode). Opt-in suites: long Thinking, 8 GB memory simulation, context calibration, and LiteRT-LM probes. |
 | `iRTChatUITests` (20 flows) | iPhone | Real taps: send, Stop, Home button mid-reply, leaving and returning mid-reply, rapid settings changes, drawer and search, pin / rename / delete, projects, attached files, web search, dictation, voice mode, deep links, a long summary while the app is in the background, regenerate / edit / versions, Think, memory settings, markdown, keyboard clearance, Models |
 
 All suites run on a connected, unlocked iPhone through the harness (it downloads E4B and EmbeddingGemma if missing). The simulator isn't used.
@@ -398,12 +397,12 @@ iRTChat is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE
 | swift-markdown | Swift package | Apache 2.0 |
 | swift-cmark | Swift package (via swift-markdown) | BSD 2-Clause |
 | SwiftMath | Swift package | MIT |
-| Gemma 4 E4B | Downloaded at runtime | Apache 2.0 |
+| Gemma 4 E4B (litert-community build, rotary positions patched) | Downloaded at runtime | Apache 2.0 |
 
 ## Acknowledgements
 
 - [LiteRT](https://github.com/google-ai-edge/litert) and [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) by Google (Apache 2.0)
 - [LiteRT-LM Swift guide](https://developers.google.com/edge/litert-lm/swift)
 - [Gemma 4 on LiteRT-LM](https://developers.google.com/edge/litert-lm/models/gemma-4)
-- [Gemma 4 E4B](https://huggingface.co/google/gemma-4-E4B-it) by Google, with the [LiteRT-LM build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) by `litert-community` (Apache 2.0)
+- [Gemma 4 E4B](https://huggingface.co/google/gemma-4-E4B-it) by Google, with the [LiteRT-LM build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) by `litert-community` (Apache 2.0); iRTChat downloads [a copy with float16-exact rotary positions](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope)
 - [swift-markdown](https://github.com/swiftlang/swift-markdown) by the Swift project, and [SwiftMath](https://github.com/mgriebling/SwiftMath) by Computer Inspirations

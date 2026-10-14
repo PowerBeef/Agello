@@ -36,8 +36,12 @@ and the simulator can't catch any of them.
 - The token estimate is about 3 bytes per token, learned upward from exact
   runtime counts (`estimateCalibration`, clamped 1–3). Estimates must stay
   conservative.
-- Chat uses an 8K cache. Long inputs get 16K, or 32K when the app may use at
-  least 6.5 GB. A bigger cache slows every reply, so don't raise defaults.
+- Chat uses an 8K cache. Settings can raise it to 16K, or 32K when the app
+  may use at least 6.5 GB; nothing raises it automatically. A bigger cache
+  slows every reply, so don't raise the default.
+- At 3 bytes per token, about 4K tokens of English prose is the most one
+  message can hold in 8K. Tests with longer prompts set
+  `maxNumTokensOverride` (see `test15_LongContextDigitFidelity`).
 
 ## Engine lifecycle
 
@@ -45,7 +49,7 @@ and the simulator can't catch any of them.
   pass `validate()` (a one-token generation) before use, retried once after
   750 ms. Loads try GPU then CPU, multimodal then text-only.
 - `InferencePlanner.requiresEngineReload` lists the engine-level settings
-  (backend, KV size, vision, audio, MTP, FP32 activations). Changing any of
+  (backend, KV size, vision, audio, MTP). Changing any of
   them needs a full `load`. Everything else goes through
   `updateConversationOptions`, which reseeds the conversation.
 - Engine-level `ExperimentalFlags` must be set before creating the engine.
@@ -62,15 +66,19 @@ and the simulator can't catch any of them.
 
 ## Precision and decoding
 
-- With 16-bit GPU activations, digits duplicate in long contexts ("2026"
-  becomes "202026"; LiteRT-LM #3913). Root cause, proven by probes 10–11: the
-  model computes rotary angles from a float copy of the position, and in FP16
-  positions above **2,048** collide. What matters is the highest position a
-  call reaches (system prompt + history + input + reply, thinking included),
-  not the prompt size. `AppState` switches to FP32 activations at an
-  estimated 2,500 context tokens (back below 1,500); the footer shows
-  `GPU·FP32`; FP32 is an engine reload. Known gaps: that trigger can fire
-  after position 2,048, and file summaries run before it.
+- **Only use the patched model file.** Google's Gemma 4 E4B file duplicates
+  digits past position 2,048 with 16-bit GPU activations ("2026" becomes
+  "202026"; LiteRT-LM #3913): it computes rotary angles from a float copy of
+  the position, which FP16 can't hold exactly above 2,048.
+  - `ModelCatalog.e4b` downloads a copy whose rotary positions are split
+    (`2048·h + l`) so every float stays exact up to 32,767. It's pinned to a
+    Hugging Face commit; probes 10–12 prove it.
+  - The app runs in 16-bit activations everywhere, with no FP32 switch.
+  - Don't point the catalog at the unpatched file, and don't add precision
+    switching back.
+  - When the model is updated, re-apply `patch_rope.py --split` (see
+    `irtchat-litert-update`), then run `test15_LongContextDigitFidelity`
+    and probe 12.
 - Speculative decoding (MTP) breaks JSON-schema constrained decoding on
   device. `helperJSON` turns MTP off; plain-text helpers keep it.
 - Don't trust the model file's `thinking` or `functionCalling` flags: Gemma 4

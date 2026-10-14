@@ -9,10 +9,12 @@ struct ModelSpec: Identifiable, Sendable, Equatable {
   let fileName: String
   /// Expected download size in bytes (verified against Hugging Face).
   let sizeBytes: Int64
+  /// Hugging Face commit (or branch) to download: a commit pins the exact file.
+  var revision = "main"
 
   var downloadURL: URL {
     // swiftlint:disable:next force_unwrapping
-    URL(string: "https://huggingface.co/\(repo)/resolve/main/\(fileName)")!
+    URL(string: "https://huggingface.co/\(repo)/resolve/\(revision)/\(fileName)")!
   }
 
   var sizeDisplay: String {
@@ -23,13 +25,18 @@ struct ModelSpec: Identifiable, Sendable, Equatable {
 }
 
 enum ModelCatalog {
+  /// litert-community's Gemma 4 E4B build with float16-exact rotary positions:
+  /// the original corrupts digits past 2,048 context tokens with 16-bit GPU
+  /// activations (LiteRT-LM #3913). Same weights; reproducible from the
+  /// original (sha256 4a691f036fb06f7d4761da0026ad69a8b16cd7d9bc3965de9c2765edec7cb15f).
   static let e4b = ModelSpec(
     id: .e4b,
     displayName: "Gemma 4 E4B",
     tagline: "Private, on-device. Text, vision, audio and reasoning.",
-    repo: "litert-community/gemma-4-E4B-it-litert-lm",
-    fileName: "gemma-4-E4B-it.litertlm",
-    sizeBytes: 3_659_530_240
+    repo: "PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope",
+    fileName: "gemma-4-E4B-it-fp16-rope.litertlm",
+    sizeBytes: 3_659_988_992,
+    revision: "13d5aa4cc27f986fe469267da96f177408d98b69"
   )
 
   /// EmbeddingGemma 2 (text, 270M): turns text into vectors for search by

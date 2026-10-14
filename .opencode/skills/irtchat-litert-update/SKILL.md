@@ -62,11 +62,28 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   (pointer on #2814).
 - Reproduction: the fork's `research/3913` branch, `research/issue-3913/`
   (graph-patch script, macOS runner, raw results, `summarize.py`).
-- Re-test every new release or re-exported model on the iPhone:
-  `ONLY=iRTChatDeviceTests/ProbeScenarioTests/test10_PositionBoundary scripts/device-harness.sh probes`.
-  Once FP16 copies exactly past position 2,048, the app's FP32 switch can go.
-  `test11_ShiftedRotaryPositions` needs a patched model copied to the app's
-  `Documents/lab/ishift-2048.litertlm` (`patch_rope.py … -2048 … --int`).
+- **The app ships our fix.** `ModelCatalog.e4b` downloads
+  `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`, pinned to a commit.
+  - It's the litert-community file run through `patch_rope.py --split`: rotary
+    positions split as `2048·h + l`, exact in FP16 up to 32,767; main model
+    and MTP drafter; weights unchanged.
+  - The output is deterministic: the model card lists the sha256 of both files.
+- **When litert-community updates the E4B file:**
+  1. Run `patch_rope.py --split` on the new file.
+  2. Upload it to the same Hugging Face repo, with the model card's sha256
+     and source revision updated.
+  3. Update `ModelCatalog.e4b` (`revision`, `sizeBytes`).
+  4. Run the `inference` suite (`test15_LongContextDigitFidelity`) and probe 12.
+- **When Google fixes #3913** (a new LiteRT-LM release or a re-exported model):
+  - Run `ONLY=iRTChatDeviceTests/ProbeScenarioTests/test10_PositionBoundary scripts/device-harness.sh probes`
+    against their file.
+  - If FP16 copies exactly past position 2,048, the catalog can go back to
+    their file.
+- **Lab models for the probes:** copy them to the app's `Documents/lab` with
+  `devicectl device copy to`, and delete them with
+  `TEST_RUNNER_LAB_REMOVE=<file> ONLY=…/test13_RemoveLabModels scripts/device-harness.sh probes`.
+  - Probe 11 needs `ishift-2048.litertlm` (`patch_rope.py … -2048 … --int`).
+  - Probe 12 needs `split.litertlm` (`--split`).
 
 ### Using patches in iRTChat
 
@@ -137,7 +154,6 @@ Run these in order (see `irtchat-device-testing`):
 2. `inference`, then `files`.
 3. `calibrate` when performance or memory may have changed. Compare with the
    README's Performance table.
-4. If #3913 is fixed upstream, test whether the FP32 switch in `AppState`
-   (`highPrecisionOnTokens`) is still needed before removing it.
+4. If the release mentions #3913, follow "When Google fixes #3913" above.
 
 Commit the refresh and the fixes separately.

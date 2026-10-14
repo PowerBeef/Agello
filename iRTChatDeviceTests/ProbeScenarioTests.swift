@@ -620,6 +620,33 @@ final class ProbeScenarioTests: DeviceTestCase {
     }
   }
 
+  /// Housekeeping for the lab models copied by hand (probes 11-12): deletes
+  /// the files named in TEST_RUNNER_LAB_REMOVE (comma-separated) from
+  /// Documents/lab. devicectl can copy files into the app's container but
+  /// can't delete them.
+  func test13_RemoveLabModels() throws {
+    guard let names = ProcessInfo.processInfo.environment["LAB_REMOVE"] else {
+      throw XCTSkip("Set TEST_RUNNER_LAB_REMOVE=<file>,<file> to delete lab models")
+    }
+    let lab = try FileManager.default.url(
+      for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false
+    ).appendingPathComponent("lab")
+    for name in names.split(separator: ",").map(String.init) {
+      let file = lab.appendingPathComponent(name)
+      XCTAssertEqual(file.deletingLastPathComponent().standardizedFileURL, lab.standardizedFileURL, "Only files directly in Documents/lab")
+      if FileManager.default.fileExists(atPath: file.path) {
+        try FileManager.default.removeItem(at: file)
+        print("lab: removed \(name)")
+      } else {
+        print("lab: \(name) not found")
+      }
+    }
+    let left = (try? FileManager.default.contentsOfDirectory(atPath: lab.path)) ?? []
+    let free = (try? lab.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
+      .volumeAvailableCapacityForImportantUsage ?? -1
+    print("lab: left \(left), free \(Double(free) / 1e9) GB")
+  }
+
   struct CopyRun: Sendable {
     let expected: String
     let output: String
