@@ -132,8 +132,8 @@ TAG=v0.19.0 ./Vendor/refresh-litert-lm.sh
 ```
 
 Then update the tag in `Vendor/README.md`, the README badge and the
-"Vendored LiteRT-LM" section, and `NOTICE` if the license or copyright
-changed.
+"Vendored LiteRT-LM" section, the code map in `docs/ARCHITECTURE.md`, and
+`NOTICE` if the license or copyright changed.
 
 ## 3. Build and fix
 
