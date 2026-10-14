@@ -87,6 +87,31 @@ final class KnowledgeTests: XCTestCase {
     XCTAssertTrue((top.pageStart!...top.pageEnd!).contains(2), top.citation)
   }
 
+  /// A file attached before the embedding model arrived (never indexed).
+  private func unindexedDocument() async throws -> ChatDocument {
+    let document = try XCTUnwrap(knowledge.add(report(), threadID: UUID()))
+    await knowledge.waitForIndexing([document])
+    document.indexedWith = nil
+    for chunk in document.chunks { chunk.embedding = nil }
+    try container.mainContext.save()
+    return document
+  }
+
+  func testIndexPendingIndexesFilesAttachedBeforeTheEmbedder() async throws {
+    let document = try await unindexedDocument()
+    knowledge.indexPending()
+    await knowledge.waitForIndexing([document])
+    XCTAssertEqual(document.indexedWith, HashingEmbedder().identifier)
+    XCTAssertTrue(document.chunks.allSatisfy { $0.embedding != nil })
+  }
+
+  func testSearchIndexesUnindexedFilesFirst() async throws {
+    let document = try await unindexedDocument()
+    let passages = await knowledge.search("budget in million dollars", in: [document], limit: 1)
+    XCTAssertEqual(document.indexedWith, HashingEmbedder().identifier, "Search must index first")
+    XCTAssertTrue(passages.first?.text.contains("4.2 million") == true)
+  }
+
   func testDocumentsAreScopedToTheirChatOrProject() {
     let thread = UUID()
     let project = UUID()

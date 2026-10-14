@@ -146,9 +146,17 @@ final class KnowledgeBase {
   func indexPending() {
     guard let context = modelContext, let embedder = currentEmbedder() else { return }
     let identifier = embedder.identifier
+    // `nil` (never indexed) must match explicitly: SQL comparisons skip NULL.
     let descriptor = FetchDescriptor<ChatDocument>(
-      predicate: #Predicate { $0.indexedWith != identifier })
+      predicate: #Predicate { $0.indexedWith == nil || $0.indexedWith != identifier })
     for document in (try? context.fetch(descriptor)) ?? [] { index(document) }
+  }
+
+  /// ``indexPending()`` when the embedding model is already on the device,
+  /// so a launch never starts its download.
+  func indexPendingIfAvailable() {
+    guard useHashingEmbedder || store.isDownloaded(ModelCatalog.embeddingGemma) else { return }
+    indexPending()
   }
 
   /// Wait for running indexing of `documents` to finish.
@@ -252,6 +260,8 @@ final class KnowledgeBase {
   /// The `limit` most relevant passages of `documents` for `query`.
   func search(_ query: String, in documents: [ChatDocument], limit: Int) async -> [Passage] {
     guard !documents.isEmpty, limit > 0 else { return [] }
+    // Files attached before the embedding model was ready are indexed now.
+    for document in documents { index(document) }
     await waitForIndexing(documents)
     let chunks = documents.flatMap { document in document.chunks.map { (document, $0) } }
     guard !chunks.isEmpty else { return [] }

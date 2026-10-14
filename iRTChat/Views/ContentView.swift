@@ -84,6 +84,7 @@ struct ContentView: View {
       answerSharedItems()
       SpotlightIndex.refresh(in: context)
       appState.pruneEmptyThreads()
+      appState.knowledge.indexPendingIfAvailable()
       presentOnboarding = OnboardingView.shouldShow(
         done: onboardingDone, isMock: appState.isMock,
         downloaded: appState.store.activeSpecDownloaded)

@@ -34,6 +34,10 @@ final class ModelStore: NSObject {
   /// Downloads waiting for the current one (one at a time).
   @ObservationIgnored
   private var queue: [ModelSpec] = []
+  /// Called when a download finishes and the model is ready to load (e.g.
+  /// to index files attached before the embedding model arrived).
+  @ObservationIgnored
+  var onModelReady: ((ModelID) -> Void)?
 
   override init() {
     super.init()
@@ -359,6 +363,7 @@ extension ModelStore {
         self.states[spec.id] = .failed(message: placementError.localizedDescription)
       } else {
         self.states[spec.id] = .ready
+        self.onModelReady?(spec.id)
       }
       self.startNextQueued()
     }

@@ -178,6 +178,10 @@ final class AppState {
     // working with ~0.8 GB left in the 8 GB simulation), so only stop a reply
     // when memory is actually nearly exhausted (also checked while streaming).
     installWebSearchTool()
+    // Files attached before the embedding model arrived get indexed once it does.
+    self.store.onModelReady = { [weak self] model in
+      if model == ModelCatalog.embeddingGemma.id { self?.knowledge.indexPending() }
+    }
     memoryWarningObserver = NotificationCenter.default.addObserver(
       forName: UIApplication.didReceiveMemoryWarningNotification, object: nil,
       queue: .main
