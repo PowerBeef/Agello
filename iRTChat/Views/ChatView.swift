@@ -332,13 +332,14 @@ struct ChatView: View {
             Image(systemName: suggestion.symbol)
               .foregroundStyle(Theme.Brand.glacier)
               .accessibilityHidden(true)
-            // Wraps rather than truncating at larger text sizes.
+            // Fills the chip and wraps rather than truncating at larger text
+            // sizes (beside a Spacer it would get half the width and wrap early).
             Text(suggestion.title)
               .foregroundStyle(Theme.Text.secondary)
               .lineLimit(2)
               .multilineTextAlignment(.leading)
               .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+              .frame(maxWidth: .infinity, alignment: .leading)
           }
           .font(.system(.subheadline, weight: .medium))
           .padding(.horizontal, Theme.Spacing.md)

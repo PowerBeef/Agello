@@ -17,7 +17,9 @@ final class ScreenshotTourUITests: XCTestCase {
 
   func testTour() throws {
     // 1. A fresh start: chats, a reasoning answer, a web answer, the drawer,
-    //    Settings and Models.
+    //    Settings and Models. From the Home Screen, so the status bar has no
+    //    back link to the app that was open.
+    XCUIDevice.shared.press(.home)
     launch(["--uitest-reset"])
     try waitForEngineReady()
     capture("01-new-chat")
@@ -37,7 +39,7 @@ final class ScreenshotTourUITests: XCTestCase {
     newChat()
     if element("composer.search").exists {
       element("composer.search").tap()
-      ask("Who won the 2026 Tour de France, and by how much?")
+      ask("Who won the 2026 Tour de France?")
       try waitForReplyToFinish(timeout: 300)
       scrollToTop()
       capture("04-web-search")
@@ -61,6 +63,7 @@ final class ScreenshotTourUITests: XCTestCase {
     XCTAssertTrue(element("message.file").waitForExistence(timeout: 10), "Sample report not attached")
     ask("Summarize this report in three short bullet points.")
     try waitForReplyToFinish(timeout: 400)
+    scrollToTop()
     capture("08-document")
 
     // 3. Voice mode.

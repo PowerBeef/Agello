@@ -86,6 +86,8 @@ run_suite() {
   suite_status="$(cat "$status_file")"
   rm -f "$status_file"
   set -e
+  # This run's attachments only (the manifest is rewritten each time).
+  rm -rf "$OUT/attachments/$name"
   mkdir -p "$OUT/attachments/$name"
   xcrun xcresulttool export attachments --path "$result" \
     --output-path "$OUT/attachments/$name" >/dev/null 2>&1 || true

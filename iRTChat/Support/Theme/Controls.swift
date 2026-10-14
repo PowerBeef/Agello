@@ -163,10 +163,14 @@ struct RowLabel: View {
   var body: some View {
     HStack(spacing: Theme.Spacing.md) {
       TintTile(symbol: symbol, tint: tint)
-      Text(title).foregroundStyle(Theme.Text.primary)
+      Text(title).foregroundStyle(Theme.Text.primary).layoutPriority(1)
       if let value {
-        Spacer(minLength: Theme.Spacing.sm)
-        Text(value).foregroundStyle(Theme.Text.tertiary).lineLimit(1)
+        // Fills the rest of the row, right-aligned: a Spacer would add two
+        // more stack gaps and cut short values like "DuckDuckGo".
+        Text(value)
+          .foregroundStyle(Theme.Text.tertiary)
+          .lineLimit(1)
+          .frame(maxWidth: .infinity, alignment: .trailing)
       }
     }
   }
