@@ -62,8 +62,8 @@ enum WidgetPalette {
 }
 
 enum WidgetLinks {
-  static let newChat = URL(string: "irtchat://new")!
-  static let voice = URL(string: "irtchat://voice")!
+  static let newChat = URL(string: "agello://new")!
+  static let voice = URL(string: "agello://voice")!
 }
 
 struct QuickActionsView: View {
@@ -135,7 +135,7 @@ struct QuickActionsView: View {
 
 struct TalkControl: ControlWidget {
   var body: some ControlWidgetConfiguration {
-    StaticControlConfiguration(kind: "com.patricedery.irtchat.talk") {
+    StaticControlConfiguration(kind: "com.patricedery.agello.talk") {
       ControlWidgetButton(action: StartVoiceModeIntent()) {
         Label("Talk to iRTChat", systemImage: "waveform")
       }
@@ -147,7 +147,7 @@ struct TalkControl: ControlWidget {
 
 struct NewChatControl: ControlWidget {
   var body: some ControlWidgetConfiguration {
-    StaticControlConfiguration(kind: "com.patricedery.irtchat.newchat") {
+    StaticControlConfiguration(kind: "com.patricedery.agello.newchat") {
       ControlWidgetButton(action: NewChatIntent()) {
         Label("New iRTChat chat", systemImage: "square.and.pencil")
       }

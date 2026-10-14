@@ -22,11 +22,11 @@ struct AgelloApp: App {
   let container: ModelContainer
 
   init() {
-    // `--mock-engine` launch arg (or IRT_MOCK_ENGINE=1 env) runs the scripted
+    // `--mock-engine` launch arg (or AGELLO_MOCK_ENGINE=1 env) runs the scripted
     // engine: full UI without a 2 GB model. Used for simulator smoke tests.
     let args = ProcessInfo.processInfo.arguments
     let env = ProcessInfo.processInfo.environment
-    let useMock = args.contains("--mock-engine") || env["IRT_MOCK_ENGINE"] != nil
+    let useMock = args.contains("--mock-engine") || env["AGELLO_MOCK_ENGINE"] != nil
 
     let opened = ChatStoreLoader.open()
     container = opened.container

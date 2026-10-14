@@ -42,7 +42,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT/scripts/lib/device.sh"
 resolve_device_id "$ROOT"
 OUT="${OUT:-$ROOT/build/device-harness}"
-BUNDLE_ID="com.patricedery.irtchat"
+BUNDLE_ID="com.patricedery.agello"
 mkdir -p "$OUT"
 # Lets the in-app report survive crash relaunches within this run only.
 export TEST_RUNNER_HARNESS_RUN_ID="run-$(date +%s)"

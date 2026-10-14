@@ -42,9 +42,9 @@ final class AppRouter {
 
   // MARK: Deep links
 
-  nonisolated static let scheme = "irtchat"
+  nonisolated static let scheme = "agello"
 
-  /// `irtchat://new`, `irtchat://voice`, `irtchat://ask?q=…`, `irtchat://chat/<id>`.
+  /// `agello://new`, `agello://voice`, `agello://ask?q=…`, `agello://chat/<id>`.
   nonisolated static func action(for url: URL) -> Action? {
     guard url.scheme?.lowercased() == scheme, let host = url.host()?.lowercased() else { return nil }
     switch host {

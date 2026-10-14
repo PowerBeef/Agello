@@ -276,7 +276,7 @@ enum ModelStoreError: Error, LocalizedError, Equatable {
 /// The app's one background download session (its identifier must be
 /// unique per process), forwarding callbacks to the current ``ModelStore``.
 enum BackgroundDownloads {
-  static let identifier = "com.patricedery.irtchat.models"
+  static let identifier = "com.patricedery.agello.models"
 
   static let delegate = DownloadDelegate()
 

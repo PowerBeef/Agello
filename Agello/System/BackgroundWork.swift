@@ -9,7 +9,7 @@ import Foundation
 @MainActor
 final class BackgroundWork {
   static let shared = BackgroundWork()
-  static let identifierPrefix = "com.patricedery.irtchat.continued."
+  static let identifierPrefix = "com.patricedery.agello.continued."
 
   /// Called when iOS or the user cancels the task.
   var onExpire: (() -> Void)?

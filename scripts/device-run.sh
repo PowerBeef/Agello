@@ -23,7 +23,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT/scripts/lib/device.sh"
 resolve_device_id "$ROOT"
 OUT="${OUT:-$ROOT/build/device-run}"
-BUNDLE_ID="com.patricedery.irtchat"
+BUNDLE_ID="com.patricedery.agello"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT"
 

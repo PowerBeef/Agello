@@ -232,7 +232,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     let base = try FileManager.default.url(
       for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true
     )
-    let dir = base.appendingPathComponent("com.irt.chat.litertlm", isDirectory: true)
+    let dir = base.appendingPathComponent("com.patricedery.agello.litertlm", isDirectory: true)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     return dir.path
   }

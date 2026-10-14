@@ -5,7 +5,7 @@ import Foundation
 /// question) here, in the app group; the app answers it when it's next
 /// opened. Compiled into the app and the share extension.
 enum ShareInbox {
-  static let appGroup = "group.com.patricedery.irtchat"
+  static let appGroup = "group.com.patricedery.agello"
 
   enum Kind: String, Codable, Sendable {
     case text, url, image, file

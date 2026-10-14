@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 /// the chat. Can be turned off in Settings (the index is then cleared).
 @MainActor
 enum SpotlightIndex {
-  static let domain = "com.patricedery.irtchat.chats"
+  static let domain = "com.patricedery.agello.chats"
   static let enabledKey = "spotlightEnabled"
 
   static var isEnabled: Bool {

@@ -7,7 +7,7 @@ import UIKit
 /// a JPEG when the user finishes speaking ("what am I looking at?").
 final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
   let session = AVCaptureSession()
-  private let queue = DispatchQueue(label: "irtchat.camera")
+  private let queue = DispatchQueue(label: "agello.camera")
   private let lock = NSLock()
   private var latest: CVPixelBuffer?
   private let context = CIContext()

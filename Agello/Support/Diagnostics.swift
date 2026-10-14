@@ -3,9 +3,9 @@ import Foundation
 import os
 
 /// Structured logging. Read on device with Console.app or
-/// `log stream --predicate 'subsystem == "com.patricedery.irtchat"'`.
+/// `log stream --predicate 'subsystem == "com.patricedery.agello"'`.
 enum Log {
-  private static let subsystem = "com.patricedery.irtchat"
+  private static let subsystem = "com.patricedery.agello"
   static let engine = Logger(subsystem: subsystem, category: "engine")
   static let generation = Logger(subsystem: subsystem, category: "generation")
   static let lifecycle = Logger(subsystem: subsystem, category: "lifecycle")

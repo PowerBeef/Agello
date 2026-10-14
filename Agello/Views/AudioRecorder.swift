@@ -80,7 +80,7 @@ final class AudioRecorder: NSObject {
     timer = nil
     isRecording = false
     let url = FileManager.default.temporaryDirectory
-      .appendingPathComponent("irt-audio-\(UUID().uuidString).wav")
+      .appendingPathComponent("agello-audio-\(UUID().uuidString).wav")
     if let format = AVAudioFormat(
       commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: false),
       let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_000),
@@ -99,7 +99,7 @@ final class AudioRecorder: NSObject {
     discard()
     errorMessage = nil
     let url = FileManager.default.temporaryDirectory
-      .appendingPathComponent("irt-audio-\(UUID().uuidString).wav")
+      .appendingPathComponent("agello-audio-\(UUID().uuidString).wav")
     let settings: [String: Any] = [
       AVFormatIDKey: kAudioFormatLinearPCM,
       AVSampleRateKey: 16_000,

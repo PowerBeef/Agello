@@ -64,7 +64,7 @@ struct WebSearchSettings: Codable, Equatable, Sendable {
 
 /// API keys for Brave / Tavily, stored in the Keychain (this device only).
 enum SearchKeys {
-  private static let service = "com.patricedery.irtchat.search"
+  private static let service = "com.patricedery.agello.search"
 
   static func key(for provider: SearchProvider) -> String? {
     var result: AnyObject?
@@ -114,7 +114,7 @@ enum WebSearchError: LocalizedError, Equatable {
 struct WebClient: Sendable {
   static let browserAgent =
     "Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1"
-  static let appAgent = "iRTChat/1.0 (on-device assistant; https://github.com/PowerBeef/iRTChat)"
+  static let appAgent = "Agello/1.0 (on-device assistant; https://github.com/PowerBeef/Agello)"
   static let maxPageBytes = 3_000_000
 
   let session: URLSession

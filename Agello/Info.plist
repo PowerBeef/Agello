@@ -4,16 +4,16 @@
 <dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.patricedery.irtchat.continued.*</string>
+		<string>com.patricedery.agello.continued.*</string>
 	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.patricedery.irtchat</string>
+			<string>com.patricedery.agello</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>irtchat</string>
+				<string>agello</string>
 			</array>
 		</dict>
 	</array>

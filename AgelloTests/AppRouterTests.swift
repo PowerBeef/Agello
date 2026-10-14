@@ -6,17 +6,17 @@ import XCTest
 
 final class AppRouterTests: XCTestCase {
   func testDeepLinks() {
-    XCTAssertEqual(AppRouter.action(for: URL(string: "irtchat://new")!), .newChat)
-    XCTAssertEqual(AppRouter.action(for: URL(string: "IRTCHAT://Voice")!), .voice)
+    XCTAssertEqual(AppRouter.action(for: URL(string: "agello://new")!), .newChat)
+    XCTAssertEqual(AppRouter.action(for: URL(string: "AGELLO://Voice")!), .voice)
     XCTAssertEqual(
-      AppRouter.action(for: URL(string: "irtchat://ask?q=What%20is%20Canberra%3F")!),
+      AppRouter.action(for: URL(string: "agello://ask?q=What%20is%20Canberra%3F")!),
       .ask("What is Canberra?"))
-    XCTAssertEqual(AppRouter.action(for: URL(string: "irtchat://ask")!), .newChat)
+    XCTAssertEqual(AppRouter.action(for: URL(string: "agello://ask")!), .newChat)
     let id = UUID()
-    XCTAssertEqual(AppRouter.action(for: URL(string: "irtchat://chat/\(id.uuidString)")!), .openChat(id))
-    XCTAssertNil(AppRouter.action(for: URL(string: "irtchat://chat/not-a-uuid")!))
+    XCTAssertEqual(AppRouter.action(for: URL(string: "agello://chat/\(id.uuidString)")!), .openChat(id))
+    XCTAssertNil(AppRouter.action(for: URL(string: "agello://chat/not-a-uuid")!))
     XCTAssertNil(AppRouter.action(for: URL(string: "https://new")!))
-    XCTAssertNil(AppRouter.action(for: URL(string: "irtchat://unknown")!))
+    XCTAssertNil(AppRouter.action(for: URL(string: "agello://unknown")!))
   }
 
   func testURLsRoundTrip() {
