@@ -565,11 +565,68 @@ final class ProbeScenarioTests: DeviceTestCase {
     }
   }
 
+  /// LiteRT-LM #3913: the float16-exact rotary patch (patch_rope.py --split:
+  /// position = 2048*h + l, main model and MTP drafter) on the iPhone's Metal
+  /// accelerator, at the app's real windows (32K). Copy the patched model to
+  /// Documents/lab/split.litertlm (devicectl). Compares it in FP16 with the
+  /// original in FP32 (today's long-context fallback) and FP16: copy fidelity
+  /// at 0.7K-30K tokens, identical text, speed, memory, speculative decoding.
+  func test12_SplitRotaryOnDevice() async throws {
+    let documents = try FileManager.default.url(
+      for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: false)
+    let patched = documents.appendingPathComponent("lab/split.litertlm")
+    guard FileManager.default.fileExists(atPath: patched.path) else {
+      throw XCTSkip("Copy the patched model to Documents/lab/split.litertlm")
+    }
+    ExperimentalFlags.optIntoExperimentalAPIs()
+    ExperimentalFlags.enableBenchmark = true
+    let freeBytes = (try? documents.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
+      .volumeAvailableCapacityForImportantUsage ?? -1
+    // Filler sentences: ~0.7K, 2.1K, 4.1K (crossing 4,096), 6K, 8K, 16K, 30K tokens.
+    let lengths = [40, 129, 255, 379, 507, 1019, 1914]
+    let arms: [(name: String, url: URL?, activations: ActivationDataType?, mtp: Bool, sentences: [Int], seeds: [Int])] = [
+      ("split-fp16", patched, nil, false, lengths, [1, 2]),
+      ("original-fp32", nil, .float32, false, lengths, [1, 2]),
+      ("split-fp16-mtp", patched, nil, true, [129, 379, 1019], [1, 2]),
+      ("original-fp32-mtp", nil, .float32, true, [129, 379, 1019], [1, 2]),
+      ("original-fp16", nil, nil, false, [129, 507, 1914], [1]),
+      ("split-fp32", patched, .float32, false, [40, 129], [1, 2]),
+    ]
+    // Optional subset, e.g. TEST_RUNNER_PROBE12_ARMS=original-fp16,split-fp32 (one
+    // process loading many engines can run short of memory).
+    let only = ProcessInfo.processInfo.environment["PROBE12_ARMS"].map { Set($0.split(separator: ",").map(String.init)) }
+    var results: [[String: Any]] = []
+    for arm in arms where only?.contains(arm.name) ?? true {
+      ExperimentalFlags.enableSpeculativeDecoding = arm.mtp
+      // One engine at a time: released at the end of each iteration.
+      let loadStarted = Date()
+      let engine = try await gemmaEngine(maxNumTokens: 32_768, activations: arm.activations, modelURL: arm.url)
+      let loadSeconds = Date().timeIntervalSince(loadStarted)
+      let loadedFootprint = Double(MemoryProbe.footprintBytes()) / 1e9
+      for sentences in arm.sentences {
+        for seed in arm.seeds {
+          let run = try await Self.copyRun(
+            engine: engine, digits: Self.referenceDigits(seed: seed), sentences: sentences, late: false)
+          var entry = run.record(arm: arm.name, seed: seed, sentences: sentences, late: false)
+          entry["mtp"] = arm.mtp
+          entry["loadSeconds"] = (loadSeconds * 10).rounded() / 10
+          entry["loadedFootprintGB"] = (loadedFootprint * 100).rounded() / 100
+          entry["freeDiskGB"] = Double(freeBytes) / 1e9
+          results.append(entry)
+          harness.record("probe12_splitRotary", ["results": results], in: self)
+          print("probe12 \(arm.name) seed=\(seed) prefill=\(run.prefill) decode=\(Int(run.decodeTPS)) tok/s \(run.summary)")
+        }
+      }
+    }
+  }
+
   struct CopyRun: Sendable {
     let expected: String
     let output: String
     let prefill: Int
     let decode: Int
+    var prefillTPS = 0.0
+    var decodeTPS = 0.0
     /// Index of the first wrong digit in the reply (nil when exact).
     var firstMismatch: Int? {
       let got = Array(output.filter(\.isNumber))
@@ -585,6 +642,7 @@ final class ProbeScenarioTests: DeviceTestCase {
       var entry: [String: Any] = [
         "arm": arm, "seed": seed, "sentences": sentences, "late": late, "prefill": prefill,
         "decode": decode, "exact": firstMismatch == nil, "expected": expected, "output": output,
+        "prefillTPS": (prefillTPS * 10).rounded() / 10, "decodeTPS": (decodeTPS * 10).rounded() / 10,
       ]
       if let index = firstMismatch {
         entry["firstMismatch"] = index
@@ -641,7 +699,8 @@ final class ProbeScenarioTests: DeviceTestCase {
     let info = try conversation.getBenchmarkInfo()
     return CopyRun(
       expected: digits, output: reply.toString, prefill: info.lastPrefillTokenCount,
-      decode: info.lastDecodeTokenCount)
+      decode: info.lastDecodeTokenCount, prefillTPS: info.lastPrefillTokensPerSecond,
+      decodeTPS: info.lastDecodeTokensPerSecond)
   }
 
   nonisolated static func greedyWhole(engine: Engine, prompt: String, maxOutputTokens: Int = 160)
