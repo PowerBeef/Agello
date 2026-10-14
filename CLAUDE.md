@@ -46,7 +46,7 @@ scripts/device-run.sh logs 20       # relaunch the installed app, save 20 s of i
 | `screenshots` (opt-in) | `iRTChatUITests/ScreenshotTourUITests`: a guided tour with the real model, one screenshot per screen |
 
 - Suites take 3–15 minutes: run them with the Bash tool's `run_in_background` and wait for the notification. Results land in `build/device-harness/`; the exit code is 65 when tests fail.
-- Tests build Debug (`@testable import`); measure speed in Release. MobileBuildMCP (pinned in `.mcp.json`, device workflows only) reads the same `config.yaml`, but run tests through the harness: it sets each suite's environment and collects the results.
+- Tests build Debug (`@testable import`); measure speed in Release. MobileBuildMCP (from your user-scope MCP config; `.mobilebuildmcp/config.yaml` keeps it to device workflows) reads the same `config.yaml`, but run tests through the harness: it sets each suite's environment and collects the results.
 - `--mock-engine` (or the `IRT_MOCK_ENGINE` environment variable) runs the whole UI on the scripted engine, without a model.
 
 ## Architecture
