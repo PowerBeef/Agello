@@ -742,7 +742,7 @@ final class AppState {
 
   // MARK: - Shared from other apps
 
-  /// Answer the oldest item shared to iRTChat (share sheet) in a new chat.
+  /// Answer the oldest item shared to Agello (share sheet) in a new chat.
   /// Returns false when there is nothing to do (or a reply is running).
   @discardableResult
   func answerNextSharedItem(inbox base: URL? = nil) async -> Bool {
@@ -769,7 +769,7 @@ final class AppState {
       if let file, let extracted = try? await DocumentIngestor.extract(from: file) {
         attach(extracted)
       } else {
-        generationError = String(localized: "iRTChat couldn't read the shared file.")
+        generationError = String(localized: "Agello couldn't read the shared file.")
       }
     case .image:
       if let file, let data = try? Data(contentsOf: file) { image = ImagePreparer.prepare(data) ?? data }
@@ -1115,7 +1115,7 @@ final class AppState {
     }
     Log.lifecycle.info("background: stopping generation")
     stop()
-    generationError = "Reply stopped because iRTChat moved to the background."
+    generationError = "Reply stopped because Agello moved to the background."
   }
 
   // MARK: - Benchmark

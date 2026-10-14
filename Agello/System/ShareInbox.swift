@@ -1,6 +1,6 @@
 import Foundation
 
-/// Items shared to iRTChat from other apps. The share extension can't run
+/// Items shared to Agello from other apps. The share extension can't run
 /// the model or open the app, so it saves what was shared (and the user's
 /// question) here, in the app group; the app answers it when it's next
 /// opened. Compiled into the app and the share extension.

@@ -1,8 +1,8 @@
 import AppIntents
 
-/// Ask a question: opens iRTChat in a new chat and sends it.
+/// Ask a question: opens Agello in a new chat and sends it.
 struct AskAgelloIntent: AppIntent {
-  static let title: LocalizedStringResource = "Ask iRTChat"
+  static let title: LocalizedStringResource = "Ask Agello"
   static let description = IntentDescription(
     "Ask the on-device assistant a question in a new chat.")
   static let supportedModes: IntentModes = .foreground(.immediate)

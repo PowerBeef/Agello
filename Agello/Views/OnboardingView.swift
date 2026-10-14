@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// First launch: what iRTChat is, and the one-time model download (which
+/// First launch: what Agello is, and the one-time model download (which
 /// continues in the background). "Not now" leaves it for the chat banner.
 struct OnboardingView: View {
   @Environment(AppState.self) private var appState
@@ -49,7 +49,7 @@ struct OnboardingView: View {
         }
         .accessibilityHidden(true)
         .padding(.bottom, Theme.Spacing.xs)
-      Text("iRTChat")
+      Text("Agello")
         .font(.wordmark)
         .foregroundStyle(Theme.Brand.glacier)
       Text("Your own AI, entirely on this iPhone.")

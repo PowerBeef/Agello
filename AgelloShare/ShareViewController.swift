@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// "Ask iRTChat" in the share sheet: shows what's shared, takes an optional
+/// "Ask Agello" in the share sheet: shows what's shared, takes an optional
 /// question, and saves both for the app (which answers when it's opened).
 final class ShareViewController: UIViewController {
   override func viewDidLoad() {
@@ -67,7 +67,7 @@ final class ShareModel {
         preview = String(text.prefix(140))
         symbol = "text.quote"
       } else {
-        phase = .failed(String(localized: "iRTChat can't read this item."))
+        phase = .failed(String(localized: "Agello can't read this item."))
         return
       }
       phase = .ready
@@ -83,7 +83,7 @@ final class ShareModel {
       try ShareInbox.save(item, file: file, fileData: imageData)
       phase = .saved
     } catch {
-      phase = .failed(String(localized: "Couldn't save the item for iRTChat."))
+      phase = .failed(String(localized: "Couldn't save the item for Agello."))
     }
   }
 
@@ -155,18 +155,18 @@ struct ShareView: View {
               .lineLimit(1...5)
               .focused($focused)
           } footer: {
-            Text("iRTChat answers on this iPhone when you open it.")
+            Text("Agello answers on this iPhone when you open it.")
           }
         case .saved:
           Section {
-            Label("Saved for iRTChat", systemImage: "checkmark.circle.fill")
+            Label("Saved for Agello", systemImage: "checkmark.circle.fill")
               .foregroundStyle(.green)
           } footer: {
-            Text("Open iRTChat to see the answer.")
+            Text("Open Agello to see the answer.")
           }
         }
       }
-      .navigationTitle("Ask iRTChat")
+      .navigationTitle("Ask Agello")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {

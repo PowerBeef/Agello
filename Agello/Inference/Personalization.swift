@@ -1,6 +1,6 @@
 import Foundation
 
-/// What the user tells iRTChat about themselves and how it should respond.
+/// What the user tells Agello about themselves and how it should respond.
 /// Stored apart from ``InferenceOptions`` and merged into the system prompt.
 struct Personalization: Codable, Equatable, Sendable {
   enum Style: String, Codable, CaseIterable, Sendable {

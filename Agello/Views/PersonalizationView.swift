@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// About you and how iRTChat should respond. Saved when leaving the screen,
+/// About you and how Agello should respond. Saved when leaving the screen,
 /// so the conversation is rebuilt once rather than on every keystroke.
 struct PersonalizationView: View {
   @Environment(AppState.self) private var appState
@@ -28,7 +28,7 @@ struct PersonalizationView: View {
       .themedRow()
       .disabled(!draft.enabled)
 
-      Section("What should iRTChat call you?") {
+      Section("What should Agello call you?") {
         TextField("Name", text: $draft.name)
           .textContentType(.givenName)
           .accessibilityIdentifier("personalization.name")
@@ -39,7 +39,7 @@ struct PersonalizationView: View {
       Section {
         editor($draft.aboutYou, identifier: "personalization.about")
       } header: {
-        Text("Anything else iRTChat should know about you?")
+        Text("Anything else Agello should know about you?")
       } footer: {
         Text("Interests, values, what you do. \(counter(draft.aboutYou))")
       }
@@ -49,7 +49,7 @@ struct PersonalizationView: View {
       Section {
         editor($draft.instructions, identifier: "personalization.instructions")
       } header: {
-        Text("How should iRTChat respond?")
+        Text("How should Agello respond?")
       } footer: {
         Text("Language, format, tone. \(counter(draft.instructions))")
       }

@@ -204,6 +204,6 @@ struct SettingsView: View {
     let info = Bundle.main.infoDictionary
     let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
     let build = info?["CFBundleVersion"] as? String ?? "1"
-    return "iRTChat \(version) (\(build)) · Gemma 4 on-device via LiteRT-LM"
+    return "Agello \(version) (\(build)) · Gemma 4 on-device via LiteRT-LM"
   }
 }

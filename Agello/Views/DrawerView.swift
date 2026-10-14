@@ -100,7 +100,7 @@ struct DrawerView: View {
           .font(.system(.subheadline, weight: .semibold))
           .foregroundStyle(Theme.Brand.glacier)
           .accessibilityHidden(true)
-        Text("iRTChat")
+        Text("Agello")
           .font(.wordmark)
           .foregroundStyle(Theme.Text.primary)
           .accessibilityAddTraits(.isHeader)

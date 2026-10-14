@@ -219,7 +219,7 @@ struct ContentView: View {
       onMove: { thread, projectID in appState.move(thread, toProject: projectID) })
   }
 
-  /// Items shared from other apps while iRTChat wasn't open.
+  /// Items shared from other apps while Agello wasn't open.
   private func answerSharedItems() {
     Task {
       while await appState.answerNextSharedItem() {}

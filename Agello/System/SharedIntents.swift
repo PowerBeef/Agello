@@ -7,7 +7,7 @@ import AppIntents
 /// Open a new, empty chat.
 struct NewChatIntent: AppIntent {
   static let title: LocalizedStringResource = "New Chat"
-  static let description = IntentDescription("Start a new chat in iRTChat.")
+  static let description = IntentDescription("Start a new chat in Agello.")
   static let supportedModes: IntentModes = .foreground(.immediate)
 
   func perform() async throws -> some IntentResult {
@@ -20,7 +20,7 @@ struct NewChatIntent: AppIntent {
 
 /// Talk hands-free (voice mode).
 struct StartVoiceModeIntent: AppIntent {
-  static let title: LocalizedStringResource = "Talk to iRTChat"
+  static let title: LocalizedStringResource = "Talk to Agello"
   static let description = IntentDescription("Start a hands-free voice conversation.")
   static let supportedModes: IntentModes = .foreground(.immediate)
 

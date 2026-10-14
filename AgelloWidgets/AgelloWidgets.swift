@@ -13,7 +13,7 @@ struct AgelloWidgets: WidgetBundle {
 
 // MARK: - Home Screen and Lock Screen
 
-/// Shortcuts into iRTChat: a new chat, or a voice conversation. The model
+/// Shortcuts into Agello: a new chat, or a voice conversation. The model
 /// runs in the app, so widgets only open it.
 struct QuickActionsWidget: Widget {
   var body: some WidgetConfiguration {
@@ -21,7 +21,7 @@ struct QuickActionsWidget: Widget {
       QuickActionsView()
         .containerBackground(for: .widget) { WidgetPalette.background }
     }
-    .configurationDisplayName("iRTChat")
+    .configurationDisplayName("Agello")
     .description("Start a chat or talk to your on-device assistant.")
     .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular, .accessoryRectangular])
   }
@@ -78,10 +78,10 @@ struct QuickActionsView: View {
           .font(.title3)
       }
       .widgetURL(WidgetLinks.voice)
-      .accessibilityLabel("Talk to iRTChat")
+      .accessibilityLabel("Talk to Agello")
     case .accessoryRectangular:
       VStack(alignment: .leading, spacing: 2) {
-        Label("iRTChat", systemImage: "sparkles").font(.headline)
+        Label("Agello", systemImage: "sparkles").font(.headline)
         Text("Ask anything").font(.caption)
       }
       .widgetURL(WidgetLinks.newChat)
@@ -96,7 +96,7 @@ struct QuickActionsView: View {
           .font(.title2.weight(.semibold))
           .foregroundStyle(WidgetPalette.glacier)
         Spacer()
-        Text("Ask iRTChat")
+        Text("Ask Agello")
           .font(.headline)
           .foregroundStyle(WidgetPalette.text)
         Text("Private, on-device")
@@ -137,10 +137,10 @@ struct TalkControl: ControlWidget {
   var body: some ControlWidgetConfiguration {
     StaticControlConfiguration(kind: "com.patricedery.agello.talk") {
       ControlWidgetButton(action: StartVoiceModeIntent()) {
-        Label("Talk to iRTChat", systemImage: "waveform")
+        Label("Talk to Agello", systemImage: "waveform")
       }
     }
-    .displayName("Talk to iRTChat")
+    .displayName("Talk to Agello")
     .description("Start a hands-free voice conversation.")
   }
 }
@@ -149,10 +149,10 @@ struct NewChatControl: ControlWidget {
   var body: some ControlWidgetConfiguration {
     StaticControlConfiguration(kind: "com.patricedery.agello.newchat") {
       ControlWidgetButton(action: NewChatIntent()) {
-        Label("New iRTChat chat", systemImage: "square.and.pencil")
+        Label("New Agello chat", systemImage: "square.and.pencil")
       }
     }
-    .displayName("New iRTChat chat")
+    .displayName("New Agello chat")
     .description("Start a new chat.")
   }
 }
