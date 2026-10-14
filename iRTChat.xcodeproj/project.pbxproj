@@ -669,6 +669,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = iRTChat;
 				INFOPLIST_KEY_LSRequiresIPhoneOS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				INFOPLIST_FILE = iRTChat/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "iRTChat uses the camera to take photos for the on-device model to see.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "iRTChat uses the microphone to record voice messages for the on-device model.";
@@ -701,6 +702,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = iRTChat;
 				INFOPLIST_KEY_LSRequiresIPhoneOS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				INFOPLIST_FILE = iRTChat/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "iRTChat uses the camera to take photos for the on-device model to see.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "iRTChat uses the microphone to record voice messages for the on-device model.";

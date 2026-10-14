@@ -49,6 +49,9 @@ struct iRTChatApp: App {
     WindowGroup {
       ContentView()
         .environment(appState)
+        // One tuned dark theme (see Theme).
+        .preferredColorScheme(.dark)
+        .tint(Theme.Brand.glacier)
     }
     .modelContainer(container)
     .onChange(of: scenePhase) { _, phase in
