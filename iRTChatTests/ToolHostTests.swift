@@ -23,6 +23,23 @@ final class ToolHostTests: XCTestCase {
     XCTAssertNil(ToolBudget.claim())
   }
 
+  func testPlanSplitsTheRoomWhenAnyToolIsOffered() {
+    let plan = ToolBudget.plan(room: 4_000, toolsOffered: true)
+    XCTAssertEqual(plan.outputCap, 1_000, "A quarter of the room per generation")
+    XCTAssertEqual(plan.limits.maxCalls, 2)
+    XCTAssertEqual(plan.limits.maxResultBytes, Int(500 * ContextBudget.bytesPerToken))
+    // Two generations' worth of tool results plus three generations fit the room.
+    XCTAssertLessThanOrEqual(
+      3 * plan.outputCap + 2 * Int(Double(plan.limits.maxResultBytes) / ContextBudget.bytesPerToken),
+      4_000)
+  }
+
+  func testPlanGivesTheWholeRoomWithoutTools() {
+    let plan = ToolBudget.plan(room: 4_000, toolsOffered: false)
+    XCTAssertEqual(plan.outputCap, 4_000)
+    XCTAssertEqual(plan.limits.maxCalls, 0)
+  }
+
   func testResultsAreTrimmedToBudgetAndAccounted() {
     let limits = ToolBudget.Limits(maxResultBytes: 10, maxCalls: 1)
     ToolBudget.begin(limits)

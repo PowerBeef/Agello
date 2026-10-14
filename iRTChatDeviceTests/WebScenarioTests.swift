@@ -55,4 +55,25 @@ final class WebScenarioTests: DeviceTestCase {
     XCTAssertTrue(tools.contains { $0.contains("Searched the web") }, "web_search not called: \(tools)")
     XCTAssertFalse(sources.isEmpty)
   }
+
+  /// Automatic web search has its own switch: it must work with the
+  /// on-device tools (date, calculator) turned off. tearDown restores tools.
+  func test03_AutomaticSearchWithToolsOff() async throws {
+    try await requireLoadedModel()
+    appState.enableTools = false
+    appState.webSettings.automatic = true
+    defer { appState.webSettings.automatic = false }
+    await appState.applyCurrentOptions()
+    let reply = await harness.ask(
+      "Search the web: what is the latest stable version of Swift?", in: harness.newThread())
+    let tools = reply.reply?.parts.toolActivity.map(\.summary) ?? []
+    let sources = reply.reply?.parts.sources ?? []
+    harness.record(
+      "web03_automaticToolsOff",
+      ["reply": reply.text, "tools": tools, "sources": sources.map(\.title), "seconds": reply.seconds],
+      in: self)
+    XCTAssertFalse(reply.text.hasPrefix(ChatTurn.errorPrefix), reply.text)
+    XCTAssertTrue(tools.contains { $0.contains("Searched the web") }, "web_search not called: \(tools)")
+    XCTAssertFalse(sources.isEmpty)
+  }
 }

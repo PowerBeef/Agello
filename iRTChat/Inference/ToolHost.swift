@@ -42,6 +42,25 @@ enum ToolBudget {
   /// Used when no generation is in flight (tests, direct calls).
   static let unrestricted = Limits(maxResultBytes: 16_000, maxCalls: .max)
 
+  /// A reply's share of the context room.
+  struct Plan: Sendable, Equatable {
+    /// Largest output of one generation round.
+    var outputCap: Int
+    var limits: Limits
+  }
+
+  /// Split `room` (tokens) for one reply. Tool rounds run inside LiteRT-LM
+  /// under the same cap, so whenever any tool is registered (including
+  /// `web_search` alone) the room is split: a quarter per generation, an
+  /// eighth per tool result, at most two calls (3/4 + 2/8 = 1). Without
+  /// tools the reply gets the whole room.
+  static func plan(room: Int, toolsOffered: Bool) -> Plan {
+    let resultBytes = Int(Double(room / 8) * ContextBudget.bytesPerToken)
+    return toolsOffered
+      ? Plan(outputCap: room / 4, limits: Limits(maxResultBytes: resultBytes, maxCalls: 2))
+      : Plan(outputCap: room, limits: Limits(maxResultBytes: resultBytes, maxCalls: 0))
+  }
+
   private struct State {
     var limits: Limits?
     var calls = 0

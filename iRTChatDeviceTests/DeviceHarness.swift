@@ -31,6 +31,9 @@ final class DeviceHarness {
   /// Options every scenario starts from; scenarios that change options
   /// restore this in tearDown.
   let baselineOptions = InferenceOptions()
+  /// Web search as a fresh install has it (allowed, not automatic): the
+  /// phone's own saved settings must not decide whether scenarios search.
+  let baselineWeb = WebSearchSettings()
 
   private static let defaultsKeys = [
     "inferenceOptions", "enableTools", "selectedThreadID", "benchmarkReport", "memoryEnabled",
@@ -55,6 +58,7 @@ final class DeviceHarness {
     appState.modelContext = container.mainContext
     appState.options = baselineOptions
     appState.enableTools = true
+    appState.webSettings = baselineWeb
     // Long downloads and generations must not be interrupted by auto-lock.
     UIApplication.shared.isIdleTimerDisabled = true
     report["device"] = [
@@ -98,9 +102,13 @@ final class DeviceHarness {
 
   /// Put options back to the baseline (and apply them to a loaded engine).
   func resetOptions() async {
-    guard appState.options != baselineOptions || !appState.enableTools else { return }
+    guard
+      appState.options != baselineOptions || !appState.enableTools
+        || appState.webSettings != baselineWeb
+    else { return }
     appState.options = baselineOptions
     appState.enableTools = true
+    appState.webSettings = baselineWeb
     await appState.applyCurrentOptions()
   }
 

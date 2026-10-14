@@ -566,12 +566,13 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       continuation.finish(throwing: ChatError.contextFull)
       return
     }
-    let cap = toolsEnabled ? room / 4 : room
+    // `web_search` is registered on its own (automatic web search) even when
+    // the on-device tools are off, so it needs the same split.
+    let budget = ToolBudget.plan(
+      room: room, toolsOffered: toolsEnabled || options?.webSearchTool == true)
+    let cap = budget.outputCap
     let maxOutputTokens = min(resolved.maxOutputTokens ?? cap, cap)
-    ToolBudget.begin(
-      ToolBudget.Limits(
-        maxResultBytes: Int(Double(room / 8) * ContextBudget.bytesPerToken),
-        maxCalls: toolsEnabled ? 2 : 0))
+    ToolBudget.begin(budget.limits)
     defer { ToolBudget.end() }
     // Safety net for what the budgets can't bound (e.g. extra tool rounds):
     // stop before streamed output + tool results could exceed the room.
