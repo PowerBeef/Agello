@@ -143,6 +143,34 @@ final class InferenceScenarioTests: DeviceTestCase {
       "Tool chip not recorded (toolNames empty) even though tools are enabled")
   }
 
+  /// The calculator takes what the model writes for money questions:
+  /// powers and percent. The savings question under Think used to end as
+  /// "Error processing tool call calculate: malformed".
+  func test05b_CalculatorPowersAndPercent() async throws {
+    try await requireLoadedModel()
+    let cursor = ToolActivity.cursor
+    let percent = await harness.ask(
+      "Use the calculate tool: what is an 18% tip on $86.40?", in: harness.newThread())
+    appState.options.enableThinking = true
+    appState.options.thinkingBudget = 512
+    await appState.applyCurrentOptions()
+    defer { appState.options.enableThinking = false }
+    let savings = await harness.ask(
+      "If I save $250 a month at 4% a year, compounded monthly, how much will I have after 5 years? Use the calculate tool.",
+      in: harness.newThread())
+    let activity = ToolActivity.records(since: cursor).map(\.summary)
+    harness.record(
+      "05b_calculator",
+      ["percent": percent.text, "savings": savings.text, "toolActivity": activity], in: self)
+    XCTAssertFalse(percent.text.hasPrefix(ChatTurn.errorPrefix), percent.text)
+    XCTAssertTrue(percent.text.filter(\.isNumber).contains("1555"), "Expected 15.55: \(percent.text)")
+    XCTAssertFalse(savings.text.hasPrefix(ChatTurn.errorPrefix), savings.text)
+    XCTAssertTrue(
+      savings.text.filter(\.isNumber).contains("1657"), "Expected about 16,575: \(savings.text)")
+    XCTAssertTrue(
+      activity.contains { $0.hasPrefix("Calculated") }, "The calculator never succeeded: \(activity)")
+  }
+
   func test06_Thinking() async throws {
     try await requireLoadedModel()
     appState.options.enableThinking = true

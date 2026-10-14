@@ -14,7 +14,7 @@ No account, no API key, no cloud. After a one-time download, every conversation 
 [![LiteRT-LM 0.18.0](https://img.shields.io/badge/LiteRT--LM-0.18.0-4285F4)](#vendored-litert-lm)
 [![Gemma 4 E4B](https://img.shields.io/badge/Model-Gemma%204%20E4B-8E75FF)](docs/USER_GUIDE.md#the-models)
 [![On-device](https://img.shields.io/badge/100%25-on--device-2EA44F)](#why-agello)
-[![Tests](https://img.shields.io/badge/tests-283%20on%20iPhone-2EA44F)](docs/TESTING.md)
+[![Tests](https://img.shields.io/badge/tests-291%20on%20iPhone-2EA44F)](docs/TESTING.md)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
 
 <br>
@@ -164,8 +164,8 @@ Voice-activity turn detection, and one audio engine for echo-cancelled capture a
 </td>
 <td valign="top">
 
-#### ✅ 283 tests on a real iPhone
-214 unit tests, 46 scenarios with the real models in-process, and 23 real-tap UI flows. They run through a device harness that also simulates 8 GB iPhones and probes the runtime directly. No simulator: the failures that matter only happen on hardware.
+#### ✅ 291 tests on a real iPhone
+220 unit tests, 48 scenarios with the real models in-process, and 23 real-tap UI flows. They run through a device harness that also simulates 8 GB iPhones and probes the runtime directly. No simulator: the failures that matter only happen on hardware.
 
 </td>
 </tr>
@@ -220,7 +220,7 @@ Phases 0–5 have shipped: foundations, the core chat experience, files, project
 
 ## Vendored LiteRT-LM
 
-`Vendor/LiteRT-LM` holds the Swift package surface of [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) at v0.18.0. Upstream stores prebuilt binaries in Git LFS, which intermittently breaks Swift Package Manager resolution. The iOS build uses only the checksummed release XCFramework, so vendoring changes no behavior. To update, run `TAG=v0.19.0 ./Vendor/refresh-litert-lm.sh`, then update the tag in `Vendor/README.md` and run the test suites.
+`Vendor/LiteRT-LM` holds the Swift package surface of [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) v0.18.0, from our fork's [`agello` branch](https://github.com/PowerBeef/LiteRT-LM/tree/agello) with one patch to the Swift wrapper: a tool call that fails is answered with an error the model can read, instead of ending the reply. Upstream stores prebuilt binaries in Git LFS, which intermittently breaks Swift Package Manager resolution; the iOS build uses only Google's checksummed release XCFramework. To update, move the fork's branch, run `REF=<commit> ./Vendor/refresh-litert-lm.sh`, then update `Vendor/README.md` and run the test suites.
 
 ## Contributing
 

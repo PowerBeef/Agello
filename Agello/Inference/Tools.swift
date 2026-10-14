@@ -72,6 +72,7 @@ enum CalculatorError: Error, LocalizedError, Equatable {
   case invalidCharacter(Character)
   case malformed
   case divisionByZero
+  case notFinite
 
   var errorDescription: String? {
     switch self {
@@ -80,22 +81,37 @@ enum CalculatorError: Error, LocalizedError, Equatable {
     case .invalidCharacter(let c): return "Invalid character: '\(c)'."
     case .malformed: return "Malformed expression."
     case .divisionByZero: return "Division by zero."
+    case .notFinite: return "The result is too large or undefined."
     }
   }
 }
 
-/// Safe arithmetic evaluator (recursive descent). Only digits, whitespace,
-/// `+ - * / %` and parentheses are accepted; anything else throws.
+/// Safe arithmetic evaluator (recursive descent). Accepts numbers, `+ - * /`,
+/// `^` or `**` for powers, `%` for percent (`18%` is 0.18; `10 % 3`, with an
+/// operand after it, is the remainder) and parentheses. Currency symbols and
+/// thousands separators are ignored. Anything else, identifiers and
+/// functions included, throws.
 enum ArithmeticParser {
   static func evaluate(_ input: String) throws -> Double {
-    let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmed = normalize(input).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { throw CalculatorError.emptyExpression }
     guard trimmed.count <= 200 else { throw CalculatorError.tooLong }
     var parser = Parser(text: Array(trimmed))
     let value = try parser.parseExpression()
     try parser.expectEnd()
-    guard value.isFinite else { throw CalculatorError.malformed }
+    guard value.isFinite else { throw CalculatorError.notFinite }
     return value
+  }
+
+  /// What models write around numbers: currency symbols, thousands
+  /// separators and typographic operators ("$1,250 × 2" is "1250 * 2").
+  static func normalize(_ input: String) -> String {
+    var text = input.replacingOccurrences(of: "[$€£¥]", with: "", options: .regularExpression)
+    text = text.replacingOccurrences(
+      of: #"(?<=\d),(?=\d{3}(?!\d))"#, with: "", options: .regularExpression)
+    return text.replacingOccurrences(of: "×", with: "*")
+      .replacingOccurrences(of: "÷", with: "/")
+      .replacingOccurrences(of: "\u{2212}", with: "-")
   }
 
   private struct Parser {
@@ -143,7 +159,53 @@ enum ArithmeticParser {
       }
     }
 
+    /// Unary signs apply after powers: -2^2 is -4.
     mutating func parseFactor() throws -> Double {
+      skipSpaces()
+      guard let c = peek else { throw CalculatorError.malformed }
+      if c == "-" {
+        advance()
+        return -(try parseFactor())
+      }
+      if c == "+" {
+        advance()
+        return try parseFactor()
+      }
+      return try parsePower()
+    }
+
+    /// `^` or `**`, grouping to the right: 2^3^2 is 2^9.
+    mutating func parsePower() throws -> Double {
+      let base = try parsePercent()
+      skipSpaces()
+      if peek == "^" {
+        advance()
+        return pow(base, try parseFactor())
+      }
+      if peek == "*", peekAfter == "*" {
+        advance()
+        advance()
+        return pow(base, try parseFactor())
+      }
+      return base
+    }
+
+    /// `18%` is 0.18. With an operand after it (`10 % 3`) the `%` is left
+    /// for the remainder in `parseTerm`.
+    mutating func parsePercent() throws -> Double {
+      let value = try parsePrimary()
+      skipSpaces()
+      guard peek == "%" else { return value }
+      var next = index + 1
+      while next < text.count, text[next].isWhitespace { next += 1 }
+      if next < text.count, text[next].isNumber || text[next] == "." || text[next] == "(" {
+        return value
+      }
+      advance()
+      return value / 100
+    }
+
+    mutating func parsePrimary() throws -> Double {
       skipSpaces()
       guard let c = peek else { throw CalculatorError.malformed }
       if c == "(" {
@@ -153,14 +215,6 @@ enum ArithmeticParser {
         guard peek == ")" else { throw CalculatorError.malformed }
         advance()
         return value
-      }
-      if c == "-" {
-        advance()
-        return -(try parseFactor())
-      }
-      if c == "+" {
-        advance()
-        return try parseFactor()
       }
       return try parseNumber()
     }
@@ -182,7 +236,7 @@ enum ArithmeticParser {
         }
       }
       guard sawDigit else {
-        if let c = peek, !"+-*/%()".contains(c), !c.isWhitespace {
+        if let c = peek, !"+-*/%^()".contains(c), !c.isWhitespace {
           throw CalculatorError.invalidCharacter(c)
         }
         throw CalculatorError.malformed
@@ -195,7 +249,7 @@ enum ArithmeticParser {
     mutating func expectEnd() throws {
       skipSpaces()
       if let c = peek {
-        if c.isNumber || c == "." || "+-*/%()".contains(c) {
+        if c.isNumber || c == "." || "+-*/%^()".contains(c) {
           throw CalculatorError.malformed
         }
         throw CalculatorError.invalidCharacter(c)
@@ -203,6 +257,7 @@ enum ArithmeticParser {
     }
 
     var peek: Character? { index < text.count ? text[index] : nil }
+    var peekAfter: Character? { index + 1 < text.count ? text[index + 1] : nil }
     mutating func advance() { index += 1 }
     mutating func skipSpaces() {
       while let c = peek, c.isWhitespace { index += 1 }
@@ -214,16 +269,28 @@ enum ArithmeticParser {
 struct CalculatorTool: Tool {
   static let name = "calculate"
   static let description =
-    "Evaluate an arithmetic expression with numbers, + - * / % and parentheses. Use it for any exact computation instead of mental math."
+    "Evaluate an arithmetic expression: numbers, + - * /, ^ for powers (x^0.5 is a square root), % for percent (18% is 0.18) and parentheses. Use it for any exact computation instead of mental math."
 
-  @ToolParam(description: "The expression to evaluate, e.g. '(12.5 * 3) + 4'.")
+  @ToolParam(description: "The expression to evaluate, e.g. '(12.5 * 3) + 4' or '1000 * 1.05^10'.")
   var expression: String = ""
 
+  /// Expressions it can't evaluate are answered with an error the model can
+  /// act on, never thrown: LiteRT-LM would end the reply on a thrown error.
   func run() async throws -> Any {
     guard let limits = ToolBudget.claim() else { return ToolBudget.limitReachedResult }
     let shown = ToolBudget.fit(expression, limits)
-    let result = try ArithmeticParser.evaluate(expression)
-    ToolActivity.record(Self.name, summary: "Calculated \(shown)")
-    return ["expression": shown, "result": result]
+    do {
+      let value = try ArithmeticParser.evaluate(expression)
+      ToolActivity.record(Self.name, summary: "Calculated \(shown)")
+      // 12 significant digits: no 0.30000000000000004 for the model to echo.
+      return ["expression": shown, "result": Double(String(format: "%.12g", value)) ?? value]
+    } catch {
+      ToolActivity.record(Self.name, summary: "Couldn't calculate \(shown)")
+      let reason = (error as? LocalizedError)?.errorDescription ?? "Couldn't evaluate it."
+      return [
+        "expression": shown,
+        "error": "\(reason) Use only numbers, + - * /, ^ for powers, % for percent and parentheses.",
+      ]
+    }
   }
 }
