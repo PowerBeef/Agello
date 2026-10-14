@@ -78,6 +78,7 @@ struct ChatView: View {
             }
           }
       }
+      .environment(appState)
     }
     .alert(
       "Microphone access denied",

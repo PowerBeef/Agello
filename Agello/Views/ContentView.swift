@@ -95,8 +95,11 @@ struct ContentView: View {
         downloaded: appState.store.activeSpecDownloaded)
     }
     .onChange(of: appState.selectedThreadID) { appState.pruneEmptyThreads() }
+    // Presented screens get AppState explicitly: running on a Mac, the
+    // onboarding cover didn't inherit it and the app crashed at launch.
     .sheet(isPresented: $showSettings) {
       SettingsView()
+        .environment(appState)
     }
     .sheet(item: $openProject) { project in
       ProjectView(
@@ -113,10 +116,13 @@ struct ContentView: View {
           appState.newChatProjectID = project.id
           setDrawer(open: false)
         },
-        onDelete: { appState.deleteProject(project, in: context) })
+        onDelete: { appState.deleteProject(project, in: context) }
+      )
+      .environment(appState)
     }
     .fullScreenCover(isPresented: $presentOnboarding, onDismiss: { onboardingDone = true }) {
       OnboardingView { presentOnboarding = false }
+        .environment(appState)
     }
     .alert("Rename chat", isPresented: isRenaming) {
       TextField("Title", text: $renameText)
