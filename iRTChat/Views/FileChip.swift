@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// An attached file: icon, name, and pages; optionally removable.
+/// An attached file: a tinted icon tile, the name and pages; optionally
+/// removable.
 struct FileChip: View {
   let name: String
   let kind: DocumentKind
@@ -8,33 +9,38 @@ struct FileChip: View {
   var onRemove: (() -> Void)?
 
   var body: some View {
-    HStack(spacing: 8) {
-      Image(systemName: kind.symbol)
-        .font(.callout)
-        .foregroundStyle(Color.accentColor)
+    HStack(spacing: Theme.Spacing.sm) {
+      TintTile(symbol: kind.symbol)
       VStack(alignment: .leading, spacing: 0) {
         Text(name)
-          .font(.caption.weight(.medium))
+          .font(.system(.caption, weight: .semibold))
+          .foregroundStyle(Theme.Text.primary)
           .lineLimit(1)
         if pageCount > 0 {
           Text(pageCount == 1 ? "1 page" : "\(pageCount) pages")
             .font(.caption2)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Theme.Text.tertiary)
         }
       }
       if let onRemove {
         Button(action: onRemove) {
-          Image(systemName: "xmark.circle.fill")
-            .foregroundStyle(.secondary)
+          Image(systemName: "xmark")
+            .font(.system(.caption2, weight: .bold))
+            .foregroundStyle(Theme.Text.secondary)
+            .frame(width: 22, height: 22)
+            .background { Circle().fill(Color.white.opacity(0.08)) }
+            .frame(width: Theme.Size.glyph, height: Theme.Size.glyph)
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Remove \(name)")
       }
     }
-    .frame(maxWidth: 220, alignment: .leading)
-    .padding(.horizontal, 10)
-    .padding(.vertical, 6)
-    .glassEffect(.regular, in: .rect(cornerRadius: DS.radiusInner))
+    .frame(maxWidth: 240, alignment: .leading)
+    .padding(.leading, Theme.Spacing.sm)
+    .padding(.trailing, onRemove == nil ? Theme.Spacing.md : Theme.Spacing.xs)
+    .padding(.vertical, Theme.Spacing.sm)
+    .surfaceCard(radius: Theme.Radius.card, fill: Theme.Surface.stage)
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier("message.file")
   }

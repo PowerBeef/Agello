@@ -30,12 +30,13 @@ struct LitButtonStyle: ButtonStyle {
 struct LitCircleButtonStyle: ButtonStyle {
   @Environment(\.isEnabled) private var isEnabled
   var tint: Color
+  var size: CGFloat = Theme.Size.target
 
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.system(.body, weight: .semibold))
+      .font(.system(size > Theme.Size.target ? .title3 : .body, weight: .semibold))
       .foregroundStyle(isEnabled ? Theme.Text.primary : Theme.Text.tertiary)
-      .frame(width: Theme.Size.target, height: Theme.Size.target)
+      .frame(width: size, height: size)
       .background { LitTintBackground(shape: Circle(), tint: tint, isEnabled: isEnabled) }
       .contentShape(Circle())
       .scaleEffect(configuration.isPressed ? 0.94 : 1)
@@ -61,6 +62,25 @@ struct QuietCircleButtonStyle: ButtonStyle {
   }
 }
 
+/// Secondary capsule buttons (Pause, Cancel, Delete): quiet fill and
+/// hairline; the label carries the color.
+struct QuietCapsuleButtonStyle: ButtonStyle {
+  var tint: Color = Theme.Text.primary
+  @ScaledMetric(relativeTo: .footnote) private var height: CGFloat = Theme.Size.pill
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(.system(.footnote, weight: .semibold))
+      .foregroundStyle(tint)
+      .padding(.horizontal, Theme.Spacing.lg)
+      .frame(minHeight: height)
+      .background { QuietBackground(shape: Capsule(), isPressed: configuration.isPressed) }
+      .contentShape(Capsule())
+      .frame(minHeight: Theme.Size.target)
+      .animation(Theme.Motion.press, value: configuration.isPressed)
+  }
+}
+
 /// A mode toggle (Think, Search): quiet when off, lit in its mode color when
 /// on. The title never truncates; `iconOnly` is the compact fallback.
 struct ModePillStyle: ButtonStyle {
@@ -75,7 +95,7 @@ struct ModePillStyle: ButtonStyle {
       .font(.system(.subheadline, weight: .medium))
       .foregroundStyle(isOn ? Theme.Text.primary : Theme.Text.secondary)
       .padding(.horizontal, iconOnly ? Theme.Spacing.snug : Theme.Spacing.md)
-      .frame(minWidth: iconOnly ? height : nil, minHeight: height)
+      .frame(minWidth: iconOnly ? max(height, Theme.Size.target) : nil, minHeight: height)
       .background {
         if isOn {
           LitTintBackground(shape: Capsule(), tint: tint, strength: .pill)
@@ -112,16 +132,22 @@ private struct PillLabelStyle: LabelStyle {
 struct TintTile: View {
   let symbol: String
   var tint: Color = Theme.Brand.glacier
-  @ScaledMetric(relativeTo: .body) private var size: CGFloat = Theme.Size.tile
+  var size: CGFloat = Theme.Size.tile
+  @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
 
   var body: some View {
+    let side = size * scale
     Image(systemName: symbol)
-      .font(.system(size: size * 0.5, weight: .semibold))
+      .font(.system(size: side * 0.48, weight: .semibold))
       .foregroundStyle(tint)
-      .frame(width: size, height: size)
+      .frame(width: side, height: side)
       .background {
-        RoundedRectangle(cornerRadius: Theme.Radius.tile, style: .continuous)
+        RoundedRectangle(cornerRadius: side * 0.3, style: .continuous)
           .fill(tint.opacity(0.12))
+      }
+      .overlay {
+        RoundedRectangle(cornerRadius: side * 0.3, style: .continuous)
+          .stroke(tint.opacity(0.18), lineWidth: Theme.Stroke.hairline)
       }
       .accessibilityHidden(true)
   }
@@ -171,6 +197,8 @@ struct InlineBanner<Actions: View>: View {
   let message: String
   var tint: Color = Theme.Brand.glacier
   var showsProgress = false
+  /// Accessibility identifier of the message text (UI tests).
+  var identifier: String = ""
   @ViewBuilder var actions: Actions
 
   var body: some View {
@@ -185,6 +213,7 @@ struct InlineBanner<Actions: View>: View {
         .foregroundStyle(Theme.Text.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
+        .accessibilityIdentifier(identifier)
       actions
         .buttonStyle(.plain)
         .font(.system(.footnote, weight: .semibold))
@@ -198,8 +227,13 @@ struct InlineBanner<Actions: View>: View {
 }
 
 extension InlineBanner where Actions == EmptyView {
-  init(symbol: String, message: String, tint: Color = Theme.Brand.glacier, showsProgress: Bool = false) {
-    self.init(symbol: symbol, message: message, tint: tint, showsProgress: showsProgress) { EmptyView() }
+  init(
+    symbol: String, message: String, tint: Color = Theme.Brand.glacier, showsProgress: Bool = false,
+    identifier: String = ""
+  ) {
+    self.init(
+      symbol: symbol, message: message, tint: tint, showsProgress: showsProgress, identifier: identifier
+    ) { EmptyView() }
   }
 }
 

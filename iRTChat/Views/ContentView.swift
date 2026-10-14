@@ -39,22 +39,27 @@ struct ContentView: View {
         if progress > 0 {
           drawer
             .frame(width: width)
-            .background(Color(.secondarySystemBackground).ignoresSafeArea())
+            .background { AmbientBackdrop(tint: Theme.Brand.glacier, intensity: .whisper) }
             .accessibilityHidden(!drawerOpen)
         }
         // The chat lays out in the safe area; its card and dimming extend
         // edge to edge so it slides aside as one panel.
         chat
+          // The chat slides aside as one rounded card, backdrop included.
+          .mask {
+            RoundedRectangle(cornerRadius: progress > 0 ? 44 : 0, style: .continuous)
+              .ignoresSafeArea()
+          }
           .background {
-            RoundedRectangle(cornerRadius: progress > 0 ? 44 : 0)
-              .fill(Color(.systemBackground))
-              .shadow(color: .black.opacity(0.12 * progress), radius: 12)
+            RoundedRectangle(cornerRadius: progress > 0 ? 44 : 0, style: .continuous)
+              .fill(Theme.Surface.canvas)
+              .shadow(color: Theme.Elevation.floating.opacity(progress), radius: 18, y: 14)
               .ignoresSafeArea()
           }
           .overlay {
             if progress > 0 {
-              RoundedRectangle(cornerRadius: 44)
-                .fill(Color.black.opacity(0.12 * progress))
+              RoundedRectangle(cornerRadius: 44, style: .continuous)
+                .fill(Color.black.opacity(0.18 * progress))
                 .ignoresSafeArea()
                 .contentShape(.rect)
                 .onTapGesture { setDrawer(open: false) }
@@ -147,6 +152,7 @@ struct ContentView: View {
               setDrawer(open: true)
             } label: {
               Image(systemName: "line.3.horizontal")
+                .foregroundStyle(Theme.Text.primary)
             }
             .accessibilityLabel("Chats")
             .accessibilityIdentifier("chat.drawer")
@@ -154,9 +160,17 @@ struct ContentView: View {
           ToolbarItem(placement: .topBarTrailing) {
             Button(action: newChat) {
               Image(systemName: "square.and.pencil")
+                .foregroundStyle(Theme.Text.primary)
             }
             .accessibilityLabel("New chat")
             .accessibilityIdentifier("chat.new")
+          }
+          ToolbarItem(placement: .principal) {
+            Text(currentThread?.title ?? "")
+              .font(.headline)
+              .foregroundStyle(Theme.Text.primary)
+              .lineLimit(1)
+              .accessibilityAddTraits(.isHeader)
           }
           if let thread = currentThread {
             ToolbarItem(placement: .topBarTrailing) {
@@ -172,6 +186,7 @@ struct ContentView: View {
                   .disabled(appState.generatingThreadID == thread.id)
               } label: {
                 Image(systemName: "ellipsis")
+                  .foregroundStyle(Theme.Text.primary)
               }
               .accessibilityLabel("Chat options")
               .accessibilityIdentifier("chat.menu")
@@ -249,7 +264,7 @@ struct ContentView: View {
       UIApplication.shared.sendAction(
         #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
-    withAnimation(.snappy(duration: 0.3)) {
+    withAppAnimation(Theme.Motion.panel) {
       drawerOpen = open
       dragOffset = 0
     }

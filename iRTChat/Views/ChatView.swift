@@ -32,7 +32,13 @@ struct ChatView: View {
   /// The user message being edited in the composer, if any.
   @State private var editingTurn: ChatTurn?
   @FocusState private var inputFocused: Bool
-  @Namespace private var inputNamespace
+  /// Settings → Advanced → Performance: time to first token, speed, backend.
+  @AppStorage("showPerformanceDetails") private var showStats = false
+
+  /// What the next message does; tints the backdrop, pills and send button.
+  private var mode: Theme.Mode {
+    searchWeb ? .search : appState.options.enableThinking ? .think : .chat
+  }
 
   var body: some View {
     // Computed once per render (not per use: this re-renders while streaming).
@@ -53,7 +59,11 @@ struct ChatView: View {
       }
       .layoutPriority(1)
     }
-    .background(ambientBackground)
+    .background {
+      AmbientBackdrop(tint: mode.tint)
+        .animation(Theme.Motion.modeCrossfade, value: mode)
+    }
+    .appAnimation(Theme.Motion.easeOut, value: appState.generationError)
     .navigationTitle(thread?.title ?? "")
     .navigationBarTitleDisplayMode(.inline)
     .sheet(isPresented: $showLibrary) {
@@ -120,12 +130,13 @@ struct ChatView: View {
               ])
           ]
         } else if arguments.contains("--uitest-sample-report") {
-          // A long report, so "Summarize this" reads it section by section.
+          // A long report, so "Summarize this" reads it section by section:
+          // 60 pages (~8K tokens) never fit half of the 8K chat window.
           let topics = [
             "harbour maintenance", "coastal erosion", "lighthouse operations", "fisheries",
             "visitor services", "storm preparedness", "habitat restoration", "water quality",
           ]
-          let pages = (1...30).map { page -> String in
+          let pages = (1...60).map { page -> String in
             let topic = topics[page % topics.count]
             return [
               "Section \(page): \(topic.capitalized).",
@@ -145,14 +156,6 @@ struct ChatView: View {
     }
   }
 
-  private var ambientBackground: some View {
-    LinearGradient(
-      colors: [.accentColor.opacity(0.07), .clear],
-      startPoint: .top, endPoint: .center
-    )
-    .ignoresSafeArea()
-  }
-
   // MARK: - Banners
 
   @ViewBuilder
@@ -160,44 +163,28 @@ struct ChatView: View {
     switch appState.engineState {
     case .idle:
       if !appState.isMock, !appState.store.isDownloaded(appState.store.activeSpec) {
-        HStack {
-          Text("Download \(appState.store.activeSpec.displayName) to start chatting.")
-            .font(.caption)
-            .accessibilityIdentifier("chat.banner.download")
-          Spacer()
+        InlineBanner(
+          symbol: "arrow.down.circle",
+          message: String(localized: "Download \(appState.store.activeSpec.displayName) to start chatting."),
+          identifier: "chat.banner.download"
+        ) {
           Button("Models") { showLibrary = true }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
         }
-        .padding(DS.padMD)
-        .glassEffect(.regular, in: .rect(cornerRadius: DS.radiusBanner))
-        .padding(.horizontal)
-        .padding(.top, 6)
+        .bannerInsets()
       }
     case .loading(let progress):
-      HStack {
-        ProgressView().controlSize(.small)
-        Text(progress).font(.caption).accessibilityIdentifier("chat.banner.loading")
-        Spacer()
-      }
-      .padding(DS.padMD)
-      .glassEffect(.regular, in: .rect(cornerRadius: DS.radiusBanner))
-      .padding(.horizontal)
-      .padding(.top, 6)
+      InlineBanner(
+        symbol: "hourglass", message: progress, showsProgress: true, identifier: "chat.banner.loading"
+      )
+      .bannerInsets()
     case .failed(let message):
-      HStack {
-        Image(systemName: "exclamationmark.triangle")
-          .foregroundStyle(.red)
-        Text(message).font(.caption).accessibilityIdentifier("chat.banner.failed")
-        Spacer()
+      InlineBanner(
+        symbol: "exclamationmark.triangle", message: message, tint: Theme.Status.critical,
+        identifier: "chat.banner.failed"
+      ) {
         Button("Retry") { Task { await appState.ensureEngineLoaded() } }
-          .buttonStyle(.bordered)
-          .controlSize(.small)
       }
-      .padding(DS.padMD)
-      .glassEffect(.regular, in: .rect(cornerRadius: DS.radiusBanner))
-      .padding(.horizontal)
-      .padding(.top, 6)
+      .bannerInsets()
     case .ready, .generating:
       EmptyView()
     }
@@ -206,18 +193,13 @@ struct ChatView: View {
   @ViewBuilder
   private var noticeBanner: some View {
     if let error = appState.generationError {
-      HStack {
-        Image(systemName: "info.circle")
-        Text(error).font(.caption).accessibilityIdentifier("chat.banner.notice")
-        Spacer()
+      InlineBanner(
+        symbol: "info.circle", message: error, tint: Theme.Status.guarded,
+        identifier: "chat.banner.notice"
+      ) {
         Button("Dismiss") { appState.generationError = nil }
-          .buttonStyle(.bordered)
-          .controlSize(.small)
       }
-      .padding(DS.padMD)
-      .glassEffect(.regular, in: .rect(cornerRadius: DS.radiusBanner))
-      .padding(.horizontal)
-      .padding(.top, 6)
+      .bannerInsets()
     }
   }
 
@@ -230,48 +212,126 @@ struct ChatView: View {
       } else {
         ScrollViewReader { proxy in
           ScrollView {
-            LazyVStack(spacing: DS.spaceLG) {
+            LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
               ForEach(turns) { turn in
                 MessageBubbleView(
                   turn: turn, isStreaming: isLiveBubble(turn, in: turns),
                   toolStatus: appState.toolStatus,
                   versions: versions[VersionKey(turn)] ?? [],
+                  showsStats: showStats,
                   actions: actions(for: turn))
                   .id(turn.id)
               }
               Color.clear.frame(height: 1).id("bottom")
             }
-            .padding()
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.top, Theme.Spacing.lg)
+            .padding(.bottom, Theme.Spacing.sm)
           }
-          .onChange(of: scrollSignature(turns)) {
-            withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+          .scrollDismissesKeyboard(.interactively)
+          .onChange(of: turns.count) {
+            withAppAnimation(Theme.Motion.easeOut) { proxy.scrollTo("bottom", anchor: .bottom) }
           }
+          // Streaming text follows without animation: smoother, and cheaper
+          // than animating every token.
+          .onChange(of: scrollSignature(turns)) { proxy.scrollTo("bottom", anchor: .bottom) }
         }
       }
     }
   }
 
-  /// A new chat: a short greeting, nothing else to read or tap.
+  /// A new chat: the greeting and a few ways to start.
   private var emptyState: some View {
-    VStack {
+    VStack(spacing: Theme.Spacing.xxl) {
       Spacer()
-      if let project = newChatProject {
-        Label(project.name, systemImage: "folder")
-          .font(.subheadline.weight(.medium))
-          .foregroundStyle(.secondary)
-          .padding(.bottom, 4)
-          .accessibilityIdentifier("chat.project")
+      VStack(spacing: Theme.Spacing.sm) {
+        if let project = newChatProject {
+          Label(project.name, systemImage: "folder")
+            .eyebrowStyle(Theme.Brand.glacier)
+            .accessibilityIdentifier("chat.project")
+        }
+        Text(greeting)
+          .font(.greeting)
+          .foregroundStyle(Theme.Text.primary)
+          .multilineTextAlignment(.center)
+          .accessibilityIdentifier("chat.empty")
       }
-      Text(greeting)
-        .font(.title2.weight(.semibold))
-        .multilineTextAlignment(.center)
-        .accessibilityIdentifier("chat.empty")
+      suggestions
       Spacer()
     }
     .frame(maxWidth: .infinity)
-    .padding(.horizontal, 24)
+    .padding(.horizontal, Theme.Spacing.xl)
     .contentShape(.rect)
     .onTapGesture { inputFocused = false }
+  }
+
+  private enum Suggestion: CaseIterable {
+    case explain, summarize, write, plan
+
+    var title: LocalizedStringKey {
+      switch self {
+      case .explain: "Explain a concept"
+      case .summarize: "Summarize a file"
+      case .write: "Help me write"
+      case .plan: "Plan a trip"
+      }
+    }
+
+    var symbol: String {
+      switch self {
+      case .explain: "lightbulb"
+      case .summarize: "doc.text.magnifyingglass"
+      case .write: "pencil.line"
+      case .plan: "map"
+      }
+    }
+
+    /// Text that starts the draft (nil: the action is a file picker).
+    var starter: String? {
+      switch self {
+      case .explain: String(localized: "Explain how ")
+      case .summarize: nil
+      case .write: String(localized: "Help me write ")
+      case .plan: String(localized: "Plan a three-day trip to ")
+      }
+    }
+  }
+
+  private var suggestions: some View {
+    LazyVGrid(
+      columns: [GridItem(.flexible(), spacing: Theme.Spacing.sm), GridItem(.flexible())],
+      spacing: Theme.Spacing.sm
+    ) {
+      ForEach(Suggestion.allCases, id: \.self) { suggestion in
+        Button {
+          Haptics.selection()
+          if let starter = suggestion.starter {
+            draft = starter
+            inputFocused = true
+          } else {
+            showFiles = true
+          }
+        } label: {
+          HStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: suggestion.symbol)
+              .foregroundStyle(Theme.Brand.glacier)
+              .accessibilityHidden(true)
+            Text(suggestion.title)
+              .foregroundStyle(Theme.Text.secondary)
+              .lineLimit(1)
+              .minimumScaleFactor(0.85)
+            Spacer(minLength: 0)
+          }
+          .font(.system(.subheadline, weight: .medium))
+          .padding(.horizontal, Theme.Spacing.md)
+          .frame(minHeight: Theme.Size.target + Theme.Spacing.xs)
+          .surfaceCard(radius: Theme.Radius.card)
+          .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("chat.suggestion")
+      }
+    }
   }
 
   /// The project a new chat will join, for the empty state.
@@ -287,7 +347,6 @@ struct ChatView: View {
       ? String(localized: "What can I help with?")
       : String(localized: "What can I help with, \(name)?")
   }
-
 
   // MARK: - Message actions
 
@@ -324,7 +383,7 @@ struct ChatView: View {
       edit: { startEditing(turn) },
       speak: { reader.toggle(turn.text, id: turn.id) },
       selectVersion: { version in
-        withAnimation(.snappy) { appState.selectVersion(version, in: thread) }
+        withAppAnimation(Theme.Motion.easeOut) { appState.selectVersion(version, in: thread) }
       })
   }
 
@@ -344,20 +403,24 @@ struct ChatView: View {
   @ViewBuilder
   private var editingBar: some View {
     if editingTurn != nil {
-      HStack(spacing: 8) {
+      HStack(spacing: Theme.Spacing.sm) {
         Image(systemName: "pencil")
+          .foregroundStyle(Theme.Brand.glacier)
+          .accessibilityHidden(true)
         Text("Editing message")
-          .font(.caption)
+          .font(.footnote)
+          .foregroundStyle(Theme.Text.secondary)
           .accessibilityIdentifier("chat.editing")
         Spacer()
         Button("Cancel", action: cancelEditing)
-          .font(.caption)
-          .buttonStyle(.glass)
-          .controlSize(.small)
+          .font(.system(.footnote, weight: .semibold))
+          .foregroundStyle(Theme.Brand.glacier)
+          .buttonStyle(.plain)
+          .frame(minHeight: Theme.Size.target)
+          .contentShape(.rect)
           .accessibilityIdentifier("chat.editing.cancel")
       }
-      .padding(.horizontal)
-      .padding(.vertical, 4)
+      .padding(.horizontal, Theme.Spacing.xl)
     }
   }
 
@@ -376,17 +439,17 @@ struct ChatView: View {
   @ViewBuilder
   private var preparingBar: some View {
     if let status = appState.preparingStatus, appState.preparingThreadID == thread?.id {
-      HStack(spacing: 8) {
-        ProgressView().controlSize(.small)
+      HStack(spacing: Theme.Spacing.sm) {
+        ProgressView().controlSize(.small).tint(mode.tint)
         Text(status)
-          .font(.caption)
-          .foregroundStyle(.secondary)
+          .font(.footnote)
+          .foregroundStyle(Theme.Text.secondary)
           .lineLimit(1)
           .accessibilityIdentifier("chat.preparing")
         Spacer()
       }
-      .padding(.horizontal, 20)
-      .padding(.vertical, 4)
+      .padding(.horizontal, Theme.Spacing.xl)
+      .padding(.vertical, Theme.Spacing.xs)
     }
   }
 
@@ -394,100 +457,124 @@ struct ChatView: View {
   private var pendingBar: some View {
     if !pendingFiles.isEmpty || readingFiles > 0 {
       ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 8) {
+        HStack(spacing: Theme.Spacing.sm) {
           ForEach(Array(pendingFiles.enumerated()), id: \.offset) { index, file in
             FileChip(name: file.name, kind: file.kind, pageCount: file.isPaged ? file.pages.count : 0) {
               pendingFiles.remove(at: index)
             }
           }
           if readingFiles > 0 {
-            HStack(spacing: 6) {
+            HStack(spacing: Theme.Spacing.tight) {
               ProgressView().controlSize(.mini)
-              Text("Reading…").font(.caption)
+              Text("Reading…").font(.caption).foregroundStyle(Theme.Text.secondary)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .glassEffect(.regular, in: .capsule)
+            .padding(.horizontal, Theme.Spacing.md)
+            .frame(minHeight: Theme.Size.pill)
+            .background { QuietBackground(shape: Capsule()) }
             .accessibilityIdentifier("composer.readingFile")
           }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, Theme.Spacing.md)
       }
-      .padding(.vertical, 4)
+      .padding(.vertical, Theme.Spacing.xs)
     }
     if pendingImage != nil || recorder.finishedURL != nil || recorder.isRecording {
-      GlassEffectContainer(spacing: 8) {
-        HStack(spacing: 8) {
-          if let data = pendingImage, let uiImage = UIImage(data: data) {
+      HStack(spacing: Theme.Spacing.sm) {
+        if let data = pendingImage, let uiImage = UIImage(data: data) {
+          Button {
+            pendingImage = nil
+          } label: {
             Image(uiImage: uiImage)
               .resizable()
               .scaledToFill()
-              .frame(width: DS.controlTarget, height: DS.controlTarget)
-              .clipShape(.rect(cornerRadius: DS.radiusThumb))
-              .onTapGesture { pendingImage = nil }
+              .frame(width: Theme.Size.target, height: Theme.Size.target)
+              .clipShape(.rect(cornerRadius: Theme.Radius.row, style: .continuous))
+              .overlay {
+                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                  .stroke(Theme.Surface.stroke, lineWidth: Theme.Stroke.hairline)
+              }
           }
-          if recorder.isRecording {
-            Label(
-              dictating
-                ? String(format: String(localized: "Listening… %.0fs"), recorder.elapsed)
-                : String(format: "%.0fs / %.0fs", recorder.elapsed, AudioRecorder.maxDuration),
-              systemImage: dictating ? "waveform" : "record.circle"
-            )
-            .font(.caption)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .glassEffect(.regular.tint(.red), in: .capsule)
-            .accessibilityIdentifier("composer.recording")
-            if !dictating {
-              Button("Stop") { recorder.stop() }
-                .font(.caption)
-                .buttonStyle(.glass)
-                .controlSize(.small)
-                .accessibilityIdentifier("composer.stopVoice")
-            }
-          } else if recorder.finishedURL != nil, !dictating, !appState.isTranscribing {
-            Label("Voice ready (\(Int(recorder.elapsed))s)", systemImage: "waveform")
-              .font(.caption)
-              .padding(.horizontal, 10)
-              .padding(.vertical, 6)
-              .glassEffect(.regular, in: .capsule)
-              .onTapGesture { recorder.discard() }
-          }
-          Spacer()
-          if pendingImage != nil || recorder.finishedURL != nil {
-            Button("Clear") {
-              pendingImage = nil
-              recorder.discard()
-            }
-            .font(.caption)
-            .buttonStyle(.glass)
-            .controlSize(.small)
-          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Photo")
+          .accessibilityHint("Removes the photo")
         }
-        .padding(.horizontal)
-        .padding(.vertical, 4)
+        if recorder.isRecording {
+          Label(
+            dictating
+              ? String(format: String(localized: "Listening… %.0fs"), recorder.elapsed)
+              : String(format: "%.0fs / %.0fs", recorder.elapsed, AudioRecorder.maxDuration),
+            systemImage: dictating ? "waveform" : "record.circle"
+          )
+          .font(.system(.caption, weight: .medium))
+          .monospacedDigit()
+          .foregroundStyle(Theme.Text.primary)
+          .padding(.horizontal, Theme.Spacing.md)
+          .frame(minHeight: Theme.Size.pill)
+          .background { LitTintBackground(shape: Capsule(), tint: Theme.Status.critical, strength: .pill) }
+          .accessibilityIdentifier("composer.recording")
+          if !dictating {
+            Button("Stop") { recorder.stop() }
+              .font(.system(.footnote, weight: .semibold))
+              .foregroundStyle(Theme.Status.critical)
+              .buttonStyle(.plain)
+              .frame(minHeight: Theme.Size.target)
+              .accessibilityIdentifier("composer.stopVoice")
+          }
+        } else if recorder.finishedURL != nil, !dictating, !appState.isTranscribing {
+          Button {
+            recorder.discard()
+          } label: {
+            Label("Voice ready (\(Int(recorder.elapsed))s)", systemImage: "waveform")
+              .font(.system(.caption, weight: .medium))
+              .foregroundStyle(Theme.Text.primary)
+              .padding(.horizontal, Theme.Spacing.md)
+              .frame(minHeight: Theme.Size.pill)
+              .background { LitTintBackground(shape: Capsule(), tint: Theme.Mode.voice.tint, strength: .pill) }
+          }
+          .buttonStyle(.plain)
+          .accessibilityHint("Removes the voice message")
+        }
+        Spacer()
+        if pendingImage != nil || recorder.finishedURL != nil {
+          Button("Clear") {
+            pendingImage = nil
+            recorder.discard()
+          }
+          .font(.system(.footnote, weight: .semibold))
+          .foregroundStyle(Theme.Text.secondary)
+          .buttonStyle(.plain)
+          .frame(minHeight: Theme.Size.target)
+        }
       }
+      .padding(.horizontal, Theme.Spacing.lg)
+      .padding(.vertical, Theme.Spacing.xs)
     }
   }
 
   // MARK: - Composer
 
-  /// ChatGPT-style composer: the message on top; attachments, Think, the
-  /// microphone and Send/Stop below, in one glass card. You can type the
-  /// next message while a reply is streaming.
+  /// The composer: the message on top; attach, Think, Search, the
+  /// microphone and the send / voice / stop button below, on one chrome
+  /// panel lit by the active mode. The next message can be typed while a
+  /// reply streams.
   private var inputBar: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      TextField("Ask anything", text: $draft, axis: .vertical)
-        .lineLimit(1...8)
-        .textFieldStyle(.plain)
-        .padding(.horizontal, 6)
-        .padding(.top, 6)
-        .focused($inputFocused)
-        .accessibilityIdentifier("chat.input")
-      HStack(spacing: DS.spaceMD) {
+    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+      TextField(
+        "Ask anything", text: $draft,
+        prompt: Text("Ask anything").foregroundStyle(Theme.Text.placeholder), axis: .vertical
+      )
+      .font(.body)
+      .foregroundStyle(Theme.Text.primary)
+      .lineLimit(1...8)
+      .textFieldStyle(.plain)
+      .padding(.horizontal, Theme.Spacing.sm)
+      .padding(.top, Theme.Spacing.sm)
+      .focused($inputFocused)
+      .accessibilityIdentifier("chat.input")
+      HStack(spacing: Theme.Spacing.sm) {
         attachMenu
         // Titled pills when they fit, icons otherwise; priority over the
-        // spacer so the titles never truncate to "T…".
+        // spacer so a title never truncates to "T…".
         ViewThatFits(in: .horizontal) {
           modeToggles(iconOnly: false)
           modeToggles(iconOnly: true)
@@ -498,12 +585,14 @@ struct ChatView: View {
         actionButton
       }
     }
-    .padding(10)
-    .glassEffect(.regular, in: .rect(cornerRadius: 26))
+    .padding(Theme.Spacing.snug)
+    .chromeSurface(
+      in: RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous), tint: mode.tint)
+    .animation(Theme.Motion.modeCrossfade, value: mode)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("chat.composer")
-    .padding(.horizontal, 12)
-    .padding(.bottom, 6)
+    .padding(.horizontal, Theme.Spacing.snug)
+    .padding(.bottom, Theme.Spacing.tight)
     .photosPicker(isPresented: $showPhotos, selection: $photoItem, matching: .images)
     .onChange(of: photoItem) { _, item in
       Task {
@@ -581,9 +670,11 @@ struct ChatView: View {
       }
     } label: {
       Image(systemName: "plus")
-        .font(.body.weight(.medium))
-        .frame(width: DS.controlTarget, height: DS.controlTarget)
-        .glassEffect(.regular.interactive(), in: .circle)
+        .font(.system(.body, weight: .semibold))
+        .foregroundStyle(attachDisabled ? Theme.Text.tertiary : Theme.Text.primary)
+        .frame(width: Theme.Size.target, height: Theme.Size.target)
+        .background { QuietBackground(shape: Circle()) }
+        .contentShape(Circle())
     }
     .disabled(attachDisabled)
     .accessibilityLabel("Add photos and files")
@@ -591,7 +682,7 @@ struct ChatView: View {
   }
 
   private func modeToggles(iconOnly: Bool) -> some View {
-    HStack(spacing: DS.spaceMD) {
+    HStack(spacing: Theme.Spacing.sm) {
       thinkToggle(iconOnly: iconOnly)
       if appState.webSettings.allowed {
         searchToggle(iconOnly: iconOnly)
@@ -603,20 +694,11 @@ struct ChatView: View {
   private func searchToggle(iconOnly: Bool) -> some View {
     Button {
       searchWeb.toggle()
-      Haptics.complete()
+      Haptics.selection()
     } label: {
       Label("Search", systemImage: "globe")
-        .labelStyle(PillLabelStyle(iconOnly: iconOnly))
-        .font(.subheadline.weight(.medium))
-        .foregroundStyle(searchWeb ? Color.accentColor : .secondary)
-        .padding(.horizontal, 12)
-        .frame(height: 36)
-        .glassEffect(
-          searchWeb
-            ? .regular.tint(.accentColor.opacity(0.25)).interactive() : .regular.interactive(),
-          in: .capsule)
     }
-    .buttonStyle(.plain)
+    .buttonStyle(ModePillStyle(isOn: searchWeb, tint: Theme.Mode.search.tint, iconOnly: iconOnly))
     .disabled(appState.isBusy || editingTurn != nil)
     .accessibilityLabel("Search")
     .accessibilityValue(searchWeb ? "On" : "Off")
@@ -630,19 +712,11 @@ struct ChatView: View {
     return Button {
       appState.options.enableThinking.toggle()
       appState.scheduleApplyOptions()
-      Haptics.complete()
+      Haptics.selection()
     } label: {
       Label("Think", systemImage: "lightbulb")
-        .labelStyle(PillLabelStyle(iconOnly: iconOnly))
-        .font(.subheadline.weight(.medium))
-        .foregroundStyle(isOn ? Color.accentColor : .secondary)
-        .padding(.horizontal, 12)
-        .frame(height: 36)
-        .glassEffect(
-          isOn ? .regular.tint(.accentColor.opacity(0.25)).interactive() : .regular.interactive(),
-          in: .capsule)
     }
-    .buttonStyle(.plain)
+    .buttonStyle(ModePillStyle(isOn: isOn, tint: Theme.Mode.think.tint, iconOnly: iconOnly))
     .disabled(appState.isBusy)
     .accessibilityLabel("Think")
     .accessibilityValue(isOn ? "On" : "Off")
@@ -651,35 +725,43 @@ struct ChatView: View {
   }
 
   /// Dictation: speak, then the text lands in the composer for review.
+  @ViewBuilder
   private var micButton: some View {
     let listening = recorder.isRecording && dictating
-    return Button {
-      if listening {
-        recorder.stop()  // transcribed in onChange(of: isRecording)
-      } else {
-        dictating = true
-        Task {
-          await recorder.toggle()
-          if !recorder.isRecording { dictating = false }
-        }
-      }
-    } label: {
+    let button = Button(action: toggleDictation) {
       Group {
         if appState.isTranscribing {
           ProgressView()
         } else {
           Image(systemName: listening ? "checkmark" : "mic")
+            .contentTransition(.symbolEffect(.replace))
         }
       }
-      .frame(width: DS.controlTarget, height: DS.controlTarget)
-      .glassEffect(
-        listening ? .regular.tint(.red).interactive() : .regular.interactive(), in: .circle)
+    }
+    Group {
+      if listening {
+        button.buttonStyle(LitCircleButtonStyle(tint: Theme.Status.critical))
+      } else {
+        button.buttonStyle(QuietCircleButtonStyle())
+      }
     }
     .disabled(
       appState.isBusy || appState.isTranscribing || (recorder.isRecording && !dictating))
     .accessibilityLabel(listening ? "Finish dictation" : "Dictate")
     .accessibilityValue(appState.isTranscribing ? "Transcribing" : listening ? "Listening" : "")
     .accessibilityIdentifier("composer.mic")
+  }
+
+  private func toggleDictation() {
+    if recorder.isRecording && dictating {
+      recorder.stop()  // transcribed in onChange(of: isRecording)
+    } else {
+      dictating = true
+      Task {
+        await recorder.toggle()
+        if !recorder.isRecording { dictating = false }
+      }
+    }
   }
 
   /// The dictation recording became text: append it to the draft.
@@ -696,46 +778,66 @@ struct ChatView: View {
     }
   }
 
-  @ViewBuilder
-  private var actionButton: some View {
-    if appState.isBusy {
-      Button(action: { appState.stop() }) {
-        Image(systemName: "stop.fill")
-          .foregroundStyle(.white)
-          .frame(width: DS.controlTarget, height: DS.controlTarget)
-          .glassEffect(.regular.tint(.red).interactive(), in: .circle)
-          .glassEffectID("action", in: inputNamespace)
+  /// What the composer's main button does right now.
+  private enum PrimaryAction: Equatable {
+    case stop, voice, send
+
+    var symbol: String {
+      switch self {
+      case .stop: "stop.fill"
+      case .voice: "waveform"
+      case .send: "arrow.up"
       }
-      .accessibilityLabel("Stop generating")
-      .accessibilityIdentifier("chat.stop")
-    } else if !canSend, !recorder.isRecording, !appState.isTranscribing, editingTurn == nil {
-      // Nothing to send: talk instead (voice mode).
-      Button {
-        showVoice = true
-      } label: {
-        Image(systemName: "waveform")
-          .font(.headline)
-          .foregroundStyle(.white)
-          .frame(width: DS.controlTarget, height: DS.controlTarget)
-          .glassEffect(.regular.tint(.accentColor).interactive(), in: .circle)
-          .glassEffectID("action", in: inputNamespace)
-      }
-      .accessibilityLabel("Voice mode")
-      .accessibilityIdentifier("composer.voice")
-    } else {
-      Button(action: send) {
-        Image(systemName: "arrow.up")
-          .font(.headline)
-          .foregroundStyle(.white)
-          .frame(width: DS.controlTarget, height: DS.controlTarget)
-          .glassEffect(.regular.tint(.accentColor).interactive(), in: .circle)
-          .glassEffectID("action", in: inputNamespace)
-      }
-      .disabled(!canSend)
-      .opacity(canSend ? 1 : 0.45)
-      .accessibilityLabel("Send")
-      .accessibilityIdentifier("chat.send")
     }
+
+    var label: LocalizedStringKey {
+      switch self {
+      case .stop: "Stop generating"
+      case .voice: "Voice mode"
+      case .send: "Send"
+      }
+    }
+
+    var identifier: String {
+      switch self {
+      case .stop: "chat.stop"
+      case .voice: "composer.voice"
+      case .send: "chat.send"
+      }
+    }
+  }
+
+  private var primaryAction: PrimaryAction {
+    if appState.isBusy { return .stop }
+    // Nothing to send: talk instead (voice mode).
+    if !canSend, !recorder.isRecording, !appState.isTranscribing, editingTurn == nil { return .voice }
+    return .send
+  }
+
+  /// Send, voice mode, or stop: one lit button whose glyph morphs.
+  private var actionButton: some View {
+    let action = primaryAction
+    let tint =
+      switch action {
+      case .stop: Theme.Status.critical
+      case .voice: Theme.Mode.voice.tint
+      case .send: mode.tint
+      }
+    return Button {
+      switch action {
+      case .stop: appState.stop()
+      case .voice: showVoice = true
+      case .send: send()
+      }
+    } label: {
+      Image(systemName: action.symbol)
+        .contentTransition(.symbolEffect(.replace))
+    }
+    .buttonStyle(LitCircleButtonStyle(tint: tint))
+    .disabled(action == .send && !canSend)
+    .animation(Theme.Motion.easeOut, value: action)
+    .accessibilityLabel(action.label)
+    .accessibilityIdentifier(action.identifier)
   }
 
   /// A finished voice message (not a dictation being transcribed).
@@ -802,23 +904,9 @@ struct ChatView: View {
   }
 }
 
-
-/// Think / Search pill content: the title never truncates; icon-only is the
-/// compact fallback (the title stays the VoiceOver label).
-private struct PillLabelStyle: LabelStyle {
-  let iconOnly: Bool
-
-  func makeBody(configuration: Configuration) -> some View {
-    if iconOnly {
-      configuration.icon
-        .frame(minWidth: DS.controlTarget - 24)
-    } else {
-      HStack(spacing: 6) {
-        configuration.icon
-        configuration.title
-      }
-      .lineLimit(1)
-      .fixedSize()
-    }
+private extension View {
+  /// Banners sit just under the toolbar, inset like the composer.
+  func bannerInsets() -> some View {
+    padding(.horizontal, Theme.Spacing.md).padding(.top, Theme.Spacing.tight)
   }
 }
