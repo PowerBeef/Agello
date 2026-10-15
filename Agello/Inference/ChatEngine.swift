@@ -435,13 +435,22 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     return keep
   }
 
-  /// After a helper: the main conversation as it was, or an empty one.
+  /// After a helper: the main conversation as it was, or an empty one. Callers
+  /// release their own reference to the helper's conversation first.
   private func endHelper(
     keep: Bool, engine: Engine, resolved: ResolvedInference, options: InferenceOptions
   ) async throws {
     helperConversation = nil
     lastHelperKeptConversation = keep
-    guard !keep else { return }
+    if keep {
+      // Switching the engine back to the kept conversation restores its KV
+      // cache and frees the copy taken for the helper (one cache: 0.23 GB at
+      // 8K), which otherwise waits for the next message. Reading the token
+      // count is what switches it; the helper's session is gone by now, so
+      // nothing is copied on the way.
+      _ = try? conversation?.getTokenCount()
+      return
+    }
     conversation = try await Self.makeConversation(
       engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
       history: [])
@@ -521,19 +530,23 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
     let started = Date()
     let keep = beginHelper()
-    let helper = try await engine.createConversation(
-      with: ConversationConfig(
-        samplerConfig: try SamplerConfig(topK: 1, topP: 1, temperature: 0),
-        enableSpeculativeDecoding: resolved.enableSpeculativeDecoding))
-    helperConversation = helper
-    let reply = try await helper.sendMessage(
-      LiteRTLM.Message(contents: [
-        .text(Dictation.instruction), .audioFile(audioFileURL.path),
-      ]), maxOutputTokens: Dictation.maxOutputTokens)
+    let text: String
+    do {
+      let helper = try await engine.createConversation(
+        with: ConversationConfig(
+          samplerConfig: try SamplerConfig(topK: 1, topP: 1, temperature: 0),
+          enableSpeculativeDecoding: resolved.enableSpeculativeDecoding))
+      helperConversation = helper
+      let reply = try await helper.sendMessage(
+        LiteRTLM.Message(contents: [
+          .text(Dictation.instruction), .audioFile(audioFileURL.path),
+        ]), maxOutputTokens: Dictation.maxOutputTokens)
+      text = reply.toString
+    }
     try await endHelper(keep: keep, engine: engine, resolved: resolved, options: options)
     Log.engine.info(
-      "transcribe: \(reply.toString.count) chars in \(Date().timeIntervalSince(started), format: .fixed(precision: 2))s, kept \(keep)")
-    return Dictation.clean(reply.toString)
+      "transcribe: \(text.count) chars in \(Date().timeIntervalSince(started), format: .fixed(precision: 2))s, kept \(keep)")
+    return Dictation.clean(text)
   }
 
   // MARK: Send

@@ -23,11 +23,11 @@ and the simulator can't catch any of them.
   must reseed history before the next send.
 - Our runtime (a build with a build id, `EngineCache.runtimeBuildID`) keeps
   the main conversation: it copies its KV cache aside while the helper runs
-  and restores it on the next send (about 0.1 s, against 2.9 s to reseed 8K
-  tokens on the Mac). The copy costs one KV cache, held until the chat's
-  next message restores it (iPhone, 2026-10-15: +0.23 GB at 8K between
-  messages), so the engine keeps it only when that fits above
-  `lowMemoryStopBytes`
+  and restores it when the engine switches back (about 0.1 s, against 2.9 s
+  to reseed 8K tokens on the Mac). `endHelper` switches back right away (the
+  chat's `getTokenCount()` does it), so the copy, one KV cache, lives only
+  while the helper runs; otherwise it would wait for the next message. The
+  engine keeps the chat only when one cache fits above `lowMemoryStopBytes`
   (`DeviceProfile.keepsConversationAcrossHelpers`); otherwise it releases the
   main conversation *before* the helper and leaves an empty one, as with
   Google's. Callers ask `lastHelperKeptConversation` (`AppState.afterHelper`)
