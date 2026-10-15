@@ -155,7 +155,9 @@ nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
 - **Pushing `agello-next`:** from `../LiteRT-LM` (`git push origin
   agello-next`); from the worktree, Git LFS's pre-push lock check fails.
 - **In Agello:** `Vendor/use-local-litert.sh` vendors the worktree's build
-  (its header says how to switch back). Never commit `Vendor/LiteRT-LM`
+  (its header says how to switch back). It *copies* the framework: rerun it
+  after every rebuild, and check the build id in the harness report's device
+  record (`runtimeBuild`) before trusting a run. Never commit `Vendor/LiteRT-LM`
   while it points at the local build. Then run the `PLATFORM=mac` suites;
   the app ships Google's binary until the source build has had an iPhone run
   and the user decides how to host it.

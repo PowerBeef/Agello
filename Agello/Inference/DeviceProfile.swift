@@ -44,15 +44,15 @@ struct DeviceProfile: Sendable, Equatable {
   /// - Ours (a runtime with a build id) keeps it: the runtime copies its KV
   ///   cache aside while the helper runs and restores it in about 0.1 s
   ///   (2.9 s to reseed 8K tokens of history on the Mac). Measured on the Mac
-  ///   at 16K: +0.94 GB at the peak, about twice the cache, so it needs that
-  ///   much memory above ``lowMemoryStopBytes``.
+  ///   at 16K: +0.47 GB while the helper runs (one copy of the cache), none
+  ///   afterwards, so it needs that much memory above ``lowMemoryStopBytes``.
   /// `availableBytes` 0 means not reported (the Mac): keep.
   static func keepsConversationAcrossHelpers(
     runtimeKeepsSessions: Bool, maxNumTokens: Int, availableBytes: UInt64
   ) -> Bool {
     guard runtimeKeepsSessions else { return false }
     guard availableBytes > 0 else { return true }
-    let peak = 2 * kvBytesPerToken * UInt64(max(0, maxNumTokens))
+    let peak = kvBytesPerToken * UInt64(max(0, maxNumTokens))
     return availableBytes >= peak + lowMemoryStopBytes
   }
 
