@@ -24,8 +24,15 @@ project (its own CLAUDE.md and skills don't load):
 | `upstream` | `google-ai-edge/LiteRT-LM` (fetch only; push is disabled) |
 | `agello` branch | Tag `v0.18.0` plus Agello's Swift patches (see below); `Vendor/LiteRT-LM` is vendored from it. Also holds `docs/agello/` and `tools/agello-bench`. |
 | `agello-next` branch | The source build (below): upstream's 0.19.0 nightly source (tag `agello-base-20261013`) plus our patches. Worktree at `../agello-arms/next/LiteRT-LM`. Not in the app yet. |
-| `research/3913` branch | The #3913 research (below) |
-| Release tags | Live on `release/vX.Y.Z` branches, not on `main` |
+| `research/3913` tag | The #3913 research (below); a branch until 2026-10-15, so links to `tree/research/3913` still resolve |
+| Release tags | Live on upstream's `release/vX.Y.Z` branches (fetch from `upstream`), not on `main` |
+
+Branch policy (decided 2026-10-15): each fork (this one, `PowerBeef/LiteRT`,
+`PowerBeef/ml-drift`) keeps `main`, an upstream mirror, plus our branches; the
+branches Google's repos had when the forks were made don't belong there. Once
+the iPhone validates our build and the app ships it, `agello` and
+`agello-next` merge into one `agello` (tag the old `agello` tip first: the
+app's vendored commit must stay reachable).
 
 Set it up on a new machine. The partial clone keeps full history but fetches
 file contents on demand, and LFS stays skipped: upstream's LFS holds GBs of
@@ -77,9 +84,9 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   graph (INT32/BOOL producers: broadcast ADD, comparisons, CAST, SELECT_V2).
   The user decided not to file them, and posted a correction:
   https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6160403434
-  The check lives on the fork's `research/3913` branch, in
+  The check lives on the fork's `research/3913` tag, in
   `research/issue-3913/webgpu-op-check/` (commit `7cebaa0c`).
-- Reproduction: the fork's `research/3913` branch, `research/issue-3913/`
+- Reproduction: the fork's `research/3913` tag, `research/issue-3913/`
   (graph-patch script, macOS runner, raw results, `summarize.py`).
 - **The app ships our fix.** `ModelCatalog.e4b` downloads
   `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`, pinned to a commit.
