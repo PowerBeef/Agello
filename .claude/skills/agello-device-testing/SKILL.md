@@ -124,6 +124,16 @@ Everything lands in `build/device-harness/` (`build/mac-harness/` on the Mac):
 
 The script's exit code is `xcodebuild`'s (65 = test failures).
 
+On our own LiteRT-LM build (see `agello-litert-update`, "The source build"),
+each scenario in `harness-report.json` also carries `telemetry`, the engine's
+account of that scenario: span timings, GPU time, host copies by buffer size,
+cache and delegation counters, logits probes, anomalies. Google's binary has
+none. Read it with the fork's report script:
+
+```sh
+python3 ../LiteRT-LM/tools/agello-bench/telemetry.py build/mac-harness/harness-report.json
+```
+
 App logs use subsystem `com.patricedery.agello`, categories `engine`,
 `generation`, and `lifecycle`. CoreData "database is corrupted" lines during
 `unit` come from tests that feed a corrupt store on purpose.
@@ -190,6 +200,8 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
 | `--uitest-fake-mic` | Fake microphone input (no permission prompt) |
 | `--uitest-sample-file`, `--uitest-sample-report` | Attach sample documents generated in code (`ChatView`) |
 | `TEST_RUNNER_HARNESS_THINKING`, `_MEMORY`, `_CALIBRATE`, `_PROBES` | Enable the opt-in device suites (the script sets them) |
+| `AGELLO_TELEMETRY=<0-4>` (to the script) | Engine telemetry level on our LiteRT-LM build, passed as `TEST_RUNNER_AGELLO_TELEMETRY` (default 2: span timings; 4 times each GPU kernel and slows the run) |
+| `TEST_RUNNER_AGELLO_VERIFY_DIRECT_COPIES=1` | Our build checks every direct Metal host copy against ML Drift's own conversion; a difference is an error anomaly in the scenario's telemetry |
 
 ## After a change
 

@@ -22,7 +22,9 @@ project (its own CLAUDE.md and skills don't load):
 | --- | --- |
 | `origin` | `PowerBeef/agello-litert-lm` (push here) |
 | `upstream` | `google-ai-edge/LiteRT-LM` (fetch only; push is disabled) |
-| `agello` branch | Tag `v0.18.0` plus Agello's Swift patches (see below); `Vendor/LiteRT-LM` is vendored from it. |
+| `agello` branch | Tag `v0.18.0` plus Agello's Swift patches (see below); `Vendor/LiteRT-LM` is vendored from it. Also holds `docs/agello/` and `tools/agello-bench`. |
+| `agello-next` branch | The source build (below): upstream's 0.19.0 nightly source (tag `agello-base-20261013`) plus our patches. Worktree at `../agello-arms/next/LiteRT-LM`. Not in the app yet. |
+| `research/3913` branch | The #3913 research (below) |
 | Release tags | Live on `release/vX.Y.Z` branches, not on `main` |
 
 Set it up on a new machine. The partial clone keeps full history but fetches
@@ -75,8 +77,8 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   graph (INT32/BOOL producers: broadcast ADD, comparisons, CAST, SELECT_V2).
   The user decided not to file them, and posted a correction:
   https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6160403434
-  The check lives in the fork's
-  `research/issue-3913/webgpu-op-check/` (uncommitted).
+  The check lives on the fork's `research/3913` branch, in
+  `research/issue-3913/webgpu-op-check/` (commit `7cebaa0c`).
 - Reproduction: the fork's `research/3913` branch, `research/issue-3913/`
   (graph-patch script, macOS runner, raw results, `summarize.py`).
 - **The app ships our fix.** `ModelCatalog.e4b` downloads
@@ -120,6 +122,43 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   points at Google's checksummed release binary, so using a patched runtime
   means building and hosting our own. That's a bigger commitment: decide with
   the user first.
+
+### The source build (`agello-next`)
+
+The Apple-only re-engineering of LiteRT-LM builds the whole runtime from
+source, Metal accelerator included, in three forks. Its docs are in the fork's
+`docs/agello/` on `agello`: `AUDIT.md`, `PARITY.md` (against Google's
+nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
+
+| Checkout | Repository, branch |
+| --- | --- |
+| `../agello-arms/next/LiteRT-LM` | `PowerBeef/agello-litert-lm`, `agello-next` (a worktree of `../LiteRT-LM`) |
+| `../LiteRT` | `PowerBeef/LiteRT`, `agello-next`: the Metal delegate and buffer handler, telemetry probes |
+| `../ml-drift` | `PowerBeef/ml-drift`, `agello-next`: the GPU engine, kernel names and timing |
+
+- **Build:** `agello/build-xcframework.sh` in the worktree writes
+  `dist/CLiteRTLM.xcframework` and `dist/BUILD-INFO.txt` (commits, SHA-256s).
+  Its `WORKSPACE` pins LiteRT and ML Drift by commit and archive sha256.
+- **Changing LiteRT or ML Drift:** uncomment the `--override_repository`
+  lines in the worktree's `.bazelrc.user` to build from the local checkouts.
+  After pushing, re-pin: the new commit and `shasum -a 256` of
+  `https://github.com/PowerBeef/<repo>/archive/<commit>.tar.gz`. Comment the
+  overrides out and rebuild: the framework should come out byte-identical.
+- **Pushing `agello-next`:** from `../LiteRT-LM` (`git push origin
+  agello-next`); from the worktree, Git LFS's pre-push lock check fails.
+- **In Agello:** `Vendor/use-local-litert.sh` vendors the worktree's build
+  (its header says how to switch back). Never commit `Vendor/LiteRT-LM`
+  while it points at the local build. Then run the `PLATFORM=mac` suites;
+  the app ships Google's binary until the source build has had an iPhone run
+  and the user decides how to host it.
+- **Measuring:** `tools/agello-bench` on `agello` (build it against an arm
+  with `LITERTLM_PACKAGE=<checkout> swift build -c release --scratch-path
+  .build-<arm>`), ABAB runs, `compare.py` for changes with confidence
+  intervals, `telemetry.py` for the engine's own breakdown.
+- **Telemetry:** `AGELLO_TELEMETRY=<0-4>` (level), `AGELLO_TELEMETRY_OUT`
+  (snapshot at exit), `AGELLO_TELEMETRY_GRAPH_DIR` (GPU graph dumps),
+  `AGELLO_VERIFY_DIRECT_COPIES=1` (checks the direct Metal host copies). See
+  `TELEMETRY.md`, and `agello-device-testing` for the harness side.
 
 ## 1. Check upstream
 
