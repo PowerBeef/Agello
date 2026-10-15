@@ -90,12 +90,15 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   (graph-patch script, macOS runner, raw results, `summarize.py`).
 - **The app ships our fix.** `ModelCatalog.e4b` downloads
   `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`, pinned to a commit.
-  - It's the litert-community file run through `patch_rope.py --split`: rotary
-    positions split as `2048·h + l`, exact in FP16 up to 32,767; main model
-    and MTP drafter; weights unchanged.
+  - It's the litert-community file run through the fork's
+    `tools/model-surgery/patch_rope.py --split --block 512`: rotary positions
+    split as `512·h + l`, exact in FP16 up to 32,767 on every GPU tested (M1-class
+    GPUs also lose precision in SIN/COS past ~1,650, which 2,048-token blocks,
+    the first revision `13d5aa4c`, left in place); main model and MTP drafter;
+    weights unchanged. `--block 2048` reproduces the first revision.
   - The output is deterministic: the model card lists the sha256 of both files.
 - **When litert-community updates the E4B file:**
-  1. Run `patch_rope.py --split` on the new file.
+  1. Run `patch_rope.py --split --block 512` on the new file.
   2. Upload it to the same Hugging Face repo, with the model card's sha256
      and source revision updated.
   3. Update `ModelCatalog.e4b` (`revision`, `sizeBytes`).
@@ -109,7 +112,7 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   `devicectl device copy to`, and delete them with
   `TEST_RUNNER_LAB_REMOVE=<file> ONLY=…/test13_RemoveLabModels scripts/device-harness.sh probes`.
   - Probe 11 needs `ishift-2048.litertlm` (`patch_rope.py … -2048 … --int`).
-  - Probe 12 needs `split.litertlm` (`--split`).
+  - Probe 12 needs `split.litertlm` (`--split --block 512`).
 
 ### Using patches in Agello
 

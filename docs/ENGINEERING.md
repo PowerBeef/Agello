@@ -16,15 +16,15 @@ How Agello keeps a 4-billion-parameter model fast, correct and stable on a phone
 
 **Root cause.** A device probe that copies a 48-digit number from increasing positions showed the errors start at exactly **position 2,048**. The model computes rotary angles from a float copy of the token position. With 16-bit activations that copy is float16, whose 11-bit significand holds every integer only up to 2,048; past it, positions round to even numbers and attention sees the wrong angle. The full analysis is [on the upstream issue](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598).
 
-**Fix: rewrite the graph, not the runtime.** LiteRT-LM's runtime is a prebuilt binary, so the fix edits the model file instead ([`patch_rope.py`](https://github.com/PowerBeef/agello-litert-lm/tree/research/3913/research/issue-3913)). It splits every position as `2048·h + l`:
+**Fix: rewrite the graph, not the runtime.** LiteRT-LM's runtime is a prebuilt binary, so the fix edits the model file instead ([`patch_rope.py`](https://github.com/PowerBeef/agello-litert-lm/tree/agello/tools/model-surgery)). It splits every position as `512·h + l`:
 
-- `l` (0–2,047, exact in float16) goes through the model's existing MUL / SIN / COS;
-- the phase of `2048·h` comes from small precomputed tables selected with `onehot(h)`;
+- `l` (0–511) goes through the model's existing MUL / SIN / COS;
+- the phase of `512·h` comes from small precomputed tables selected with `onehot(h)`;
 - angle addition combines them, using only values in [−1, 1].
 
-Every float stays exact up to position 32,767. The weights are untouched, the main model and its speculative-decoding drafter are both patched, and the output is reproducible byte for byte from Google's file. A first attempt (shifting positions by −2,048) only doubled the exact range, to 4,096, which is why the split was needed.
+Every float stays exact up to position 32,767. The first revision used 2,048-token blocks, the largest float16 allows; on M1-class GPUs the MUL / SIN / COS that follow also lose precision once the angle passes about 1,650 ([found on an M1 Max](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6166055004)), so the app now ships 512-token blocks: exact there too, replies identical to the 2,048-token file on the iPhone and the Mac, at the same speed. The weights are untouched, the main model and its speculative-decoding drafter are both patched, and the output is reproducible byte for byte from Google's file. A first attempt (shifting positions by −2,048) only doubled the exact range, to 4,096, which is why the split was needed.
 
-**Results on iPhone 17 Pro** ([follow-up on the issue](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6159684389)):
+**Results on iPhone 17 Pro**, with the first revision ([follow-up on the issue](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6159684389)):
 
 | | Patched, float16 | Original, float32 (old workaround) | Original, float16 |
 | --- | --- | --- | --- |

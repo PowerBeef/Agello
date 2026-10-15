@@ -102,12 +102,13 @@ and the simulator can't catch any of them.
   "202026"; LiteRT-LM #3913): it computes rotary angles from a float copy of
   the position, which FP16 can't hold exactly above 2,048.
   - `ModelCatalog.e4b` downloads a copy whose rotary positions are split
-    (`2048·h + l`) so every float stays exact up to 32,767. It's pinned to a
-    Hugging Face commit; probes 10–12 prove it.
+    (`512·h + l`) so the rotary math stays exact up to 32,767, M1-class GPUs
+    included (2,048-token blocks, the first revision, still missed digits
+    there). It's pinned to a Hugging Face commit; probes 10–12 prove it.
   - The app runs in 16-bit activations everywhere, with no FP32 switch.
   - Don't point the catalog at the unpatched file, and don't add precision
     switching back.
-  - When the model is updated, re-apply `patch_rope.py --split` (see
+  - When the model is updated, re-apply `patch_rope.py --split --block 512` (see
     `agello-litert-update`), then run `test15_LongContextDigitFidelity`
     and probe 12.
 - Speculative decoding (MTP) breaks JSON-schema constrained decoding on

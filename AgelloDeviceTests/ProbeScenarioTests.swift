@@ -573,7 +573,7 @@ final class ProbeScenarioTests: DeviceTestCase {
   }
 
   /// LiteRT-LM #3913: the float16-exact rotary patch (patch_rope.py --split:
-  /// position = 2048*h + l, main model and MTP drafter) on the iPhone's Metal
+  /// position = BLOCK*h + l, main model and MTP drafter) on the iPhone's Metal
   /// accelerator, at the app's real windows (32K). Copy the patched model to
   /// Documents/lab/split.litertlm (devicectl). Compares it in FP16 with the
   /// original in FP32 (today's long-context fallback) and FP16: copy fidelity

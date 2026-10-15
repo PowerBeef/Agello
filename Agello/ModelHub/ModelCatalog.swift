@@ -27,16 +27,18 @@ struct ModelSpec: Identifiable, Sendable, Equatable {
 enum ModelCatalog {
   /// litert-community's Gemma 4 E4B build with float16-exact rotary positions:
   /// the original corrupts digits past 2,048 context tokens with 16-bit GPU
-  /// activations (LiteRT-LM #3913). Same weights; reproducible from the
-  /// original (sha256 4a691f036fb06f7d4761da0026ad69a8b16cd7d9bc3965de9c2765edec7cb15f).
+  /// activations (LiteRT-LM #3913). Positions split in 512-token blocks, exact
+  /// on M1-class GPUs too. Same weights; reproducible from the original with
+  /// the fork's `patch_rope.py --split --block 512` (sha256
+  /// 6353a23321e46624e0fa1b038d23370e8e0af84032d24d30ef53be3b116f655c).
   static let e4b = ModelSpec(
     id: .e4b,
     displayName: "Gemma 4 E4B",
     tagline: "Private, on-device. Text, vision, audio and reasoning.",
     repo: "PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope",
     fileName: "gemma-4-E4B-it-fp16-rope.litertlm",
-    sizeBytes: 3_659_988_992,
-    revision: "13d5aa4cc27f986fe469267da96f177408d98b69"
+    sizeBytes: 3_660_726_272,
+    revision: "a1693e22a3439b0d36570cc7844d7b572336a85d"
   )
 
   /// EmbeddingGemma 2 (text, 270M): turns text into vectors for search by

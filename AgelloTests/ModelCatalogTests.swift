@@ -37,7 +37,7 @@ final class ModelCatalogTests: XCTestCase {
 
   func testVerifiedSize() {
     // Byte counts verified against the Hugging Face content-length header.
-    XCTAssertEqual(ModelCatalog.e4b.sizeBytes, 3_659_988_992)
+    XCTAssertEqual(ModelCatalog.e4b.sizeBytes, 3_660_726_272)
     XCTAssertEqual(ModelCatalog.embeddingGemma.sizeBytes, 164_626_432)
     XCTAssertEqual(
       ModelCatalog.embeddingGemma.downloadURL.absoluteString,
