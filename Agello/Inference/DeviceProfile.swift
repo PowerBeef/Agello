@@ -43,9 +43,9 @@ struct DeviceProfile: Sendable, Equatable {
   ///   one runs, so the chat must be reseeded.
   /// - Ours (a runtime with a build id) keeps it: the runtime copies its KV
   ///   cache aside while the helper runs and restores it in about 0.1 s
-  ///   (2.9 s to reseed 8K tokens of history on the Mac). Measured on the Mac
-  ///   at 16K: +0.47 GB while the helper runs (one copy of the cache), none
-  ///   afterwards, so it needs that much memory above ``lowMemoryStopBytes``.
+  ///   (2.9 s to reseed 8K tokens of history on the Mac). The copy (0.47 GB
+  ///   at 16K) stays until the chat's next message restores it, so it needs
+  ///   that much memory above ``lowMemoryStopBytes``.
   /// `availableBytes` 0 means not reported (the Mac): keep.
   static func keepsConversationAcrossHelpers(
     runtimeKeepsSessions: Bool, maxNumTokens: Int, availableBytes: UInt64

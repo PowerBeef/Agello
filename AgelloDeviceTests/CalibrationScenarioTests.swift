@@ -39,6 +39,8 @@ final class CalibrationScenarioTests: DeviceTestCase {
         "appLimitGB": limitGB, "loaded": loaded,
         "loadLog": loadLog,
         "footprintAfterLoadGB": Double(afterLoad) / 1e9,
+        // 0 nominal, 1 fair, 2 serious, 3 critical: throttling changes every number here.
+        "thermalStateAfterLoad": ProcessInfo.processInfo.thermalState.rawValue,
       ]
       guard loaded else {
         harness.record("calibration_\(model.rawValue)_\(window)", values, in: self)
@@ -63,6 +65,8 @@ final class CalibrationScenarioTests: DeviceTestCase {
       values["footprintPeakGB"] = Double(MemoryProbe.footprintBytes()) / 1e9
       values["availableGB"] = Double(MemoryProbe.availableBytes()) / 1e9
       values["replyPrefix"] = String(exchange.text.prefix(120))
+      values["outputTokens"] = stats?.outputTokens ?? -1
+      values["thermalStateAfterReply"] = ProcessInfo.processInfo.thermalState.rawValue
       harness.record("calibration_\(model.rawValue)_\(window)", values, in: self)
       XCTAssertTrue(exchange.accepted, appState.generationError ?? "")
       XCTAssertFalse(exchange.text.hasPrefix(ChatTurn.errorPrefix), exchange.text)
