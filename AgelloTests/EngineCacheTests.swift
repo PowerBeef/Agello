@@ -51,17 +51,64 @@ final class EngineCacheTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     try Data([1]).write(to: root.appendingPathComponent("legacy_mldrift_weight_cache.bin"))
-    let embedding = try EngineCache.embeddingDirectory(root: root)
+    let embedding = try EngineCache.embeddingDirectory(root: root, build: nil)
 
-    _ = try EngineCache.directory(maxNumTokens: 4_096, root: root)
+    _ = try EngineCache.directory(maxNumTokens: 4_096, root: root, build: nil)
     Thread.sleep(forTimeInterval: 0.05)
-    _ = try EngineCache.directory(maxNumTokens: 8_192, root: root)
+    _ = try EngineCache.directory(maxNumTokens: 8_192, root: root, build: nil)
     Thread.sleep(forTimeInterval: 0.05)
-    let dir = try EngineCache.directory(maxNumTokens: 16_384, root: root)
+    let dir = try EngineCache.directory(maxNumTokens: 16_384, root: root, build: nil)
 
     let names = Set(try FileManager.default.contentsOfDirectory(atPath: root.path))
     XCTAssertEqual(names, ["kv-16384", "kv-8192", "embedding"])
     XCTAssertEqual(dir, root.appendingPathComponent("kv-16384").path)
     XCTAssertTrue(FileManager.default.fileExists(atPath: embedding))
+  }
+
+  func testFolderNamesCarryTheBuild() {
+    XCTAssertEqual(EngineCache.folder(maxNumTokens: 8_192, build: nil), "kv-8192")
+    XCTAssertEqual(EngineCache.folder(maxNumTokens: 8_192, build: "e07a401c74c2"), "kv-8192-e07a401c74c2")
+    XCTAssertEqual(EngineCache.embeddingFolder(build: nil), "embedding")
+    XCTAssertEqual(EngineCache.embeddingFolder(build: "dev"), "embedding-dev")
+    XCTAssertNil(EngineCache.build(ofSizeFolder: "kv-8192"))
+    XCTAssertEqual(EngineCache.build(ofSizeFolder: "kv-8192-e07a401c74c2"), "e07a401c74c2")
+  }
+
+  func testAnotherBuildsFoldersAreDeleted() {
+    let entries = [
+      entry("kv-8192-aaa", minutesAgo: 30), entry("kv-4096-aaa", minutesAgo: 20),
+      entry("kv-16384-aaa", minutesAgo: 40), entry("kv-8192", minutesAgo: 1),
+      entry("kv-8192-bbb", minutesAgo: 2), entry("embedding", minutesAgo: 3),
+      entry("embedding-aaa", minutesAgo: 50), entry("embedding-bbb", minutesAgo: 4),
+    ]
+    let deleted = EngineCache.entriesToDelete(entries, current: "kv-8192-aaa", keep: 2, build: "aaa")
+    XCTAssertEqual(
+      Set(deleted), ["kv-16384-aaa", "kv-8192", "kv-8192-bbb", "embedding", "embedding-bbb"])
+  }
+
+  func testGooglesBuildDeletesOurFolders() {
+    let entries = [
+      entry("kv-4096", minutesAgo: 10), entry("kv-8192-aaa", minutesAgo: 1),
+      entry("embedding-aaa", minutesAgo: 1), entry("embedding", minutesAgo: 60),
+    ]
+    let deleted = EngineCache.entriesToDelete(entries, current: "kv-8192", keep: 2, build: nil)
+    XCTAssertEqual(Set(deleted), ["kv-8192-aaa", "embedding-aaa"])
+  }
+
+  func testDirectoryForABuildReplacesAnotherBuildsCaches() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("EngineCacheTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    _ = try EngineCache.directory(maxNumTokens: 8_192, root: root, build: nil)
+    _ = try EngineCache.embeddingDirectory(root: root, build: nil)
+    let dir = try EngineCache.directory(maxNumTokens: 8_192, root: root, build: "abc")
+    let embedding = try EngineCache.embeddingDirectory(root: root, build: "abc")
+
+    XCTAssertEqual(dir, root.appendingPathComponent("kv-8192-abc").path)
+    XCTAssertEqual(embedding, root.appendingPathComponent("embedding-abc").path)
+    // Google's embedder folder goes at the next context-size load.
+    _ = try EngineCache.directory(maxNumTokens: 4_096, root: root, build: "abc")
+    let names = Set(try FileManager.default.contentsOfDirectory(atPath: root.path))
+    XCTAssertEqual(names, ["kv-4096-abc", "kv-8192-abc", "embedding-abc"])
   }
 }

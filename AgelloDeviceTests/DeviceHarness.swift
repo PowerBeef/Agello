@@ -76,6 +76,8 @@ final class DeviceHarness {
       "gpu": gpu?.name ?? "none",
       "gpuAppleFamily": gpu.map(Self.appleFamily) ?? 0,
       "gpuWorkingSetGB": Double(gpu?.recommendedMaxWorkingSetSize ?? 0) / 1e9,
+      // How the LiteRT-LM runtime was built (our builds; Google's has none).
+      "runtimeBuild": EngineCache.runtimeBuildInfo() ?? [:],
     ]
     report["startedAt"] = ISO8601DateFormatter().string(from: Date())
     // XCTest relaunches the app after a crash and continues with the next
