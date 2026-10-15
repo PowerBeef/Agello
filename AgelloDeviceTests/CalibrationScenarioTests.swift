@@ -41,6 +41,7 @@ final class CalibrationScenarioTests: DeviceTestCase {
         "footprintAfterLoadGB": Double(afterLoad) / 1e9,
         // 0 nominal, 1 fair, 2 serious, 3 critical: throttling changes every number here.
         "thermalStateAfterLoad": ProcessInfo.processInfo.thermalState.rawValue,
+        "lowPowerMode": ProcessInfo.processInfo.isLowPowerModeEnabled,
       ]
       guard loaded else {
         harness.record("calibration_\(model.rawValue)_\(window)", values, in: self)
@@ -70,6 +71,19 @@ final class CalibrationScenarioTests: DeviceTestCase {
       harness.record("calibration_\(model.rawValue)_\(window)", values, in: self)
       XCTAssertTrue(exchange.accepted, appState.generationError ?? "")
       XCTAssertFalse(exchange.text.hasPrefix(ChatTurn.errorPrefix), exchange.text)
+      // The one-sentence reply above decodes 30-60 tokens, too few for a steady
+      // rate (runs differ by about 10%); a longer follow-up in the same chat
+      // measures decode over a few hundred.
+      let followUp = await harness.ask(
+        "List ten details from the text, one short sentence each.", in: thread)
+      let followUpStats = followUp.reply?.stats
+      values["longDecodeTokPerSec"] = followUpStats?.decodeTokensPerSecond ?? -1
+      values["longOutputTokens"] = followUpStats?.outputTokens ?? -1
+      values["longReplyAccepted"] = followUp.accepted
+      values["footprintAfterFollowUpGB"] = Double(MemoryProbe.footprintBytes()) / 1e9
+      values["thermalStateAfterFollowUp"] = ProcessInfo.processInfo.thermalState.rawValue
+      harness.record("calibration_\(model.rawValue)_\(window)", values, in: self)
+      XCTAssertTrue(followUp.accepted, appState.generationError ?? "")
     }
   }
 
