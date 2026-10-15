@@ -16,11 +16,16 @@ MobileBuildMCP is configured with the `device` workflow only.
    the whole run. A lock makes Xcode stall ("device is locked") and makes UI
    tests fail with "Timed out while enabling automation mode". For long
    suites, ask the user to set Auto-Lock to Never.
-2. The device comes from `deviceId` in the git-ignored
+2. For `ui` and `screenshots`: Settings → Developer → Enable UI Automation is
+   on (it asks for the passcode once). Otherwise XCUITest waits 60 s for a
+   passcode prompt on the phone and fails with "Timed out while enabling
+   automation mode", so those suites can't run unattended. The device-test
+   suites (`inference`, `probes`, …) don't need it.
+3. The device comes from `deviceId` in the git-ignored
    `.mobilebuildmcp/config.yaml` (copy `config.example.yaml`), or
    `DEVICE_ID=<udid>`. `xcrun devicectl list devices` shows whether it's
    connected.
-3. Don't edit files in the target folders (`Agello*/`) while a run is
+4. Don't edit files in the target folders (`Agello*/`) while a run is
    building: stage changes elsewhere and apply them after the run. Files
    outside them (docs, `.claude/`, `scripts/`) are safe to edit.
 
