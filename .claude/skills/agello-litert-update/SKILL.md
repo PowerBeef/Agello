@@ -159,6 +159,15 @@ nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
   while it points at the local build. Then run the `PLATFORM=mac` suites;
   the app ships Google's binary until the source build has had an iPhone run
   and the user decides how to host it.
+- **Shipping it:** `agello/release-xcframework.sh <tag>` on the fork (a dry run
+  without `--publish`; publishing needs the user's OK), then
+  `REF=<commit> TAG=<tag> Vendor/use-release-litert.sh` here. `BUILD.md` on the
+  fork covers the release, the third-party notices (for `NOTICE`) and the
+  privacy manifest check (no new required-reason categories as of 2026-10-15).
+- **Build provenance:** `litert_lm_get_build_info()` (our builds only) names
+  the commits, flags and a build id; `EngineCache` keys its folders by that id,
+  so switching between Google's binary and ours needs no cache juggling (the
+  other build's folders are deleted at the next load).
 - **Measuring:** `tools/agello-bench` on `agello` (build it against an arm
   with `LITERTLM_PACKAGE=<checkout> swift build -c release --scratch-path
   .build-<arm>`), ABAB runs, `compare.py` for changes with confidence

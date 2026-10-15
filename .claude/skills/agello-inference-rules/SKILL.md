@@ -66,7 +66,9 @@ and the simulator can't catch any of them.
   `embeddingDirectory()` for EmbeddingGemma, `EngineCache.disabled` for
   one-off engines like the benchmark. Never hand an engine the cache root:
   LiteRT-LM keeps a 2.2 GB weight copy per context size in one file and never
-  trims it (probe 14).
+  trims it (probe 14). LiteRT-LM's cache keys ignore the runtime build, so
+  builds that report an id (ours) get folders of their own and another build's
+  folders are deleted (`EngineCache.runtimeBuildID`).
 - Settings changed just before sending must apply to that message
   (`scheduleApplyOptions`, then send).
 
