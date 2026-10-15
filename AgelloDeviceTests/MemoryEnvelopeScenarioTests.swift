@@ -50,6 +50,9 @@ final class MemoryEnvelopeScenarioTests: DeviceTestCase {
 
     // Measure the real limit with nothing loaded, then shrink it.
     await appState.engine.unload()
+    // What the app holds with no engine loaded. Before the test host stayed
+    // idle, its own warmed-up engine showed here as 1.4-1.9 GB (probe 16).
+    let leftover = MemoryProbe.breakdown()
     let realLimit = Double(MemoryProbe.footprintBytes() + MemoryProbe.availableBytes())
     let target = limitGB * 1e9
     try ballast.grow(toBytes: max(0, Int(realLimit - target)))
@@ -68,6 +71,7 @@ final class MemoryEnvelopeScenarioTests: DeviceTestCase {
         [
           "realLimitGB": realLimit / 1e9, "simulatedLimitGB": limitGB,
           "ballastGB": Double(ballast.bytes) / 1e9, "steps": steps,
+          "leftoverGB": leftover,
         ], in: self)
     }
     step("ballast")

@@ -89,6 +89,9 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// Human-readable trace of the most recent `load`: capabilities and every
   /// attempt on the backend ladder with its outcome (read by the device harness).
   private(set) var loadLog: [String] = []
+  /// How the last engine's memory came back after unloading; each `load`
+  /// starts its `loadLog` with it.
+  private(set) var lastUnload: String?
   /// Estimated tokens the conversation will prefill before its first send
   /// (preamble + replayed history). `getTokenCount()` reads 0 until then.
   private var pendingSeedTokens = ContextBudget.preambleTokens
@@ -147,13 +150,13 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       throw ChatError.modelFileMissing
     }
 
-    unloadLocked()
+    unloadAndRecord()
     var plan = InferencePlanner.resolve(options: options, model: spec.id, memoryBytes: memoryBytes)
 
     // Introspect the model file (cheap, no engine needed) and intersect the
     // plan with real capabilities: MTP support, thinking, modalities, and
     // the model's context / visual-token limits.
-    loadLog = []
+    loadLog = lastUnload.map { [$0] } ?? []
     if let caps = Self.inspect(modelURL: modelURL) {
       capabilities = caps
       plan = InferencePlanner.applyCapabilities(caps, to: plan)
@@ -223,7 +226,22 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   }
 
   func unload() async {
+    unloadAndRecord()
+  }
+
+  /// Frees the engine and notes, for the next `load`'s log, how much memory
+  /// came back and whether the `Engine` object itself was released. The
+  /// iPhone returns the memory at once; probe 16 checks that none stays.
+  private func unloadAndRecord() {
+    guard engine != nil else { return }
+    weak var released = engine
+    let before = MemoryProbe.footprintBytes()
     unloadLocked()
+    let after = MemoryProbe.footprintBytes()
+    lastUnload = String(
+      format: "unload: footprint %.2f -> %.2f GB, engine object %@", Double(before) / 1e9,
+      Double(after) / 1e9, released == nil ? "freed" : "still referenced")
+    Log.engine.info("\(self.lastUnload ?? "", privacy: .public)")
   }
 
   private func unloadLocked() {

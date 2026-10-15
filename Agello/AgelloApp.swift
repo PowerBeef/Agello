@@ -20,6 +20,12 @@ struct AgelloApp: App {
   @State private var appState: AppState
   @Environment(\.scenePhase) private var scenePhase
   let container: ModelContainer
+  /// Hosting the unit and device test bundles, which build their own
+  /// `AppState`: the app shows nothing, so it doesn't warm up a second engine
+  /// (1.1-1.9 GB that device runs measured as memory left after unloading,
+  /// probe 16), answer the share inbox or open chats while tests run. UI tests
+  /// launch the app normally, without this variable.
+  private let hostsTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
   init() {
     // `--mock-engine` launch arg (or AGELLO_MOCK_ENGINE=1 env) runs the scripted
@@ -47,11 +53,15 @@ struct AgelloApp: App {
 
   var body: some Scene {
     WindowGroup {
-      ContentView()
-        .environment(appState)
-        // One tuned dark theme (see Theme).
-        .preferredColorScheme(.dark)
-        .tint(Theme.Brand.glacier)
+      if hostsTests {
+        Color.clear
+      } else {
+        ContentView()
+          .environment(appState)
+          // One tuned dark theme (see Theme).
+          .preferredColorScheme(.dark)
+          .tint(Theme.Brand.glacier)
+      }
     }
     .modelContainer(container)
     .onChange(of: scenePhase) { _, phase in
