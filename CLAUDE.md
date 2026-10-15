@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Run tests with `scripts/device-harness.sh` (below). The iPhone must be connected and unlocked for the whole run.
 - Don't edit files in the target folders (`Agello*/`) while a harness run is building: stage changes elsewhere and apply them after the run.
 - Commit after each verified chunk, directly on `main`. Push only when asked.
+- Disk space on this Mac is limited. After a run, delete the scratch it made (one-off `build/device-harness-*` folders once their numbers are recorded, engine caches written beside models in `~/Models/agello/`, stale bench builds), and check `df -h /` before large builds.
 - Use the project skills in `.claude/skills/` before the work they cover:
   - `agello-device-testing`: running and reading the harness, writing scenarios, known failures.
   - `agello-inference-rules`: before changing the engine, `AppState` generation, budgets, or helpers.
