@@ -34,6 +34,28 @@ struct DeviceProfile: Sendable, Equatable {
     availableBytes > 0 && availableBytes < lowMemoryStopBytes
   }
 
+  /// E4B's KV cache per token of context (24 INT8 caches): 0.47 GB at 16K.
+  static let kvBytesPerToken: UInt64 = 28_672
+
+  /// Whether a helper (title, memory, search planning, summary, dictation)
+  /// runs beside the chat's conversation instead of replacing it.
+  /// - Google's LiteRT-LM (v0.18.0) wipes the conversation whenever another
+  ///   one runs, so the chat must be reseeded.
+  /// - Ours (a runtime with a build id) keeps it: the runtime copies its KV
+  ///   cache aside while the helper runs and restores it in about 0.1 s
+  ///   (2.9 s to reseed 8K tokens of history on the Mac). Measured on the Mac
+  ///   at 16K: +0.94 GB at the peak, about twice the cache, so it needs that
+  ///   much memory above ``lowMemoryStopBytes``.
+  /// `availableBytes` 0 means not reported (the Mac): keep.
+  static func keepsConversationAcrossHelpers(
+    runtimeKeepsSessions: Bool, maxNumTokens: Int, availableBytes: UInt64
+  ) -> Bool {
+    guard runtimeKeepsSessions else { return false }
+    guard availableBytes > 0 else { return true }
+    let peak = 2 * kvBytesPerToken * UInt64(max(0, maxNumTokens))
+    return availableBytes >= peak + lowMemoryStopBytes
+  }
+
   /// Everyday chat context. Calibrated on iPhone 17 Pro: a larger KV cache
   /// slows *every* reply (E4B decode 43 → 38 → 34 → 27 tok/s at 4K → 8K →
   /// 16K → 32K), so chat stays at 8K and long inputs use ``maxContextTokens``.

@@ -228,6 +228,15 @@ final class AppState {
     return await task.value
   }
 
+  /// After a helper: unless it kept the engine's conversation (our runtime,
+  /// memory allowing), it left an empty one, so the chat is rebuilt from
+  /// history on its next message.
+  private func afterHelper() async {
+    guard await !engine.lastHelperKeptConversation else { return }
+    conversationThreadID = nil
+    conversationIsEmpty = true
+  }
+
   /// Load the active model if needed. Returns true when ready to generate.
   @discardableResult
   func ensureEngineLoaded() async -> Bool {
@@ -696,10 +705,7 @@ final class AppState {
         Log.engine.error("title helper failed: \(String(describing: error), privacy: .public)")
         data = nil
       }
-      // The helper replaced the engine's conversation with an empty one:
-      // rebuild this chat from history on its next message.
-      self.conversationThreadID = nil
-      self.conversationIsEmpty = true
+      await self.afterHelper()
       return data
     }
     guard let output, let title = HelperTasks.parseTitle(output), thread.title == provisional
@@ -815,16 +821,14 @@ final class AppState {
       guard await self.loadIfNeeded() else {
         return .failure(ChatError.engineNotReady)
       }
-      defer {
-        // The transcription replaced the engine's conversation.
-        self.conversationThreadID = nil
-        self.conversationIsEmpty = true
-      }
+      let result: Result<String, Error>
       do {
-        return .success(try await self.engine.transcribe(audioFileURL: audioFileURL))
+        result = .success(try await self.engine.transcribe(audioFileURL: audioFileURL))
       } catch {
-        return .failure(error)
+        result = .failure(error)
       }
+      await self.afterHelper()
+      return result
     }
     switch result {
     case .success(let text):
@@ -860,13 +864,11 @@ final class AppState {
       preparingStatus = String(localized: "Planning the search…")
       let prompt = WebContext.queryPrompt(question: question, history: history)
       let output: Data? = await serialized {
-        defer {
-          self.conversationThreadID = nil
-          self.conversationIsEmpty = true
-        }
-        return try? await self.engine.helperJSON(
+        let output = try? await self.engine.helperJSON(
           prompt: prompt, schemaJSON: WebContext.querySchema,
           maxOutputTokens: WebContext.queryMaxOutputTokens)
+        await self.afterHelper()
+        return output
       }
       let planned = output.map(WebContext.parseQueries) ?? []
       if !planned.isEmpty { queries = planned }
@@ -993,12 +995,7 @@ final class AppState {
       subtitle: String(localized: "Reading \(count) sections"))
     preparingStatus = "Reading \(name)…"
     let outputs: [String]? = await serialized {
-      defer {
-        // The helper left the engine's conversation empty.
-        self.conversationThreadID = nil
-        self.conversationIsEmpty = true
-      }
-      return try? await self.engine.helperTexts(
+      let outputs = try? await self.engine.helperTexts(
         prompts, maxOutputTokens: FileContext.sectionSummaryTokens
       ) { done in
         await MainActor.run {
@@ -1006,6 +1003,8 @@ final class AppState {
           BackgroundWork.shared.sectionProgress(completed: done, total: count)
         }
       }
+      await self.afterHelper()
+      return outputs
     }
     guard let outputs, !Task.isCancelled, outputs.count == sections.count else { return nil }
     let summary = FileContext.joinSummaries(outputs, sections: sections)
@@ -1233,14 +1232,11 @@ final class AppState {
     let prompt = HelperTasks.memoryPrompt(user: message, existing: all)
     let output: Data? = await serialized {
       guard !self.isGenerating, await self.engine.isLoaded else { return nil }
-      defer {
-        // The helper left the engine's conversation empty.
-        self.conversationThreadID = nil
-        self.conversationIsEmpty = true
-      }
-      return try? await self.engine.helperJSON(
+      let output = try? await self.engine.helperJSON(
         prompt: prompt, schemaJSON: HelperTasks.memorySchema,
         maxOutputTokens: HelperTasks.memoryMaxOutputTokens)
+      await self.afterHelper()
+      return output
     }
     guard let output else { return }
     let learned = HelperTasks.newMemories(HelperTasks.parseMemories(output), existing: all)

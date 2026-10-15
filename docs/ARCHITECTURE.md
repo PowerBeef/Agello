@@ -56,7 +56,7 @@ flowchart TB
 1. Apply any setting changed since the last message (the **Think** toggle applies to *this* message).
 2. Build file context: whole files, cited passages, or a cached summary.
 3. Run a web search, if asked.
-4. Bind the native conversation to this chat, reseeding it from history if another chat, a helper, or a cancellation used it last.
+4. Bind the native conversation to this chat, reseeding it from history if another chat or a cancellation used it last, or a helper that didn't keep it (Google's runtime always wipes it; ours keeps it when memory allows).
 5. Fit the context: estimate the message, trim older turns if needed, or reject a message that can never fit.
 6. Save the user turn and a placeholder reply, then stream tokens into it.
 7. Afterwards: learn memories, write a title after the first exchange, update Spotlight.

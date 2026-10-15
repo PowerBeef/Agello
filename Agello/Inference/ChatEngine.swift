@@ -38,21 +38,27 @@ protocol ChatEngineProtocol: Sendable {
   ) -> AsyncThrowingStream<ChatEvent, Error>
   func cancel() async
   /// Run a structured helper prompt (JSON-schema constrained) in a throwaway
-  /// conversation. This wipes the main conversation's context (LiteRT-LM keeps
-  /// one live conversation per engine), which is replaced by an empty one:
-  /// the caller must re-seed history before the next send.
+  /// conversation. Google's LiteRT-LM keeps one live conversation per engine,
+  /// so the helper wipes the main one, which is replaced by an empty one: the
+  /// caller must re-seed history before the next send. Our runtime keeps it
+  /// when memory allows (``lastHelperKeptConversation``).
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data
   /// Run plain-text helper prompts one after another (e.g. summarizing a
   /// long document section by section), each in a throwaway conversation.
-  /// Like ``helperJSON``, this leaves the main conversation empty.
+  /// Like ``helperJSON``, this leaves the main conversation empty unless kept.
   /// `progress` receives the number of prompts completed. Stops early (with
   /// the outputs so far) when the calling task is cancelled.
   func helperTexts(
     _ prompts: [String], maxOutputTokens: Int, progress: @Sendable (Int) async -> Void
   ) async throws -> [String]
   /// Transcribe a recording (dictation) in a throwaway conversation with
-  /// greedy decoding. Leaves the main conversation empty, like the helpers.
+  /// greedy decoding. Leaves the main conversation empty unless kept, like
+  /// the helpers.
   func transcribe(audioFileURL: URL) async throws -> String
+  /// Whether the last helper (``helperJSON``, ``helperTexts``, ``transcribe``)
+  /// finished with the main conversation as it was. False when it was replaced
+  /// by an empty one, or the helper failed: reseed before the next send.
+  var lastHelperKeptConversation: Bool { get async }
 }
 
 // MARK: - Live engine
@@ -76,6 +82,10 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// "CANCELLED"), so a cancelled generation always ends as
   /// ``ChatError/generationCancelled`` and the caller must reseed.
   private var cancelRequested = false
+  private(set) var lastHelperKeptConversation = false
+  /// The helper conversation running now, so ``cancel()`` stops it rather
+  /// than the kept main conversation.
+  private var helperConversation: Conversation?
   /// Human-readable trace of the most recent `load`: capabilities and every
   /// attempt on the backend ladder with its outcome (read by the device harness).
   private(set) var loadLog: [String] = []
@@ -411,12 +421,43 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 
   // MARK: Helpers
 
+  /// Before a helper: whether the main conversation stays
+  /// (``DeviceProfile/keepsConversationAcrossHelpers``). If not, it's released
+  /// first, so our runtime doesn't copy its KV cache aside.
+  private func beginHelper() -> Bool {
+    lastHelperKeptConversation = false
+    let keep =
+      conversation != nil
+      && DeviceProfile.keepsConversationAcrossHelpers(
+        runtimeKeepsSessions: EngineCache.runtimeBuildID != nil,
+        maxNumTokens: resolved?.maxNumTokens ?? 0, availableBytes: MemoryProbe.availableBytes())
+    if !keep { conversation = nil }
+    return keep
+  }
+
+  /// After a helper: the main conversation as it was, or an empty one.
+  private func endHelper(
+    keep: Bool, engine: Engine, resolved: ResolvedInference, options: InferenceOptions
+  ) async throws {
+    helperConversation = nil
+    lastHelperKeptConversation = keep
+    guard !keep else { return }
+    conversation = try await Self.makeConversation(
+      engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
+      history: [])
+    pendingSeedTokens = preambleTokens
+  }
+
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data {
     guard let engine, let resolved, let options else { throw ChatError.engineNotReady }
     guard !generating else { throw ChatError.underlying(message: "Busy generating.") }
     generating = true
-    defer { generating = false }
+    defer {
+      generating = false
+      helperConversation = nil
+    }
     let started = Date()
+    let keep = beginHelper()
     let output: String
     do {
       // Speculative decoding (MTP) breaks grammar-constrained decoding on
@@ -424,19 +465,15 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       // "compute_mask() called after stop"), so helpers decode plainly.
       let helper = try await engine.createConversation(
         with: ConversationConfig(enableResponseFormat: true, enableSpeculativeDecoding: false))
+      helperConversation = helper
       let reply = try await helper.sendMessage(
         LiteRTLM.Message(prompt), maxOutputTokens: maxOutputTokens,
         responseFormat: try .json(schema: schemaJSON))
       output = reply.toString
     }
-    // The helper wiped the main conversation: replace it with an empty one.
-    conversation = nil
-    conversation = try await Self.makeConversation(
-      engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
-      history: [])
-    pendingSeedTokens = preambleTokens
+    try await endHelper(keep: keep, engine: engine, resolved: resolved, options: options)
     Log.engine.info(
-      "helper: \(output.utf8.count) bytes in \(Date().timeIntervalSince(started), format: .fixed(precision: 2))s")
+      "helper: \(output.utf8.count) bytes in \(Date().timeIntervalSince(started), format: .fixed(precision: 2))s, kept \(keep)")
     return Data(output.utf8)
   }
 
@@ -446,27 +483,28 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     guard let engine, let resolved, let options else { throw ChatError.engineNotReady }
     guard !generating else { throw ChatError.underlying(message: "Busy generating.") }
     generating = true
-    defer { generating = false }
+    defer {
+      generating = false
+      helperConversation = nil
+    }
     let started = Date()
+    let keep = beginHelper()
     var outputs: [String] = []
     for prompt in prompts {
       if Task.isCancelled { break }
       // No grammar here, so speculative decoding stays on for speed.
-      conversation = nil
+      helperConversation = nil
       let helper = try await engine.createConversation(
         with: ConversationConfig(enableSpeculativeDecoding: resolved.enableSpeculativeDecoding))
+      helperConversation = helper
       let reply = try await helper.sendMessage(
         LiteRTLM.Message(prompt), maxOutputTokens: maxOutputTokens)
       outputs.append(reply.toString.trimmingCharacters(in: .whitespacesAndNewlines))
       await progress(outputs.count)
     }
-    conversation = nil
-    conversation = try await Self.makeConversation(
-      engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
-      history: [])
-    pendingSeedTokens = preambleTokens
+    try await endHelper(keep: keep, engine: engine, resolved: resolved, options: options)
     Log.engine.info(
-      "helper texts: \(outputs.count)/\(prompts.count) in \(Date().timeIntervalSince(started), format: .fixed(precision: 1))s")
+      "helper texts: \(outputs.count)/\(prompts.count) in \(Date().timeIntervalSince(started), format: .fixed(precision: 1))s, kept \(keep)")
     return outputs
   }
 
@@ -477,23 +515,24 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
     guard !generating else { throw ChatError.underlying(message: "Busy generating.") }
     generating = true
-    defer { generating = false }
+    defer {
+      generating = false
+      helperConversation = nil
+    }
     let started = Date()
-    conversation = nil
+    let keep = beginHelper()
     let helper = try await engine.createConversation(
       with: ConversationConfig(
         samplerConfig: try SamplerConfig(topK: 1, topP: 1, temperature: 0),
         enableSpeculativeDecoding: resolved.enableSpeculativeDecoding))
+    helperConversation = helper
     let reply = try await helper.sendMessage(
       LiteRTLM.Message(contents: [
         .text(Dictation.instruction), .audioFile(audioFileURL.path),
       ]), maxOutputTokens: Dictation.maxOutputTokens)
-    conversation = try await Self.makeConversation(
-      engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
-      history: [])
-    pendingSeedTokens = preambleTokens
+    try await endHelper(keep: keep, engine: engine, resolved: resolved, options: options)
     Log.engine.info(
-      "transcribe: \(reply.toString.count) chars in \(Date().timeIntervalSince(started), format: .fixed(precision: 2))s")
+      "transcribe: \(reply.toString.count) chars in \(Date().timeIntervalSince(started), format: .fixed(precision: 2))s, kept \(keep)")
     return Dictation.clean(reply.toString)
   }
 
@@ -685,7 +724,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     Log.generation.info("cancel requested (generating=\(self.generating))")
     guard generating else { return }
     cancelRequested = true
-    try? conversation?.cancel()
+    try? (helperConversation ?? conversation)?.cancel()
   }
 }
 
@@ -853,9 +892,14 @@ actor MockChatEngine: ChatEngineProtocol {
   private(set) var helperPrompts: [String] = []
   func setHelperResponse(_ json: String) { helperResponse = Data(json.utf8) }
   func setScript(_ text: String) { script = [ChatChunk(textDelta: text, thoughtDelta: nil)] }
+  /// Whether helpers keep the main conversation, as our runtime does (tests).
+  private(set) var helpersKeepConversation = false
+  func setHelpersKeepConversation(_ value: Bool) { helpersKeepConversation = value }
+  private(set) var lastHelperKeptConversation = false
 
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data {
     helperPrompts.append(prompt)
+    lastHelperKeptConversation = helpersKeepConversation
     return helperResponse
   }
 
@@ -866,6 +910,7 @@ actor MockChatEngine: ChatEngineProtocol {
 
   func transcribe(audioFileURL: URL) async throws -> String {
     transcribed.append(audioFileURL)
+    lastHelperKeptConversation = helpersKeepConversation
     return transcript
   }
 
@@ -881,6 +926,7 @@ actor MockChatEngine: ChatEngineProtocol {
       outputs.append("- Key point \(outputs.count + 1) of this part.")
       await progress(outputs.count)
     }
+    lastHelperKeptConversation = helpersKeepConversation
     return outputs
   }
 }

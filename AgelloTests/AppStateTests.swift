@@ -119,6 +119,19 @@ final class AppStateTests: XCTestCase {
     XCTAssertEqual(promptsAfter.count, 1)
   }
 
+  /// Our runtime keeps the chat's conversation across a helper (T3): the next
+  /// message continues it without replaying history.
+  func testHelperThatKeepsTheConversationNeedsNoRebuild() async {
+    await mock.setHelpersKeepConversation(true)
+    let thread = appState.newThread(in: context)
+    await appState.send(text: "Tell me about lighthouses", imageData: nil, audioFileURL: nil, in: thread)
+    XCTAssertEqual(thread.title, "Mock chat")
+    let reseedsBefore = await mock.reseedLog.count
+    await appState.send(text: "More", imageData: nil, audioFileURL: nil, in: thread)
+    let reseedsAfter = await mock.reseedLog.count
+    XCTAssertEqual(reseedsAfter, reseedsBefore)
+  }
+
   func testUserRenamedChatKeepsItsTitle() async {
     let thread = appState.newThread(in: context)
     thread.title = "My trip"

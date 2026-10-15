@@ -356,8 +356,10 @@ final class InferenceScenarioTests: DeviceTestCase {
     XCTAssertTrue(thread.turns.contains { $0.text == after.text } && !after.text.isEmpty)
   }
 
-  /// Helper task: a model-written title after the first exchange. The helper
-  /// wipes the engine's conversation, so the chat must be rebuilt intact.
+  /// Helper task: a model-written title after the first exchange. Google's
+  /// runtime wipes the engine's conversation (the chat is rebuilt from
+  /// history); ours keeps it (the next message reads only itself). Either
+  /// way the chat must stay intact.
   func test11_TitleAndContextAfterHelper() async throws {
     try await requireLoadedModel()
     let thread = harness.newThread()

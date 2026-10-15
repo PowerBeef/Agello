@@ -17,9 +17,21 @@ and the simulator can't catch any of them.
   benchmark, delete, helpers) one at a time. The actor is reentrant across its
   long awaits, so without it two loads interleave and hold two engines. Never
   call `serialized` from inside a serialized operation: that deadlocks.
-- LiteRT-LM keeps one live conversation per engine. `helperJSON`,
-  `helperTexts`, and `transcribe` create throwaway conversations and leave the
-  main one **empty**, so the caller must reseed history before the next send.
+- Google's LiteRT-LM keeps one live conversation per engine. `helperJSON`,
+  `helperTexts`, and `transcribe` create throwaway conversations, which wipe
+  the main one: the engine replaces it with an **empty** one, and the caller
+  must reseed history before the next send.
+- Our runtime (a build with a build id, `EngineCache.runtimeBuildID`) keeps
+  the main conversation: it copies its KV cache aside while the helper runs
+  and restores it on the next send (about 0.1 s, against 2.9 s to reseed 8K
+  tokens on the Mac). The peak costs about twice the cache, so the engine
+  keeps it only when that fits above `lowMemoryStopBytes`
+  (`DeviceProfile.keepsConversationAcrossHelpers`); otherwise it releases the
+  main conversation *before* the helper and leaves an empty one, as with
+  Google's. Callers ask `lastHelperKeptConversation` (`AppState.afterHelper`)
+  and unbind the chat only when it's false; a failed helper reports false.
+- While a helper runs, `cancel()` cancels the helper's conversation, never
+  the kept main one (a cancelled conversation rejects the next message).
 
 ## Context window (KV cache)
 
