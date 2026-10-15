@@ -97,7 +97,7 @@ Gemma 4 E4B on an iPhone 17 Pro (12 GB, iOS 27), GPU, with speculative decoding 
 | Web search answer (search, read 5 pages, rank, answer) | ~25 s |
 | Voice mode, first spoken sentence after you stop talking | ~1.2–1.5 s |
 | Dictation of a spoken sentence | ~1 s (word error rate 0–0.13, English and French) |
-| App memory footprint (8K context, vision and audio) | ~1.4–2.5 GB |
+| App memory footprint (8K context, vision and audio) | ~1.2–2.8 GB |
 
 For reference, Google reports 1,189 prefill and 25 decode tokens per second for E4B on the same GPU without speculative decoding.
 

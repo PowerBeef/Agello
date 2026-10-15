@@ -115,6 +115,16 @@ scripts/device-run.sh crashes pull            # copy them to build/device-run/cr
 - Axiom's `xclog` console capture is simulator-only, and `log collect` needs
   root for a physical device: use `logs` instead.
 
+## The test host
+
+Unit and device tests run inside the app, which shows only a black screen
+while it hosts them (`AgelloApp.hostsTests`, from `XCTestConfigurationFilePath`):
+the tests build their own `AppState`, and the app's own UI used to warm up a
+second E4B engine next to theirs. Device memory figures recorded before
+2026-10-15 (afternoon) include that engine, about 1.2 GB once it had loaded.
+Probe 16 (`test16_MemoryAfterUnload`) checks that nothing stays after an
+unload. UI tests launch the app normally and see its UI.
+
 ## Reading results
 
 Everything lands in `build/device-harness/` (`build/mac-harness/` on the Mac):
