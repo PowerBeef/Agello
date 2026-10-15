@@ -8,9 +8,10 @@ extension ProbeScenarioTests {
   /// copy of the GPU weights (2.2 GB for E4B) for every context size in one
   /// file: measured from an empty cache, 8K 2.20 GB (7.5 s load), 8K again
   /// 2.20 GB (0.8 s), 4K 4.40 GB, 16K 6.60 GB; MTP and vision added nothing.
-  /// `EngineCache` gives each context size its own folder and keeps the
-  /// `keptContextSizes` most recently used, so loading 8K, 4K, 16K, 8K leaves
-  /// two folders, each with one copy.
+  /// With Google's binary, `EngineCache` gives each context size its own
+  /// folder and keeps the `keptContextSizes` most recently used, so loading
+  /// 8K, 4K, 16K, 8K leaves two folders, each with one copy. Our build keys
+  /// the weights by content (T11): one folder and one copy for every size.
   func test14_WeightCacheGrowth() async throws {
     _ = try await harness.ensureDownloaded(ModelCatalog.e4b)
     await appState.engine.unload()

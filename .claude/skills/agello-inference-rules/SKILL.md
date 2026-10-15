@@ -75,13 +75,14 @@ and the simulator can't catch any of them.
   `updateConversationOptions`, which reseeds the conversation.
 - Engine-level `ExperimentalFlags` must be set before creating the engine.
 - Engine caches go through `EngineCache`: `directory(maxNumTokens:)` for any
-  E4B engine (one folder per context size, the two most recently used kept),
-  `embeddingDirectory()` for EmbeddingGemma, `EngineCache.disabled` for
-  one-off engines like the benchmark. Never hand an engine the cache root:
-  LiteRT-LM keeps a 2.2 GB weight copy per context size in one file and never
-  trims it (probe 14). LiteRT-LM's cache keys ignore the runtime build, so
-  builds that report an id (ours) get folders of their own and another build's
-  folders are deleted (`EngineCache.runtimeBuildID`).
+  E4B engine, `embeddingDirectory()` for EmbeddingGemma, `EngineCache.disabled`
+  for one-off engines like the benchmark. Never hand an engine the cache root.
+  Google's LiteRT-LM keeps a 2.2 GB weight copy per context size in one file
+  and never trims it (probe 14), so with it each size has a folder (the two
+  most recently used kept). Ours keys weights by content (T11): one folder,
+  `kv-all-<id>`, for every size. LiteRT-LM's cache keys ignore the runtime
+  build, so builds that report an id (ours) get folders of their own and
+  another build's folders are deleted (`EngineCache.runtimeBuildID`).
 - Settings changed just before sending must apply to that message
   (`scheduleApplyOptions`, then send).
 

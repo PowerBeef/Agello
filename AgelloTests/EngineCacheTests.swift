@@ -67,11 +67,13 @@ final class EngineCacheTests: XCTestCase {
 
   func testFolderNamesCarryTheBuild() {
     XCTAssertEqual(EngineCache.folder(maxNumTokens: 8_192, build: nil), "kv-8192")
-    XCTAssertEqual(EngineCache.folder(maxNumTokens: 8_192, build: "e07a401c74c2"), "kv-8192-e07a401c74c2")
+    XCTAssertEqual(EngineCache.folder(maxNumTokens: 8_192, build: "e07a401c74c2"), "kv-all-e07a401c74c2")
+    XCTAssertEqual(EngineCache.folder(maxNumTokens: 32_768, build: "e07a401c74c2"), "kv-all-e07a401c74c2")
     XCTAssertEqual(EngineCache.embeddingFolder(build: nil), "embedding")
     XCTAssertEqual(EngineCache.embeddingFolder(build: "dev"), "embedding-dev")
     XCTAssertNil(EngineCache.build(ofSizeFolder: "kv-8192"))
     XCTAssertEqual(EngineCache.build(ofSizeFolder: "kv-8192-e07a401c74c2"), "e07a401c74c2")
+    XCTAssertEqual(EngineCache.build(ofSizeFolder: "kv-all-e07a401c74c2"), "e07a401c74c2")
   }
 
   func testAnotherBuildsFoldersAreDeleted() {
@@ -95,6 +97,19 @@ final class EngineCacheTests: XCTestCase {
     XCTAssertEqual(Set(deleted), ["kv-8192-aaa", "embedding-aaa"])
   }
 
+  /// Our builds share one weight copy across sizes (T11): per-size folders
+  /// of the same build, from before, go.
+  func testOurBuildKeepsOneFolderForEverySize() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("EngineCacheTests-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+      at: root.appendingPathComponent("kv-8192-abc"), withIntermediateDirectories: true)
+    _ = try EngineCache.directory(maxNumTokens: 16_384, root: root, build: "abc")
+    let names = Set(try FileManager.default.contentsOfDirectory(atPath: root.path))
+    XCTAssertEqual(names, ["kv-all-abc"])
+  }
+
   func testDirectoryForABuildReplacesAnotherBuildsCaches() throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("EngineCacheTests-\(UUID().uuidString)", isDirectory: true)
@@ -104,11 +119,12 @@ final class EngineCacheTests: XCTestCase {
     let dir = try EngineCache.directory(maxNumTokens: 8_192, root: root, build: "abc")
     let embedding = try EngineCache.embeddingDirectory(root: root, build: "abc")
 
-    XCTAssertEqual(dir, root.appendingPathComponent("kv-8192-abc").path)
+    XCTAssertEqual(dir, root.appendingPathComponent("kv-all-abc").path)
     XCTAssertEqual(embedding, root.appendingPathComponent("embedding-abc").path)
-    // Google's embedder folder goes at the next context-size load.
-    _ = try EngineCache.directory(maxNumTokens: 4_096, root: root, build: "abc")
+    // Google's embedder folder goes at the next load; every size shares our folder.
+    let other = try EngineCache.directory(maxNumTokens: 4_096, root: root, build: "abc")
+    XCTAssertEqual(other, dir)
     let names = Set(try FileManager.default.contentsOfDirectory(atPath: root.path))
-    XCTAssertEqual(names, ["kv-4096-abc", "kv-8192-abc", "embedding-abc"])
+    XCTAssertEqual(names, ["kv-all-abc", "embedding-abc"])
   }
 }

@@ -4,18 +4,20 @@ import Foundation
 /// Where LiteRT-LM keeps compiled GPU programs and GPU-format weights, kept
 /// to a bounded size.
 ///
-/// LiteRT-LM's GPU weight cache stores a full copy of the model's weights
-/// (2.2 GB for E4B) for every context size an engine is created with, in one
-/// file it never trims while the model file is unchanged (probe 14). So each
-/// context size gets its own folder, and only the most recently used ones
-/// stay. A cached size loads in under a second; an evicted one recompiles
-/// once (~7.5 s for E4B).
+/// Google's LiteRT-LM stores a full copy of the model's GPU weights (2.2 GB
+/// for E4B) for every context size an engine is created with, in one file it
+/// never trims while the model file is unchanged (probe 14). So with Google's
+/// binary each context size gets its own folder, and only the most recently
+/// used ones stay. A cached size loads in under a second; an evicted one
+/// recompiles once (~7.5 s for E4B).
 ///
 /// LiteRT-LM's cache keys ignore which runtime build wrote them, and a program
 /// cache from another build can't be trusted. Builds that report a build id
-/// (ours, `litert_lm_get_build_info`) get folders of their own
-/// (`kv-8192-<id>`, `embedding-<id>`); Google's keep the plain names. A
-/// different build's folders are deleted on the next load.
+/// (ours, `litert_lm_get_build_info`) get folders of their own; a different
+/// build's folders are deleted on the next load. Ours key the weights by
+/// content, so every context size shares one copy (Mac: 2.2 GB for 4K, 8K
+/// and 16K, a new size loads in 1.2–1.4 s): one folder, `kv-all-<id>`, and
+/// `embedding-<id>`. Google's keep `kv-8192` and `embedding`.
 enum EngineCache {
   /// Context sizes whose caches stay: the current one and the last other.
   static let keptContextSizes = 2
@@ -28,14 +30,15 @@ enum EngineCache {
   static let runtimeBuildID: String? = runtimeBuildInfo()?["build_id"]
 
   static func folder(maxNumTokens: Int, build: String? = runtimeBuildID) -> String {
-    build.map { "kv-\(maxNumTokens)-\($0)" } ?? "kv-\(maxNumTokens)"
+    build.map { "kv-all-\($0)" } ?? "kv-\(maxNumTokens)"
   }
 
   static func embeddingFolder(build: String? = runtimeBuildID) -> String {
     build.map { "\(embeddingFolder)-\($0)" } ?? embeddingFolder
   }
 
-  /// The build a context-size folder belongs to: nil for `kv-8192`, "abc" for `kv-8192-abc`.
+  /// The build a context-size folder belongs to: nil for `kv-8192`, "abc" for `kv-all-abc`
+  /// (and `kv-8192-abc`, from before shared weights).
   static func build(ofSizeFolder name: String) -> String? {
     let parts = name.split(separator: "-", maxSplits: 2)
     return parts.count == 3 ? String(parts[2]) : nil
@@ -93,7 +96,9 @@ enum EngineCache {
         name: url.lastPathComponent, isDirectory: values?.isDirectory ?? false,
         modified: values?.contentModificationDate ?? .distantPast)
     }
-    for name in entriesToDelete(entries, current: current, keep: keptContextSizes, build: build) {
+    // Our builds keep a single folder for every size.
+    let keep = build == nil ? keptContextSizes : 1
+    for name in entriesToDelete(entries, current: current, keep: keep, build: build) {
       do {
         try files.removeItem(at: root.appendingPathComponent(name))
         Log.engine.info("engine cache: removed \(name, privacy: .public)")
