@@ -109,12 +109,20 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
 - **Swift wrapper patches** (`swift/`) are commits on the fork's `agello`
   branch; the app vendors that branch pinned to a commit
   (`REF=<commit> ./Vendor/refresh-litert-lm.sh`, `PowerBeef/agello-litert-lm` by
-  default). Current patches (as of 2026-10-14, commit `7c4ee32d`):
+  default). Current patches (as of 2026-10-15, commit `85b1a776`):
   1. `Conversation.handleToolCalls`: a failed tool call (an invented tool
      name, arguments that don't decode, a tool that throws) is answered with
      an `error` tool response instead of throwing `toolExecutionError`, which
      ended the reply. Probe 15 (`test15_FailingToolCallKeepsTheReply`)
      checks it. Worth offering upstream as an issue, with the user's go-ahead.
+  2. `StreamContext` holds its conversation weakly. Held strongly, the final
+     stream callback could release the last reference: `deinit` then deleted
+     the native conversation on LiteRT-LM's callback thread, which waited for
+     the task running that callback until the 10-minute timeout (probe 9 waited
+     600 s; a thread sample shows the chain). Releasing on another queue isn't
+     enough: the deletion then overlaps the next conversation, which also
+     stalled v0.18.0. Probe 9 asserts every step under 60 s. Also an upstream
+     issue candidate.
   Each patched file carries a modification notice (Apache 2.0, section 4),
   and `NOTICE` lists the change.
 - **C++ runtime patches** reach the app only through a rebuilt

@@ -2,7 +2,7 @@
 
 `Vendor/LiteRT-LM` is a pruned copy of LiteRT-LM **v0.18.0** from our fork,
 https://github.com/PowerBeef/agello-litert-lm, branch `agello`, at commit
-**7c4ee32d** (v0.18.0 plus the patches below). It contains only what the Xcode
+**85b1a776** (v0.18.0 plus the patches below). It contains only what the Xcode
 build needs:
 
 - `Package.swift` (pins Google's `CLiteRTLM.xcframework.zip` release binary, checksummed)
@@ -15,6 +15,12 @@ build needs:
    invented, arguments that don't decode, or a tool that throws) is answered
    with an `error` tool response the model can read, instead of throwing
    `toolExecutionError` and ending the reply. Probe 15 checks it on device.
+2. `swift/Conversation.swift`: a stream holds its conversation weakly. Held
+   strongly, a conversation the app had already dropped (a stream abandoned
+   early, or a conversation replaced while its cancelled stream was finishing)
+   was released inside LiteRT-LM's final stream callback, and deleting it there
+   waited for the very task running that callback: the engine stalled until
+   LiteRT-LM's 10-minute timeout. Probe 9 checks it.
 
 ## Why vendored instead of a remote SPM dependency?
 

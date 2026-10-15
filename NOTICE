@@ -9,7 +9,8 @@ This product includes software developed by Google LLC:
   Licensed under the Apache License, Version 2.0
   https://github.com/google-ai-edge/LiteRT-LM
   Modified (swift/Conversation.swift): a failed tool call is answered with
-  an error response instead of throwing; from
+  an error response instead of throwing, and a stream holds its conversation
+  weakly (a deadlock fix); from
   https://github.com/PowerBeef/agello-litert-lm/tree/agello
 
 This product includes the following Swift packages (resolved via Swift

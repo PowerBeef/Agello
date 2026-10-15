@@ -416,6 +416,7 @@ final class ProbeScenarioTests: DeviceTestCase {
           "total": String(format: "%.2f", timing.total),
         ])
         harness.record("probe09_voiceTurn", ["results": results], in: self)
+        XCTAssertLessThan(timing.total, 60, "\(mode) \(language) took \(timing.total) s: a stalled engine?")
       }
     }
     // (B) Re-reading history: 8 short text turns, then a short message.
@@ -423,6 +424,12 @@ final class ProbeScenarioTests: DeviceTestCase {
     harness.record(
       "probe09_voiceTurn",
       ["results": results, "reseed8TurnsTTFT": reseed.0, "freshTTFT": reseed.1], in: self)
+    // `timeReseed` abandons its first stream after one chunk. When that stream's final callback
+    // released the last reference to its conversation, the native delete waited on the task
+    // running the callback, and the next conversation waited out LiteRT-LM's 10-minute timeout
+    // (fixed in the Swift wrapper: a stream holds its conversation weakly).
+    XCTAssertLessThan(reseed.0, 60, "reseeded first token took \(reseed.0) s: a stalled engine?")
+    XCTAssertLessThan(reseed.1, 60, "fresh first token took \(reseed.1) s: a stalled engine?")
   }
 
   struct VoiceTiming: Sendable {
