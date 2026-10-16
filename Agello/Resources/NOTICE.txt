@@ -1,0 +1,51 @@
+Agello
+Copyright 2026 Patrice Déry
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes software developed by Google LLC:
+
+  LiteRT-LM (Vendor/LiteRT-LM) — Copyright 2026 Google LLC
+  Licensed under the Apache License, Version 2.0
+  https://github.com/google-ai-edge/LiteRT-LM
+  Modified (swift/Conversation.swift, swift/ConversationStream.swift and
+  others): a failed tool call is answered with an error response instead of
+  throwing; a stream holds its conversation weakly (a deadlock fix); streams
+  are found by ID and end once (a use-after-free fix), stop their native work
+  when cancelled and cap their tool rounds; a tokenizer API and an embedding
+  input-overflow option; from
+  https://github.com/PowerBeef/agello-litert-lm/tree/agello
+
+This product includes the following Swift packages (resolved via Swift
+Package Manager, not stored in this repository):
+
+  swift-markdown — Copyright Apple Inc. and the Swift project authors
+  Licensed under the Apache License, Version 2.0
+  https://github.com/swiftlang/swift-markdown
+
+  swift-cmark (GitHub-flavored cmark) — Copyright (c) 2014, John MacFarlane
+  Licensed under the BSD 2-Clause License
+  https://github.com/swiftlang/swift-cmark
+
+  SwiftMath — Copyright (c) 2023 Computer Inspirations
+  Licensed under the MIT License
+  https://github.com/mgriebling/SwiftMath
+  Bundles math fonts with their own licenses (texts in SwiftMath's
+  mathFonts.bundle): Latin Modern Math and TeX Gyre Termes Math under the
+  GUST Font License; XITS Math, KpMath, Noto Sans Math, Fira Math,
+  Libertinus Math, Asana Math, Garamond Math, Euler Math and Lete Sans Math
+  under the SIL Open Font License 1.1.
+
+At runtime, the app downloads model weights that are not distributed
+with this repository:
+
+  Gemma 4 E4B (LiteRT-LM build by litert-community, based on
+  google/gemma-4-E4B-it), modified: the rotary-position computation is
+  rewritten to stay exact with 16-bit activations; weights unchanged
+  Licensed under the Apache License, Version 2.0
+  https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope
+  (original: https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm)
+
+  EmbeddingGemma 2 (LiteRT-LM build by litert-community)
+  Licensed under the Apache License, Version 2.0
+  https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm

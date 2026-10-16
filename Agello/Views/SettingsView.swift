@@ -18,6 +18,7 @@ struct SettingsView: View {
         youSection
         modelSection
         advancedSection
+        aboutSection
       }
       .themedList(Theme.Brand.glacier)
       .navigationTitle("Settings")
@@ -190,13 +191,38 @@ struct SettingsView: View {
       .themedRow()
       .accessibilityIdentifier("settings.advanced")
     } footer: {
-      VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-        Text("Performance, reasoning, sampling, voice and vision, the system prompt, and the benchmark.")
-        Text(appVersion)
-          .font(.caption2)
-          .frame(maxWidth: .infinity)
+      Text("Performance, reasoning, sampling, voice and vision, the system prompt, and the benchmark.")
+        .foregroundStyle(Theme.Text.tertiary)
+    }
+  }
+
+  /// Published from `docs/privacy.md` (GitHub Pages).
+  static let privacyPolicyURL = URL(string: "https://powerbeef.github.io/Agello/privacy")!
+
+  private var aboutSection: some View {
+    Section {
+      Link(destination: Self.privacyPolicyURL) {
+        RowLabel(
+          title: String(localized: "Privacy policy"), symbol: "hand.raised.fill",
+          tint: Theme.Brand.silver)
       }
-      .foregroundStyle(Theme.Text.tertiary)
+      .themedRow()
+      .accessibilityIdentifier("settings.privacy")
+      NavigationLink {
+        LicensesView()
+      } label: {
+        RowLabel(
+          title: String(localized: "Licenses"), symbol: "doc.text", tint: Theme.Brand.silver)
+      }
+      .themedRow()
+      .accessibilityIdentifier("settings.licenses")
+    } header: {
+      Text("About").eyebrowStyle()
+    } footer: {
+      Text(appVersion)
+        .font(.caption2)
+        .frame(maxWidth: .infinity)
+        .foregroundStyle(Theme.Text.tertiary)
     }
   }
 

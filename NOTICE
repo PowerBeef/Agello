@@ -30,6 +30,11 @@ Package Manager, not stored in this repository):
   SwiftMath — Copyright (c) 2023 Computer Inspirations
   Licensed under the MIT License
   https://github.com/mgriebling/SwiftMath
+  Bundles math fonts with their own licenses (texts in SwiftMath's
+  mathFonts.bundle): Latin Modern Math and TeX Gyre Termes Math under the
+  GUST Font License; XITS Math, KpMath, Noto Sans Math, Fira Math,
+  Libertinus Math, Asana Math, Garamond Math, Euler Math and Lete Sans Math
+  under the SIL Open Font License 1.1.
 
 At runtime, the app downloads model weights that are not distributed
 with this repository:
