@@ -1,5 +1,7 @@
 import SwiftData
 import UIKit
+import UniformTypeIdentifiers
+import ImageIO
 import XCTest
 
 @testable import Agello
@@ -319,6 +321,30 @@ final class AppStateTests: XCTestCase {
     let image = try XCTUnwrap(UIImage(data: prepared))
     XCTAssertEqual(image.size.width * image.scale, 1568)
     XCTAssertEqual(image.size.height * image.scale, 1176)
+  }
+
+  /// Read with ImageIO at the target size (never decoded in full), with the photo's EXIF
+  /// orientation applied: a phone photo stored landscape with orientation 6 comes out portrait.
+  func testImagePreparerAppliesOrientationWithoutAFullDecode() throws {
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    let landscape = UIGraphicsImageRenderer(size: CGSize(width: 4000, height: 3000), format: format)
+      .image { context in
+        UIColor.red.setFill()
+        context.fill(CGRect(x: 0, y: 0, width: 4000, height: 3000))
+      }
+    let output = NSMutableData()
+    let destination = try XCTUnwrap(
+      CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil))
+    CGImageDestinationAddImage(
+      destination, try XCTUnwrap(landscape.cgImage),
+      [kCGImagePropertyOrientation: 6, kCGImageDestinationLossyCompressionQuality: 0.8]
+        as [CFString: Any] as CFDictionary)
+    XCTAssertTrue(CGImageDestinationFinalize(destination))
+    let prepared = try XCTUnwrap(ImagePreparer.prepare(output as Data))
+    let image = try XCTUnwrap(UIImage(data: prepared))
+    XCTAssertEqual(image.size.width * image.scale, 1176)
+    XCTAssertEqual(image.size.height * image.scale, 1568)
   }
 
   // MARK: - Attachment-only messages (audit #12)

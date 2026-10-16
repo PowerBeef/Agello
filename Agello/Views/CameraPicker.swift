@@ -27,7 +27,8 @@ struct CameraPicker: UIViewControllerRepresentable {
       _ picker: UIImagePickerController,
       didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
     ) {
-      if let image = info[.originalImage] as? UIImage, let data = image.jpegData(compressionQuality: 0.9) {
+      // Scaled before encoding: a full-size JPEG of the photo was encoded, then decoded again.
+      if let image = info[.originalImage] as? UIImage, let data = ImagePreparer.prepare(image) {
         parent.onCapture(data)
       }
       parent.dismiss()

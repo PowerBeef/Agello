@@ -614,14 +614,16 @@ struct ChatView: View {
     .onChange(of: photoItem) { _, item in
       Task {
         if let item, let data = try? await item.loadTransferable(type: Data.self) {
-          pendingImage = ImagePreparer.prepare(data) ?? data
+          pendingImage = await Task.detached(priority: .userInitiated) {
+            ImagePreparer.prepare(data) ?? data
+          }.value
         }
         photoItem = nil
       }
     }
     .fullScreenCover(isPresented: $showCamera) {
       CameraPicker { data in
-        pendingImage = ImagePreparer.prepare(data) ?? data
+        pendingImage = data
       }
       .ignoresSafeArea()
     }

@@ -1,4 +1,6 @@
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 /// Items shared to Agello from other apps. The share extension can't run
 /// the model or open the app, so it saves what was shared (and the user's
@@ -93,4 +95,42 @@ enum ShareInbox {
   /// Shared text up to this long is sent inline; longer text is attached
   /// as a document.
   static let inlineTextLimit = 600
+}
+
+/// Photos scaled down for the model and encoded as JPEG through ImageIO, which reads only what
+/// the requested size needs: a 48 MP photo decoded in full is 192 MB, more than the share
+/// extension may use, and a needless spike in the app. The photo's orientation is applied.
+/// Shared with the share extension.
+enum ImageDownsampler {
+  static func jpeg(from data: Data, maxPixels: Int, quality: Double = 0.85) -> Data? {
+    let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+    guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: maxPixels,
+      kCGImageSourceShouldCacheImmediately: true,
+    ]
+    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+    else { return nil }
+    return jpeg(image, quality: quality)
+  }
+
+  static func jpeg(_ image: CGImage, quality: Double = 0.85) -> Data? {
+    let output = NSMutableData()
+    guard
+      let destination = CGImageDestinationCreateWithData(
+        output, UTType.jpeg.identifier as CFString, 1, nil)
+    else { return nil }
+    CGImageDestinationAddImage(
+      destination, image, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
+    guard CGImageDestinationFinalize(destination) else { return nil }
+    return output as Data
+  }
+
+  /// Decodes one JPEG (a scanned page), for reading pages one at a time.
+  static func image(from data: Data) -> CGImage? {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+    return CGImageSourceCreateImageAtIndex(source, 0, nil)
+  }
 }

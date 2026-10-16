@@ -89,6 +89,8 @@ enum DocumentIngestor {
   static let maxFileBytes: Int64 = 50_000_000
   /// Pages without a text layer are recognized with Vision, up to this many.
   static let maxOCRPages = 60
+  /// Longest side, in pixels, of a page image read with OCR (about 200 dpi on letter paper).
+  static let ocrMaxDimension = 2_200
   /// Text kept from one file (about 1,250 passages); longer files are cut.
   static let maxExtractedCharacters = 2_000_000
 
@@ -142,6 +144,24 @@ enum DocumentIngestor {
       try Task.checkCancellation()
       pages.append(try await recognizeText(in: image))
     }
+    return try scanned(pages, name: name)
+  }
+
+  /// Scanned pages kept as JPEGs, decoded one at a time for OCR.
+  static func extract(scannedPages images: [Data], name: String) async throws -> ExtractedDocument {
+    var pages: [String] = []
+    for data in images.prefix(maxOCRPages) {
+      try Task.checkCancellation()
+      guard let image = ImageDownsampler.image(from: data) else {
+        pages.append("")
+        continue
+      }
+      pages.append(try await recognizeText(in: image))
+    }
+    return try scanned(pages, name: name)
+  }
+
+  private static func scanned(_ pages: [String], name: String) throws -> ExtractedDocument {
     let document = ExtractedDocument(name: name, kind: .scan, byteCount: 0, pages: pages)
     guard document.characterCount > 0 else { throw IngestionError.noText(name) }
     return document.prepared()
@@ -175,7 +195,7 @@ enum DocumentIngestor {
   private static func render(_ page: PDFPage) -> CGImage? {
     let bounds = page.bounds(for: .mediaBox)
     // ~200 dpi on letter-size pages: enough for OCR, bounded memory.
-    let scale = min(2.8, 2_200 / max(bounds.width, bounds.height))
+    let scale = min(2.8, CGFloat(ocrMaxDimension) / max(bounds.width, bounds.height))
     let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
     return page.thumbnail(of: size, for: .mediaBox).cgImage
   }

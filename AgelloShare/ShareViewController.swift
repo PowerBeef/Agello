@@ -47,7 +47,9 @@ final class ShareModel {
         symbol = "doc.richtext"
       } else if let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }) {
         let data = try await loadData(provider, type: .image)
-        guard let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.85) else {
+        // Scaled while decoding: a full-size photo decoded here can exceed the extension's
+        // memory limit.
+        guard let jpeg = ImageDownsampler.jpeg(from: data, maxPixels: 1_568) else {
           throw CocoaError(.fileReadCorruptFile)
         }
         imageData = jpeg
@@ -81,6 +83,7 @@ final class ShareModel {
     item.question = question
     do {
       try ShareInbox.save(item, file: file, fileData: imageData)
+      removeTemporaryCopy()
       phase = .saved
     } catch {
       phase = .failed(String(localized: "Couldn't save the item for Agello."))
@@ -88,7 +91,15 @@ final class ShareModel {
   }
 
   func close() {
+    removeTemporaryCopy()
     context?.completeRequest(returningItems: nil)
+  }
+
+  /// The copy ``loadFile(_:)`` made in the extension's temporary folder.
+  private func removeTemporaryCopy() {
+    guard let file, file.path.hasPrefix(FileManager.default.temporaryDirectory.path) else { return }
+    try? FileManager.default.removeItem(at: file)
+    self.file = nil
   }
 
   private func isDocument(_ provider: NSItemProvider) -> Bool {

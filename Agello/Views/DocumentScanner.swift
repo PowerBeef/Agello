@@ -4,7 +4,7 @@ import VisionKit
 /// The system document scanner (edge detection, perspective correction,
 /// multiple pages); returns the scanned pages as images.
 struct DocumentScanner: UIViewControllerRepresentable {
-  var onScan: ([CGImage]) -> Void
+  var onScan: ([Data]) -> Void
   @Environment(\.dismiss) private var dismiss
 
   static var isAvailable: Bool { VNDocumentCameraViewController.isSupported }
@@ -27,7 +27,13 @@ struct DocumentScanner: UIViewControllerRepresentable {
     func documentCameraViewController(
       _ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan
     ) {
-      let pages = (0..<scan.pageCount).compactMap { scan.imageOfPage(at: $0).cgImage }
+      // One page decoded at a time, kept as a JPEG at OCR resolution: holding every page at
+      // full size (about 48 MB each) until OCR finished could exhaust memory.
+      let pages: [Data] = (0..<scan.pageCount).compactMap { index in
+        autoreleasepool {
+          ImagePreparer.prepare(scan.imageOfPage(at: index), maxDimension: DocumentIngestor.ocrMaxDimension)
+        }
+      }
       parent.onScan(pages)
       parent.dismiss()
     }
