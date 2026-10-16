@@ -60,7 +60,8 @@ struct WebSearchTool: Tool {
     }
     ToolActivity.record(Self.name, summary: "Searched the web for “\(trimmed)”")
     let result = await handler(trimmed, limits.maxResultTokens)
-    return ["sources": ToolBudget.fit(result, limits)]
+    // Web pages can't close the tool response or open a turn.
+    return ["sources": ToolBudget.fit(PromptText.neutralized(result), limits)]
   }
 }
 

@@ -140,12 +140,13 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     return usedTokens() + ContextBudget.estimateTokens(text) + media
   }
 
-  /// The text a message is sent with (a prompt of its own when it's only an image or audio).
+  /// The text a message is sent with (a prompt of its own when it's only an image or audio), its
+  /// chat markers neutralized (``PromptText``).
   private static func promptText(_ text: String, _ imageData: Data?, _ audioFileURL: URL?) -> String {
     if imageData != nil, text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
       return "Describe this image in detail."
     }
-    if !text.isEmpty { return text }
+    if !text.isEmpty { return PromptText.neutralized(text) }
     return audioFileURL != nil ? "Listen to this voice message and respond to it." : "Hello!"
   }
 
@@ -348,12 +349,14 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     if options.webSearchTool { tools.append(WebSearchTool()) }
     let initial = history.suffix(maxReplayedTurns).map { turn -> LiteRTLM.Message in
       switch turn.role {
-      case .user: return LiteRTLM.Message(turn.text, role: .user)
-      case .model: return LiteRTLM.Message(turn.text, role: .model)
+      case .user: return LiteRTLM.Message(PromptText.neutralized(turn.text), role: .user)
+      case .model: return LiteRTLM.Message(PromptText.neutralized(turn.text), role: .model)
       }
     }
     let config = ConversationConfig(
-      systemMessage: options.systemPrompt.isEmpty ? nil : LiteRTLM.Message(options.systemPrompt),
+      // Memories and personalization are text from chats: no chat markers either.
+      systemMessage: options.systemPrompt.isEmpty
+        ? nil : LiteRTLM.Message(PromptText.neutralized(options.systemPrompt)),
       initialMessages: initial,
       tools: tools,
       samplerConfig: sampler,
@@ -423,7 +426,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     var budget = ContextBudget.historyBudget(
       maxNumTokens: window, input: alone, thinkingBudget: thinking, preamble: 0)
     var turnTokens: [Int] = []
-    for turn in history { turnTokens.append(await textTokens(turn.text)) }
+    for turn in history { turnTokens.append(await textTokens(PromptText.neutralized(turn.text))) }
     var trimmed: [(role: ChatRole, text: String)] = []
     var total = alone
     // The turns' own template tokens aren't counted per turn: check the rebuilt conversation and
@@ -564,7 +567,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       helperConversation = helper
       try checkHelperNotCancelled()
       let reply = try await helper.sendMessage(
-        LiteRTLM.Message(prompt), maxOutputTokens: maxOutputTokens,
+        LiteRTLM.Message(PromptText.neutralized(prompt)), maxOutputTokens: maxOutputTokens,
         responseFormat: try .json(schema: schemaJSON))
       output = reply.toString
     } catch {
@@ -601,7 +604,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         helperConversation = helper
         if cancelRequested { break }
         let reply = try await helper.sendMessage(
-          LiteRTLM.Message(prompt), maxOutputTokens: maxOutputTokens)
+          LiteRTLM.Message(PromptText.neutralized(prompt)), maxOutputTokens: maxOutputTokens)
         outputs.append(reply.toString.trimmingCharacters(in: .whitespacesAndNewlines))
         await progress(outputs.count)
       }
