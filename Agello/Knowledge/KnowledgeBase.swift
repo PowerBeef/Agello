@@ -33,6 +33,10 @@ final class KnowledgeBase {
   @ObservationIgnored private let useHashingEmbedder: Bool
   @ObservationIgnored private var embedder: (any TextEmbedder)?
   @ObservationIgnored private var indexTasks: [UUID: Task<Void, Never>] = [:]
+  /// Each indexed document's passages and their vectors, decoded once (with every vector decoded
+  /// again, a question over 1,800 passages cost 27 ms on a Mac before any searching).
+  @ObservationIgnored private var vectorCache:
+    [UUID: (indexedWith: String, chunks: [DocumentChunk], matrix: VectorIndex.Matrix)] = [:]
 
   init(store: ModelStore, useHashingEmbedder: Bool) {
     self.store = store
@@ -59,6 +63,12 @@ final class KnowledgeBase {
   /// Release the embedding model's memory (it reloads on next use).
   func unloadEmbedder() async {
     await embedder?.unload()
+  }
+
+  /// A memory warning: unload EmbeddingGemma unless it's indexing (it reloads on its next use).
+  func releaseMemory() async {
+    guard indexing.isEmpty else { return }
+    await unloadEmbedder()
   }
 
   /// Forget the embedder (its model was deleted): the next use downloads it again.
@@ -116,6 +126,7 @@ final class KnowledgeBase {
 
   func delete(_ document: ChatDocument) {
     indexTasks[document.id]?.cancel()
+    vectorCache[document.id] = nil
     modelContext?.delete(document)
     try? modelContext?.save()
   }
@@ -151,6 +162,7 @@ final class KnowledgeBase {
         }
         for (chunk, vector) in zip(chunks, vectors) { chunk.embedding = VectorIndex.encode(vector) }
         document.indexedWith = embedder.identifier
+        vectorCache[id] = (embedder.identifier, chunks, VectorIndex.Matrix(vectors))
         try? modelContext?.save()
         Log.engine.info(
           "knowledge: indexed \(chunks.count) passages in \(String(describing: ContinuousClock.now - started), privacy: .public)")
@@ -299,8 +311,6 @@ final class KnowledgeBase {
     // Files attached before the embedding model was ready are indexed now.
     for document in documents { index(document) }
     await waitForIndexing(documents)
-    let chunks = documents.flatMap { document in document.chunks.map { (document, $0) } }
-    guard !chunks.isEmpty else { return [] }
 
     func passage(_ pair: (ChatDocument, DocumentChunk), score: Double) -> Passage {
       Passage(
@@ -311,20 +321,26 @@ final class KnowledgeBase {
     // Each document by meaning when it's indexed, by keywords when it isn't (yet): one file
     // that failed to index used to send every file in the chat to keyword search.
     let embedder = currentEmbedder()
-    let byMeaning = chunks.filter { pair in
-      embedder.map { pair.0.indexedWith == $0.identifier && pair.1.embedding != nil } ?? false
+    let byMeaning = documents.filter { document in
+      embedder.map { document.indexedWith == $0.identifier } ?? false
     }
-    let meaningIDs = Set(byMeaning.map { ObjectIdentifier($0.1) })
-    let byKeywords = chunks.filter { !meaningIDs.contains(ObjectIdentifier($0.1)) }
     var meaning: [Passage] = []
     if let embedder, !byMeaning.isEmpty, let queryVector = try? await embedder.embed(query: query) {
-      let candidates = byMeaning.compactMap { pair in
-        pair.1.embedding.map { (pair, VectorIndex.decode($0)) }
+      var scored: [(document: ChatDocument, chunk: DocumentChunk, score: Float)] = []
+      for document in byMeaning {
+        let entry = vectors(of: document, indexedWith: embedder.identifier)
+        let scores = entry.matrix.scores(queryVector)
+        for row in VectorIndex.topIndices(scores, limit: limit) {
+          scored.append((document, entry.chunks[row], scores[row]))
+        }
       }
-      meaning = VectorIndex.top(limit, query: queryVector, candidates: candidates)
-        .map { passage($0.item, score: Double($0.score)) }
+      meaning = scored.sorted { $0.score > $1.score }.prefix(limit)
+        .map { passage(($0.document, $0.chunk), score: Double($0.score)) }
     }
-    let keywordChunks = meaning.isEmpty && !byMeaning.isEmpty ? chunks : byKeywords
+    let keywordDocuments =
+      meaning.isEmpty && !byMeaning.isEmpty
+      ? documents : documents.filter { document in !byMeaning.contains { $0 === document } }
+    let keywordChunks = keywordDocuments.flatMap { document in document.chunks.map { (document, $0) } }
     var keywords: [Passage] = []
     if !keywordChunks.isEmpty {
       // Keyword ranking, falling back to document order.
@@ -336,6 +352,22 @@ final class KnowledgeBase {
         .map { passage($0.element.0, score: $0.element.1) }
     }
     return Self.interleave(meaning, keywords, limit: limit)
+  }
+
+  /// `document`'s passages with vectors and their matrix, decoded on first use (or kept from
+  /// indexing) and reused until the document is indexed again.
+  private func vectors(of document: ChatDocument, indexedWith identifier: String)
+    -> (indexedWith: String, chunks: [DocumentChunk], matrix: VectorIndex.Matrix)
+  {
+    if let cached = vectorCache[document.id], cached.indexedWith == identifier { return cached }
+    let decoded = document.chunks.sorted { $0.index < $1.index }
+      .compactMap { chunk in chunk.embedding.map { (chunk, VectorIndex.decode($0)) } }
+    // Rows and passages stay aligned: a vector of another size (none expected) is left out.
+    let dimension = decoded.first?.1.count ?? 0
+    let usable = decoded.filter { $0.1.count == dimension }
+    let entry = (identifier, usable.map(\.0), VectorIndex.Matrix(usable.map(\.1)))
+    vectorCache[document.id] = entry
+    return entry
   }
 
   /// The best of two rankings whose scores can't be compared, taken in turn.

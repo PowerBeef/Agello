@@ -17,6 +17,16 @@ final class KnowledgeTests: XCTestCase {
 
   // MARK: - Vectors
 
+  /// One matrix-vector product scores every passage of a document; the best come first.
+  func testMatrixScoresAndTopIndices() {
+    let matrix = VectorIndex.Matrix([[1, 0, 0], [0, 1, 0], [0.6, 0.8, 0]])
+    XCTAssertEqual(matrix.rows, 3)
+    XCTAssertEqual(matrix.scores([0, 1, 0]), [0, 1, 0.8])
+    XCTAssertEqual(VectorIndex.topIndices([0.1, 0.9, 0.5, 0.7, 0.3], limit: 3), [1, 3, 2])
+    XCTAssertEqual(VectorIndex.topIndices([0.2, 0.1], limit: 5), [0, 1])
+    XCTAssertEqual(VectorIndex.Matrix(encoded: [VectorIndex.encode([1, 0])]).scores([1, 0]), [1])
+  }
+
   func testFloat16RoundTripAndRanking() {
     let a = VectorIndex.normalized([1, 2, 3, 4])
     let decoded = VectorIndex.decode(VectorIndex.encode(a))

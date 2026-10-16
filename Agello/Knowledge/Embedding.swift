@@ -30,6 +30,9 @@ actor LiteRTEmbedder: TextEmbedder {
 
   private let modelURL: URL
   private var engine: EmbeddingEngine?
+  /// The load in progress: a question asked while files are being indexed waits for it
+  /// instead of loading a second engine (the actor is reentrant across `initialize`).
+  private var loading: Task<EmbeddingEngine, Error>?
   /// Truncate, never fail: an input longer than the loaded signatures (1,024 tokens) used to
   /// fail its whole batch and the document with it.
   private let options = EmbeddingOptions(
@@ -66,6 +69,8 @@ actor LiteRTEmbedder: TextEmbedder {
   }
 
   func unload() async {
+    loading?.cancel()
+    loading = nil
     await engine?.close()
     engine = nil
   }
@@ -81,6 +86,16 @@ actor LiteRTEmbedder: TextEmbedder {
 
   private func loaded() async throws -> EmbeddingEngine {
     if let engine { return engine }
+    if let loading { return try await loading.value }
+    let task = Task { try await self.load() }
+    loading = task
+    defer { loading = nil }
+    let loaded = try await task.value
+    engine = loaded
+    return loaded
+  }
+
+  private func load() async throws -> EmbeddingEngine {
     let cacheDir = try EngineCache.embeddingDirectory()
     var lastError: Error?
     for backend: Backend in [.gpu, .cpu()] {
@@ -90,7 +105,6 @@ actor LiteRTEmbedder: TextEmbedder {
         config: EmbeddingEngineConfig(modelPath: modelURL.path, backend: backend, cacheDir: cacheDir))
       do {
         try await candidate.initialize()
-        engine = candidate
         Log.engine.info("embedder: loaded on \(String(describing: backend), privacy: .public)")
         return candidate
       } catch {
@@ -168,6 +182,49 @@ enum VectorIndex {
     let norm = sqrt(dot(vector, vector))
     guard norm > 0 else { return vector }
     return vector.map { $0 / norm }
+  }
+
+  /// A document's passage vectors decoded once into one row-major matrix, so a question costs
+  /// one matrix-vector product instead of decoding every vector again.
+  struct Matrix: Sendable, Equatable {
+    let rows: Int
+    let dimension: Int
+    let values: [Float]
+
+    init(_ vectors: [[Float]]) {
+      let size = vectors.first?.count ?? 0
+      let usable = vectors.filter { $0.count == size && size > 0 }
+      dimension = size
+      rows = usable.count
+      values = usable.flatMap { $0 }
+    }
+
+    init(encoded: [Data]) {
+      self.init(encoded.map(VectorIndex.decode))
+    }
+
+    /// Each row's dot product with `query` (cosine similarity for unit vectors).
+    func scores(_ query: [Float]) -> [Float] {
+      guard rows > 0, query.count == dimension else { return Array(repeating: 0, count: rows) }
+      var result = [Float](repeating: 0, count: rows)
+      vDSP_mmul(values, 1, query, 1, &result, 1, vDSP_Length(rows), 1, vDSP_Length(dimension))
+      return result
+    }
+  }
+
+  /// Indices of the `limit` largest `scores`, best first.
+  static func topIndices(_ scores: [Float], limit: Int) -> [Int] {
+    guard limit > 0 else { return [] }
+    if scores.count <= limit { return scores.indices.sorted { scores[$0] > scores[$1] } }
+    var best: [Int] = []
+    best.reserveCapacity(limit + 1)
+    for index in scores.indices {
+      guard best.count < limit || scores[index] > scores[best[best.count - 1]] else { continue }
+      let position = best.firstIndex { scores[index] > scores[$0] } ?? best.count
+      best.insert(index, at: position)
+      if best.count > limit { best.removeLast() }
+    }
+    return best
   }
 
   /// The `limit` best candidates by cosine similarity (vectors are unit length).

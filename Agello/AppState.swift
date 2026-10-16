@@ -199,7 +199,10 @@ final class AppState {
     ) { [weak self] _ in
       guard let self else { return }
       Log.lifecycle.warning("memory warning (\(MemoryProbe.summary, privacy: .public))")
-      Task { @MainActor in self.stopIfMemoryIsExhausted() }
+      Task { @MainActor in
+        self.stopIfMemoryIsExhausted()
+        await self.knowledge.releaseMemory()
+      }
     }
   }
 
