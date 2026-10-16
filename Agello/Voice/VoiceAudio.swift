@@ -36,6 +36,9 @@ final class VoiceAudio: @unchecked Sendable {
   private let prerollLimit: AVAudioFrameCount = 8_000  // 0.5 s at 16 kHz
   private var pendingSpeech = 0
   private(set) var echoCancellation = false
+  /// Utterance files are written here, not on the real-time audio thread (a blocking disk write
+  /// there can glitch the microphone and echo cancellation).
+  private let writer = DispatchQueue(label: "agello.voice.writer", qos: .userInitiated)
 
   // MARK: Lifecycle
 
@@ -170,7 +173,8 @@ final class VoiceAudio: @unchecked Sendable {
           forWriting: url, settings: recordFormat.settings, commonFormat: .pcmFormatInt16,
           interleaved: false)
       else { return }
-      for buffer in preroll { try? file.write(from: buffer) }
+      let prerolled = preroll
+      writer.async { for buffer in prerolled { try? file.write(from: buffer) } }
       self.file = file
       fileURL = url
     }
@@ -178,13 +182,16 @@ final class VoiceAudio: @unchecked Sendable {
 
   /// Finish the utterance; returns its WAV file.
   func endUtterance() -> URL? {
-    lock.withLock {
+    let url: URL? = lock.withLock {
       defer {
         file = nil
         fileURL = nil
       }
       return file == nil ? nil : fileURL
     }
+    // Every buffer of the utterance is on disk before the file is read.
+    writer.sync {}
+    return url
   }
 
   func cancelUtterance() {
@@ -198,7 +205,7 @@ final class VoiceAudio: @unchecked Sendable {
       let converted = convert(buffer, with: converter, to: recordFormat)
     else { return }
     lock.withLock {
-      if let file { try? file.write(from: converted) }
+      if let file { writer.async { try? file.write(from: converted) } }
       preroll.append(converted)
       prerollFrames += converted.frameLength
       while prerollFrames > prerollLimit, let first = preroll.first {

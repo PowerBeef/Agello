@@ -31,6 +31,9 @@ struct ChatView: View {
   /// voice message.
   @State private var dictating = false
   @State private var showVoice = false
+  /// Made once per opening: built in the cover's closure, a new session (audio engine, speech
+  /// synthesizer, camera session) was made and thrown away at every update of this view.
+  @State private var voiceSession: VoiceSession?
   @State private var reader = SpeechReader()
   /// The user message being edited in the composer, if any.
   @State private var editingTurn: ChatTurn?
@@ -92,14 +95,13 @@ struct ChatView: View {
     } message: {
       Text("Enable microphone access in Settings to send voice messages.")
     }
-    .fullScreenCover(isPresented: $showVoice) {
-      VoiceModeView(
-        session: VoiceSession(appState: appState, thread: thread, makeThread: newThread))
+    .fullScreenCover(isPresented: $showVoice, onDismiss: { voiceSession = nil }) {
+      if let voiceSession { VoiceModeView(session: voiceSession) }
     }
     .onChange(of: AppRouter.shared.voiceRequested, initial: true) { _, requested in
       guard requested else { return }
       AppRouter.shared.voiceRequested = false
-      showVoice = true
+      openVoiceMode()
     }
     .onChange(of: recorder.isRecording) { wasRecording, isRecording in
       if wasRecording, !isRecording, dictating { finishDictation() }
@@ -669,6 +671,11 @@ struct ChatView: View {
     }
   }
 
+  private func openVoiceMode() {
+    voiceSession = VoiceSession(appState: appState, thread: thread, makeThread: newThread)
+    showVoice = true
+  }
+
   /// A link's message (`agello://ask`) in the composer, for the user to send.
   private func takeRequestedDraft() {
     guard let text = AppRouter.shared.draftRequested else { return }
@@ -886,7 +893,7 @@ struct ChatView: View {
     return Button {
       switch action {
       case .stop: appState.stop()
-      case .voice: showVoice = true
+      case .voice: openVoiceMode()
       case .send: send()
       }
     } label: {

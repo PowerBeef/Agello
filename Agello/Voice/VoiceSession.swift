@@ -128,7 +128,9 @@ final class VoiceSession {
 
   private func heardLevel(_ level: Float, duration: TimeInterval) {
     let assistantBusy = state == .speaking || state == .thinking
-    if state != .speaking { self.level = Double(max(0, min(1, (level + 60) / 50))) }
+    // The orb follows visible changes only: every buffer (~50 a second) re-rendered it.
+    let shown = Double(max(0, min(1, (level + 60) / 50)))
+    if state != .speaking, abs(shown - self.level) >= 0.02 { self.level = shown }
     guard !muted, state != .starting else { return }
     if case .failed = state { return }
     switch vad.feed(level: level, duration: duration, assistantSpeaking: assistantBusy) {
