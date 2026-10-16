@@ -128,6 +128,58 @@ final class ChatSchemaTests: XCTestCase {
     XCTAssertEqual(try context.fetch(FetchDescriptor<DocumentChunk>()).count, 1)
   }
 
+  func testFailuresAreClassifiedBeforeAnythingIsMoved() {
+    func error(_ domain: String, _ code: Int, sqlite: Int? = nil, underlying: NSError? = nil) -> NSError {
+      var info: [String: Any] = [:]
+      if let sqlite { info["NSSQLiteErrorDomain"] = sqlite }
+      if let underlying { info[NSUnderlyingErrorKey] = underlying }
+      return NSError(domain: domain, code: code, userInfo: info)
+    }
+    XCTAssertEqual(ChatStoreLoader.classify(error(NSCocoaErrorDomain, 134_110, sqlite: 11)), .corrupt)
+    XCTAssertEqual(ChatStoreLoader.classify(error("NSSQLiteErrorDomain", 26)), .corrupt)
+    XCTAssertEqual(ChatStoreLoader.classify(error(NSCocoaErrorDomain, 134_100)), .newerVersion)
+    XCTAssertEqual(
+      ChatStoreLoader.classify(error("SwiftData", 1, underlying: error(NSCocoaErrorDomain, 134_130))),
+      .newerVersion)
+    XCTAssertEqual(ChatStoreLoader.classify(error(NSCocoaErrorDomain, 134_110, sqlite: 13)), .unavailable)
+    XCTAssertEqual(ChatStoreLoader.classify(error(NSCocoaErrorDomain, 640)), .unavailable)
+    XCTAssertEqual(ChatStoreLoader.classify(error(NSCocoaErrorDomain, 134_110)), .other)
+  }
+
+  /// A store that can't be read right now (file protection before the first unlock, here a
+  /// file without read permission) is left alone: in-memory chats for the session, a notice.
+  func testAStoreThatCantBeReadNowIsLeftAlone() throws {
+    do {
+      let container = try ChatStoreLoader.makeContainer(
+        ModelConfiguration(schema: ChatStore.schema, url: storeURL))
+      container.mainContext.insert(ChatThread())
+      try container.mainContext.save()
+    }
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: storeURL.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: storeURL.path) }
+    let opened = ChatStoreLoader.open(url: storeURL)
+    XCTAssertNotNil(opened.recoveryNotice)
+    let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+    XCTAssertFalse(files.contains { $0.contains(".unreadable-") }, "Moved aside: \(files)")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: storeURL.path))
+  }
+
+  func testOnlyTheNewestSetAsideCopiesAreKept() throws {
+    for stamp in ["2026-01-01", "2026-02-01", "2026-03-01", "2026-04-01"] {
+      let name = "chats.store.unreadable-\(stamp)"
+      try Data().write(to: directory.appendingPathComponent(name))
+      try Data().write(to: directory.appendingPathComponent(name + "-wal"))
+    }
+    ChatStoreLoader.pruneBackups(of: storeURL)
+    let files = try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
+    XCTAssertEqual(
+      files,
+      [
+        "chats.store.unreadable-2026-03-01", "chats.store.unreadable-2026-03-01-wal",
+        "chats.store.unreadable-2026-04-01", "chats.store.unreadable-2026-04-01-wal",
+      ])
+  }
+
   func testUnreadableStoreIsSetAsideNotFatal() throws {
     try Data("not a database".utf8).write(to: storeURL)
     let opened = ChatStoreLoader.open(url: storeURL)
