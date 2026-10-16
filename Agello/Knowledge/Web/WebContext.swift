@@ -177,35 +177,43 @@ final class WebResearch {
     queries: [String], question: String, settings: WebSearchSettings, budgetTokens: Int,
     firstIndex: Int = 1, progress: @MainActor (String) -> Void
   ) async throws -> Findings {
-    // 1. Search.
-    var results: [[WebResult]] = []
-    var usedProvider: SearchProvider?
-    var lastError: Error = WebSearchError.noResults
+    // 1. Search, every query at once (each through the provider chain), in query order.
     let chain = settings.chain { SearchKeys.key(for: $0) != nil }
-    for query in queries {
-      progress(String(localized: "Searching the web for “\(query)”…"))
-      for provider in chain {
-        do {
-          let found = try await client.search(query, with: provider, settings: settings)
-          if !found.isEmpty {
-            results.append(found)
-            usedProvider = usedProvider ?? provider
-            break
+    progress(String(localized: "Searching the web for “\(queries.first ?? question)”…"))
+    let client = self.client
+    var outcomes: [Int: (results: [WebResult], provider: SearchProvider?, error: Error?)] = [:]
+    await withTaskGroup(of: (Int, [WebResult], SearchProvider?, Error?).self) { group in
+      for (index, query) in queries.enumerated() {
+        group.addTask {
+          var lastError: Error?
+          for provider in chain {
+            do {
+              let found = try await client.search(query, with: provider, settings: settings)
+              if !found.isEmpty { return (index, found, provider, nil) }
+            } catch {
+              lastError = error
+              if case WebSearchError.offline = error { break }
+            }
           }
-        } catch {
-          lastError = error
-          if case WebSearchError.offline = error { throw error }
+          return (index, [], nil, lastError)
         }
       }
-      try Task.checkCancellation()
+      for await (index, found, provider, error) in group { outcomes[index] = (found, provider, error) }
     }
+    try Task.checkCancellation()
+    let errors = queries.indices.compactMap { outcomes[$0]?.error }
+    if let offline = errors.first(where: { if case WebSearchError.offline = $0 { true } else { false } }) {
+      throw offline
+    }
+    let results = queries.indices.compactMap { outcomes[$0]?.results }.filter { !$0.isEmpty }
+    let usedProvider = queries.indices.lazy.compactMap { outcomes[$0]?.provider }.first
+    let lastError: Error = errors.last ?? WebSearchError.noResults
     let merged = Self.merge(results)
     guard !merged.isEmpty else { throw lastError }
 
     // 2. Read the top pages in parallel (snippets stand in for failures).
     let candidates = Array(merged.prefix(Self.pagesToRead))
     progress(String(localized: "Reading \(candidates.count) pages…"))
-    let client = self.client
     var pages: [Int: ReadableText.Page] = [:]
     await withTaskGroup(of: (Int, ReadableText.Page?).self) { group in
       for (index, result) in candidates.enumerated() {
@@ -272,17 +280,28 @@ final class WebResearch {
 
   /// Indices of `passages`, most relevant first (by meaning when the
   /// embedding model is available, else by keywords).
+  /// Passages embedded per search: the best by keywords. Embedding every passage of five pages
+  /// (up to 200) took seconds of GPU time before the reply could start.
+  static let passagesToEmbed = 40
+
   private func rank(_ passages: [String], question: String) async -> [Int] {
     guard !passages.isEmpty else { return [] }
+    let scores = KeywordScorer.scores(query: question, documents: passages)
+    let byKeywords = passages.indices.sorted {
+      scores[$0] != scores[$1] ? scores[$0] > scores[$1] : $0 < $1
+    }
+    let shortlist = Array(byKeywords.prefix(Self.passagesToEmbed))
     if let embedder = knowledge.currentEmbedder(),
       let query = try? await embedder.embed(query: question),
-      let vectors = try? await embedder.embed(documents: passages.map { (title: "none", text: $0) }),
-      vectors.count == passages.count
+      let vectors = try? await embedder.embed(
+        documents: shortlist.map { (title: "none", text: passages[$0]) }),
+      vectors.count == shortlist.count
     {
-      return VectorIndex.top(passages.count, query: query, candidates: Array(zip(passages.indices, vectors)))
+      // The shortlist by meaning, then the rest by keywords.
+      let byMeaning = VectorIndex.top(shortlist.count, query: query, candidates: Array(zip(shortlist, vectors)))
         .map(\.item)
+      return byMeaning + byKeywords.dropFirst(shortlist.count)
     }
-    let scores = KeywordScorer.scores(query: question, documents: passages)
-    return passages.indices.sorted { scores[$0] != scores[$1] ? scores[$0] > scores[$1] : $0 < $1 }
+    return byKeywords
   }
 }
