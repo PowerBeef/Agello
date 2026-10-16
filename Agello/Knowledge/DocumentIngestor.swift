@@ -24,7 +24,37 @@ struct ExtractedDocument: Sendable, Equatable {
   var kind: DocumentKind
   var byteCount: Int64
   var pages: [String]
+  /// Passages, split during extraction (off the main thread); nil until ``prepared()``.
+  var chunks: [ChunkDraft]?
+  /// The text was longer than ``DocumentIngestor/maxExtractedCharacters`` and was cut.
+  var truncated = false
   var isPaged: Bool { kind != .text }
+
+  /// Caps the text and splits it into passages. Extraction calls it, so the work happens off
+  /// the main thread.
+  func prepared() -> ExtractedDocument {
+    var document = self
+    var budget = DocumentIngestor.maxExtractedCharacters
+    var kept: [String] = []
+    for page in pages {
+      guard budget > 0 else {
+        document.truncated = true
+        break
+      }
+      let count = page.count
+      if count <= budget {
+        kept.append(page)
+        budget -= count
+      } else {
+        kept.append(String(page.prefix(budget)))
+        budget = 0
+        document.truncated = true
+      }
+    }
+    document.pages = kept
+    document.chunks = Chunker.chunks(pages: kept, paged: isPaged)
+    return document
+  }
 
   var characterCount: Int { pages.reduce(0) { $0 + $1.count } }
 
@@ -59,6 +89,8 @@ enum DocumentIngestor {
   static let maxFileBytes: Int64 = 50_000_000
   /// Pages without a text layer are recognized with Vision, up to this many.
   static let maxOCRPages = 60
+  /// Text kept from one file (about 1,250 passages); longer files are cut.
+  static let maxExtractedCharacters = 2_000_000
 
   /// File types offered in the file picker.
   static let supportedTypes: [UTType] = {
@@ -100,18 +132,19 @@ enum DocumentIngestor {
     }
     guard document.pages.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
     else { throw IngestionError.noText(name) }
-    return document
+    return document.prepared()
   }
 
   /// Pages photographed with the document scanner.
   static func extract(scannedPages images: [CGImage], name: String) async throws -> ExtractedDocument {
     var pages: [String] = []
     for image in images.prefix(maxOCRPages) {
+      try Task.checkCancellation()
       pages.append(try await recognizeText(in: image))
     }
     let document = ExtractedDocument(name: name, kind: .scan, byteCount: 0, pages: pages)
     guard document.characterCount > 0 else { throw IngestionError.noText(name) }
-    return document
+    return document.prepared()
   }
 
   // MARK: - PDF
@@ -122,6 +155,8 @@ enum DocumentIngestor {
     var pages: [String] = []
     var ocrPages = 0
     for index in 0..<pdf.pageCount {
+      // A long scanned PDF takes minutes to read: stop when the read is cancelled.
+      try Task.checkCancellation()
       guard let page = pdf.page(at: index) else {
         pages.append("")
         continue

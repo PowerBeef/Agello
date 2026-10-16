@@ -73,7 +73,9 @@ final class KnowledgeBase {
       name: extracted.name, kindRaw: extracted.kind.rawValue, byteCount: extracted.byteCount,
       pageCount: extracted.isPaged ? extracted.pages.count : 0, text: extracted.fullText,
       threadID: threadID, projectID: projectID)
-    for draft in Chunker.chunks(pages: extracted.pages, paged: extracted.isPaged) {
+    // Extraction already split files into passages off the main thread; small texts made here
+    // (shared text, a web page) are split now.
+    for draft in extracted.chunks ?? Chunker.chunks(pages: extracted.pages, paged: extracted.isPaged) {
       document.chunks.append(
         DocumentChunk(
           index: draft.index, text: draft.text, pageStart: draft.pageStart, pageEnd: draft.pageEnd))

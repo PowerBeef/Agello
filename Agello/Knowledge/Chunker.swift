@@ -105,20 +105,24 @@ enum Chunker {
     return result.isEmpty ? [text] : result
   }
 
+  /// Cuts text with no usable sentence breaks into passage-sized pieces, in one pass: long
+  /// single-line files (minified JSON, logs) reach this, and recounting the rest of the text
+  /// for every piece made it quadratic.
   private static func hardWrap(_ text: String) -> [String] {
     guard text.count > targetCharacters else { return [text] }
     var pieces: [String] = []
-    var rest = Substring(text)
-    while rest.count > targetCharacters {
-      var end = rest.index(rest.startIndex, offsetBy: targetCharacters)
-      // Prefer breaking at a space.
-      if let space = rest[..<end].lastIndex(of: " "), rest.distance(from: rest.startIndex, to: space) > targetCharacters / 2 {
-        end = space
-      }
-      pieces.append(String(rest[..<end]).trimmingCharacters(in: .whitespaces))
-      rest = rest[end...]
+    var start = text.startIndex
+    while let limit = text.index(start, offsetBy: targetCharacters, limitedBy: text.endIndex),
+      limit < text.endIndex
+    {
+      var end = limit
+      // Prefer breaking at a space in the piece's second half.
+      let half = text.index(start, offsetBy: targetCharacters / 2 + 1)
+      if let space = text[half..<limit].lastIndex(of: " ") { end = space }
+      pieces.append(String(text[start..<end]).trimmingCharacters(in: .whitespaces))
+      start = end
     }
-    let tail = rest.trimmingCharacters(in: .whitespaces)
+    let tail = text[start...].trimmingCharacters(in: .whitespaces)
     if !tail.isEmpty { pieces.append(tail) }
     return pieces
   }

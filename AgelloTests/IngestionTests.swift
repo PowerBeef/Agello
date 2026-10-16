@@ -4,6 +4,34 @@ import XCTest
 @testable import Agello
 
 final class IngestionTests: XCTestCase {
+  /// Minified JSON or a log without line breaks: cutting it used to recount the rest of the
+  /// text for every piece (quadratic, on the main thread). 5 MB must take seconds, not minutes.
+  func testHugeSingleLineTextChunksInLinearTime() {
+    let text = String(repeating: "abcdefghij", count: 500_000)
+    let started = ContinuousClock.now
+    let chunks = Chunker.chunks(pages: [text], paged: false)
+    XCTAssertLessThan(ContinuousClock.now - started, .seconds(5))
+    XCTAssertEqual(chunks.count, 3_125)
+    XCTAssertTrue(chunks.allSatisfy { $0.text.count <= Chunker.targetCharacters })
+  }
+
+  /// A cut prefers a space in the piece's second half.
+  func testLongSentencesBreakAtSpaces() {
+    let words = Array(repeating: "lighthouse", count: 400).joined(separator: " ")
+    let chunks = Chunker.chunks(pages: [words], paged: false)
+    XCTAssertGreaterThan(chunks.count, 1)
+    for chunk in chunks { XCTAssertFalse(chunk.text.hasPrefix(" ") || chunk.text.hasSuffix(" ")) }
+    XCTAssertTrue(chunks.allSatisfy { $0.text.split(separator: " ").allSatisfy { $0 == "lighthouse" } })
+  }
+
+  func testExtractedTextIsCappedAndSplitDuringExtraction() {
+    let big = String(repeating: "a b ", count: 600_000)
+    let prepared = ExtractedDocument(name: "big.txt", kind: .text, byteCount: 0, pages: [big]).prepared()
+    XCTAssertEqual(prepared.pages.first?.count, DocumentIngestor.maxExtractedCharacters)
+    XCTAssertTrue(prepared.truncated)
+    XCTAssertFalse(prepared.chunks?.isEmpty ?? true)
+  }
+
   private var directory: URL!
 
   override func setUpWithError() throws {
