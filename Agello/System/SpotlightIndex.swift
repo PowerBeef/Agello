@@ -66,15 +66,33 @@ enum SpotlightIndex {
     CSSearchableIndex.default().deleteSearchableItems(withIdentifiers: ids.map(\.uuidString))
   }
 
-  /// Rebuild the index from the store (launch), or clear it when off.
-  static func refresh(in context: ModelContext) {
+  /// When the index last caught up with the store.
+  static let refreshedAtKey = "spotlightRefreshedAt"
+
+  /// Index the chats changed since the last refresh (launch), all of them (`full`, when turned
+  /// on), or clear the index when off. Each reply and new title index their chat as they happen,
+  /// so a launch only catches up: building entries for 300 chats took 0.4 s on the main thread
+  /// on a Mac, more on an iPhone.
+  static func refresh(
+    in context: ModelContext, full: Bool = false, defaults: UserDefaults = .standard
+  ) {
     guard isEnabled else {
       CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [domain])
+      defaults.removeObject(forKey: refreshedAtKey)
       return
     }
+    let since = full ? nil : defaults.object(forKey: refreshedAtKey) as? Date
+    let now = Date()
+    index(threadsToIndex(in: context, changedSince: since))
+    defaults.set(now, forKey: refreshedAtKey)
+  }
+
+  /// The most recent chats, or those changed since `date`.
+  static func threadsToIndex(in context: ModelContext, changedSince date: Date?) -> [ChatThread] {
     var descriptor = FetchDescriptor<ChatThread>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
+    if let date { descriptor.predicate = #Predicate { $0.updatedAt > date } }
     descriptor.fetchLimit = limit
-    index((try? context.fetch(descriptor)) ?? [])
+    return (try? context.fetch(descriptor)) ?? []
   }
 
   /// The chat a Spotlight result points at.

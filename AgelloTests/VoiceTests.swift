@@ -76,10 +76,7 @@ final class VoiceTextTests: XCTestCase {
     XCTAssertEqual(left, ["agello-audio-3.txt", "keep.wav"])
   }
 
-  func testVoiceInstructionJoinsTheSystemPrompt() {
-    let prompt = SystemPrompt.compose(
-      base: "Base.", personalization: Personalization(), project: nil, voice: true)
-    XCTAssertTrue(prompt.hasSuffix(VoiceText.instruction))
+  func testVoiceInstructionStaysOutOfTheSystemPrompt() {
     XCTAssertFalse(
       SystemPrompt.compose(base: "Base.", personalization: Personalization(), project: nil)
         .contains("⟦"))
@@ -165,10 +162,13 @@ final class VoiceTurnFlowTests: XCTestCase {
     XCTAssertFalse(updates.contains { $0.0.contains("⟦") })
     // Titled from the transcript; the model-written title waits until voice mode closes.
     XCTAssertEqual(thread.title, "What time is it?")
+    // The instruction travels with the recording, not in the system prompt.
+    let sent = await mock.sendLog
+    XCTAssertEqual(sent.last, VoiceText.instruction)
     let prompt = await mock.systemPrompt
-    XCTAssertTrue(prompt.contains(VoiceText.instruction))
+    XCTAssertFalse(prompt.contains(VoiceText.instruction))
 
-    // Leaving voice mode removes the instruction before the next message.
+    // Leaving voice mode doesn't rebuild the conversation for its own sake.
     appState.voiceModeActive = false
     appState.onVoiceReply = nil
     await appState.runPendingHelpers()

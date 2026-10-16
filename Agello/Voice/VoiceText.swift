@@ -5,9 +5,9 @@ enum VoiceText {
   static let openMark = "⟦"
   static let closeMark = "⟧"
 
-  /// Added to the system prompt while voice mode is on. Measured on device:
-  /// Gemma follows it reliably and the first answer sentence is ready
-  /// ~0.7–1.0 s after the user stops talking.
+  /// Sent with each voice turn's recording (in the system prompt before; measured there on
+  /// device: Gemma followed it reliably and the first answer sentence was ready ~0.7–1.0 s after
+  /// the user stopped talking).
   static let instruction =
     "The user is talking to you by voice. Start every reply with exactly what the user said, "
     + "transcribed in their language between \(openMark) and \(closeMark), then answer in their "

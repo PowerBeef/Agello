@@ -50,7 +50,7 @@ final class AppState {
     var effective = options
     effective.systemPrompt = SystemPrompt.compose(
       base: options.systemPrompt, personalization: personalization, project: activeProject,
-      memories: memoryEnabled ? memoryTexts() : [], voice: voiceModeActive)
+      memories: memoryEnabled ? memoryTexts() : [])
     effective.webSearchTool = webSettings.allowed && webSettings.automatic
     return effective
   }
@@ -573,6 +573,8 @@ final class AppState {
 
     // Files in this chat (and its project): build what the model reads.
     var enginePrompt = prompt
+    // A voice turn is the recording; the model reads how to answer it with it.
+    if voiceModeActive, audioFileURL != nil, prompt.isEmpty { enginePrompt = VoiceText.instruction }
     var sources: [SourceRecord] = []
     let documents = documents(for: thread)
     if !documents.isEmpty {
@@ -797,6 +799,7 @@ final class AppState {
     }
     thread.title = title
     try? modelContext?.save()
+    SpotlightIndex.index([thread])
     return true
   }
 
@@ -889,12 +892,12 @@ final class AppState {
 
   // MARK: - Voice mode
 
-  /// Voice mode is open: replies start with the user's transcript and are
-  /// short and speakable (the system prompt changes, so the conversation is
-  /// rebuilt before the next message).
+  /// Voice mode is open: replies start with the user's transcript and are short and speakable.
+  /// The instruction travels with each voice turn (`VoiceText.instruction`), not in the system
+  /// prompt, so opening and closing voice mode keeps the chat's conversation (in the system
+  /// prompt, both rebuilt it: a full re-prefill each way).
   var voiceModeActive = false {
     didSet {
-      if voiceModeActive != oldValue { conversationThreadID = nil }
       if !voiceModeActive { scheduleHelpers() }
     }
   }

@@ -1041,7 +1041,9 @@ actor MockChatEngine: ChatEngineProtocol {
     AsyncThrowingStream { continuation in
       let task = Task {
         let script =
-          text.localizedCaseInsensitiveContains("markdown")
+          // A user asking for markdown ("Show me markdown"; UI tests), not an instruction
+          // that mentions it.
+          text.localizedCaseInsensitiveContains("show me markdown")
           ? MockChatEngine.markdownSample : await self.script
         // Like the real model: reasoning only streams when thinking is on.
         let thinking = await self.thinkingEnabled

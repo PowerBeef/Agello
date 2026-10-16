@@ -132,7 +132,7 @@ struct SettingsView: View {
       }
       .themedRow()
       .onChange(of: spotlightEnabled) {
-        if let context = appState.modelContext { SpotlightIndex.refresh(in: context) }
+        if let context = appState.modelContext { SpotlightIndex.refresh(in: context, full: true) }
       }
       .accessibilityIdentifier("settings.spotlight")
     } header: {

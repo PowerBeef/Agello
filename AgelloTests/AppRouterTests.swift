@@ -64,6 +64,24 @@ final class SpotlightTests: XCTestCase {
     XCTAssertEqual(item.attributeSet.title, "Kyoto trip")
   }
 
+  /// A launch indexes only the chats changed since the last refresh; turning Spotlight on
+  /// indexes them all.
+  func testLaunchIndexesOnlyChangedChats() throws {
+    let container = try ModelContainer(
+      for: ChatStore.schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+    let context = container.mainContext
+    let old = ChatThread(title: "Old")
+    old.updatedAt = Date(timeIntervalSinceNow: -3_600)
+    let recent = ChatThread(title: "Recent")
+    recent.updatedAt = Date()
+    context.insert(old)
+    context.insert(recent)
+    let since = Date(timeIntervalSinceNow: -60)
+    XCTAssertEqual(SpotlightIndex.threadsToIndex(in: context, changedSince: since).map(\.title), ["Recent"])
+    XCTAssertEqual(
+      SpotlightIndex.threadsToIndex(in: context, changedSince: nil).map(\.title), ["Recent", "Old"])
+  }
+
   func testResultOpensTheChat() {
     let id = UUID()
     let activity = NSUserActivity(activityType: CSSearchableItemActionType)
