@@ -7,7 +7,8 @@
 	     ("Cannot allocate memory") and LiteRT-LM silently loads a broken model. -->
 	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
 	<true/>
-	<!-- Default per-app memory limit measured on device: ~3.5 GB. -->
+	<!-- Default per-app memory limit: no recorded measurement (an earlier note
+	     said ~3.5 GB). With these entitlements an iPhone 17 Pro reports 8 GiB. -->
 	<key>com.apple.developer.kernel.increased-memory-limit</key>
 	<true/>
 	<!-- Replies keep running (on the GPU) when the user leaves the app,

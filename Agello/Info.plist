@@ -6,6 +6,8 @@
 	<array>
 		<string>com.patricedery.agello.continued.*</string>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
