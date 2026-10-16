@@ -9,6 +9,84 @@ final class MarkdownTests: XCTestCase {
 
   private func plain(_ text: AttributedString) -> String { String(text.characters) }
 
+  // MARK: Streaming
+
+  /// A reply as it streams: the stable part and the tail, parsed apart, give the blocks of
+  /// parsing the whole text, at every point of the reply.
+  func testStreamedPartsParseLikeTheWhole() {
+    let reply = """
+      ## Plan
+
+      First paragraph with **bold** and `code`.
+
+      1. One
+      2. Two
+
+      3. Three after a blank line
+
+      - item
+        - nested
+
+      ```swift
+      let a = 1
+
+      let b = 2
+      ```
+
+      | A | B |
+      |---|---|
+      | 1 | 2 |
+
+      $$
+      x = 1
+
+      y = 2
+      $$
+
+      > Quote line
+
+      > Second quote
+
+      Setext heading
+      ==============
+
+      Last words.
+      """
+    var cuts = 0
+    for end in reply.indices where reply[end] == "\n" || reply[end] == " " {
+      let text = String(reply[..<end])
+      let (prefix, tail) = MarkdownStream.stableSplit(text)
+      if !prefix.isEmpty { cuts += 1 }
+      let streamed = blocks(String(prefix)) + blocks(String(tail))
+      XCTAssertEqual(streamed, blocks(text), "Split at \(prefix.count) of \(text.count) changed the blocks")
+    }
+    XCTAssertGreaterThan(cuts, 20, "The stable part never grows")
+  }
+
+  /// The streaming view extends the finished blocks of the update before; every update shows
+  /// what a whole parse of its text gives.
+  @MainActor
+  func testStreamingUpdatesMatchWholeParses() {
+    let reply = String(
+      repeating: "## Part\n\nText with **bold**.\n\n- a\n- b\n\n```\ncode\n\nmore\n```\n\n", count: 6)
+    var end = reply.startIndex
+    while end < reply.endIndex {
+      end = reply.index(end, offsetBy: 7, limitedBy: reply.endIndex) ?? reply.endIndex
+      let text = String(reply[..<end])
+      XCTAssertEqual(MarkdownView(text, streaming: true).document, MarkdownDocument(parsing: text), "\(text.count)")
+    }
+    // Another reply starting over doesn't reuse the last one's blocks.
+    XCTAssertEqual(MarkdownView("New reply\n\nok", streaming: true).document, MarkdownDocument(parsing: "New reply\n\nok"))
+  }
+
+  func testNoCutInsideFencesMathOrBeforeAContinuation() {
+    XCTAssertEqual(MarkdownStream.stableSplit("```\nlet a = 1\n\nlet b").prefix, "")
+    XCTAssertEqual(MarkdownStream.stableSplit("$$\nx\n\ny").prefix, "")
+    XCTAssertEqual(MarkdownStream.stableSplit("1. a\n\n2. b").prefix, "")
+    XCTAssertEqual(MarkdownStream.stableSplit("Para one.\n\nPara two").prefix, "Para one.\n\n")
+    XCTAssertEqual(MarkdownStream.stableSplit("Para one.\n\n").prefix, "")
+  }
+
   func testHeadingsParagraphsAndInlineStyles() {
     let result = blocks("# Title\n\nSome **bold**, *italic*, `code` and [a link](https://example.com).")
     guard case .heading(1, let title) = result.first, case .paragraph(let body) = result.last else {

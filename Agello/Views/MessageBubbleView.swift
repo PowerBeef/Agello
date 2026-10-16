@@ -104,7 +104,8 @@ struct MessageBubbleView: View {
       }
       if !turn.text.isEmpty {
         VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
-          MarkdownView(WebContext.linkCitations(turn.text, sources: turn.parts.sources))
+          MarkdownView(
+            WebContext.linkCitations(turn.text, sources: turn.parts.sources), streaming: isStreaming)
             .textSelection(.enabled)
           if isStreaming {
             streamingCursor

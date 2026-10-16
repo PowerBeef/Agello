@@ -7,8 +7,18 @@ import UIKit
 struct MarkdownView: View {
   let document: MarkdownDocument
 
-  init(_ text: String) {
-    document = MarkdownCache.document(for: text)
+  /// While `streaming`, each update parses only what it added: the finished blocks extend those
+  /// of the update before (``MarkdownCache/finishedBlocks(of:)``), and the unfinished rest is
+  /// parsed on its own (``MarkdownStream``).
+  init(_ text: String, streaming: Bool = false) {
+    guard streaming else {
+      document = MarkdownCache.document(for: text)
+      return
+    }
+    let (prefix, tail) = MarkdownStream.stableSplit(text)
+    document = MarkdownDocument(
+      blocks: MarkdownCache.finishedBlocks(of: String(prefix))
+        + MarkdownDocument(parsing: String(tail)).blocks)
   }
 
   var body: some View {
@@ -39,6 +49,24 @@ enum MarkdownCache {
     cache.setObject(Box(document), forKey: key)
     return document
   }
+
+  /// The streaming reply's finished part and its blocks (one reply streams at a time).
+  private static var streamed: (text: String, blocks: [MarkdownDocument.Block]) = ("", [])
+
+  /// Blocks of a streaming reply's finished part (``MarkdownStream/stableSplit(_:)``). It only
+  /// grows, at safe cuts, so the part added since the last update parses on its own.
+  static func finishedBlocks(of prefix: String) -> [MarkdownDocument.Block] {
+    if prefix.isEmpty { return [] }
+    if prefix == streamed.text { return streamed.blocks }
+    let blocks: [MarkdownDocument.Block]
+    if !streamed.text.isEmpty, prefix.hasPrefix(streamed.text) {
+      blocks = streamed.blocks + MarkdownDocument(parsing: String(prefix.dropFirst(streamed.text.count))).blocks
+    } else {
+      blocks = MarkdownDocument(parsing: prefix).blocks
+    }
+    streamed = (prefix, blocks)
+    return blocks
+  }
 }
 
 private struct BlocksView: View {
@@ -47,13 +75,14 @@ private struct BlocksView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
       ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-        BlockView(block: block)
+        // Unchanged blocks (all but the last while a reply streams) skip their bodies.
+        BlockView(block: block).equatable()
       }
     }
   }
 }
 
-private struct BlockView: View {
+private struct BlockView: View, Equatable {
   let block: MarkdownDocument.Block
 
   var body: some View {
