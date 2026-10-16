@@ -43,11 +43,11 @@ struct ModelCapabilities: Sendable, Equatable {
 /// LiteRT-LM's native heap and crashes the app, so every send must fit:
 /// tokens already in the cache + the new message + the reply cap <= window.
 ///
-/// LiteRT-LM exposes no tokenizer, so pending input is estimated
-/// pessimistically from UTF-8 bytes; tokens already in the cache are measured.
+/// The engine counts exactly with the model's own tokenizer (probe 17); these estimates stand in
+/// where it can't (the scripted engine, file and web budgets) and err high.
 enum ContextBudget {
   /// Bytes per token used for estimates. Gemma averages ~4+ bytes/token on
-  /// English; 3 leaves headroom for digits, code, and other scripts.
+  /// English; 3 leaves headroom for code and other scripts.
   static let bytesPerToken = 3.0
   /// Tool schemas + chat template + a short system prompt, before any turn.
   static let preambleTokens = 256
@@ -79,24 +79,37 @@ enum ContextBudget {
     requested >= 32_003 ? maxAllocatedPositions : requested
   }
 
-  static func estimateTokens(_ text: String, calibration: Double = 1) -> Int {
-    let raw = (Double(text.utf8.count) / bytesPerToken * max(1, calibration)).rounded(.up)
-    return Int(raw) + perTurnOverhead
+  /// Tokens `text` takes, estimated without the model's tokenizer: 3 bytes a token, or about a
+  /// token per digit, ideograph or kana (``Chunker/weight(of:)``), whichever is more. Gemma
+  /// splits numbers into single digits, so digit-heavy text costs a token per byte.
+  static func estimateTextTokens<S: StringProtocol>(_ text: S) -> Int {
+    estimateTextTokens(bytes: text.utf8.count, weight: Chunker.weight(of: text))
   }
 
-  static func estimateInput(
-    text: String, imageTokens: Int?, audioSeconds: Double?, calibration: Double = 1
-  ) -> Int {
-    var total = estimateTokens(text, calibration: calibration)
+  /// ``estimateTextTokens(_:)`` from running totals of UTF-8 bytes and ``Chunker/weight(of:)``.
+  static func estimateTextTokens(bytes: Int, weight: Int) -> Int {
+    Int(max(Double(bytes) / bytesPerToken, Double(weight) / 4).rounded(.up))
+  }
+
+  /// A turn's estimated tokens: its text and the template around it.
+  static func estimateTokens(_ text: String) -> Int {
+    estimateTextTokens(text) + perTurnOverhead
+  }
+
+  /// Tokens an attached image or voice message adds to a message.
+  static func mediaTokens(imageTokens: Int?, audioSeconds: Double?) -> Int {
+    var total = 0
     if let imageTokens { total += imageTokens + perTurnOverhead }
     if let audioSeconds { total += Int((audioSeconds * audioTokensPerSecond).rounded(.up)) }
     return total
   }
 
-  static func estimateHistory(
-    _ history: [(role: ChatRole, text: String)], calibration: Double = 1
-  ) -> Int {
-    history.reduce(0) { $0 + estimateTokens($1.text, calibration: calibration) }
+  static func estimateInput(text: String, imageTokens: Int?, audioSeconds: Double?) -> Int {
+    estimateTokens(text) + mediaTokens(imageTokens: imageTokens, audioSeconds: audioSeconds)
+  }
+
+  static func estimateHistory(_ history: [(role: ChatRole, text: String)]) -> Int {
+    history.reduce(0) { $0 + estimateTokens($1.text) }
   }
 
   /// Room kept free for the reply (thinking tokens count toward it).
@@ -125,33 +138,40 @@ enum ContextBudget {
   /// Smallest useful remnant of a truncated reply.
   static let minTruncatedTokens = 48
 
-  /// The newest turns whose estimate fits `budget`, starting on a user turn.
-  /// When a reply is too long to keep whole, the exchange is kept with the
-  /// reply truncated, rather than losing the latest context entirely.
+  /// The newest turns that fit `budget`, starting on a user turn. When a reply is too long to
+  /// keep whole, the exchange is kept with the reply truncated, rather than losing the latest
+  /// context entirely. `tokens` holds each turn's text tokens when the engine counted them
+  /// exactly; without it they're estimated. Each turn adds ``perTurnOverhead``.
   static func trimmedHistory(
-    _ history: [(role: ChatRole, text: String)], budget: Int, calibration: Double = 1
+    _ history: [(role: ChatRole, text: String)], budget: Int, tokens: [Int]? = nil
   ) -> [(role: ChatRole, text: String)] {
+    let textTokens =
+      tokens.flatMap { $0.count == history.count ? $0 : nil }
+      ?? history.map { estimateTextTokens($0.text) }
+    func cost(_ index: Int) -> Int { textTokens[index] + perTurnOverhead }
+    /// `history[index]`'s text cut to about `room` tokens of its own, with an ellipsis.
+    func truncated(_ index: Int, room: Int) -> (role: ChatRole, text: String) {
+      let text = history[index].text
+      let maxBytes = Int(Double(text.utf8.count) * Double(room) / Double(max(1, textTokens[index])))
+      return (history[index].role, prefix(text, maxBytes: maxBytes) + "…")
+    }
     var kept: [(role: ChatRole, text: String)] = []
     var total = 0
     var index = history.count - 1
     while index >= 0 {
       let turn = history[index]
-      let cost = estimateTokens(turn.text, calibration: calibration)
-      if total + cost <= budget {
+      if total + cost(index) <= budget {
         kept.insert(turn, at: 0)
-        total += cost
+        total += cost(index)
         index -= 1
         continue
       }
       if turn.role == .model, index > 0, history[index - 1].role == .user {
-        let user = history[index - 1]
-        let userCost = estimateTokens(user.text, calibration: calibration)
         // Room for the reply's text, minus its template overhead and the ellipsis.
-        let room = budget - total - userCost - perTurnOverhead - 2
+        let room = budget - total - cost(index - 1) - perTurnOverhead - 2
         if room >= minTruncatedTokens {
-          let maxBytes = Int(Double(room) * bytesPerToken / max(1, calibration))
-          kept.insert((.model, prefix(turn.text, maxBytes: maxBytes) + "…"), at: 0)
-          kept.insert(user, at: 0)
+          kept.insert(truncated(index, room: room), at: 0)
+          kept.insert(history[index - 1], at: 0)
         }
       }
       break
@@ -159,15 +179,11 @@ enum ContextBudget {
     // The oldest kept turn may be a reply whose prompt didn't fit: shrink the
     // reply to make room for its prompt rather than dropping the exchange.
     if let first = kept.first, first.role == .model, index >= 0, history[index].role == .user {
-      let user = history[index]
-      let others = total - estimateTokens(first.text, calibration: calibration)
-      let room =
-        budget - others - estimateTokens(user.text, calibration: calibration)
-        - perTurnOverhead - 2
+      let others = total - cost(index + 1)
+      let room = budget - others - cost(index) - perTurnOverhead - 2
       if room >= minTruncatedTokens {
-        let maxBytes = Int(Double(room) * bytesPerToken / max(1, calibration))
-        kept[0] = (.model, prefix(first.text, maxBytes: maxBytes) + "…")
-        kept.insert(user, at: 0)
+        kept[0] = truncated(index + 1, room: room)
+        kept.insert(history[index], at: 0)
       }
     }
     while let first = kept.first, first.role != .user { kept.removeFirst() }

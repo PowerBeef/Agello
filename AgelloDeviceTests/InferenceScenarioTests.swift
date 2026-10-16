@@ -356,6 +356,37 @@ final class InferenceScenarioTests: DeviceTestCase {
     XCTAssertTrue(thread.turns.contains { $0.text == after.text } && !after.text.isEmpty)
   }
 
+  /// Exact token accounting: Gemma reads a token per digit, three times what the old estimate of
+  /// 3 bytes a token assumed. At a 2K window a message of 1,500 digits is refused (the estimate
+  /// let it into a cache it overflows), one of 400 digits is answered, and the cache never holds
+  /// more than the window.
+  func test10c_DigitHeavyMessagesAreCountedExactly() async throws {
+    try await requireLoadedModel()
+    appState.options.maxNumTokensOverride = 2048
+    await appState.applyCurrentOptions()
+    func numbers(_ count: Int) -> String {
+      (0..<count).map { String(format: "%04d", ($0 * 7919 + 13) % 10_000) }.joined(separator: " ")
+    }
+    let thread = harness.newThread()
+    let tooMany = await harness.ask("How many numbers are in this list? \(numbers(375))", in: thread)
+    let refusal = appState.generationError ?? ""
+    let few = await harness.ask(
+      "Reply with only the first number of this list, exactly as written: \(numbers(100))", in: thread)
+    let cached = await (appState.engine as? LiteRTChatEngine)?.cachedTokenCount() ?? -1
+    harness.record(
+      "10c_digitHeavy",
+      [
+        "tooManyAccepted": tooMany.accepted, "refusal": refusal, "fewAccepted": few.accepted,
+        "fewReply": few.text, "fewInputTokens": few.reply?.stats?.inputTokens ?? -1,
+        "cachedTokens": cached,
+      ], in: self)
+    XCTAssertFalse(tooMany.accepted, "1,500 digits don't fit a 2K window")
+    XCTAssertEqual(refusal, ChatError.messageTooLong.displayMessage)
+    XCTAssertTrue(few.accepted, appState.generationError ?? "")
+    XCTAssertTrue(few.text.contains("13"), few.text)
+    XCTAssertLessThanOrEqual(cached, 2048)
+  }
+
   /// Helper task: a model-written title after the first exchange. Google's
   /// runtime wipes the engine's conversation (the chat is rebuilt from
   /// history); ours keeps it (the next message reads only itself). Either
@@ -508,8 +539,7 @@ final class InferenceScenarioTests: DeviceTestCase {
     let preset = appState.options.samplerPreset
     defer { appState.options.samplerPreset = preset }
     appState.options.samplerPreset = .precise  // keep sampling noise out of a fidelity test
-    // The app estimates 3 bytes per token and this prose averages ~5, so the
-    // longer cases don't fit chat's 8K window and would be rejected as too long.
+    // The longest case (~6.2K tokens) would leave chat's 8K window little room to reply.
     appState.options.maxNumTokensOverride = 16_384
     await appState.applyCurrentOptions()
     XCTAssertEqual(appState.resolved?.maxNumTokens, 16_384)

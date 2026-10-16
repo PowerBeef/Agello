@@ -12,7 +12,7 @@ final class ToolHostTests: XCTestCase {
   /// A tool round that outlives its reply (the stream was stopped while a tool ran) must not
   /// get the unrestricted budget: its result would land in a KV cache nobody budgeted.
   func testNoToolCallsAfterTheReplyEnded() {
-    ToolBudget.begin(.init(maxResultBytes: 100, maxCalls: 2))
+    ToolBudget.begin(.init(maxResultTokens: 40, maxCalls: 2))
     ToolBudget.end()
     XCTAssertNil(ToolBudget.claim())
     ToolBudget.reset()
@@ -20,16 +20,16 @@ final class ToolHostTests: XCTestCase {
   }
 
   func testCallLimitIsEnforcedPerReply() {
-    ToolBudget.begin(.init(maxResultBytes: 100, maxCalls: 2))
+    ToolBudget.begin(.init(maxResultTokens: 40, maxCalls: 2))
     XCTAssertNotNil(ToolBudget.claim())
     XCTAssertNotNil(ToolBudget.claim())
     XCTAssertNil(ToolBudget.claim(), "Third call must be refused")
-    ToolBudget.begin(.init(maxResultBytes: 100, maxCalls: 2))
+    ToolBudget.begin(.init(maxResultTokens: 40, maxCalls: 2))
     XCTAssertNotNil(ToolBudget.claim(), "A new reply starts a fresh budget")
   }
 
   func testNoToolsWhenToolsAreOff() {
-    ToolBudget.begin(.init(maxResultBytes: 100, maxCalls: 0))
+    ToolBudget.begin(.init(maxResultTokens: 40, maxCalls: 0))
     XCTAssertNil(ToolBudget.claim())
   }
 
@@ -37,11 +37,9 @@ final class ToolHostTests: XCTestCase {
     let plan = ToolBudget.plan(room: 4_000, toolsOffered: true)
     XCTAssertEqual(plan.outputCap, 1_000, "A quarter of the room per generation")
     XCTAssertEqual(plan.limits.maxCalls, 2)
-    XCTAssertEqual(plan.limits.maxResultBytes, Int(500 * ContextBudget.bytesPerToken))
-    // Two generations' worth of tool results plus three generations fit the room.
-    XCTAssertLessThanOrEqual(
-      3 * plan.outputCap + 2 * Int(Double(plan.limits.maxResultBytes) / ContextBudget.bytesPerToken),
-      4_000)
+    XCTAssertEqual(plan.limits.maxResultTokens, 500)
+    // Two tool results plus three generations fit the room.
+    XCTAssertLessThanOrEqual(3 * plan.outputCap + 2 * plan.limits.maxResultTokens, 4_000)
   }
 
   func testPlanGivesTheWholeRoomWithoutTools() {
@@ -51,17 +49,31 @@ final class ToolHostTests: XCTestCase {
   }
 
   func testResultsAreTrimmedToBudgetAndAccounted() {
-    let limits = ToolBudget.Limits(maxResultBytes: 10, maxCalls: 1)
+    let limits = ToolBudget.Limits(maxResultTokens: 4, maxCalls: 1)
     ToolBudget.begin(limits)
     let fitted = ToolBudget.fit("héllo wörld, this is long", limits)
-    XCTAssertLessThanOrEqual(fitted.utf8.count, 10)
+    XCTAssertLessThanOrEqual(ContextBudget.estimateTextTokens(fitted), 4)
+    XCTAssertTrue(fitted.hasPrefix("hél"))
     XCTAssertTrue(fitted.hasSuffix("…"))
-    XCTAssertEqual(ToolBudget.resultBytes, fitted.utf8.count)
+    XCTAssertEqual(ToolBudget.resultTokens, ContextBudget.estimateTextTokens(fitted))
     XCTAssertEqual(ToolBudget.fit("ok", limits), "ok")
   }
 
+  /// Gemma reads a token per digit: a table of numbers is trimmed by tokens, not bytes, or two
+  /// results three times their budget would overflow the room.
+  func testDigitResultsAreTrimmedByTokens() {
+    let limits = ToolBudget.Limits(maxResultTokens: 100, maxCalls: 1)
+    ToolBudget.begin(limits)
+    let table = (0..<200).map { "\($0 * 7919)" }.joined(separator: " ")
+    let fitted = ToolBudget.fit(table, limits)
+    let digits = fitted.filter(\.isNumber).count
+    XCTAssertLessThanOrEqual(digits, 100)
+    XCTAssertGreaterThan(digits, 60, "Trimmed far more than needed")
+    XCTAssertLessThanOrEqual(ToolBudget.resultTokens, 100)
+  }
+
   func testCalculatorRefusesBeyondTheLimitAndRecordsActivity() async throws {
-    ToolBudget.begin(.init(maxResultBytes: 100, maxCalls: 1))
+    ToolBudget.begin(.init(maxResultTokens: 40, maxCalls: 1))
     let cursor = ToolActivity.cursor
     var tool = CalculatorTool()
     tool.expression = "6*7"

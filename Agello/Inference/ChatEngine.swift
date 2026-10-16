@@ -95,16 +95,9 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// How the last engine's memory came back after unloading; each `load`
   /// starts its `loadLog` with it.
   private(set) var lastUnload: String?
-  /// Estimated tokens the conversation will prefill before its first send
-  /// (preamble + replayed history). `getTokenCount()` reads 0 until then.
-  private var pendingSeedTokens = ContextBudget.preambleTokens
-  /// Preamble of the current conversation (its system prompt included).
-  private var preambleTokens: Int {
-    ContextBudget.preambleTokens(systemPrompt: options?.systemPrompt ?? "")
-  }
-  /// Multiplier learned from the runtime's exact prefill counts, so byte
-  /// estimates track how this model actually tokenizes (never below 1).
-  private(set) var estimateCalibration = 1.0
+  /// Tokens the conversation prefills before its first message (preamble and replayed history):
+  /// counted when it's created, estimated if the runtime can't. `getTokenCount()` reads 0 until then.
+  private var seedTokens = ContextBudget.preambleTokens
 
   var isLoaded: Bool { engine != nil && conversation != nil }
 
@@ -115,15 +108,45 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// Tokens currently held by the KV cache (measured once anything was sent).
   private func usedTokens() -> Int {
     let measured = (try? conversation?.getTokenCount()) ?? 0
-    return measured > 0 ? measured : pendingSeedTokens
+    return measured > 0 ? measured : seedTokens
   }
 
-  private func estimateInput(text: String, imageData: Data?, audioFileURL: URL?) -> Int {
-    let imageTokens = imageData == nil ? nil : Int(resolved?.visualTokenBudget ?? 280)
-    let audioSeconds = audioFileURL.map(Self.audioDuration)
-    return ContextBudget.estimateInput(
-      text: text, imageTokens: imageTokens, audioSeconds: audioSeconds,
-      calibration: estimateCalibration)
+  /// Tokens `text` encodes to with the model's tokenizer; estimated (erring high) if the
+  /// runtime can't count.
+  private func textTokens(_ text: String) async -> Int {
+    if let engine, let exact = try? await engine.countTokens(text) { return exact }
+    return ContextBudget.estimateTextTokens(text)
+  }
+
+  private func mediaTokens(imageData: Data?, audioFileURL: URL?) -> Int {
+    ContextBudget.mediaTokens(
+      imageTokens: imageData == nil ? nil : Int(resolved?.visualTokenBudget ?? 280),
+      audioSeconds: audioFileURL.map(Self.audioDuration))
+  }
+
+  /// What the KV cache holds once `text` (with its image or voice message) is prefilled.
+  /// Exact for text (probe 17): the runtime renders the message as it will prefill it (on a new
+  /// conversation that includes the preamble and the replayed history, plus a BOS token the
+  /// text doesn't show) and the model's tokenizer counts it. Images and audio are estimated.
+  private func tokensAfterPrefill(text: String, imageData: Data?, audioFileURL: URL?) async -> Int {
+    let media = mediaTokens(imageData: imageData, audioFileURL: audioFileURL)
+    let cached = (try? conversation?.getTokenCount()) ?? 0
+    let message = LiteRTLM.Message(contents: [.text(Self.promptText(text, imageData, audioFileURL))])
+    if let engine, let rendered = try? conversation?.renderMessageIntoString(message),
+      let exact = try? await engine.countTokens(rendered)
+    {
+      return cached + (cached == 0 ? 1 : 0) + exact + media
+    }
+    return usedTokens() + ContextBudget.estimateTokens(text) + media
+  }
+
+  /// The text a message is sent with (a prompt of its own when it's only an image or audio).
+  private static func promptText(_ text: String, _ imageData: Data?, _ audioFileURL: URL?) -> String {
+    if imageData != nil, text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return "Describe this image in detail."
+    }
+    if !text.isEmpty { return text }
+    return audioFileURL != nil ? "Listen to this voice message and respond to it." : "Hello!"
   }
 
   private nonisolated static func audioDuration(_ url: URL) -> Double {
@@ -199,7 +222,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
           )
           self.engine = engine
           self.conversation = conversation
-          self.pendingSeedTokens = ContextBudget.preambleTokens(systemPrompt: options.systemPrompt)
+          self.seedTokens = await Self.seedTokens(
+            conversation, engine: engine, history: [], systemPrompt: options.systemPrompt)
           self.resolved = attempt
           self.builtPlan = plan
           self.spec = spec
@@ -346,70 +370,83 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 
   func reseed(history: [(role: ChatRole, text: String)]) async throws {
     guard let engine, let resolved, let options else { throw ChatError.engineNotReady }
-    conversation = try await Self.makeConversation(
+    let conversation = try await Self.makeConversation(
       engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
       history: history
     )
-    pendingSeedTokens =
-      preambleTokens
-      + ContextBudget.estimateHistory(
-        Array(history.suffix(Self.maxReplayedTurns)), calibration: estimateCalibration)
+    self.conversation = conversation
+    seedTokens = await Self.seedTokens(
+      conversation, engine: engine, history: history, systemPrompt: options.systemPrompt)
   }
 
-  /// Learn how this model tokenizes from an exact KV-cache delta: grow the
-  /// multiplier immediately when estimates ran low, relax it slowly.
-  private func calibrate(text: String, measuredBefore: Int, outputTokens: Int?) {
-    // Short prompts are dominated by fixed template tokens (turn markers),
-    // which would inflate the per-byte ratio and over-trim history.
-    guard text.utf8.count >= Self.minCalibrationBytes, let outputTokens,
-      let measuredAfter = try? conversation?.getTokenCount()
-    else { return }
-    let actualInput = measuredAfter - measuredBefore - outputTokens
-    let raw = ContextBudget.estimateTokens(text)
-    guard actualInput > 0, raw > 0 else { return }
-    let ratio = Double(actualInput) / Double(raw)
-    let next = ratio > estimateCalibration ? ratio : 0.8 * estimateCalibration + 0.2 * ratio
-    estimateCalibration = min(3, max(1, next))
-    Log.engine.info(
-      "calibration: actual=\(actualInput) raw≈\(raw) ratio=\(ratio) → \(self.estimateCalibration)")
+  /// What a new conversation prefills before its first message: its preamble and replayed
+  /// history as the runtime renders them, plus BOS; estimated if the runtime can't count.
+  private static func seedTokens(
+    _ conversation: Conversation, engine: Engine, history: [(role: ChatRole, text: String)],
+    systemPrompt: String
+  ) async -> Int {
+    if let preface = try? conversation.renderPrefaceIntoString(),
+      let exact = try? await engine.countTokens(preface)
+    {
+      return exact + 1
+    }
+    return ContextBudget.preambleTokens(systemPrompt: systemPrompt)
+      + ContextBudget.estimateHistory(Array(history.suffix(maxReplayedTurns)))
   }
-
-  static let minCalibrationBytes = 400
 
   /// Upper bound on replayed turns (see ``makeConversation``).
   static let maxReplayedTurns = 20
 
   // MARK: Context window
 
+  /// Make room for `text` and a reply: nothing to do when it fits after what the conversation
+  /// holds; otherwise the conversation is rebuilt with the newest history that fits beside it
+  /// (true). Throws ``ChatError/messageTooLong`` when the message doesn't fit even alone, which
+  /// leaves the conversation empty: the caller reseeds before the next send.
   func fitContext(
     text: String, imageData: Data?, audioFileURL: URL?,
     history: [(role: ChatRole, text: String)]
   ) async throws -> Bool {
     guard conversation != nil, let resolved else { throw ChatError.engineNotReady }
-    let input = estimateInput(text: text, imageData: imageData, audioFileURL: audioFileURL)
     let window = resolved.maxNumTokens
-    guard
-      ContextBudget.fits(
-        used: preambleTokens, input: input, maxNumTokens: window,
-        thinkingBudget: resolved.thinkingBudget)
-    else {
-      throw ChatError.messageTooLong
+    let thinking = resolved.thinkingBudget
+    func fits(_ total: Int) -> Bool {
+      ContextBudget.fits(used: total, input: 0, maxNumTokens: window, thinkingBudget: thinking)
     }
-    let used = usedTokens()
-    if ContextBudget.fits(
-      used: used, input: input, maxNumTokens: window, thinkingBudget: resolved.thinkingBudget)
-    {
-      return false
+    let used = await tokensAfterPrefill(text: text, imageData: imageData, audioFileURL: audioFileURL)
+    if fits(used) { return false }
+
+    // The message alone, on an empty conversation: preamble, tools and the message, counted.
+    try await reseed(history: [])
+    let alone = await tokensAfterPrefill(text: text, imageData: imageData, audioFileURL: audioFileURL)
+    guard fits(alone) else { throw ChatError.messageTooLong }
+    var budget = ContextBudget.historyBudget(
+      maxNumTokens: window, input: alone, thinkingBudget: thinking, preamble: 0)
+    var turnTokens: [Int] = []
+    for turn in history { turnTokens.append(await textTokens(turn.text)) }
+    var trimmed: [(role: ChatRole, text: String)] = []
+    var total = alone
+    // The turns' own template tokens aren't counted per turn: check the rebuilt conversation and
+    // trim by what it's over until it fits.
+    for _ in 0..<4 {
+      trimmed = ContextBudget.trimmedHistory(history, budget: budget, tokens: turnTokens)
+      if trimmed.isEmpty { break }
+      try await reseed(history: trimmed)
+      total = await tokensAfterPrefill(text: text, imageData: imageData, audioFileURL: audioFileURL)
+      if fits(total) { break }
+      let over =
+        total + ContextBudget.replyReserve(maxNumTokens: window, thinkingBudget: thinking)
+        + ContextBudget.safetyMargin - window
+      budget -= max(over, ContextBudget.perTurnOverhead)
+      trimmed = []
     }
-    let budget = ContextBudget.historyBudget(
-      maxNumTokens: window, input: input, thinkingBudget: resolved.thinkingBudget,
-      preamble: preambleTokens)
-    let trimmed = ContextBudget.trimmedHistory(
-      history, budget: budget, calibration: estimateCalibration)
+    if trimmed.isEmpty {
+      try await reseed(history: [])
+      total = alone
+    }
     Log.engine.info(
-      "context: used=\(used) input≈\(input) window=\(window) budget=\(budget) calibration=\(self.estimateCalibration); replaying \(trimmed.count)/\(history.count) turns"
+      "context: was \(used), now \(total) of \(window) (alone \(alone)); replaying \(trimmed.count)/\(history.count) turns"
     )
-    try await reseed(history: trimmed)
     return true
   }
 
@@ -480,10 +517,12 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       _ = try? conversation?.getTokenCount()
       return
     }
-    conversation = try await Self.makeConversation(
+    let conversation = try await Self.makeConversation(
       engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
       history: [])
-    pendingSeedTokens = preambleTokens
+    self.conversation = conversation
+    seedTokens = await Self.seedTokens(
+      conversation, engine: engine, history: [], systemPrompt: options.systemPrompt)
   }
 
   /// A helper stopped before it sent anything.
@@ -648,16 +687,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     cancelRequested = false
     defer { generating = false }
 
-    var contents: [Content] = []
-    if imageData != nil, text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      contents.append(.text("Describe this image in detail."))
-    } else if !text.isEmpty {
-      contents.append(.text(text))
-    } else if audioFileURL != nil {
-      contents.append(.text("Listen to this voice message and respond to it."))
-    } else {
-      contents.append(.text("Hello!"))
-    }
+    var contents: [Content] = [.text(Self.promptText(text, imageData, audioFileURL))]
     if let imageData { contents.append(.imageData(imageData)) }
     if let audioFileURL { contents.append(.audioFile(audioFileURL.path)) }
     let message = LiteRTLM.Message(contents: contents)
@@ -667,17 +697,20 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     // inside LiteRT-LM (each = a tool result + another generation under the
     // same cap), so with tools the room is split: a quarter per generation,
     // an eighth per tool result, at most two tool calls (3/4 + 2/8 = 1).
-    let measuredBefore = (try? conversation.getTokenCount()) ?? 0
-    let usedBefore = usedTokens()
-    let inputEstimate = estimateInput(
+    let prefilled = await tokensAfterPrefill(
       text: text, imageData: imageData, audioFileURL: audioFileURL)
     guard
       let room = ContextBudget.outputCap(
-        maxNumTokens: resolved.maxNumTokens, used: usedBefore, input: inputEstimate)
+        maxNumTokens: resolved.maxNumTokens, used: prefilled, input: 0)
     else {
       Log.generation.error(
-        "context full: used=\(usedBefore) input≈\(inputEstimate) window=\(resolved.maxNumTokens)")
+        "context full: \(prefilled) after prefill, window=\(resolved.maxNumTokens)")
       continuation.finish(throwing: ChatError.contextFull)
+      return
+    }
+    // Stopped while the message was being counted.
+    if cancelRequested || Task.isCancelled {
+      continuation.finish(throwing: ChatError.generationCancelled)
       return
     }
     // `web_search` is registered on its own (automatic web search) even when
@@ -688,10 +721,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     let maxOutputTokens = min(resolved.maxOutputTokens ?? cap, cap)
     ToolBudget.begin(budget.limits)
     defer { ToolBudget.end() }
-    // Safety net for what the budgets can't bound (e.g. extra tool rounds):
-    // stop before streamed output + tool results could exceed the room.
-    let roomBytes = Int(Double(room) * ContextBudget.bytesPerToken)
+    // Safety net for tool rounds (results are trimmed by estimate): stop before streamed output
+    // and tool results could exceed the room. Without tools the runtime's cap is exact.
+    let guardsToolRounds = budget.limits.maxCalls > 0
     var emittedBytes = 0
+    var emittedWeight = 0
 
     let started = Date()
     var firstChunkAt: Date?
@@ -706,11 +740,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
 
     func stats(started: Date, firstChunkAt: Date?) -> GenerationStats {
-      // Prefer exact runtime measurements; fall back to client-side timing.
+      // Token counts and speed from the runtime; time to first token from this reply's own
+      // clock (the runtime's figure is the conversation's first reply, not this one).
       if let info = try? conversation.getBenchmarkInfo() {
         return GenerationStats(
-          timeToFirstToken: info.timeToFirstTokenInSecond > 0
-            ? info.timeToFirstTokenInSecond : firstChunkAt?.timeIntervalSince(started),
+          timeToFirstToken: firstChunkAt?.timeIntervalSince(started),
           totalTime: Date().timeIntervalSince(started),
           inputTokens: info.lastPrefillTokenCount,
           outputTokens: info.lastDecodeTokenCount,
@@ -745,7 +779,12 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         }
         if firstChunkAt == nil { firstChunkAt = Date() }
         let thought = chunk.channels["thought"]
-        emittedBytes += chunk.toString.utf8.count + (thought?.utf8.count ?? 0)
+        if guardsToolRounds {
+          for piece in [chunk.toString, thought ?? ""] {
+            emittedBytes += piece.utf8.count
+            emittedWeight += Chunker.weight(of: piece)
+          }
+        }
         let activity = newToolActivity()
         continuation.yield(
           .chunk(
@@ -755,9 +794,10 @@ actor LiteRTChatEngine: ChatEngineProtocol {
               toolNames: chunk.toolCalls.map(\.name) + activity.map(\.name),
               toolActivity: activity
             )))
-        if emittedBytes + ToolBudget.resultBytes > roomBytes {
+        let emittedTokens = ContextBudget.estimateTextTokens(bytes: emittedBytes, weight: emittedWeight)
+        if guardsToolRounds, emittedTokens + ToolBudget.resultTokens > room {
           Log.generation.error(
-            "context guard: stopping at \(emittedBytes)+\(ToolBudget.resultBytes) bytes of \(roomBytes)")
+            "context guard: stopping at ~\(emittedTokens)+\(ToolBudget.resultTokens) tokens of \(room)")
           try? conversation.cancel()
           continuation.finish(throwing: ChatError.replyTruncated)
           return
@@ -785,9 +825,6 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         return
       }
       let final = stats(started: started, firstChunkAt: firstChunkAt)
-      if imageData == nil, audioFileURL == nil, measuredBefore > 0 {
-        calibrate(text: text, measuredBefore: measuredBefore, outputTokens: final.outputTokens)
-      }
       Log.generation.info(
         "finished: \(final.footerLine, privacy: .public), out=\(final.outputTokens ?? -1) cap=\(maxOutputTokens) kv=\(self.usedTokens())/\(resolved.maxNumTokens)"
       )
@@ -950,6 +987,8 @@ actor MockChatEngine: ChatEngineProtocol {
     history: [(role: ChatRole, text: String)]
   ) async throws -> Bool {
     fitCalls += 1
+    // Like the live engine: a message too long even alone is found on an empty conversation.
+    if case .failure = fitResult { held = [] }
     return try fitResult.get()
   }
 

@@ -33,14 +33,15 @@ enum ToolActivity {
 /// tool result that overflows the KV cache corrupts the native heap.
 enum ToolBudget {
   struct Limits: Sendable, Equatable {
-    /// Largest tool result (UTF-8 bytes) the context can absorb.
-    var maxResultBytes: Int
+    /// Largest tool result (estimated tokens, ``ContextBudget/estimateTextTokens(_:)``) the
+    /// context can absorb.
+    var maxResultTokens: Int
     /// Tool calls allowed for this reply.
     var maxCalls: Int
   }
 
   /// Used before any reply set a budget (tests, probes calling tools directly).
-  static let unrestricted = Limits(maxResultBytes: 16_000, maxCalls: .max)
+  static let unrestricted = Limits(maxResultTokens: 5_000, maxCalls: .max)
 
   /// A reply's share of the context room.
   struct Plan: Sendable, Equatable {
@@ -55,16 +56,15 @@ enum ToolBudget {
   /// eighth per tool result, at most two calls (3/4 + 2/8 = 1). Without
   /// tools the reply gets the whole room.
   static func plan(room: Int, toolsOffered: Bool) -> Plan {
-    let resultBytes = Int(Double(room / 8) * ContextBudget.bytesPerToken)
-    return toolsOffered
-      ? Plan(outputCap: room / 4, limits: Limits(maxResultBytes: resultBytes, maxCalls: 2))
-      : Plan(outputCap: room, limits: Limits(maxResultBytes: resultBytes, maxCalls: 0))
+    toolsOffered
+      ? Plan(outputCap: room / 4, limits: Limits(maxResultTokens: room / 8, maxCalls: 2))
+      : Plan(outputCap: room, limits: Limits(maxResultTokens: room / 8, maxCalls: 0))
   }
 
   private struct State {
     var limits: Limits?
     var calls = 0
-    var resultBytes = 0
+    var resultTokens = 0
     /// The last reply ended: tool rounds still running for it get nothing.
     var closed = false
   }
@@ -95,15 +95,27 @@ enum ToolBudget {
     }
   }
 
-  /// Total tool-result bytes delivered during the current reply.
-  static var resultBytes: Int { state.withLock { $0.resultBytes } }
+  /// Estimated tokens of the tool results delivered during the current reply.
+  static var resultTokens: Int { state.withLock { $0.resultTokens } }
 
-  /// Trim `text` to the limit (never splitting a character) and account for it.
+  /// Trim `text` to the limit (never splitting a character) and account for it. Estimates err
+  /// high (a token per digit or ideograph), so a table of numbers can't overflow the room.
   static func fit(_ text: String, _ limits: Limits) -> String {
-    let fitted =
-      text.utf8.count <= limits.maxResultBytes
-      ? text : ContextBudget.prefix(text, maxBytes: max(0, limits.maxResultBytes - 3)) + "…"
-    state.withLock { $0.resultBytes += fitted.utf8.count }
+    var fitted = text
+    var tokens = ContextBudget.estimateTextTokens(text)
+    if tokens > limits.maxResultTokens {
+      // The ellipsis takes a token.
+      let room = max(0, limits.maxResultTokens - 1)
+      var maxBytes = Int(Double(text.utf8.count) * Double(room) / Double(tokens))
+      repeat {
+        fitted = ContextBudget.prefix(text, maxBytes: maxBytes)
+        maxBytes = maxBytes * 9 / 10
+      } while ContextBudget.estimateTextTokens(fitted) > room && maxBytes > 0
+      if ContextBudget.estimateTextTokens(fitted) > room { fitted = "" }
+      fitted += "…"
+      tokens = ContextBudget.estimateTextTokens(fitted)
+    }
+    state.withLock { $0.resultTokens += tokens }
     return fitted
   }
 

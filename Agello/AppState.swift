@@ -630,6 +630,8 @@ final class AppState {
             text: promptToFit, imageData: imageData, audioFileURL: audioFileURL,
             history: history))
       } catch {
+        // Fitting may have emptied the conversation on its way to this error: reseed first.
+        self.conversationThreadID = nil
         let chatError = error as? ChatError ?? .underlying(message: error.localizedDescription)
         return .rejected(chatError.displayMessage)
       }
@@ -1035,18 +1037,18 @@ final class AppState {
 
   /// The automatic `web_search` tool's work (runs during a reply).
   private func installWebSearchTool() {
-    WebSearchTool.handler = { [weak self] query, maxBytes in
-      await self?.toolSearch(query, maxBytes: maxBytes) ?? "Web search is unavailable."
+    WebSearchTool.handler = { [weak self] query, maxTokens in
+      await self?.toolSearch(query, maxTokens: maxTokens) ?? "Web search is unavailable."
     }
   }
 
-  private func toolSearch(_ query: String, maxBytes: Int) async -> String {
+  private func toolSearch(_ query: String, maxTokens: Int) async -> String {
     guard webSettings.allowed else { return "Web search is turned off." }
     do {
       let findings = try await webResearch.research(
         queries: [query], question: query, settings: webSettings,
-        // ~3 bytes per token (ContextBudget.bytesPerToken).
-        budgetTokens: max(200, Int(Double(maxBytes) / ContextBudget.bytesPerToken) - 40),
+        // Room for the sources block's own lines.
+        budgetTokens: max(200, maxTokens - 40),
         firstIndex: toolSourceOffset + WebSourcesRecorder.nextIndex
       ) { _ in }
       WebSourcesRecorder.record(findings.sources.map(\.record))

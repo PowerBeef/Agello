@@ -48,8 +48,8 @@ struct WebSearchTool: Tool {
   @ToolParam(description: "A short, self-contained web search query.")
   var query: String = ""
 
-  /// Runs the search for the app (set by `AppState`); returns the sources
-  /// block for the model, or an error message.
+  /// Runs the search for the app (set by `AppState`) within a budget of tokens; returns the
+  /// sources block for the model, or an error message.
   nonisolated(unsafe) static var handler: (@Sendable (String, Int) async -> String)?
 
   func run() async throws -> Any {
@@ -59,7 +59,7 @@ struct WebSearchTool: Tool {
       return ["error": "Web search is unavailable."]
     }
     ToolActivity.record(Self.name, summary: "Searched the web for “\(trimmed)”")
-    let result = await handler(trimmed, limits.maxResultBytes)
+    let result = await handler(trimmed, limits.maxResultTokens)
     return ["sources": ToolBudget.fit(result, limits)]
   }
 }

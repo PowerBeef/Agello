@@ -299,6 +299,23 @@ final class AppStateTests: XCTestCase {
     XCTAssertEqual(appState.generationError, ChatError.messageTooLong.displayMessage)
   }
 
+  /// Fitting a message that's too long empties the conversation on the way (the engine measures
+  /// the message alone): the next message must still be answered with the chat's history.
+  func testHistoryIsRestoredAfterAMessageTooLong() async {
+    let thread = appState.newThread(in: context)
+    _ = await appState.send(text: "My name is Ada", imageData: nil, audioFileURL: nil, in: thread)
+    await mock.setFitResult(.failure(.messageTooLong))
+    let rejected = await appState.send(
+      text: "Very long", imageData: nil, audioFileURL: nil, in: thread)
+    XCTAssertFalse(rejected)
+    await mock.setFitResult(.success(false))
+    let accepted = await appState.send(
+      text: "What's my name?", imageData: nil, audioFileURL: nil, in: thread)
+    XCTAssertTrue(accepted)
+    let held = await mock.heldAtSend.last ?? []
+    XCTAssertEqual(held.first, "My name is Ada", "Answered without the chat's history: \(held)")
+  }
+
   func testFailedRepliesAreNotReplayedAsHistory() {
     let thread = ChatThread()
     context.insert(thread)

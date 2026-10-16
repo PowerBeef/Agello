@@ -16,7 +16,8 @@ final class ContextBudgetTests: XCTestCase {
 
   private func turns(_ count: Int, length: Int = 300) -> [(role: ChatRole, text: String)] {
     (0..<count).map { i in
-      (i.isMultiple(of: 2) ? .user : .model, String(repeating: "\(i % 10)", count: length))
+      let letter = Character(Unicode.Scalar(UInt8(97 + i % 26)))
+      return (i.isMultiple(of: 2) ? .user : .model, String(repeating: letter, count: length))
     }
   }
 
@@ -27,11 +28,48 @@ final class ContextBudgetTests: XCTestCase {
     XCTAssertGreaterThan(ContextBudget.estimateTokens(text), realisticTokens)
   }
 
-  func testCalibrationRaisesEstimatesButNeverLowersThem() {
-    let text = String(repeating: "x", count: 300)
-    let base = ContextBudget.estimateTokens(text)
-    XCTAssertGreaterThan(ContextBudget.estimateTokens(text, calibration: 2), base)
-    XCTAssertEqual(ContextBudget.estimateTokens(text, calibration: 0.5), base)
+  /// Gemma splits numbers into single digits and reads about a token per ideograph: estimates
+  /// made without its tokenizer must not fall below that.
+  func testEstimateCoversDigitsAndIdeographs() {
+    let digits = String(repeating: "2026-10-16 ", count: 30)
+    XCTAssertGreaterThanOrEqual(
+      ContextBudget.estimateTextTokens(digits), digits.filter(\.isNumber).count)
+    let chinese = String(repeating: "上下文窗口", count: 40)
+    XCTAssertGreaterThanOrEqual(ContextBudget.estimateTextTokens(chinese), chinese.count)
+    // English stays at 3 bytes a token.
+    let english = String(repeating: "The quick brown fox. ", count: 10)
+    XCTAssertEqual(
+      ContextBudget.estimateTextTokens(english),
+      Int((Double(english.utf8.count) / ContextBudget.bytesPerToken).rounded(.up)))
+    XCTAssertEqual(
+      ContextBudget.estimateTextTokens(bytes: digits.utf8.count, weight: Chunker.weight(of: digits)),
+      ContextBudget.estimateTextTokens(digits))
+  }
+
+  /// With the engine's exact counts, trimming follows them rather than the estimate.
+  func testTrimmedHistoryUsesExactCountsWhenGiven() {
+    let history = turns(6, length: 300)
+    // Each turn of 300 letters is estimated at 100 tokens; say the tokenizer counts 40.
+    let exact = Array(repeating: 40, count: history.count)
+    let budget = 3 * (40 + ContextBudget.perTurnOverhead)
+    let estimated = ContextBudget.trimmedHistory(history, budget: budget)
+    let counted = ContextBudget.trimmedHistory(history, budget: budget, tokens: exact)
+    XCTAssertGreaterThan(counted.count, estimated.count)
+    XCTAssertEqual(counted.last?.text, history.last?.text)
+    XCTAssertEqual(counted.first?.role, .user)
+  }
+
+  /// A reply too long to keep whole is cut in proportion to its counted tokens.
+  func testTruncationFollowsCountedTokens() {
+    let reply = String(repeating: "Ice moves. ", count: 120)
+    let history: [(role: ChatRole, text: String)] = [(.user, "Glaciers?"), (.model, reply)]
+    // Say the reply really takes 600 tokens, and there's room for about 200 of them.
+    let budget = 4 + 200 + 2 * ContextBudget.perTurnOverhead + 2
+    let trimmed = ContextBudget.trimmedHistory(history, budget: budget, tokens: [4, 600])
+    XCTAssertEqual(trimmed.map(\.role), [.user, .model])
+    let kept = trimmed.last?.text ?? ""
+    let share = Double(kept.utf8.count) / Double(reply.utf8.count)
+    XCTAssertEqual(share, 200.0 / 600.0, accuracy: 0.02)
   }
 
   func testImageAndAudioCountTowardInput() {

@@ -89,7 +89,7 @@ final class CalculatorToolTests: XCTestCase {
   /// A thrown error would end the whole reply (LiteRT-LM), so the tool
   /// answers with an error the model can act on.
   func testToolRunReturnsErrorsInsteadOfThrowing() async throws {
-    ToolBudget.begin(.init(maxResultBytes: 400, maxCalls: 3))
+    ToolBudget.begin(.init(maxResultTokens: 150, maxCalls: 3))
     for expression in ["2^", "sqrt(4)", "1/0"] {
       var tool = CalculatorTool()
       tool.expression = expression
@@ -101,7 +101,7 @@ final class CalculatorToolTests: XCTestCase {
   }
 
   func testToolRoundsResultsForTheModel() async throws {
-    ToolBudget.begin(.init(maxResultBytes: 400, maxCalls: 2))
+    ToolBudget.begin(.init(maxResultTokens: 150, maxCalls: 2))
     var tool = CalculatorTool()
     tool.expression = "0.1 + 0.2"
     let output = try await tool.run() as? [String: Any]

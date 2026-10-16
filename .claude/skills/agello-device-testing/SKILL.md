@@ -173,10 +173,11 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
   message) so a rejected send can't pass for a wrong answer.
 - **Order.** `testNN_Name` methods run in name order. Insert with letter
   suffixes (`test06b_…`), and keep `test90_Benchmark` last.
-- **Long prompts.** The app estimates 3 bytes per token, so about 4K tokens
-  of English is the most chat's 8K window accepts. Longer prompts need
-  `appState.options.maxNumTokensOverride` plus
-  `await appState.applyCurrentOptions()`; `tearDown` restores the options.
+- **Long prompts.** The engine counts a message's tokens exactly (probe 17),
+  and a send must leave room for a reply (512 tokens, plus the thinking
+  budget with Think): about 7K tokens fit chat's 8K window. Digits cost a
+  token each. Longer prompts need `appState.options.maxNumTokensOverride`
+  plus `await appState.applyCurrentOptions()`; `tearDown` restores the options.
 - **Opt-in suites.** Opt-in classes throw `XCTSkip` in `setUp` unless their
   `HARNESS_*` variable is set: the script exports `TEST_RUNNER_HARNESS_*`, and
   xcodebuild strips the prefix. A new device-test class runs in no suite until
