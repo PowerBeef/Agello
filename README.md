@@ -133,7 +133,7 @@ On the iPhone GPU, Gemma 4 duplicated digits once a chat passed ~2K tokens ("202
 
 #### 🧮 A context window that never overflows
 Overflowing LiteRT-LM's KV cache corrupts its native heap. So every message is budgeted first:
-- cached tokens are measured, and new text is estimated conservatively and calibrated against the runtime;
+- cached tokens are measured, and new text is counted with the model's own tokenizer, as the runtime will render it;
 - older turns are trimmed, and replies are capped;
 - tool results get their own budgets.
 

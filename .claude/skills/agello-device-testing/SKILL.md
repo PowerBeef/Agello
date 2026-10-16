@@ -207,6 +207,12 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
 - XCTest can't answer system permission prompts on device, so UI tests use
   launch arguments instead.
 
+- `ThinkingScenarioTests/test02_ReasoningStaysOutOfCache` fails on the Mac
+  with Google's v0.18.0 and the 512-block model file (cache 377 to 516 over
+  the second Think turn, as if the reasoning stayed), identically at 93122b6
+  and later. The iPhone measured the filter working before that model file;
+  run test02 on the iPhone before treating it as a regression.
+
 ## Launch arguments and environment
 
 | Name | Effect |

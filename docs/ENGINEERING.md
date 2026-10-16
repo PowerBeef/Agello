@@ -39,7 +39,7 @@ So every chat now runs at full float16 speed with no precision switch: 1.7–2.1
 
 Overflowing LiteRT-LM's KV cache corrupts its native heap and crashes the app, so every message is budgeted before it is sent:
 
-- **Measure, then estimate.** The tokens already cached are read from the runtime; the new message is estimated at 3 bytes per token, a deliberately conservative figure that is calibrated upward from exact runtime counts and never relaxed below it.
+- **Count exactly.** The tokens already cached are read from the runtime, and the new message is counted with the model's own tokenizer as the runtime will render it (on a new conversation that includes the preamble, the tool schemas and the replayed history). Byte estimates, which count digits and ideographs as a token each, remain only where the tokenizer isn't available.
 - **Fit or explain.** If the message plus a reply reserve doesn't fit, older turns are trimmed (the latest reply is truncated rather than dropped) and the conversation is reseeded. A message that can never fit is rejected with an explanation instead of crashing.
 - **Cap the reply.** The reply is capped to the room that's left. The preamble estimate includes the whole system prompt, personalization and project instructions included.
 - **Tool budgets.** LiteRT-LM runs tool calls by itself while streaming, so each generation round gets a quarter of the remaining room, each tool result an eighth, with at most two calls. A streaming guard ends a reply cleanly before output plus tool results could overflow.

@@ -103,7 +103,9 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   1. Run `patch_rope.py --split --block 512` on the new file.
   2. Upload it to the same Hugging Face repo, with the model card's sha256
      and source revision updated.
-  3. Update `ModelCatalog.e4b` (`revision`, `sizeBytes`).
+  3. Update `ModelCatalog.e4b` (`revision`, `sizeBytes`, `sha256`: the file's LFS id from
+     `https://huggingface.co/api/models/<repo>/tree/<revision>`). Downloads are checked
+     against it. EmbeddingGemma is pinned the same way (`ModelCatalog.embeddingGemma`).
   4. Run the `inference` suite (`test15_LongContextDigitFidelity`) and probe 12.
 - **When Google fixes #3913** (a new LiteRT-LM release or a re-exported model):
   - Run `ONLY=AgelloDeviceTests/ProbeScenarioTests/test10_PositionBoundary scripts/device-harness.sh probes`
@@ -121,7 +123,7 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
 - **Swift wrapper patches** (`swift/`) are commits on the fork's `agello`
   branch; the app vendors that branch pinned to a commit
   (`REF=<commit> ./Vendor/refresh-litert-lm.sh`, `PowerBeef/agello-litert-lm` by
-  default). Current patches (as of 2026-10-15, commit `85b1a776`):
+  default). Current patches (as of 2026-10-16, commit `17056fc1`, pushed):
   1. `Conversation.handleToolCalls`: a failed tool call (an invented tool
      name, arguments that don't decode, a tool that throws) is answered with
      an `error` tool response instead of throwing `toolExecutionError`, which
@@ -135,6 +137,19 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
      enough: the deletion then overlaps the next conversation, which also
      stalled v0.18.0. Probe 9 asserts every step under 60 s. Also an upstream
      issue candidate.
+  3. Streams by ID (`swift/ConversationStream.swift`): a lock-protected table
+     maps an integer passed as `userData` to the stream's state; every
+     terminal event finishes the stream once and retires its ID, and late
+     events are dropped. A rejected tool call reports up to three final
+     errors for one send, and the old `Unmanaged` release freed the context
+     on the first (use-after-free). `StreamRegistryTests` (AgelloTests) drive
+     it through `@_spi(Testing) StreamTestHarness`.
+  4. Cancellation and bounds: abandoning the stream cancels the native work;
+     a Stop between tool rounds starts no new round; `maxToolRounds` (25 when
+     nil) and `followUpMaxOutputTokens` cap tool rounds.
+  5. New API: `Engine.tokenize`/`countTokens` (the exported tokenizer) and
+     `EmbeddingOptions.inputOverflowStrategy` (`.truncate` keeps a long
+     passage from failing its batch).
   Each patched file carries a modification notice (Apache 2.0, section 4),
   and `NOTICE` lists the change.
 - **C++ runtime patches** reach the app only through a rebuilt
