@@ -8,9 +8,10 @@ final class AppRouterTests: XCTestCase {
   func testDeepLinks() {
     XCTAssertEqual(AppRouter.action(for: URL(string: "agello://new")!), .newChat)
     XCTAssertEqual(AppRouter.action(for: URL(string: "AGELLO://Voice")!), .voice)
+    // Any page can open a link: it fills the composer, it never sends.
     XCTAssertEqual(
       AppRouter.action(for: URL(string: "agello://ask?q=What%20is%20Canberra%3F")!),
-      .ask("What is Canberra?"))
+      .draft("What is Canberra?"))
     XCTAssertEqual(AppRouter.action(for: URL(string: "agello://ask")!), .newChat)
     let id = UUID()
     XCTAssertEqual(AppRouter.action(for: URL(string: "agello://chat/\(id.uuidString)")!), .openChat(id))
@@ -20,9 +21,10 @@ final class AppRouterTests: XCTestCase {
   }
 
   func testURLsRoundTrip() {
-    for action: AppRouter.Action in [.newChat, .voice, .ask("Hi & bye?"), .openChat(UUID())] {
+    for action: AppRouter.Action in [.newChat, .voice, .draft("Hi & bye?"), .openChat(UUID())] {
       XCTAssertEqual(AppRouter.action(for: AppRouter.url(for: action)), action)
     }
+    XCTAssertEqual(AppRouter.action(for: AppRouter.url(for: .ask("Hi"))), .draft("Hi"))
   }
 
   @MainActor

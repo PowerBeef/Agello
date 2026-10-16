@@ -106,6 +106,9 @@ final class AppState {
   /// live reply; nil when no tool has run in the current reply.
   var toolStatus: String?
   var generationError: String?
+  /// Something worth knowing that isn't a failure: older messages dropped to fit, a reply cut at
+  /// its limit or stopped in the background, a web search that found nothing.
+  var notice: String?
   var isBenchmarking = false
   var benchmarkReport: BenchmarkReport? {
     didSet {
@@ -546,6 +549,7 @@ final class AppState {
     guard !isGenerating, !isPreparing, !isBenchmarking else { return false }
     guard let context = modelContext else { return false }
     generationError = nil
+    notice = nil
     let stopsAtStart = stopCount
     var stopped: Bool { stopCount != stopsAtStart }
     isPreparing = true
@@ -590,8 +594,11 @@ final class AppState {
       guard await ensureEngineLoaded() else { return false }
       let filePrompt = documents.isEmpty ? nil : enginePrompt
       let firstIndex = sources.count + 1
+      // Files and web results share the room for material instead of each taking it all.
+      let fileTokens = filePrompt.map(ContextBudget.estimateTokens) ?? 0
       let task = Task { () -> WebOutcome in
-        await self.searchWeb(question: prompt, history: history, firstIndex: firstIndex)
+        await self.searchWeb(
+          question: prompt, history: history, firstIndex: firstIndex, fileTokens: fileTokens)
       }
       webTask = task
       let outcome = await task.value
@@ -601,7 +608,7 @@ final class AppState {
       case .cancelled:
         return false
       case .failed(let message):
-        generationError = message
+        notice = message
       case .found(let findings):
         enginePrompt = WebContext.prompt(
           question: prompt, sources: findings.sources, filePrompt: filePrompt)
@@ -648,8 +655,8 @@ final class AppState {
     case .ready(let trimmed):
       if trimmed {
         conversationThreadID = threadID
-        generationError =
-          "Older messages were dropped from the model's memory to fit its context window."
+        notice = String(
+          localized: "Older messages were dropped from the model's memory to fit its context window.")
       }
     }
     guard !stopped else { return false }
@@ -887,65 +894,13 @@ final class AppState {
     await send(text: "", imageData: imageData, audioFileURL: audioFileURL, in: thread)
   }
 
-  // MARK: - Shared from other apps
+  // MARK: - Shared from other apps (SharedItems.swift)
 
-  /// Answer the oldest item shared to Agello (share sheet) in a new chat.
-  /// Returns false when there is nothing to do (or a reply is running).
-  @discardableResult
-  func answerNextSharedItem(inbox base: URL? = nil) async -> Bool {
-    guard !isBusy, let context = modelContext, let (item, file) = ShareInbox.pending(base: base).first
-    else { return false }
-    let thread = newThread(in: context)
-    newChatProjectID = nil
-    selectedThreadID = thread.id
-    var question = ShareInbox.question(for: item)
-    var files: [FileRecord] = []
-    var image: Data?
-
-    func attach(_ extracted: ExtractedDocument) {
-      if let document = knowledge.add(extracted, threadID: thread.id) {
-        files.append(
-          FileRecord(
-            id: document.id, name: document.name, kind: document.kindRaw,
-            pageCount: document.pageCount))
-      }
-    }
-
-    switch item.kind {
-    case .file:
-      if let file, let extracted = try? await DocumentIngestor.extract(from: file) {
-        attach(extracted)
-      } else {
-        generationError = String(localized: "Agello couldn't read the shared file.")
-      }
-    case .image:
-      if let file, let data = try? Data(contentsOf: file) { image = ImagePreparer.prepare(data) ?? data }
-    case .url:
-      let link = item.url.flatMap(URL.init(string:))
-      if webSettings.allowed, let link, let page = await WebClient().readPage(link) {
-        attach(
-          ExtractedDocument(
-            name: page.title ?? link.host() ?? link.absoluteString, kind: .text,
-            byteCount: Int64(page.text.utf8.count), pages: [page.text]))
-        question += "\n\n(\(link.absoluteString))"
-      } else if let link {
-        question += "\n\n\(link.absoluteString)"
-      }
-    case .text:
-      let text = item.text ?? ""
-      if text.count > ShareInbox.inlineTextLimit {
-        attach(
-          ExtractedDocument(
-            name: String(localized: "Shared text"), kind: .text, byteCount: Int64(text.utf8.count),
-            pages: [text]))
-      } else if question != text {
-        question += "\n\n\(text)"
-      }
-    }
-    ShareInbox.remove(item.id, base: base)
-    await send(text: question, imageData: image, audioFileURL: nil, files: files, in: thread)
-    return true
-  }
+  /// One pass over the share inbox at a time (``answerSharedItems(inbox:)``).
+  @ObservationIgnored var answeringSharedItems = false
+  /// Shared items whose send failed this session: kept in the inbox for the next launch, not
+  /// retried on every activation.
+  @ObservationIgnored var sharedItemsTried: Set<UUID> = []
 
   // MARK: - Dictation
 
@@ -1002,7 +957,8 @@ final class AppState {
   /// Plan queries (the model resolves follow-ups; a first question is
   /// searched as asked), then research them.
   private func searchWeb(
-    question: String, history: [(role: ChatRole, text: String)], firstIndex: Int
+    question: String, history: [(role: ChatRole, text: String)], firstIndex: Int,
+    fileTokens: Int = 0
   ) async -> WebOutcome {
     var queries = [WebContext.directQuery(question)]
     if !history.isEmpty {
@@ -1023,7 +979,8 @@ final class AppState {
     do {
       let findings = try await webResearch.research(
         queries: queries, question: question, settings: webSettings,
-        budgetTokens: FileContext.budget(window: window, question: question),
+        budgetTokens: WebContext.budget(
+          window: window, question: question, alongsideFileTokens: fileTokens),
         firstIndex: firstIndex
       ) { status in self.preparingStatus = status }
       return findings.sources.isEmpty
@@ -1139,19 +1096,37 @@ final class AppState {
       title: String(localized: "Summarizing \(name)"),
       subtitle: String(localized: "Reading \(count) sections"))
     preparingStatus = "Reading \(name)…"
-    let outputs: [String]? = await serialized {
-      let outputs = try? await self.engine.helperTexts(
-        prompts, maxOutputTokens: FileContext.sectionSummaryTokens
-      ) { done in
-        await MainActor.run {
-          self.preparingStatus = "Reading \(name) · part \(min(done + 1, count)) of \(count)"
-          BackgroundWork.shared.sectionProgress(completed: done, total: count)
-        }
+    let result: Result<[String], Error> = await serialized {
+      let result: Result<[String], Error>
+      do {
+        result = .success(
+          try await self.engine.helperTexts(
+            prompts, maxOutputTokens: FileContext.sectionSummaryTokens
+          ) { done in
+            await MainActor.run {
+              self.preparingStatus = "Reading \(name) · part \(min(done + 1, count)) of \(count)"
+              BackgroundWork.shared.sectionProgress(completed: done, total: count)
+            }
+          })
+      } catch {
+        result = .failure(error)
       }
       await self.afterHelper()
-      return outputs
+      return result
     }
-    guard let outputs, !Task.isCancelled, outputs.count == sections.count else { return nil }
+    let outputs: [String]
+    switch result {
+    case .success(let value):
+      outputs = value
+    case .failure(let error):
+      // Stopped: nothing to explain. Otherwise say why the files weren't read.
+      if !Task.isCancelled, !(error is CancellationError), error as? ChatError != .generationCancelled {
+        let reason = (error as? ChatError)?.displayMessage ?? error.localizedDescription
+        generationError = String(localized: "Couldn't summarize \(name): \(reason)")
+      }
+      return nil
+    }
+    guard !Task.isCancelled, outputs.count == sections.count else { return nil }
     let summary = FileContext.joinSummaries(outputs, sections: sections)
     document.summary = summary
     try? modelContext?.save()
@@ -1210,7 +1185,7 @@ final class AppState {
           }
         case .finished(let stats):
           reply.stats = stats
-          if stats.reachedLimit == true { generationError = GenerationStats.reachedLimitNotice }
+          if stats.reachedLimit == true { notice = GenerationStats.reachedLimitNotice }
           finished = true
         }
       }
@@ -1281,7 +1256,7 @@ final class AppState {
     if isBusy {
       Log.lifecycle.info("background: stopping generation")
       stop()
-      generationError = "Reply stopped because Agello moved to the background."
+      notice = String(localized: "Reply stopped because Agello moved to the background.")
     } else {
       // A title, memory or dictation helper: stopped, and queued work runs again on return.
       Task { await engine.cancel() }
@@ -1475,8 +1450,13 @@ final class AppState {
     let projectID = project.id
     let chats = (try? context.fetch(
       FetchDescriptor<ChatThread>(predicate: #Predicate { $0.projectID == projectID }))) ?? []
-    for thread in chats where generatingThreadID != thread.id {
-      deleteThread(thread, in: context)
+    for thread in chats {
+      // The chat replying now stays, out of the project, rather than pointing at nothing.
+      if generatingThreadID == thread.id {
+        thread.projectID = nil
+      } else {
+        deleteThread(thread, in: context)
+      }
     }
     for document in knowledge.documents(projectID: projectID) { knowledge.delete(document) }
     if newChatProjectID == projectID { newChatProjectID = nil }

@@ -20,6 +20,9 @@ struct ChatView: View {
   @State private var showScanner = false
   /// Files read and waiting to be sent with the next message.
   @State private var pendingFiles: [ExtractedDocument] = []
+  /// Bumped when the chat changes: files still being read belong to the chat they were picked in.
+  @State private var composerGeneration = 0
+  @State private var fileReads: [Task<Void, Never>] = []
   /// Files being read right now.
   @State private var readingFiles = 0
   /// Search the web for the next message.
@@ -67,6 +70,7 @@ struct ChatView: View {
         .animation(Theme.Motion.modeCrossfade, value: mode)
     }
     .appAnimation(Theme.Motion.easeOut, value: appState.generationError)
+    .appAnimation(Theme.Motion.easeOut, value: appState.notice)
     .navigationTitle(thread?.title ?? "")
     .navigationBarTitleDisplayMode(.inline)
     .sheet(isPresented: $showLibrary) {
@@ -120,6 +124,19 @@ struct ChatView: View {
       editingTurn = nil
       draft = ""
       pendingImage = nil
+      // Files, the Search toggle and a voice message belong to the chat they were added in.
+      composerGeneration += 1
+      for read in fileReads { read.cancel() }
+      fileReads = []
+      pendingFiles = []
+      searchWeb = false
+      dictating = false
+      recorder.discard()
+      takeRequestedDraft()
+    }
+    .onChange(of: AppRouter.shared.draftRequested, initial: true) {
+      // A new chat opened for it applies it on the chat change above.
+      if thread == nil { takeRequestedDraft() }
     }
     .onDisappear { reader.stop() }
     .onAppear {
@@ -196,14 +213,20 @@ struct ChatView: View {
     }
   }
 
+  /// An error first, else a notice (same place and identifier; errors look like warnings).
   @ViewBuilder
   private var noticeBanner: some View {
     if let error = appState.generationError {
       InlineBanner(
-        symbol: "info.circle", message: error, tint: Theme.Status.guarded,
+        symbol: "exclamationmark.triangle", message: error, tint: Theme.Status.guarded,
         identifier: "chat.banner.notice"
       ) {
         Button("Dismiss") { appState.generationError = nil }
+      }
+      .bannerInsets()
+    } else if let notice = appState.notice {
+      InlineBanner(symbol: "info.circle", message: notice, identifier: "chat.banner.notice") {
+        Button("Dismiss") { appState.notice = nil }
       }
       .bannerInsets()
     }
@@ -646,17 +669,35 @@ struct ChatView: View {
     }
   }
 
-  /// Read a file in the background into the pending attachments.
+  /// A link's message (`agello://ask`) in the composer, for the user to send.
+  private func takeRequestedDraft() {
+    guard let text = AppRouter.shared.draftRequested else { return }
+    AppRouter.shared.draftRequested = nil
+    draft = text
+    inputFocused = true
+  }
+
+  /// Read a file in the background into the pending attachments of the chat it was picked in.
   private func read(_ extract: @escaping @Sendable () async throws -> ExtractedDocument) {
     readingFiles += 1
-    Task {
+    let generation = composerGeneration
+    let task = Task {
       defer { readingFiles -= 1 }
+      let extraction = Task.detached(priority: .userInitiated) { try await extract() }
       do {
-        pendingFiles.append(try await Task.detached(priority: .userInitiated) { try await extract() }.value)
+        let document = try await withTaskCancellationHandler {
+          try await extraction.value
+        } onCancel: {
+          extraction.cancel()
+        }
+        guard generation == composerGeneration else { return }
+        pendingFiles.append(document)
       } catch {
+        guard generation == composerGeneration, !(error is CancellationError) else { return }
         appState.generationError = error.localizedDescription
       }
     }
+    fileReads.append(task)
   }
 
   /// A new chat, in the project it was started from (if any).

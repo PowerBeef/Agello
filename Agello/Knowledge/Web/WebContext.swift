@@ -3,6 +3,13 @@ import Foundation
 /// What the model reads after a web search, query planning, and turning
 /// "[1]" markers into links. Pure (unit-tested).
 enum WebContext {
+  /// Tokens for web results: the share of the window for material (``FileContext/budget``)
+  /// less what the chat's files already take, and never under a quarter of it.
+  static func budget(window: Int, question: String, alongsideFileTokens fileTokens: Int = 0) -> Int {
+    let share = FileContext.budget(window: window, question: question)
+    return max(share / 4, share - fileTokens)
+  }
+
   struct Source: Equatable, Sendable {
     var index: Int
     var title: String

@@ -90,6 +90,36 @@ final class SharedItemFlowTests: XCTestCase {
     XCTAssertFalse(again)
   }
 
+  /// A shared item whose send fails stays in the inbox (for the next launch) and isn't retried
+  /// on every activation; its file doesn't stay behind in the empty chat.
+  func testAFailedSendKeepsTheSharedItem() async throws {
+    let file = base.appendingPathComponent("notes.md")
+    try "Bring the tent.".write(to: file, atomically: true, encoding: .utf8)
+    try ShareInbox.save(.init(kind: .file, question: "Summarize", fileName: "notes.md"), file: file, base: base)
+    await mock.setFitResult(.failure(.messageTooLong))
+    let answered = await appState.answerNextSharedItem(inbox: base)
+    XCTAssertFalse(answered)
+    XCTAssertEqual(ShareInbox.pending(base: base).count, 1, "The item was lost with the failed send")
+    XCTAssertTrue(try container.mainContext.fetch(FetchDescriptor<ChatDocument>()).isEmpty)
+    let retried = await appState.answerNextSharedItem(inbox: base)
+    XCTAssertFalse(retried, "Retried in the same session")
+  }
+
+  /// Launch and activation both ask for shared items: one pass answers each item once.
+  func testOnePassAtATime() async throws {
+    try ShareInbox.save(.init(kind: .text, question: "", text: "Only once"), base: base)
+    let sendsBefore = await mock.sendLog.count
+    let appState = try XCTUnwrap(appState)
+    let base = try XCTUnwrap(base)
+    let first = Task { await appState.answerSharedItems(inbox: base) }
+    let second = Task { await appState.answerSharedItems(inbox: base) }
+    await first.value
+    await second.value
+    let sends = await mock.sendLog.count - sendsBefore
+    XCTAssertEqual(sends, 1)
+    XCTAssertTrue(ShareInbox.pending(base: base).isEmpty)
+  }
+
   func testSharedTextAndLinks() async throws {
     try ShareInbox.save(.init(kind: .text, question: "", text: "Bonjour tout le monde"), base: base)
     await appState.answerNextSharedItem(inbox: base)

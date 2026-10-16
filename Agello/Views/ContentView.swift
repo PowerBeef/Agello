@@ -227,9 +227,7 @@ struct ContentView: View {
 
   /// Items shared from other apps while Agello wasn't open.
   private func answerSharedItems() {
-    Task {
-      while await appState.answerNextSharedItem() {}
-    }
+    Task { await appState.answerSharedItems() }
   }
 
   /// Carry out a request from Siri, Shortcuts, widgets, Spotlight, or a link.
@@ -255,6 +253,9 @@ struct ContentView: View {
       let thread = appState.newThread(in: context)
       appState.selectedThreadID = thread.id
       Task { await appState.send(text: question, imageData: nil, audioFileURL: nil, in: thread) }
+    case .draft(let text):
+      newChat()
+      AppRouter.shared.draftRequested = text
     }
   }
 

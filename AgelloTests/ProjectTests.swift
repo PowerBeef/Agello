@@ -111,6 +111,23 @@ final class ProjectTests: XCTestCase {
     XCTAssertEqual(try context.fetch(FetchDescriptor<ChatDocument>()).count, 0)
   }
 
+  /// The chat replying while its project is deleted stays, out of the project, instead of
+  /// pointing at a project that no longer exists.
+  func testDeletingAProjectKeepsTheReplyingChatOutsideIt() async throws {
+    let project = appState.newProject(named: "Trip", in: context)
+    let thread = chat(in: project)
+    let reply = Task { await appState.send(text: "Hi", imageData: nil, audioFileURL: nil, in: thread) }
+    let deadline = ContinuousClock.now + .seconds(5)
+    while appState.generatingThreadID != thread.id, ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    appState.deleteProject(project, in: context)
+    _ = await reply.value
+    let chats = try context.fetch(FetchDescriptor<ChatThread>())
+    XCTAssertEqual(chats.map(\.id), [thread.id])
+    XCTAssertNil(chats.first?.projectID)
+  }
+
   func testMovingAChatRebuildsItsContextWithTheProject() async {
     let project = appState.newProject(named: "Garden", in: context)
     project.instructions = "Organic only."

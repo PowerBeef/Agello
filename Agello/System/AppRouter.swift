@@ -13,8 +13,11 @@ final class AppRouter {
   enum Action: Equatable, Sendable {
     /// Open a new, empty chat.
     case newChat
-    /// Open a new chat and send this message.
+    /// Open a new chat and send this message (Siri and Shortcuts).
     case ask(String)
+    /// Open a new chat with this message in the composer, unsent: a link (`agello://ask`) can
+    /// come from any page or app, so it never sends for the user.
+    case draft(String)
     /// Open voice mode in a new chat.
     case voice
     /// Open a saved chat.
@@ -25,6 +28,8 @@ final class AppRouter {
   var pending: Action?
   /// Voice mode should open over the current (new) chat.
   var voiceRequested = false
+  /// Text for the new chat's composer (``Action/draft(_:)``).
+  var draftRequested: String?
 
   /// The most recent request (kept after it's carried out; diagnostics).
   private(set) var lastHandled: Action?
@@ -57,7 +62,7 @@ final class AppRouter {
         .queryItems?.first { $0.name == "q" }?.value?
         .trimmingCharacters(in: .whitespacesAndNewlines)
       guard let query, !query.isEmpty else { return .newChat }
-      return .ask(String(query.prefix(4_000)))
+      return .draft(String(query.prefix(4_000)))
     case "chat":
       let id = url.pathComponents.dropFirst().first.flatMap(UUID.init(uuidString:))
       return id.map(Action.openChat)
@@ -71,7 +76,7 @@ final class AppRouter {
     case .newChat: return URL(string: "\(scheme)://new")!
     case .voice: return URL(string: "\(scheme)://voice")!
     case .openChat(let id): return URL(string: "\(scheme)://chat/\(id.uuidString)")!
-    case .ask(let text):
+    case .ask(let text), .draft(let text):
       var components = URLComponents(string: "\(scheme)://ask")!
       components.queryItems = [URLQueryItem(name: "q", value: text)]
       return components.url!

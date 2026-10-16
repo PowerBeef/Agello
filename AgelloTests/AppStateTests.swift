@@ -286,7 +286,8 @@ final class AppStateTests: XCTestCase {
     let accepted = await appState.send(text: "Hi", imageData: nil, audioFileURL: nil, in: thread)
     XCTAssertTrue(accepted)
     XCTAssertEqual(thread.turns.count, 2)
-    XCTAssertNotNil(appState.generationError, "User should learn older messages were dropped")
+    XCTAssertNotNil(appState.notice, "User should learn older messages were dropped")
+    XCTAssertNil(appState.generationError, "Dropping older messages isn't an error")
   }
 
   func testMessageTooLongIsRejectedWithoutPersisting() async {

@@ -110,6 +110,15 @@ final class WebTests: XCTestCase {
     XCTAssertEqual(WebClient.wikipediaLanguage(for: "Oslo", preferred: ["nb-NO"]), "no")
   }
 
+  /// Files and web results share the room for material: web gets what the files leave, and
+  /// never under a quarter of it.
+  func testWebBudgetSharesTheWindowWithFiles() {
+    let alone = WebContext.budget(window: 8_192, question: "q")
+    XCTAssertEqual(alone, FileContext.budget(window: 8_192, question: "q"))
+    XCTAssertEqual(WebContext.budget(window: 8_192, question: "q", alongsideFileTokens: 1_000), alone - 1_000)
+    XCTAssertEqual(WebContext.budget(window: 8_192, question: "q", alongsideFileTokens: 9_000), alone / 4)
+  }
+
   func testEntities() {
     XCTAssertEqual(HTMLText.decodeEntities("a&amp;b &#233;t&#xE9; &unknown; &"), "a&b été &unknown; &")
   }

@@ -80,10 +80,10 @@ final class ThinkingScenarioTests: DeviceTestCase {
     let puzzle = await harness.ask(
       "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost? Reason carefully.",
       in: harness.newThread())
-    let puzzleNotice = appState.generationError ?? ""
+    let puzzleNotice = appState.notice ?? appState.generationError ?? ""
     let story = await harness.ask(
       "Write a 1,000-word story about a lighthouse keeper.", in: harness.newThread())
-    let storyNotice = appState.generationError ?? ""
+    let storyNotice = appState.notice ?? appState.generationError ?? ""
     harness.record(
       "thinking01b_answerRoom",
       [
