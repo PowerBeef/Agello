@@ -1,4 +1,6 @@
+import CryptoKit
 import Foundation
+import Network
 
 /// Downloads and stores `.litertlm` model files in Application Support.
 /// Downloads run in a background `URLSession`: they continue when the app
@@ -38,14 +40,33 @@ final class ModelStore: NSObject {
   /// to index files attached before the embedding model arrived).
   @ObservationIgnored
   var onModelReady: ((ModelID) -> Void)?
+  /// On a cellular or other metered network, or in Low Data Mode, right now.
+  private(set) var onExpensiveNetwork = false
+  /// Downloads told to wait for Wi-Fi that haven't received anything yet.
+  private(set) var waitingForWiFi: Set<ModelID> = []
+  @ObservationIgnored private let pathMonitor = NWPathMonitor()
+
+  /// Files larger than this ask before downloading over a cellular or metered network.
+  nonisolated static let cellularConsentBytes: Int64 = 200_000_000
 
   override init() {
     super.init()
     // Retired preference from the two-model era.
     UserDefaults.standard.removeObject(forKey: "activeModelID")
     BackgroundDownloads.delegate.store = self
+    for spec in ModelCatalog.all { resumeData[spec.id] = Self.savedResumeData(for: spec.id) }
     refreshStates()
     reattachRunningDownload()
+    pathMonitor.pathUpdateHandler = { [weak self] path in
+      let expensive = path.isExpensive || path.isConstrained
+      Task { @MainActor in self?.onExpensiveNetwork = expensive }
+    }
+    pathMonitor.start(queue: DispatchQueue(label: "agello.network-path"))
+  }
+
+  /// Whether downloading `spec` now should ask first (a large file over a metered network).
+  func needsCellularConsent(for spec: ModelSpec) -> Bool {
+    onExpensiveNetwork && spec.sizeBytes > Self.cellularConsentBytes && !isDownloaded(spec)
   }
 
   /// After a relaunch, a download may still be running in the background
@@ -86,13 +107,18 @@ final class ModelStore: NSObject {
     return dir
   }
 
-  /// Free space required beyond the file itself (model loading, caches, OS).
+  /// Free space required beyond the file and its engine cache (loading, the OS).
   nonisolated static let storageMargin: Int64 = 500_000_000
+
+  /// Disk `spec` needs: the file, the engine cache its first load writes, and a margin.
+  nonisolated static func requiredBytes(for spec: ModelSpec) -> Int64 {
+    spec.sizeBytes + spec.engineCacheBytes + storageMargin
+  }
 
   /// Whether `availableBytes` (nil = unknown) can hold `spec`.
   nonisolated static func hasRoom(for spec: ModelSpec, availableBytes: Int64?) -> Bool {
     guard let availableBytes else { return true }
-    return availableBytes >= spec.sizeBytes + storageMargin
+    return availableBytes >= requiredBytes(for: spec)
   }
 
   private func availableStorageBytes() -> Int64? {
@@ -119,13 +145,22 @@ final class ModelStore: NSObject {
       // Resume data arrives asynchronously after a pause; without it,
       // Resume simply restarts the download.
       if case .paused = states[spec.id] { continue }
-      states[spec.id] = isDownloaded(spec) ? .ready : .notDownloaded
+      if isDownloaded(spec) {
+        states[spec.id] = .ready
+      } else if let data = resumeData[spec.id] {
+        // Paused (or interrupted) in an earlier run: resume where it stopped.
+        states[spec.id] = .paused(progress: Self.progress(ofResumeData: data, size: spec.sizeBytes))
+      } else {
+        states[spec.id] = .notDownloaded
+      }
     }
   }
 
   // MARK: - Actions
 
-  func startDownload(_ spec: ModelSpec) {
+  /// Download `spec`; `overCellular` false waits for Wi-Fi when the network is metered (see
+  /// ``needsCellularConsent(for:)``).
+  func startDownload(_ spec: ModelSpec, overCellular: Bool = true) {
     if let current = downloadingSpec {
       if current.id == spec.id { return }
       // One download at a time: pause (keeping resume data) rather than
@@ -135,7 +170,7 @@ final class ModelStore: NSObject {
     if resumeData[spec.id] == nil, !Self.hasRoom(for: spec, availableBytes: availableStorageBytes())
     {
       let needed = ByteCountFormatter.string(
-        fromByteCount: spec.sizeBytes + Self.storageMargin, countStyle: .file)
+        fromByteCount: Self.requiredBytes(for: spec), countStyle: .file)
       states[spec.id] = .failed(message: "Not enough storage. \(needed) free space is needed.")
       return
     }
@@ -145,8 +180,12 @@ final class ModelStore: NSObject {
     if let data = resumeData[spec.id] {
       task = session.downloadTask(withResumeData: data)
     } else {
-      task = session.downloadTask(with: spec.downloadURL)
+      var request = URLRequest(url: spec.downloadURL)
+      request.allowsExpensiveNetworkAccess = overCellular
+      request.allowsConstrainedNetworkAccess = overCellular
+      task = session.downloadTask(with: request)
     }
+    if !overCellular, onExpensiveNetwork { waitingForWiFi.insert(spec.id) }
     // Readable from any thread in delegate callbacks (see below).
     task.taskDescription = spec.id.rawValue
     activeTask = task
@@ -182,9 +221,10 @@ final class ModelStore: NSObject {
     activeTask = nil
     downloadingSpec = nil
     states[spec.id] = .paused(progress: progress)
+    waitingForWiFi.remove(spec.id)
     task.cancel { [weak self] data in
       guard let data else { return }
-      Task { @MainActor in self?.resumeData[spec.id] = data }
+      Task { @MainActor in self?.keepResumeData(data, for: spec.id) }
     }
   }
 
@@ -194,8 +234,40 @@ final class ModelStore: NSObject {
       activeTask = nil
       downloadingSpec = nil
     }
-    resumeData[spec.id] = nil
+    waitingForWiFi.remove(spec.id)
+    keepResumeData(nil, for: spec.id)
     states[spec.id] = isDownloaded(spec) ? .ready : .notDownloaded
+  }
+
+  // MARK: - Resume data (kept across launches)
+
+  /// Keep (or drop) where a download stopped, on disk too, so it resumes after a relaunch
+  /// instead of starting the 3.7 GB again.
+  func keepResumeData(_ data: Data?, for id: ModelID) {
+    resumeData[id] = data
+    guard let url = try? Self.resumeDataURL(for: id) else { return }
+    if let data {
+      try? data.write(to: url, options: .atomic)
+    } else {
+      try? FileManager.default.removeItem(at: url)
+    }
+  }
+
+  nonisolated static func resumeDataURL(for id: ModelID) throws -> URL {
+    try modelsDirectory().appendingPathComponent("\(id.rawValue).resume")
+  }
+
+  nonisolated static func savedResumeData(for id: ModelID) -> Data? {
+    (try? resumeDataURL(for: id)).flatMap { try? Data(contentsOf: $0) }
+  }
+
+  /// How far a download got, from its resume data (0 when it doesn't say).
+  nonisolated static func progress(ofResumeData data: Data, size: Int64) -> Double {
+    guard size > 0,
+      let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+      let received = (plist["NSURLSessionResumeBytesReceived"] as? NSNumber)?.int64Value
+    else { return 0 }
+    return min(1, Double(received) / Double(size))
   }
 
   func deleteModel(_ spec: ModelSpec) {
@@ -238,7 +310,8 @@ final class ModelStore: NSObject {
 
   @discardableResult
   nonisolated static func placeDownloadedFile(
-    from location: URL, fileName: String, expectedSize: Int64, in directory: URL
+    from location: URL, fileName: String, expectedSize: Int64, expectedSHA256: String? = nil,
+    in directory: URL
   ) throws -> URL {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let destination = directory.appendingPathComponent(fileName)
@@ -252,12 +325,31 @@ final class ModelStore: NSObject {
       try? FileManager.default.removeItem(at: destination)
       throw ModelStoreError.sizeMismatch(expected: expectedSize, actual: size)
     }
+    // The right size can still be the wrong bytes (a damaged or swapped file).
+    if let expectedSHA256, try sha256(of: destination) != expectedSHA256.lowercased() {
+      try? FileManager.default.removeItem(at: destination)
+      throw ModelStoreError.checksumMismatch
+    }
     return destination
+  }
+
+  /// Hex SHA-256 of a file, read in 8 MB pieces (about 3 s for E4B's 3.7 GB on a recent iPhone).
+  nonisolated static func sha256(of url: URL) throws -> String {
+    let handle = try FileHandle(forReadingFrom: url)
+    defer { try? handle.close() }
+    var hasher = SHA256()
+    while let chunk = try autoreleasepool(invoking: { try handle.read(upToCount: 8 << 20) }),
+      !chunk.isEmpty
+    {
+      hasher.update(data: chunk)
+    }
+    return hasher.finalize().map { String(format: "%02x", $0) }.joined()
   }
 }
 
 enum ModelStoreError: Error, LocalizedError, Equatable {
   case sizeMismatch(expected: Int64, actual: Int64)
+  case checksumMismatch
   case httpStatus(Int)
 
   var errorDescription: String? {
@@ -265,6 +357,8 @@ enum ModelStoreError: Error, LocalizedError, Equatable {
     case .sizeMismatch(let expected, let actual):
       return
         "Downloaded file failed verification (got \(actual) bytes, expected \(expected)). Please retry."
+    case .checksumMismatch:
+      return "Downloaded file failed verification (its checksum doesn't match). Please retry."
     case .httpStatus(let code):
       return "The download server returned HTTP \(code). Please retry later."
     }
@@ -343,7 +437,7 @@ extension ModelStore {
         try Self.validateResponse(downloadTask.response)
         try Self.placeDownloadedFile(
           from: location, fileName: spec.fileName, expectedSize: spec.sizeBytes,
-          in: directory)
+          expectedSHA256: spec.sha256, in: directory)
       } catch {
         placementError = error
       }
@@ -356,7 +450,8 @@ extension ModelStore {
       // Only touch state if this task is still the in-flight download (or
       // none is tracked yet, right after a relaunch).
       guard self.downloadingSpec == nil || self.downloadingSpec?.id == spec.id else { return }
-      self.resumeData[spec.id] = nil
+      self.keepResumeData(nil, for: spec.id)
+      self.waitingForWiFi.remove(spec.id)
       self.activeTask = nil
       self.downloadingSpec = nil
       if let placementError {
@@ -381,6 +476,7 @@ extension ModelStore {
     Task { @MainActor [weak self] in
       // Ignore late callbacks from a paused/cancelled task.
       guard let self, self.downloadingSpec?.id == id else { return }
+      self.waitingForWiFi.remove(id)
       self.states[id] = .downloading(progress: progress)
     }
   }
@@ -395,7 +491,9 @@ extension ModelStore {
     let id = task.taskDescription.flatMap(ModelID.init(rawValue:))
     Task { @MainActor [weak self] in
       guard let self, let spec = self.downloadingSpec, spec.id == id else { return }
-      if let resume { self.resumeData[spec.id] = resume }
+      // No resume data: a later Retry starts over (stale resume data would fail again).
+      self.keepResumeData(resume, for: spec.id)
+      self.waitingForWiFi.remove(spec.id)
       self.activeTask = nil
       self.downloadingSpec = nil
       let progress: Double

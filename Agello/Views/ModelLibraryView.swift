@@ -29,9 +29,43 @@ struct ModelLibraryView: View {
   }
 }
 
+/// Downloads that ask first on a cellular or metered network: Download now, or wait for Wi-Fi.
+struct CellularDownloadConfirmation: ViewModifier {
+  @Environment(AppState.self) private var appState
+  @Binding var spec: ModelSpec?
+
+  func body(content: Content) -> some View {
+    content.confirmationDialog(
+      spec.map { String(localized: "Download \($0.sizeDisplay) over cellular?") } ?? "",
+      isPresented: Binding(get: { spec != nil }, set: { if !$0 { spec = nil } }),
+      titleVisibility: .visible, presenting: spec
+    ) { spec in
+      Button("Download now") { appState.store.startDownload(spec, overCellular: true) }
+      Button("Wait for Wi-Fi") { appState.store.startDownload(spec, overCellular: false) }
+      Button("Cancel", role: .cancel) {}
+    } message: { spec in
+      Text("\(spec.displayName) is a large download. It may use a lot of your data plan.")
+    }
+  }
+}
+
+extension View {
+  func cellularDownloadConfirmation(_ spec: Binding<ModelSpec?>) -> some View {
+    modifier(CellularDownloadConfirmation(spec: spec))
+  }
+}
+
+extension ModelStore {
+  /// Start `spec`, or hand it to `confirm` when it should ask about cellular data first.
+  func download(_ spec: ModelSpec, confirm: (ModelSpec) -> Void) {
+    if needsCellularConsent(for: spec) { confirm(spec) } else { startDownload(spec) }
+  }
+}
+
 private struct ModelCardView: View {
   @Environment(AppState.self) private var appState
   let spec: ModelSpec
+  @State private var cellularSpec: ModelSpec?
 
   private var state: ModelStore.DownloadState {
     appState.store.states[spec.id] ?? .notDownloaded
@@ -63,6 +97,7 @@ private struct ModelCardView: View {
     }
     .padding(Theme.Spacing.lg)
     .surfaceCard(radius: Theme.Radius.group)
+    .cellularDownloadConfirmation($cellularSpec)
   }
 
   @ViewBuilder
@@ -70,7 +105,7 @@ private struct ModelCardView: View {
     switch state {
     case .notDownloaded:
       Button {
-        appState.store.startDownload(spec)
+        appState.store.download(spec) { cellularSpec = $0 }
       } label: {
         Label("Download", systemImage: "arrow.down")
       }
@@ -81,7 +116,10 @@ private struct ModelCardView: View {
         ProgressView(value: progress)
           .tint(tint)
         HStack {
-          Text("Downloading… \(Int(progress * 100))%")
+          Text(
+            appState.store.waitingForWiFi.contains(spec.id)
+              ? String(localized: "Waiting for Wi-Fi…")
+              : String(localized: "Downloading… \(Int(progress * 100))%"))
             .font(.caption)
             .monospacedDigit()
             .foregroundStyle(Theme.Text.secondary)
@@ -97,7 +135,7 @@ private struct ModelCardView: View {
       HStack {
         StatusBadge(text: String(localized: "Paused at \(Int(progress * 100))%"), tone: Theme.Status.guarded)
         Spacer()
-        Button("Resume") { appState.store.startDownload(spec) }
+        Button("Resume") { appState.store.download(spec) { cellularSpec = $0 } }
           .buttonStyle(QuietCapsuleButtonStyle(tint: tint))
         Button("Cancel", role: .cancel) { appState.store.cancelDownload(spec) }
           .buttonStyle(QuietCapsuleButtonStyle(tint: Theme.Text.secondary))
@@ -115,7 +153,7 @@ private struct ModelCardView: View {
         Text(message)
           .font(.footnote)
           .foregroundStyle(Theme.Status.critical)
-        Button("Retry") { appState.store.startDownload(spec) }
+        Button("Retry") { appState.store.download(spec) { cellularSpec = $0 } }
           .buttonStyle(QuietCapsuleButtonStyle(tint: tint))
       }
     }

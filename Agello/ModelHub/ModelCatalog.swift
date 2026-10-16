@@ -11,6 +11,11 @@ struct ModelSpec: Identifiable, Sendable, Equatable {
   let sizeBytes: Int64
   /// Hugging Face commit (or branch) to download: a commit pins the exact file.
   var revision = "main"
+  /// SHA-256 of the file (Hugging Face's LFS id), checked before the file is used.
+  var sha256: String?
+  /// Disk the engine cache takes beside the file once the model loads (GPU-format weights
+  /// and programs, per context size on Google's binary).
+  var engineCacheBytes: Int64 = 0
 
   var downloadURL: URL {
     // swiftlint:disable:next force_unwrapping
@@ -38,7 +43,9 @@ enum ModelCatalog {
     repo: "PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope",
     fileName: "gemma-4-E4B-it-fp16-rope.litertlm",
     sizeBytes: 3_660_726_272,
-    revision: "a1693e22a3439b0d36570cc7844d7b572336a85d"
+    revision: "a1693e22a3439b0d36570cc7844d7b572336a85d",
+    sha256: "6353a23321e46624e0fa1b038d23370e8e0af84032d24d30ef53be3b116f655c",
+    engineCacheBytes: 2_500_000_000
   )
 
   /// EmbeddingGemma 2 (text, 270M): turns text into vectors for search by
@@ -49,7 +56,10 @@ enum ModelCatalog {
     tagline: "Finds the right passages in your files and memories.",
     repo: "litert-community/embeddinggemma-2-text-270m-litert-lm",
     fileName: "embeddinggemma-2-text-270m.litertlm",
-    sizeBytes: 164_626_432
+    sizeBytes: 164_626_432,
+    revision: "9be6e8b90982095dc05c2bd162e4b954ee4dbac7",
+    sha256: "2d079ee2f6f066b1f368e8d7c819f55214eaef1d0513b312321901f30ab286fb",
+    engineCacheBytes: 100_000_000
   )
 
   static let all: [ModelSpec] = [e4b, embeddingGemma]

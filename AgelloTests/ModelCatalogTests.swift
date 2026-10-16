@@ -30,6 +30,19 @@ final class ModelCatalogTests: XCTestCase {
     )
   }
 
+  /// Every download is pinned to a commit and checked against its SHA-256 (Hugging Face's
+  /// LFS id), so a changed upstream file can't replace what was tested.
+  func testEveryModelIsPinnedAndChecksummed() {
+    for spec in ModelCatalog.all {
+      XCTAssertNotNil(spec.revision.wholeMatch(of: /[0-9a-f]{40}/), "\(spec.id): \(spec.revision)")
+      XCTAssertNotNil(spec.sha256?.wholeMatch(of: /[0-9a-f]{64}/), "\(spec.id): no SHA-256")
+      XCTAssertGreaterThan(spec.engineCacheBytes, 0, "\(spec.id)")
+    }
+    XCTAssertEqual(
+      ModelCatalog.embeddingGemma.sha256,
+      "2d079ee2f6f066b1f368e8d7c819f55214eaef1d0513b312321901f30ab286fb")
+  }
+
   func testOriginalE4BFileIsRetired() {
     // The unpatched file isn't in the catalog, so ModelStore deletes it.
     XCTAssertFalse(ModelCatalog.all.map(\.fileName).contains("gemma-4-E4B-it.litertlm"))
@@ -41,7 +54,7 @@ final class ModelCatalogTests: XCTestCase {
     XCTAssertEqual(ModelCatalog.embeddingGemma.sizeBytes, 164_626_432)
     XCTAssertEqual(
       ModelCatalog.embeddingGemma.downloadURL.absoluteString,
-      "https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/main/embeddinggemma-2-text-270m.litertlm"
+      "https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m.litertlm"
     )
   }
 }

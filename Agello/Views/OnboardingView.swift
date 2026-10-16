@@ -5,6 +5,7 @@ import SwiftUI
 struct OnboardingView: View {
   @Environment(AppState.self) private var appState
   var onFinish: () -> Void
+  @State private var cellularSpec: ModelSpec?
 
   private var spec: ModelSpec { appState.store.activeSpec }
   private var state: ModelStore.DownloadState {
@@ -34,6 +35,7 @@ struct OnboardingView: View {
     }
     .ambientBackdrop(Theme.Brand.glacier, intensity: .loud)
     .onAppear { appState.store.refreshStates() }
+    .cellularDownloadConfirmation($cellularSpec)
   }
 
   private var header: some View {
@@ -106,12 +108,15 @@ struct OnboardingView: View {
       case .notDownloaded:
         note("\(spec.displayName) · \(spec.sizeDisplay) one-time download. Wi-Fi recommended.")
         primary("Download \(spec.displayName)", id: "onboarding.download") {
-          appState.store.startDownload(spec)
+          appState.store.download(spec) { cellularSpec = $0 }
         }
       case .downloading(let progress):
         ProgressView(value: progress) {
           HStack {
-            Text("Downloading \(spec.displayName)…")
+            Text(
+              appState.store.waitingForWiFi.contains(spec.id)
+                ? String(localized: "Waiting for Wi-Fi…")
+                : String(localized: "Downloading \(spec.displayName)…"))
             Spacer()
             Text("\(Int(progress * 100))%")
               .monospacedDigit()
@@ -128,12 +133,14 @@ struct OnboardingView: View {
       case .paused(let progress):
         note("Paused at \(Int(progress * 100))%.")
         primary("Resume download", id: "onboarding.download") {
-          appState.store.startDownload(spec)
+          appState.store.download(spec) { cellularSpec = $0 }
         }
       case .failed(let message):
         note(message)
           .foregroundStyle(Theme.Status.critical)
-        primary("Try again", id: "onboarding.download") { appState.store.startDownload(spec) }
+        primary("Try again", id: "onboarding.download") {
+          appState.store.download(spec) { cellularSpec = $0 }
+        }
       case .ready:
         note("\(spec.displayName) is ready.")
         primary("Start chatting", id: "onboarding.start", action: onFinish)

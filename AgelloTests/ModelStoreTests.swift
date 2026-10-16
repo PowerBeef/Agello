@@ -76,12 +76,56 @@ final class ModelStoreTests: XCTestCase {
     XCTAssertEqual(values.isExcludedFromBackup, true)
   }
 
-  func testStorageCheckRequiresFileSizePlusMargin() {
+  /// The first load writes the engine cache beside the file (2.4 GB per context size for
+  /// E4B on Google's binary): a download that leaves no room for it can't be used.
+  func testStorageCheckCountsTheEngineCache() {
     let spec = ModelCatalog.e4b
     XCTAssertTrue(ModelStore.hasRoom(for: spec, availableBytes: nil))
-    XCTAssertTrue(
+    let needed = spec.sizeBytes + spec.engineCacheBytes + ModelStore.storageMargin
+    XCTAssertTrue(ModelStore.hasRoom(for: spec, availableBytes: needed))
+    XCTAssertFalse(ModelStore.hasRoom(for: spec, availableBytes: needed - 1))
+    XCTAssertFalse(
       ModelStore.hasRoom(for: spec, availableBytes: spec.sizeBytes + ModelStore.storageMargin))
-    XCTAssertFalse(ModelStore.hasRoom(for: spec, availableBytes: spec.sizeBytes))
+  }
+
+  /// The right size isn't enough: a file whose bytes differ is removed, not used.
+  func testPlaceDownloadedFileChecksTheSHA256() throws {
+    let models = scratch.appendingPathComponent("Models", isDirectory: true)
+    let data = Data("model bytes".utf8)
+    let good = scratch.appendingPathComponent("good.tmp")
+    try data.write(to: good)
+    let digest = try ModelStore.sha256(of: good)
+    try ModelStore.placeDownloadedFile(
+      from: good, fileName: "model.litertlm", expectedSize: Int64(data.count),
+      expectedSHA256: digest, in: models)
+
+    let swapped = scratch.appendingPathComponent("swapped.tmp")
+    try Data("MODEL BYTES".utf8).write(to: swapped)
+    XCTAssertThrowsError(
+      try ModelStore.placeDownloadedFile(
+        from: swapped, fileName: "model.litertlm", expectedSize: Int64(data.count),
+        expectedSHA256: digest, in: models)
+    ) { error in
+      XCTAssertEqual(error as? ModelStoreError, .checksumMismatch)
+    }
+    XCTAssertFalse(FileManager.default.fileExists(atPath: models.appendingPathComponent("model.litertlm").path))
+  }
+
+  func testSHA256MatchesAKnownValue() throws {
+    let file = scratch.appendingPathComponent("abc.txt")
+    try Data("abc".utf8).write(to: file)
+    XCTAssertEqual(
+      try ModelStore.sha256(of: file),
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+  }
+
+  /// A paused download's progress survives a relaunch with its resume data.
+  func testResumeDataReportsHowFarTheDownloadGot() throws {
+    let plist: [String: Any] = ["NSURLSessionResumeBytesReceived": NSNumber(value: Int64(915_181_568))]
+    let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0)
+    XCTAssertEqual(
+      ModelStore.progress(ofResumeData: data, size: ModelCatalog.e4b.sizeBytes), 0.25, accuracy: 0.001)
+    XCTAssertEqual(ModelStore.progress(ofResumeData: Data("junk".utf8), size: 100), 0)
   }
 
   func testErrorPagesAreRejected() throws {
