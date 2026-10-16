@@ -39,15 +39,17 @@ struct DeviceProfile: Sendable, Equatable {
 
   /// Whether a helper (title, memory, search planning, summary, dictation)
   /// runs beside the chat's conversation instead of replacing it.
-  /// - Google's LiteRT-LM (v0.18.0) wipes the conversation whenever another
-  ///   one runs, so the chat must be reseeded.
+  /// - Google's LiteRT-LM (v0.18.0) loses the conversation whenever another
+  ///   one runs (its restore leaves the helper's cache in the GPU buffers),
+  ///   so the chat must be reseeded.
   /// - Ours (a runtime with a build id) keeps it: the runtime copies its KV
   ///   cache aside while the helper runs and restores it in about 0.1 s
   ///   (2.9 s to reseed 8K tokens of history on the Mac). The copy (0.47 GB
   ///   at 16K) lives while the helper runs (the engine restores the chat as
   ///   soon as the helper ends), so it needs that much memory above
   ///   ``lowMemoryStopBytes``.
-  /// `availableBytes` 0 means not reported (the Mac): keep.
+  /// `availableBytes` 0 means not reported: keep. (The iPhone app on a Mac
+  /// reports its physical memory.)
   static func keepsConversationAcrossHelpers(
     runtimeKeepsSessions: Bool, maxNumTokens: Int, availableBytes: UInt64
   ) -> Bool {
@@ -57,9 +59,9 @@ struct DeviceProfile: Sendable, Equatable {
     return availableBytes >= peak + lowMemoryStopBytes
   }
 
-  /// Everyday chat context. Calibrated on iPhone 17 Pro: a larger KV cache
-  /// slows *every* reply (E4B decode 43 → 38 → 34 → 27 tok/s at 4K → 8K →
-  /// 16K → 32K), so chat stays at 8K and long inputs use ``maxContextTokens``.
+  /// Everyday chat context. Calibrated on iPhone 17 Pro with Google's v0.18.0
+  /// binary: a larger KV cache slows *every* reply (E4B decode 43 → 38 → 34 →
+  /// 27 tok/s at 4K → 8K → 16K → 32K), so chat stays at 8K and long inputs use ``maxContextTokens``.
   static let standardContextTokens = 8_192
 
   /// Default KV-cache size (`maxNumTokens`). Supported devices (iPhone 15 Pro
@@ -73,7 +75,7 @@ struct DeviceProfile: Sendable, Equatable {
   /// within the ~3.5 GB worst case simulated for 8 GB iPhones.
   static func maxContextTokens(model: ModelID, appMemoryLimitBytes: UInt64?) -> Int {
     guard let limit = appMemoryLimitBytes else { return 16_384 }
-    return limit >= 6_500_000_000 ? 32_768 : 16_384
+    return limit >= 6_500_000_000 ? ContextBudget.maxAllocatedPositions : 16_384
   }
 
   func maxContextTokens(model: ModelID) -> Int {

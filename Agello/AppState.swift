@@ -150,8 +150,12 @@ final class AppState {
       useMockEngine ? MockChatEngine() : LiteRTChatEngine()
     self.knowledge = KnowledgeBase(store: self.store, useHashingEmbedder: useMockEngine)
     if let data = UserDefaults.standard.data(forKey: "inferenceOptions"),
-      let decoded = try? JSONDecoder().decode(InferenceOptions.self, from: data)
+      var decoded = try? JSONDecoder().decode(InferenceOptions.self, from: data)
     {
+      // Saved before 32K meant the 32,000 positions LiteRT-LM allocates.
+      if let override = decoded.maxNumTokensOverride, override > InferencePlanner.maxTokens {
+        decoded.maxNumTokensOverride = InferencePlanner.maxTokens
+      }
       self.options = decoded
     }
     self.enableTools = UserDefaults.standard.object(forKey: "enableTools") as? Bool ?? true

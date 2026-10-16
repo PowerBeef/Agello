@@ -74,7 +74,7 @@ struct AdvancedSettingsView: View {
         .themedRow()
       if appState.options.maxNumTokensOverride != nil {
         Stepper(
-          "KV cache: \(appState.options.maxNumTokensOverride ?? 2048) tokens",
+          "KV cache: \(contextBinding.wrappedValue) tokens",
           value: contextBinding,
           in: 256...DeviceProfile.current.maxContextTokens(model: appState.store.activeModelID),
           step: 1024
@@ -265,7 +265,11 @@ struct AdvancedSettingsView: View {
 
   private var contextBinding: Binding<Int> {
     Binding(
-      get: { appState.options.maxNumTokensOverride ?? 2048 },
+      get: {
+        min(
+          appState.options.maxNumTokensOverride ?? 2048,
+          DeviceProfile.current.maxContextTokens(model: appState.store.activeModelID))
+      },
       set: { appState.options.maxNumTokensOverride = $0 }
     )
   }

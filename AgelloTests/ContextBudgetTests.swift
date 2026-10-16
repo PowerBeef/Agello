@@ -4,6 +4,16 @@ import XCTest
 
 /// KV-cache budgeting (audit #15: overflowing the window crashed the app).
 final class ContextBudgetTests: XCTestCase {
+  /// LiteRT-LM gives these files `maxNumTokens` positions up to 32,002 and
+  /// 32,000 for any request of 32,003 or more (their export window).
+  func testAllocatedPositions() {
+    XCTAssertEqual(ContextBudget.allocatedPositions(requested: 8_192), 8_192)
+    XCTAssertEqual(ContextBudget.allocatedPositions(requested: 32_000), 32_000)
+    XCTAssertEqual(ContextBudget.allocatedPositions(requested: 32_002), 32_002)
+    XCTAssertEqual(ContextBudget.allocatedPositions(requested: 32_003), 32_000)
+    XCTAssertEqual(ContextBudget.allocatedPositions(requested: 32_768), 32_000)
+  }
+
   private func turns(_ count: Int, length: Int = 300) -> [(role: ChatRole, text: String)] {
     (0..<count).map { i in
       (i.isMultiple(of: 2) ? .user : .model, String(repeating: "\(i % 10)", count: length))

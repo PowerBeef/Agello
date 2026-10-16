@@ -40,6 +40,18 @@ final class EngineCacheTests: XCTestCase {
     XCTAssertFalse(deleted.contains("kv-8192"))
   }
 
+  /// Before 32K meant 32,000, it made `kv-32768`: never keep it over a size still in use.
+  func testFolderForASizeNoLongerAllocatedIsNeverKept() {
+    let entries = [
+      entry("kv-32768", minutesAgo: 1), entry("kv-8192", minutesAgo: 30), entry("kv-4096", minutesAgo: 60),
+    ]
+    XCTAssertEqual(
+      Set(EngineCache.entriesToDelete(entries, current: "kv-16384", keep: 2)), ["kv-32768", "kv-4096"])
+    XCTAssertEqual(EngineCache.contextSize(ofSizeFolder: "kv-32768"), 32_768)
+    XCTAssertEqual(EngineCache.contextSize(ofSizeFolder: "kv-8192-abc"), 8_192)
+    XCTAssertNil(EngineCache.contextSize(ofSizeFolder: "kv-all-abc"))
+  }
+
   func testKeepOneLeavesOnlyTheCurrentSize() {
     let entries = [entry("kv-8192", minutesAgo: 1), entry("kv-4096", minutesAgo: 2)]
     XCTAssertEqual(EngineCache.entriesToDelete(entries, current: "kv-16384", keep: 1).sorted(), ["kv-4096", "kv-8192"])

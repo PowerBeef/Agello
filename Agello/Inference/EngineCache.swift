@@ -4,9 +4,9 @@ import Foundation
 /// Where LiteRT-LM keeps compiled GPU programs and GPU-format weights, kept
 /// to a bounded size.
 ///
-/// Google's LiteRT-LM stores a full copy of the model's GPU weights (2.2 GB
-/// for E4B) for every context size an engine is created with, in one file it
-/// never trims while the model file is unchanged (probe 14). So with Google's
+/// Google's LiteRT-LM stores another copy of the model's GPU weights for every
+/// context size an engine is created with (each E4B folder held about 2.5 GB),
+/// in one file it never trims while the model file is unchanged (probe 14). So with Google's
 /// binary each context size gets its own folder, and only the most recently
 /// used ones stay. A cached size loads in under a second; an evicted one
 /// recompiles once (~7.5 s for E4B).
@@ -35,6 +35,13 @@ enum EngineCache {
 
   static func embeddingFolder(build: String? = runtimeBuildID) -> String {
     build.map { "\(embeddingFolder)-\($0)" } ?? embeddingFolder
+  }
+
+  /// The context size of a size folder: 8192 for `kv-8192` (and `kv-8192-abc`), nil for
+  /// `kv-all-abc`.
+  static func contextSize(ofSizeFolder name: String) -> Int? {
+    let parts = name.split(separator: "-", maxSplits: 2)
+    return parts.count >= 2 ? Int(parts[1]) : nil
   }
 
   /// The build a context-size folder belongs to: nil for `kv-8192`, "abc" for `kv-all-abc`
@@ -70,6 +77,9 @@ enum EngineCache {
     let sizeFolders = entries.filter {
       $0.isDirectory && $0.name.hasPrefix("kv-") && $0.name != current
         && Self.build(ofSizeFolder: $0.name) == build
+        // A size the runtime can no longer be asked for (32,768 before it
+        // meant 32,000) is never worth keeping over one that's still used.
+        && (Self.contextSize(ofSizeFolder: $0.name) ?? 0) <= ContextBudget.maxAllocatedPositions
     }
     .sorted { $0.modified > $1.modified }
     let keptOthers = Set(sizeFolders.prefix(max(0, keep - 1)).map(\.name))

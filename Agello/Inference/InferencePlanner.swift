@@ -66,6 +66,19 @@ enum ContextBudget {
   /// Audio input token rate (conservative).
   static let audioTokensPerSecond = 25.0
 
+  /// The most positions LiteRT-LM allocates for the Gemma 4 E2B/E4B files: a
+  /// `maxNumTokens` of 32,003 (their export window) or more gets 32,000, the
+  /// largest multiple of 256 below it, so a "32K" request of 32,768 has 768
+  /// fewer positions than it asks for (both Google's binary and ours).
+  static let maxAllocatedPositions = 32_000
+
+  /// Positions the runtime allocates for a requested `maxNumTokens`. Budgets
+  /// must use this, never the request: the margins that keep a reply (and an
+  /// MTP verify round) inside the cache are only a few dozen positions.
+  static func allocatedPositions(requested: Int) -> Int {
+    requested >= 32_003 ? maxAllocatedPositions : requested
+  }
+
   static func estimateTokens(_ text: String, calibration: Double = 1) -> Int {
     let raw = (Double(text.utf8.count) / bytesPerToken * max(1, calibration)).rounded(.up)
     return Int(raw) + perTurnOverhead
@@ -183,9 +196,11 @@ enum ContextBudget {
 
 enum InferencePlanner {
   static let minTokens = 256
-  /// Gemma 4 E2B/E4B support 128K; the practical ceiling is device memory
-  /// (see DeviceProfile and the calibration scenario).
-  static let maxTokens = 32_768
+  /// Gemma 4 E2B/E4B are trained for 128K, but the phone files export a 32K
+  /// window and LiteRT-LM allocates at most 32,000 positions; within that the
+  /// practical ceiling is device memory (see DeviceProfile and the
+  /// calibration scenario).
+  static let maxTokens = ContextBudget.maxAllocatedPositions
 
   /// Resolve user options + model + device into concrete engine settings.
   static func resolve(
@@ -195,9 +210,11 @@ enum InferencePlanner {
   ) -> ResolvedInference {
     let maxNumTokens: Int
     if let override = options.maxNumTokensOverride {
-      maxNumTokens = min(max(minTokens, override), maxTokens)
+      maxNumTokens = ContextBudget.allocatedPositions(
+        requested: min(max(minTokens, override), maxTokens))
     } else {
-      maxNumTokens = DeviceProfile.defaultMaxTokens(model: model, memoryBytes: memoryBytes)
+      maxNumTokens = ContextBudget.allocatedPositions(
+        requested: DeviceProfile.defaultMaxTokens(model: model, memoryBytes: memoryBytes))
     }
 
     return ResolvedInference(

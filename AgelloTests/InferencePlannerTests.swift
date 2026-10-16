@@ -41,6 +41,19 @@ final class InferencePlannerTests: XCTestCase {
       InferencePlanner.maxTokens)
   }
 
+  /// A 32K request allocates 32,000 positions; budgets must use what exists.
+  func testThirtyTwoKMeansTheAllocatedThirtyTwoThousand() {
+    var options = InferenceOptions()
+    options.maxNumTokensOverride = 32_768
+    XCTAssertEqual(
+      InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: roomy).maxNumTokens,
+      32_000)
+    options.maxNumTokensOverride = 16_384
+    XCTAssertEqual(
+      InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: roomy).maxNumTokens,
+      16_384)
+  }
+
   func testThinkingBudget() {
     var options = InferenceOptions()
     options.enableThinking = true
