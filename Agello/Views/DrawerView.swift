@@ -8,6 +8,9 @@ struct DrawerView: View {
   @Query(sort: \ChatThread.updatedAt, order: .reverse) private var threads: [ChatThread]
   @Query(sort: \Project.updatedAt, order: .reverse) private var projects: [Project]
   @State private var query = ""
+  /// The search the list shows: `query` once typing pauses. Matching reads every message of
+  /// every chat, too much to redo at each keystroke.
+  @State private var appliedQuery = ""
   /// Chats related in meaning to the search (beyond the text matches).
   @State private var related: [Row] = []
   @FocusState private var searchFocused: Bool
@@ -33,33 +36,33 @@ struct DrawerView: View {
   private var rows: [Row] {
     threads.compactMap { thread in
       guard !thread.turns.isEmpty else { return nil }
-      if query.isEmpty { return thread.projectID == nil ? Row(thread: thread) : nil }
+      if appliedQuery.isEmpty { return thread.projectID == nil ? Row(thread: thread) : nil }
       let messages = thread.orderedTurns.map(\.text)
-      return ThreadGrouping.match(query: query, title: thread.title, messages: messages)
+      return ThreadGrouping.match(query: appliedQuery, title: thread.title, messages: messages)
         .map { Row(thread: thread, snippet: $0.snippet) }
     }
   }
 
   var body: some View {
     let rows = rows
-    let relatedRows = query.isEmpty ? [] : related.filter { hit in !rows.contains { $0.id == hit.id } }
+    let relatedRows = appliedQuery.isEmpty ? [] : related.filter { hit in !rows.contains { $0.id == hit.id } }
     VStack(spacing: 0) {
       header
       ScrollView {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-          if query.isEmpty {
+          if appliedQuery.isEmpty {
             projectsSection
           }
           if rows.isEmpty, relatedRows.isEmpty {
             Group {
-              if query.isEmpty {
+              if appliedQuery.isEmpty {
                 EmptyStateView(
                   symbol: "bubble.left.and.bubble.right", title: "No chats yet",
                   message: "Your conversations stay on this iPhone.")
               } else {
                 EmptyStateView(
                   symbol: "magnifyingglass", title: "No results",
-                  message: "Nothing matches \u{201C}\(query)\u{201D}.")
+                  message: "Nothing matches \u{201C}\(appliedQuery)\u{201D}.")
               }
             }
             .padding(.top, Theme.Spacing.sm)
@@ -81,8 +84,16 @@ struct DrawerView: View {
       // Results for the previous query must not linger while typing.
       related = []
       let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+      // Clearing the search shows every chat at once; typing filters when it pauses.
+      guard !query.isEmpty else {
+        appliedQuery = ""
+        return
+      }
+      try? await Task.sleep(for: .milliseconds(200))
+      guard !Task.isCancelled else { return }
+      appliedQuery = query
       guard text.count >= 3 else { return }
-      try? await Task.sleep(for: .milliseconds(350))
+      try? await Task.sleep(for: .milliseconds(150))
       guard !Task.isCancelled else { return }
       let hits = await appState.knowledge.relatedChats(
         text, in: threads.filter { !$0.turns.isEmpty }, limit: 6)

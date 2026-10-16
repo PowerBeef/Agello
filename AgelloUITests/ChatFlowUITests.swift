@@ -203,6 +203,7 @@ final class ChatFlowUITests: XCTestCase {
     let search = element("drawer.search")
     search.tap()
     search.typeText("one")
+    sleep(1)  // the list filters once typing pauses
     XCTAssertEqual(rows().count, 1)
     search.clearAndType("quantum chromodynamics")
     sleep(2)  // let search by meaning settle
