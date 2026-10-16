@@ -53,10 +53,12 @@ Sync the fork's `main`: `git fetch upstream && git push origin upstream/main:mai
 
 ### Contributing upstream
 
-As of 2026-10-13, upstream's CONTRIBUTING.md says the repository is **not
-accepting code contributions**: it asks for GitHub issues instead. All merged
-pull requests come from Google's internal mirror (`copybara-service`); outside
-pull requests have been closed, not merged. So:
+As of 2026-10-15, upstream's CONTRIBUTING.md says the repository is **not
+accepting code contributions**: it asks for GitHub issues instead. Merged pull
+requests come from Google's internal mirror (`copybara-service`); outside pull
+requests are rarely merged (30 of 2,497 by 2026-10-15). The fork's
+`docs/agello/reference/contributing.md` has each upstream's rules, issue and
+commit templates, and the evidence checklist. So:
 
 1. Reproduce the bug on the iPhone (harness probes) and fix it on a branch
    off `upstream/main` (or off `agello` when it only matters here).
@@ -145,7 +147,9 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
 
 The Apple-only re-engineering of LiteRT-LM builds the whole runtime from
 source, Metal accelerator included, in three forks. Its docs are in the fork's
-`docs/agello/` on `agello`: `AUDIT.md`, `PARITY.md` (against Google's
+`docs/agello/` on `agello`: `reference/` (the verified reference for the
+runtime, the models and our changes; Agello's `docs/LITERT-LM.md` maps topics
+to its pages), `AUDIT.md` (dated, v0.18.0), `PARITY.md` (against Google's
 nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
 
 | Checkout | Repository, branch |
@@ -161,7 +165,11 @@ nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
   lines in the worktree's `.bazelrc.user` to build from the local checkouts.
   After pushing, re-pin: the new commit and `shasum -a 256` of
   `https://github.com/PowerBeef/<repo>/archive/<commit>.tar.gz`. Comment the
-  overrides out and rebuild: the framework should come out byte-identical.
+  overrides out and rebuild: the framework gets a new build id (it isn't
+  byte-identical), so compare replies (agello-bench `short`), not bytes.
+  Then re-verify the reference: `reference/maintenance.md`, "After a re-pin or
+  rebase" (`tools/agello-docs/check_refs.py --repin` lists the claims whose
+  cited code moved).
 - **Pushing `agello-next`:** from `../LiteRT-LM` (`git push origin
   agello-next`); from the worktree, Git LFS's pre-push lock check fails.
 - **In Agello:** `Vendor/use-local-litert.sh` vendors the worktree's build

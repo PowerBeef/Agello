@@ -1,13 +1,15 @@
 # Testing
 
-Agello is tested on a physical iPhone, and on an Apple silicon Mac running the iPhone app. The simulator has no Metal path for LiteRT-LM, and the failures that matter (native heap corruption, GPU precision, memory pressure, background termination) only show up on real hardware.
+Agello is tested on a physical iPhone, and on an Apple silicon Mac running the iPhone app. The simulator isn't used: our runtime has no simulator build, and the failures that matter (native heap corruption, GPU precision, memory pressure, background termination) only show up on real hardware.
 
 ## The suites
 
+Test methods declared at `93122b6` (2026-10-15). The iPhone run of 2026-10-15 (Agello `ecd8dc6`) passed 227 unit tests, with 1 skipped.
+
 | Target | Tests | Covers |
 | --- | --- | --- |
-| `AgelloTests` | 220 | Planner, context budgeting, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers and page extraction (recorded fixtures), dictation, voice-activity detection, deep links and intents, Spotlight, the share inbox, chat grouping and search, personalization, titles, downloads, and the whole app pipeline through a scripted engine |
-| `AgelloDeviceTests` | 48 | The real models, in-process: download, load, text, chat isolation, stop and continue, tools, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, voice turns, exact digits past 2,048 and 4,096 tokens, benchmark; files (EmbeddingGemma indexing, "summarize this 40-page PDF", cited follow-up, search chats by meaning); live web search, automatic search with the on-device tools off |
+| `AgelloTests` | 227 | Planner, context budgeting, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers and page extraction (recorded fixtures), dictation, voice-activity detection, deep links and intents, Spotlight, the share inbox, chat grouping and search, personalization, titles, downloads, and the whole app pipeline through a scripted engine |
+| `AgelloDeviceTests` | 49 | The real models, in-process: download, load, text, chat isolation, stop and continue, tools, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, voice turns, exact digits past 2,048 and 4,096 tokens, benchmark; files (EmbeddingGemma indexing, "summarize this 40-page PDF", cited follow-up, search chats by meaning); live web search, automatic search with the on-device tools off |
 | `AgelloUITests` | 23 | Real taps: send, no jumping while a reply streams, Stop, Home button mid-reply, leaving and returning mid-reply, rapid settings changes, drawer and search, pin / rename / delete, projects, attached files, web search, dictation, voice mode, deep links, a long summary in the background, regenerate / edit / versions, Think, memory settings, markdown, keyboard clearance, composer controls that fit at every text size, Models; plus the opt-in screenshot tour |
 
 The device scenarios include opt-in suites for work that's too slow or too specialized for every run: long Thinking answers, an **8 GB iPhone memory simulation** (incompressible ballast shrinks usable memory to 5.0, 4.0 and 3.5 GB), **context calibration** (speed and memory at 4K–32K), and **LiteRT-LM probes** that test the runtime directly. The probes are how [#3913](ENGINEERING.md#fixing-long-context-math-on-the-gpu-litert-lm-3913) was pinned to position 2,048 and its fix proven.

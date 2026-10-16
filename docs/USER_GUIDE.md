@@ -38,7 +38,7 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | **Advanced → Performance** | GPU or CPU backend · speculative decoding (MTP) · show performance details under each reply (off by default) |
 | **Advanced → Reasoning & Memory** | Thinking on or off, and its token budget · automatic or manual KV-cache size. Reasoning leaves the model's memory once the reply is done, so it never uses up a chat's context. |
 | **Advanced → Sampling** | Precise (temperature 0.2) · Balanced (0.7) · Creative (1.0) |
-| **Advanced → Voice & Vision** | Image and audio input · image detail (140 / 280 / 560 visual tokens) |
+| **Advanced → Voice & Vision** | Image and audio input · image detail (140 or 280 visual tokens; Detailed also uses 280 with the current model file) |
 | **Advanced → System prompt** | The base instructions for every conversation |
 | **Advanced → Benchmark** | A 1,024-token prefill and 256-token decode run, comparable to Google's published numbers |
 | **Advanced → Device** | This iPhone, the engine, and what's loaded |

@@ -7,7 +7,9 @@ description: Rules that keep LiteRT-LM from crashing or misbehaving in Agello. R
 
 Each rule below comes from a failure reproduced on device. Breaking one
 usually crashes the app (native heap corruption) or silently corrupts output,
-and the simulator can't catch any of them.
+and the simulator can't catch any of them. The runtime mechanisms behind them
+are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
+`docs/LITERT-LM.md`).
 
 ## Ownership
 
@@ -19,7 +21,8 @@ and the simulator can't catch any of them.
   call `serialized` from inside a serialized operation: that deadlocks.
 - Google's LiteRT-LM keeps one live conversation per engine. `helperJSON`,
   `helperTexts`, and `transcribe` create throwaway conversations, which wipe
-  the main one: the engine replaces it with an **empty** one, and the caller
+  the main one (v0.18.0's session restore leaves the helper's KV cache in the
+  GPU buffers): the engine replaces it with an **empty** one, and the caller
   must reseed history before the next send.
 - Our runtime (a build with a build id, `EngineCache.runtimeBuildID`) keeps
   the main conversation: it copies its KV cache aside while the helper runs
@@ -53,8 +56,9 @@ and the simulator can't catch any of them.
 - Reasoning never stays in the KV cache: `load` sets
   `ExperimentalFlags.filterChannelContentFromKvCache = true` explicitly (the
   runtime's builder defaults to true; an unset flag means that default, not
-  off). At the next message the runtime rewinds and refills the answer
-  without its reasoning, which matches a reseed from SwiftData history.
+  off). At the next message (Google's v0.18.0; our build does it right after
+  the reply) the runtime rewinds and refills the answer without its
+  reasoning, which matches a reseed from SwiftData history.
   Measured on the iPhone (two Think turns): 399 cached tokens with the
   filter, 536 with it explicitly off; `ThinkingScenarioTests/test02`
   guards it with `cachedTokenCount()`.
@@ -78,9 +82,9 @@ and the simulator can't catch any of them.
 - Engine caches go through `EngineCache`: `directory(maxNumTokens:)` for any
   E4B engine, `embeddingDirectory()` for EmbeddingGemma, `EngineCache.disabled`
   for one-off engines like the benchmark. Never hand an engine the cache root.
-  Google's LiteRT-LM keeps a 2.2 GB weight copy per context size in one file
-  and never trims it (probe 14), so with it each size has a folder (the two
-  most recently used kept). Ours keys weights by content (T11): one folder,
+  Google's LiteRT-LM keeps another weight copy per context size in one file
+  (each folder held about 2.5 GB for E4B) and never trims it (probe 14), so
+  with it each size has a folder (the two most recently used kept). Ours keys weights by content (T11): one folder,
   `kv-all-<id>`, for every size. LiteRT-LM's cache keys ignore the runtime
   build, so builds that report an id (ours) get folders of their own and
   another build's folders are deleted (`EngineCache.runtimeBuildID`).
@@ -112,7 +116,10 @@ and the simulator can't catch any of them.
     `agello-litert-update`), then run `test15_LongContextDigitFidelity`
     and probe 12.
 - Speculative decoding (MTP) breaks JSON-schema constrained decoding on
-  device. `helperJSON` turns MTP off; plain-text helpers keep it.
+  device, in Google's binary and in ours: the draft and verify states share
+  one grammar matcher, so verify masks come from the wrong position and a
+  rejected draft stays committed (reference `troubleshooting.md`).
+  `helperJSON` turns MTP off; plain-text helpers keep it.
 - Don't trust the model file's `thinking` or `functionCalling` flags: Gemma 4
   files report both as unsupported, yet both work.
 

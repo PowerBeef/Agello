@@ -83,7 +83,7 @@ Text, vision and audio in one model, with reasoning, tools, document Q&A with pa
 
 ## Performance
 
-Gemma 4 E4B on an iPhone 17 Pro (12 GB, iOS 27), GPU, with speculative decoding (MTP).
+Gemma 4 E4B on an iPhone 17 Pro (12 GB, iOS 27), GPU, with speculative decoding (MTP), on Google's LiteRT-LM v0.18.0 runtime (the one the app ships).
 
 | | |
 | --- | --- |
@@ -99,7 +99,7 @@ Gemma 4 E4B on an iPhone 17 Pro (12 GB, iOS 27), GPU, with speculative decoding 
 | Dictation of a spoken sentence | ~1 s (word error rate 0–0.13, English and French) |
 | App memory footprint (8K context, vision and audio) | ~1.2–2.8 GB |
 
-For reference, Google reports 1,189 prefill and 25 decode tokens per second for E4B on the same GPU without speculative decoding.
+For reference, Google reports 1,189 prefill and 25.1 decode tokens per second for E4B on the same GPU, without speculative decoding (model card, as of 2026-10-15).
 
 ## How it works
 
@@ -164,8 +164,8 @@ Voice-activity turn detection, and one audio engine for echo-cancelled capture a
 </td>
 <td valign="top">
 
-#### ✅ 291 tests on a real iPhone
-220 unit tests, 48 scenarios with the real models in-process, and 23 real-tap UI flows. They run through a device harness that also simulates 8 GB iPhones and probes the runtime directly. No simulator: the failures that matter only happen on hardware.
+#### ✅ 299 tests on a real iPhone
+227 unit tests, 49 scenarios with the real models in-process, and 23 real-tap UI flows. They run through a device harness that also simulates 8 GB iPhones and probes the runtime directly. No simulator: the failures that matter only happen on hardware.
 
 </td>
 </tr>
@@ -175,7 +175,7 @@ Voice-activity turn detection, and one audio engine for echo-cancelled capture a
 
 ## Get started
 
-**You'll need** an iPhone 15 Pro or later (8 GB of memory) on iOS 27 with about 4.4 GB free, and a Mac with Xcode 27. The Apple Developer account needs the **Extended Virtual Addressing**, **Increased Memory Limit**, **Background GPU Access** and **App Groups** capabilities. Agello runs on a physical iPhone only: the simulator has no Metal path for LiteRT-LM.
+**You'll need** an iPhone 15 Pro or later (8 GB of memory) on iOS 27 with about 4.4 GB free, and a Mac with Xcode 27. The Apple Developer account needs the **Extended Virtual Addressing**, **Increased Memory Limit**, **Background GPU Access** and **App Groups** capabilities. Agello runs on a physical iPhone only: its LiteRT-LM path is untested in the simulator, and the failures that matter only show on hardware.
 
 1. Open `Agello.xcodeproj`. Swift Package Manager resolves `swift-markdown` and `SwiftMath`; LiteRT-LM is vendored.
 2. The project is set up for team `FK2D8X36G2` and bundle IDs `com.patricedery.agello` (plus `.widgets` and `.share`), sharing the App Group `group.com.patricedery.agello`. On another account, change the team and bundle IDs under **Signing & Capabilities**.
@@ -214,6 +214,7 @@ Phases 0–5 have shipped: foundations, the core chat experience, files, project
 | | |
 | --- | --- |
 | [User guide](docs/USER_GUIDE.md) | Every screen and setting, Siri and widgets, the models, troubleshooting, known limitations |
+| [LiteRT-LM](docs/LITERT-LM.md) | The LiteRT-LM the app ships, what it sets, and a map of the fork's verified runtime and model reference |
 | [Architecture](docs/ARCHITECTURE.md) | Components, the life of a message, the data model, concurrency |
 | [Engineering notes](docs/ENGINEERING.md) | The #3913 fix in full, and every reliability safeguard |
 | [Testing](docs/TESTING.md) | The suites, the device harness, and how to run them |

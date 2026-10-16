@@ -41,10 +41,10 @@ Assumptions to confirm before the phases that depend on them:
 ## 3. Constraints
 
 - **Devices:** iPhone 15 Pro, 15 Pro Max, and later (8 GB or more). Enforce with `UIRequiredDeviceCapabilities` → `iphone-performance-gaming-tier` (iOS 17+, "equivalent to iPhone 15 Pro") plus a runtime check of the app's memory limit. Deployment target stays iOS 27.
-- **Memory:** the app limit with the increased-memory-limit entitlement was ~6.4 GB on a 12 GB iPhone 17 Pro. It must be **measured on an 8 GB device** (an iPhone 15 Pro or another 8 GB model) before choosing defaults. `DeviceProfile` already derives policy from the real limit.
+- **Memory:** the app limit with the increased-memory-limit entitlement was ~6.4 GB on a 12 GB iPhone 17 Pro. *(Superseded: the steady limit is about 8.6 GB (8 GiB); ~6.4 GB was an early reading.)* It must be **measured on an 8 GB device** (an iPhone 15 Pro or another 8 GB model) before choosing defaults. `DeviceProfile` already derives policy from the real limit.
 - **LiteRT-LM on iOS:** GPU (Metal) and CPU backends only (no Neural Engine). v0.18.0 is the latest release (2026-10-06).
 - **Background:** no GPU work in the background except via `BGContinuedProcessingTask` when `supportedResources` includes `.gpu`. Extensions can't load Gemma (memory), so they hand off to the app.
-- **Gemma 4 E2B/E4B:** 128K context, text + image + audio input, video as frames, function calling, thinking, 140+ languages, Apache 2.0. Outputs text only.
+- **Gemma 4 E2B/E4B:** 128K context *(the trained model; the phone files export a 32K window)*, text + image + audio input, video as frames, function calling, thinking, 140+ languages, Apache 2.0. Outputs text only.
 
 ## 4. Model lineup (all LiteRT-LM)
 
@@ -60,7 +60,7 @@ LiteRT-LM / Gemma 4 capabilities to adopt (currently unused):
 - **Large context:** budget by measured memory instead of the fixed 4K (target 8–16K on 8 GB, 16–32K on 12 GB; determined by harness measurement).
 - **JSON-schema constrained decoding** (`ResponseFormat`, `enableResponseFormat`) for structured helper outputs: search queries, memory facts, titles, citations.
 - **App-controlled tool calls** (`automaticToolCalling: false`, tool-call streaming) so the UI can show "Searching…", ask for confirmation, and display sources.
-- **Image detail up to 1,120 visual tokens** for documents and screenshots on roomy devices; **video** as sampled frames.
+- **Image detail up to 1,120 visual tokens** *(the trained model; the phone files accept at most 280)* for documents and screenshots on roomy devices; **video** as sampled frames.
 - **Thinking** with a budget (now confirmed working on device); **MTP** speculative decoding.
 - **EmbeddingGemma 2** Matryoshka truncation (e.g. 768 → 256 dims) to keep vector storage small.
 - **LoRA hooks** reserved for later task adapters; **ModelInfo** for the model catalog.
