@@ -12,7 +12,7 @@ enum ReadableText {
   /// Upper bound on extracted text (a long article is ~40K characters).
   static let maxCharacters = 60_000
 
-  static func extract(html: String) -> Page {
+  static func extract(html: String, maxCharacters: Int = maxCharacters) -> Page {
     let title = HTMLText.firstMatch(
       #"<meta[^>]+property="og:title"[^>]+content="([^"]*)""#, in: html
     )?.first.map(HTMLText.plain)
@@ -22,7 +22,7 @@ enum ReadableText {
       ["script", "style", "noscript", "svg", "nav", "header", "footer", "aside", "form", "button",
         "iframe", "template", "select", "figure"],
       from: html)
-    body = body.replacingOccurrences(of: "<!--.*?-->", with: "", options: .regularExpression)
+    body = body.replacingOccurrences(of: "(?s)<!--.*?-->", with: "", options: .regularExpression)
     let region = largest("article", in: body) ?? largest("main", in: body)
       ?? HTMLText.firstMatch(#"<body[^>]*>(.*)</body>"#, in: body)?.first ?? body
     let text = toText(region)
@@ -30,12 +30,12 @@ enum ReadableText {
       title: title?.isEmpty == false ? title : nil, text: String(text.prefix(maxCharacters)))
   }
 
-  /// Remove whole elements (with content) by tag name.
+  /// Remove whole elements (with content, across lines) by tag name.
   private static func remove(_ tags: [String], from html: String) -> String {
     var output = html
     for tag in tags {
       output = output.replacingOccurrences(
-        of: "<\(tag)\\b[^>]*>.*?</\(tag)>", with: " ",
+        of: "(?is)<\(tag)\\b[^>]*>.*?</\(tag)>", with: " ",
         options: [.regularExpression, .caseInsensitive])
       // Self-closing or unclosed leftovers.
       output = output.replacingOccurrences(

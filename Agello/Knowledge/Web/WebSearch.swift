@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 import Security
 import Synchronization
 
@@ -132,7 +133,6 @@ struct WebClient: Sendable {
   func search(_ query: String, with provider: SearchProvider, settings: WebSearchSettings)
     async throws -> [WebResult]
   {
-    let language = Locale.preferredLanguages.first.map { String($0.prefix(2)) } ?? "en"
     switch provider {
     case .duckDuckGo:
       var components = URLComponents(string: "https://html.duckduckgo.com/html/")!
@@ -141,6 +141,7 @@ struct WebClient: Sendable {
       if SearchParsers.isDuckDuckGoChallenge(html) { throw WebSearchError.blocked("DuckDuckGo") }
       return SearchParsers.duckDuckGo(html: html)
     case .wikipedia:
+      let language = Self.wikipediaLanguage(for: query)
       var components = URLComponents(string: "https://\(language).wikipedia.org/w/api.php")!
       components.queryItems = [
         .init(name: "action", value: "query"), .init(name: "list", value: "search"),
@@ -171,17 +172,58 @@ struct WebClient: Sendable {
     }
   }
 
-  /// A page's readable text, or nil (not HTML, too large, failed, slow).
+  /// The Wikipedia edition for `query`: its language when that's clear, else the device's.
+  static func wikipediaLanguage(
+    for query: String, preferred: [String] = Locale.preferredLanguages
+  ) -> String {
+    let recognizer = NLLanguageRecognizer()
+    recognizer.processString(query)
+    // A name or a single word says little about the language it's asked in.
+    let words = query.split(whereSeparator: \.isWhitespace).count
+    let dense = query.unicodeScalars.contains { Chunker.isDense($0) }
+    if words >= 3 || dense, let (language, confidence) = recognizer.languageHypotheses(withMaximum: 1).first,
+      confidence >= 0.8
+    {
+      return wikipediaCode(language.rawValue)
+    }
+    return preferred.first.map(wikipediaCode) ?? "en"
+  }
+
+  /// "zh-Hans" and "zh-Hant-TW" are "zh"; Norwegian Bokmål is "no".
+  private static func wikipediaCode(_ identifier: String) -> String {
+    let code = String(identifier.prefix { $0 != "-" && $0 != "_" }).lowercased()
+    return code == "nb" ? "no" : code
+  }
+
+  /// A page's readable text, or nil (not HTML, too large, failed, slow). The type and declared
+  /// size are checked before the body is read, which stops at ``maxPageBytes``.
   func readPage(_ url: URL) async -> ReadableText.Page? {
     var request = URLRequest(url: url, timeoutInterval: 7)
     request.setValue(Self.browserAgent, forHTTPHeaderField: "User-Agent")
     request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
-    guard let (data, response) = try? await session.data(for: request),
-      let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+    guard let (bytes, response) = try? await session.bytes(for: request) else { return nil }
+    guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
       (http.value(forHTTPHeaderField: "Content-Type") ?? "text/html").contains("html"),
-      data.count <= Self.maxPageBytes
-    else { return nil }
-    let html = String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
+      http.expectedContentLength <= Int64(Self.maxPageBytes)
+    else {
+      bytes.task.cancel()
+      return nil
+    }
+    var data = Data()
+    data.reserveCapacity(Int(min(max(0, http.expectedContentLength), Int64(Self.maxPageBytes))))
+    do {
+      for try await byte in bytes {
+        data.append(byte)
+        if data.count > Self.maxPageBytes {
+          bytes.task.cancel()
+          return nil
+        }
+      }
+    } catch {
+      return nil
+    }
+    let html = TextDecoding.decode(
+      data, declared: http.textEncodingName ?? TextDecoding.htmlCharset(in: data))
     let page = ReadableText.extract(html: html)
     return page.text.count >= 200 ? page : nil
   }

@@ -78,6 +78,38 @@ final class WebTests: XCTestCase {
     }
   }
 
+  /// Scripts, styles and comments spanning lines are removed whole, not just their tags.
+  func testMultiLineScriptsAndCommentsAreRemoved() {
+    let html = """
+      <html><body><script type="text/javascript">
+        window.dataLayer = [];
+        function track() { return "SECRET_TRACKER"; }
+      </script><style>
+        body { color: red; }
+      </style><!--
+        HIDDEN_COMMENT
+      --><article><p>\(String(repeating: "Readable article sentence about the harbour. ", count: 8))</p></article>
+      </body></html>
+      """
+    let page = ReadableText.extract(html: html)
+    for leak in ["SECRET_TRACKER", "dataLayer", "color: red", "HIDDEN_COMMENT"] {
+      XCTAssertFalse(page.text.contains(leak), "Kept '\(leak)': \(page.text)")
+    }
+    XCTAssertTrue(page.text.contains("Readable article sentence"))
+  }
+
+  /// Wikipedia answers in the question's language when it's clear, else the device's.
+  func testWikipediaEditionFollowsTheQuestion() {
+    let english = ["en-CA"]
+    XCTAssertEqual(WebClient.wikipediaLanguage(for: "Quelle est la capitale de l'Australie ?", preferred: english), "fr")
+    XCTAssertEqual(WebClient.wikipediaLanguage(for: "日本の首都はどこですか", preferred: english), "ja")
+    XCTAssertEqual(WebClient.wikipediaLanguage(for: "中国的首都是哪里", preferred: english), "zh")
+    XCTAssertEqual(WebClient.wikipediaLanguage(for: "Wie hoch ist der Mount Everest?", preferred: english), "de")
+    XCTAssertEqual(WebClient.wikipediaLanguage(for: "Paris", preferred: english), "en")
+    XCTAssertEqual(WebClient.wikipediaLanguage(for: "Paris", preferred: ["zh-Hans-CN"]), "zh")
+    XCTAssertEqual(WebClient.wikipediaLanguage(for: "Oslo", preferred: ["nb-NO"]), "no")
+  }
+
   func testEntities() {
     XCTAssertEqual(HTMLText.decodeEntities("a&amp;b &#233;t&#xE9; &unknown; &"), "a&b été &unknown; &")
   }

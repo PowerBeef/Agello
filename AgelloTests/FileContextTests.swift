@@ -11,7 +11,18 @@ final class FileContextTests: XCTestCase {
     ] {
       XCTAssertTrue(FileContext.wantsSummary(question), question)
     }
-    for question in ["What was the budget in 2024?", "Who signed the contract on page 3?"] {
+    for question in [
+      "Fasse das Dokument zusammen", "Zusammenfassung bitte", "Riassunto del documento",
+      "Hazme un resumen", "Resúmelo", "この文書を要約して", "总结一下这份文件", "요약해 줘",
+      "Give me the gist", "What's this about?",
+    ] {
+      XCTAssertTrue(FileContext.wantsSummary(question), question)
+    }
+    for question in [
+      "What was the budget in 2024?", "Who signed the contract on page 3?",
+      "What are the logistics costs?", "Is this resume strong enough for the job?",
+      "Which items are presumed lost?", "Who is the author?",
+    ] {
       XCTAssertFalse(FileContext.wantsSummary(question), question)
     }
   }

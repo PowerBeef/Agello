@@ -72,6 +72,7 @@ enum IngestionError: LocalizedError, Equatable {
   case tooLarge(limitMB: Int)
   case unreadable(String)
   case noText(String)
+  case locked(String)
 
   var errorDescription: String? {
     switch self {
@@ -79,6 +80,8 @@ enum IngestionError: LocalizedError, Equatable {
     case .tooLarge(let limit): return "Files up to \(limit) MB are supported."
     case .unreadable(let name): return "\(name) couldn't be read."
     case .noText(let name): return "No text was found in \(name)."
+    case .locked(let name):
+      return "\(name) is protected with a password. Remove the password and add it again."
     }
   }
 }
@@ -124,11 +127,17 @@ enum DocumentIngestor {
         documentAttributes: nil)
       guard let attributed else { throw IngestionError.unreadable(name) }
       document = ExtractedDocument(name: name, kind: .text, byteCount: size, pages: [attributed.string])
-    } else if type.conforms(to: .text) || type.conforms(to: .sourceCode) || isTextData(url) {
-      guard let data = try? Data(contentsOf: url), let text = decodeText(data) else {
-        throw IngestionError.unreadable(name)
-      }
+    } else if type.conforms(to: .html) {
+      // A saved web page: its readable text, not its markup and scripts.
+      guard let data = try? Data(contentsOf: url) else { throw IngestionError.unreadable(name) }
+      let page = ReadableText.extract(
+        html: TextDecoding.decode(data, declared: TextDecoding.htmlCharset(in: data)),
+        maxCharacters: maxExtractedCharacters)
+      let text = [page.title, page.text].compactMap { $0 }.joined(separator: "\n\n")
       document = ExtractedDocument(name: name, kind: .text, byteCount: size, pages: [text])
+    } else if type.conforms(to: .text) || type.conforms(to: .sourceCode) || isTextData(url) {
+      guard let data = try? Data(contentsOf: url) else { throw IngestionError.unreadable(name) }
+      document = ExtractedDocument(name: name, kind: .text, byteCount: size, pages: [decodeText(data)])
     } else {
       throw IngestionError.unsupported(name)
     }
@@ -171,7 +180,8 @@ enum DocumentIngestor {
 
   private static func extractPDF(url: URL, name: String, size: Int64) async throws -> ExtractedDocument {
     guard let pdf = PDFDocument(url: url) else { throw IngestionError.unreadable(name) }
-    guard !pdf.isLocked else { throw IngestionError.unreadable(name) }
+    // Some files are locked with an empty password; others need one the app doesn't have.
+    if pdf.isLocked, !pdf.unlock(withPassword: "") { throw IngestionError.locked(name) }
     var pages: [String] = []
     var ocrPages = 0
     for index in 0..<pdf.pageCount {
@@ -216,15 +226,7 @@ enum DocumentIngestor {
   // MARK: - Text
 
   /// UTF-8 (with or without BOM), UTF-16, then Latin-1 as a last resort.
-  static func decodeText(_ data: Data) -> String? {
-    if let text = String(data: data, encoding: .utf8) { return text }
-    if data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF]),
-      let text = String(data: data, encoding: .utf16)
-    {
-      return text
-    }
-    return String(data: data, encoding: .isoLatin1)
-  }
+  static func decodeText(_ data: Data) -> String { TextDecoding.decode(data) }
 
   /// Unknown extensions: treat as text when the first bytes contain no NULs.
   private static func isTextData(_ url: URL) -> Bool {

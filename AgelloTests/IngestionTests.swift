@@ -1,3 +1,4 @@
+import PDFKit
 import UIKit
 import XCTest
 
@@ -156,6 +157,75 @@ final class IngestionTests: XCTestCase {
   func testLatin1FallbackDecoding() {
     let data = "café".data(using: .isoLatin1)!
     XCTAssertEqual(DocumentIngestor.decodeText(data), "café")
+  }
+
+  /// Text files in the encodings people save them in: Windows-1252 quotes, UTF-16, a UTF-8 BOM,
+  /// Shift-JIS and GB18030.
+  func testTextEncodingsAreDetected() throws {
+    let quotes = "“Smart quotes” – café, naïve, 5 €"
+    XCTAssertEqual(TextDecoding.decode(try XCTUnwrap(quotes.data(using: .windowsCP1252))), quotes)
+    XCTAssertEqual(TextDecoding.decode(try XCTUnwrap(quotes.data(using: .utf16))), quotes)
+    XCTAssertEqual(TextDecoding.decode(Data([0xEF, 0xBB, 0xBF]) + Data(quotes.utf8)), quotes)
+    let japanese = String(repeating: "今日は良い天気ですね。東京の桜が満開になりました。", count: 8)
+    XCTAssertEqual(TextDecoding.decode(try XCTUnwrap(japanese.data(using: .shiftJIS))), japanese)
+    let gb18030 = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(
+      CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))
+    let chinese = String(repeating: "今天天气很好，我们去公园散步吧。", count: 8)
+    XCTAssertEqual(TextDecoding.decode(try XCTUnwrap(chinese.data(using: gb18030)), declared: "gb18030"), chinese)
+  }
+
+  func testHTMLCharsetDeclarations() {
+    XCTAssertEqual(TextDecoding.htmlCharset(in: Data(#"<html><head><meta charset="windows-1252">"#.utf8)), "windows-1252")
+    XCTAssertEqual(
+      TextDecoding.htmlCharset(
+        in: Data(#"<meta http-equiv="Content-Type" content="text/html; charset=Shift_JIS">"#.utf8)),
+      "Shift_JIS")
+    XCTAssertNil(TextDecoding.htmlCharset(in: Data("<html><body>No charset</body></html>".utf8)))
+    XCTAssertEqual(TextDecoding.encoding(ianaName: "ISO-8859-1"), .windowsCP1252)
+    XCTAssertEqual(TextDecoding.encoding(ianaName: "utf-8"), .utf8)
+  }
+
+  /// A saved web page is read for its text: no markup, scripts or comments.
+  func testHTMLFilesAreReadForTheirText() async throws {
+    let url = directory.appendingPathComponent("page.html")
+    let html = """
+      <html><head><meta charset="windows-1252"><title>Harbour news</title>
+      <script>
+        var tracking = "secret";
+      </script></head>
+      <body><!-- a
+      multi-line comment --><p>The council approved the renovation of the pier,
+      a project that residents have asked for since the storm damaged it two winters ago,
+      with work to begin in spring and to end before the summer ferry season.</p></body></html>
+      """
+    try XCTUnwrap(html.data(using: .windowsCP1252)).write(to: url)
+    let document = try await DocumentIngestor.extract(from: url)
+    XCTAssertTrue(document.fullText.hasPrefix("Harbour news"), document.fullText)
+    XCTAssertTrue(document.fullText.contains("approved the renovation of the pier"))
+    for leak in ["tracking", "secret", "<p>", "comment"] {
+      XCTAssertFalse(document.fullText.contains(leak), "Kept '\(leak)': \(document.fullText)")
+    }
+  }
+
+  /// A password-protected PDF says so instead of "couldn't be read".
+  func testLockedPDFsSayTheyAreLocked() async throws {
+    let plain = directory.appendingPathComponent("plain.pdf")
+    let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792))
+    try renderer.writePDF(to: plain) { context in
+      context.beginPage()
+      ("Confidential salary table." as NSString)
+        .draw(at: CGPoint(x: 72, y: 72), withAttributes: [.font: UIFont.systemFont(ofSize: 14)])
+    }
+    let locked = directory.appendingPathComponent("locked.pdf")
+    let pdf = try XCTUnwrap(PDFDocument(url: plain))
+    XCTAssertTrue(
+      pdf.write(to: locked, withOptions: [.userPasswordOption: "1234", .ownerPasswordOption: "5678"]))
+    do {
+      _ = try await DocumentIngestor.extract(from: locked)
+      XCTFail("A locked PDF was read")
+    } catch let error as IngestionError {
+      XCTAssertEqual(error, .locked("locked.pdf"))
+    }
   }
 
   func testOCRReadsRenderedText() async throws {

@@ -60,19 +60,48 @@ enum FileContext {
 
   // MARK: - Summaries of long files
 
-  /// Whether the user asks about a whole document rather than a detail.
+  /// Whether the user asks about a whole document rather than a detail. Cues match whole words
+  /// (word starts for stems), so "logistics" isn't "gist" and an English "resume" (a CV) isn't a
+  /// French résumé.
   static func wantsSummary(_ question: String) -> Bool {
-    let text = question.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
-    let cues = [
-      "summar", "overview", "tl;dr", "tldr", "key point", "main point", "main idea",
-      "key takeaway", "takeaways", "gist", "outline", "what is this about", "what's this about",
-      "what is it about", "what is the document about", "what is this document",
-      "resume", "resumer", "synthese", "points cles", "idees principales", "de quoi parle",
-      "en bref",
-    ]
-    return question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      || cues.contains { text.contains($0) }
+    if question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+    let lowered = question.lowercased()
+    if summaryCharacters.contains(where: { lowered.contains($0) }) { return true }
+    let words = words(of: lowered)
+    if words.contains(where: { word in accentedStems.contains { word.hasPrefix($0) } }) { return true }
+    let folded = words.map { $0.folding(options: .diacriticInsensitive, locale: nil) }
+    if folded.contains(where: { word in summaryStems.contains { word.hasPrefix($0) } })
+      || folded.contains(where: summaryWords.contains)
+    {
+      return true
+    }
+    // German splits the verb: "Fasse das Dokument zusammen".
+    if folded.contains("zusammen"), folded.contains(where: { $0.hasPrefix("fass") }) { return true }
+    let phrase = " " + folded.joined(separator: " ") + " "
+    return summaryPhrases.contains { phrase.contains(" \($0) ") }
   }
+
+  private static func words(of text: String) -> [String] {
+    text.split { !$0.isLetter && !$0.isNumber && $0 != "'" && $0 != "’" }.map(String.init)
+  }
+
+  /// Word starts: summary, summarise, Zusammenfassung, riassunto, resumen, resumo, synthèse…
+  private static let summaryStems = [
+    "summar", "overview", "takeaway", "outlin", "zusammenfass", "uberblick", "riassun", "resumen",
+    "resumir", "resumo", "synthes", "sintes", "samenvat", "podsumow",
+  ]
+  /// Accented starts, so the English "resume" isn't one: résumé, résumer, resúmelo.
+  private static let accentedStems = ["résum", "resúm"]
+  private static let summaryWords: Set<String> = ["gist", "tldr", "recap"]
+  /// Folded word sequences.
+  private static let summaryPhrases = [
+    "tl dr", "key point", "key points", "main point", "main points", "main idea", "main ideas",
+    "what is this about", "what's this about", "what is it about", "what is the document about",
+    "what is this document", "de quoi parle", "en bref", "points cles", "idees principales",
+    "de que trata", "worum geht",
+  ]
+  /// Scripts without spaces between words: matched anywhere.
+  private static let summaryCharacters = ["要約", "まとめ", "概要", "总结", "總結", "摘要", "概括", "요약"]
 
   /// Tokens of document text per summarized section.
   static let sectionTokens = 2_400
