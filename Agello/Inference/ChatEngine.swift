@@ -762,6 +762,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 // MARK: - Mock engine (previews, simulator UI smoke tests)
 
 /// Deterministic scripted engine. No model required.
+///
+/// It models what the runtime does to the conversation, so tests check behavior: the texts
+/// the "native" conversation holds (``held``), helpers that wipe it as Google's LiteRT-LM does
+/// (or keep it, like ours), a cancelled conversation that rejects the next send until it is
+/// reseeded, injected stream errors, and a gate that holds the next helper.
 actor MockChatEngine: ChatEngineProtocol {
   var script: [ChatChunk]
   var stats: GenerationStats
@@ -770,6 +775,41 @@ actor MockChatEngine: ChatEngineProtocol {
   /// Test instrumentation: how often `load` ran and every reseeded history.
   private(set) var loadCount = 0
   private(set) var reseedLog: [[String]] = []
+  /// Texts the native conversation holds, oldest first (the KV cache's contents).
+  private(set) var held: [String] = []
+  /// What the conversation held when each send started.
+  private(set) var heldAtSend: [[String]] = []
+  /// Cancelled: LiteRT-LM rejects the next message ("CANCELLED") until a reseed or load.
+  private(set) var poisoned = false
+  /// Fail the next send with `error` after `afterChunks` chunks (tests).
+  private var streamFailure: (afterChunks: Int, error: ChatError)?
+  func failNextSend(afterChunks: Int, with error: ChatError) {
+    streamFailure = (afterChunks, error)
+  }
+  /// Hold the next helper until ``releaseHelper()`` (tests interleave sends with it).
+  private var gateNextHelper = false
+  private var gate: CheckedContinuation<Void, Never>?
+  /// A helper is waiting at the gate.
+  private(set) var helperWaiting = false
+  func holdNextHelper() { gateNextHelper = true }
+  func releaseHelper() {
+    gate?.resume()
+    gate = nil
+  }
+
+  /// Runs at the start of every helper: busy check, gate, then the conversation as a helper
+  /// leaves it on this runtime.
+  private func beginHelper() async throws {
+    if generating { throw ChatError.underlying(message: "Busy generating.") }
+    if gateNextHelper {
+      gateNextHelper = false
+      helperWaiting = true
+      await withCheckedContinuation { gate = $0 }
+      helperWaiting = false
+    }
+    if !helpersKeepConversation { held = [] }
+    lastHelperKeptConversation = helpersKeepConversation
+  }
   /// Simulated load latency (exposes overlapping-load races in tests).
   var loadDelay: Duration = .zero
 
@@ -798,6 +838,8 @@ actor MockChatEngine: ChatEngineProtocol {
     loadCount += 1
     applyConversationOptions(options)
     loadedModel = nil
+    held = []
+    poisoned = false
     if loadDelay > .zero { try? await Task.sleep(for: loadDelay) }
     loadedModel = spec.id
     loadResult = InferencePlanner.resolve(options: options, model: spec.id, memoryBytes: memoryBytes)
@@ -810,6 +852,8 @@ actor MockChatEngine: ChatEngineProtocol {
 
   func reseed(history: [(role: ChatRole, text: String)]) async throws {
     reseedLog.append(history.map(\.text))
+    held = history.map(\.text)
+    poisoned = false
   }
 
   /// Scripted `fitContext` outcome (tests): `.success(true)` = trimmed.
@@ -837,20 +881,34 @@ actor MockChatEngine: ChatEngineProtocol {
         let thinking = await self.thinkingEnabled
         let stats = await self.stats
         await self.recordSend(text)
+        if await self.poisoned {
+          continuation.finish(throwing: ChatError.underlying(message: "CANCELLED"))
+          return
+        }
+        let failure = await self.takeStreamFailure()
         await self.setGenerating(true)
-        for chunk in script {
+        var reply = ""
+        for (index, chunk) in script.enumerated() {
+          if let failure, index == failure.afterChunks {
+            await self.setGenerating(false)
+            continuation.finish(throwing: failure.error)
+            return
+          }
           try? await Task.sleep(for: .milliseconds(60))
           let stopRequested = await self.cancelRequested
           if Task.isCancelled || stopRequested {
             await self.setGenerating(false)
+            await self.poison()
             continuation.finish(throwing: ChatError.generationCancelled)
             return
           }
           var chunk = chunk
           if !thinking { chunk.thoughtDelta = nil }
+          reply += chunk.textDelta
           continuation.yield(.chunk(chunk))
         }
         await self.setGenerating(false)
+        await self.hold(text, reply)
         continuation.yield(.finished(stats))
         continuation.finish()
       }
@@ -868,7 +926,16 @@ actor MockChatEngine: ChatEngineProtocol {
   }
   /// Test instrumentation: every prompt sent.
   private(set) var sendLog: [String] = []
-  private func recordSend(_ text: String) { sendLog.append(text) }
+  private func recordSend(_ text: String) {
+    sendLog.append(text)
+    heldAtSend.append(held)
+  }
+  private func takeStreamFailure() -> (afterChunks: Int, error: ChatError)? {
+    defer { streamFailure = nil }
+    return streamFailure
+  }
+  private func poison() { poisoned = true }
+  private func hold(_ text: String, _ reply: String) { held += [text, reply] }
 
   private func setGenerating(_ value: Bool) {
     generating = value
@@ -929,8 +996,8 @@ actor MockChatEngine: ChatEngineProtocol {
   private(set) var lastHelperKeptConversation = false
 
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data {
+    try await beginHelper()
     helperPrompts.append(prompt)
-    lastHelperKeptConversation = helpersKeepConversation
     return helperResponse
   }
 
@@ -940,8 +1007,8 @@ actor MockChatEngine: ChatEngineProtocol {
   func setTranscript(_ text: String) { transcript = text }
 
   func transcribe(audioFileURL: URL) async throws -> String {
+    try await beginHelper()
     transcribed.append(audioFileURL)
-    lastHelperKeptConversation = helpersKeepConversation
     return transcript
   }
 
@@ -951,13 +1018,13 @@ actor MockChatEngine: ChatEngineProtocol {
   func helperTexts(
     _ prompts: [String], maxOutputTokens: Int, progress: @Sendable (Int) async -> Void
   ) async throws -> [String] {
+    try await beginHelper()
     var outputs: [String] = []
     for prompt in prompts {
       helperTextPrompts.append(prompt)
       outputs.append("- Key point \(outputs.count + 1) of this part.")
       await progress(outputs.count)
     }
-    lastHelperKeptConversation = helpersKeepConversation
     return outputs
   }
 }
