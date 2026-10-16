@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agello hero</title>
+<link rel="stylesheet" href="brand.css">
+<style>
+  .canvas { width: 1000px; height: 520px; }
+
+  .glow.top {
+    left: -10%; top: -60%; width: 120%; height: 120%;
+    background: radial-gradient(closest-side, rgba(138, 176, 200, 0.30), rgba(138, 176, 200, 0.10) 55%, transparent);
+  }
+  .glow.phone-glow {
+    width: 380px; height: 380px;
+    background: radial-gradient(closest-side, rgba(var(--tint-rgb), 0.42), rgba(var(--tint-rgb), 0.12) 55%, transparent);
+  }
+
+  .copy { position: absolute; left: 56px; top: 74px; width: 440px; }
+  .copy .eyebrow { color: var(--glacier); }
+  .brand { display: flex; align-items: center; gap: 20px; margin: 18px 0 26px; }
+  .brand img { width: 88px; height: 88px; border-radius: 21px; box-shadow: 0 0 0 1px var(--stroke), 0 14px 30px rgba(0, 0, 0, 0.45); }
+  .brand .wordmark { font-size: 78px; line-height: 1; }
+  h1 { font-size: 29px; line-height: 1.22; font-weight: 600; letter-spacing: -0.01em; }
+  p.sub { margin-top: 14px; font-size: 17px; line-height: 1.5; color: var(--text-secondary); }
+  .modes { display: flex; gap: 8px; margin-top: 30px; }
+
+  .phone { width: 176px; padding: 4px; border-radius: 29px; }
+  .phone img { border-radius: 25px; }
+  .phone.left { left: 520px; top: 100px; transform: rotate(-5deg); }
+  .phone.right { left: 806px; top: 100px; transform: rotate(5deg); }
+  .phone.front { left: 652px; top: 44px; width: 198px; padding: 5px; border-radius: 33px; z-index: 2; }
+  .phone.front img { border-radius: 28px; }
+</style>
+</head>
+<body>
+<div class="canvas">
+  <div class="glow top"></div>
+  <div class="glow phone-glow search" style="left: 418px; top: 150px;"></div>
+  <div class="glow phone-glow chat" style="left: 561px; top: 40px;"></div>
+  <div class="glow phone-glow voice" style="left: 704px; top: 150px;"></div>
+
+  <div class="copy">
+    <div class="eyebrow">On-device · Gemma 4 · iPhone</div>
+    <div class="brand">
+      <img src="../../Agello/Assets.xcassets/AppIcon.appiconset/AppIcon.png" alt="">
+      <span class="wordmark">Agello</span>
+    </div>
+    <h1>Your own AI assistant, running entirely on your iPhone.</h1>
+    <p class="sub">Chat, vision, voice, documents and web search.<br>No account, no API key, no cloud.</p>
+    <div class="modes">
+      <span class="pill chat">Chat</span>
+      <span class="pill think">Think</span>
+      <span class="pill search">Search</span>
+      <span class="pill voice">Voice</span>
+    </div>
+  </div>
+
+  <div class="phone left"><img src="../../docs/images/web-search.jpg" alt=""></div>
+  <div class="phone right"><img src="../../docs/images/voice-mode.jpg" alt=""></div>
+  <div class="phone front"><img src="../../docs/images/chat.jpg" alt=""></div>
+</div>
+</body>
+</html>

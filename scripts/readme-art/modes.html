@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agello modes</title>
+<link rel="stylesheet" href="brand.css">
+<style>
+  .row { display: flex; gap: 16px; width: 1000px; height: 640px; }
+  .canvas { flex: 1; height: 100%; border-radius: 26px; }
+  .glow.mode {
+    left: -45%; top: -38%; width: 190%; height: 92%;
+    background: radial-gradient(closest-side, rgba(var(--tint-rgb), 0.52), rgba(var(--tint-rgb), 0.18) 52%, transparent);
+  }
+  .text { position: absolute; left: 22px; right: 18px; top: 24px; }
+  .text .eyebrow { color: var(--tint); }
+  .text h2 { margin-top: 10px; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+  .text p { margin-top: 6px; font-size: 14px; line-height: 1.42; color: var(--text-secondary); }
+  .phone { left: 50%; top: 168px; width: 196px; transform: translateX(-50%); }
+</style>
+</head>
+<body>
+<div class="row">
+  <div class="canvas chat">
+    <div class="glow mode"></div>
+    <div class="text">
+      <div class="eyebrow">Chat</div>
+      <h2>Ask anything</h2>
+      <p>Streamed answers with code, tables and math, in any language.</p>
+    </div>
+    <div class="phone"><img src="../../docs/images/new-chat.jpg" alt=""></div>
+  </div>
+  <div class="canvas think">
+    <div class="glow mode"></div>
+    <div class="text">
+      <div class="eyebrow">Think</div>
+      <h2>Reason it through</h2>
+      <p>Step-by-step reasoning in a card you can open, and tools when it needs them.</p>
+    </div>
+    <div class="phone"><img src="../../docs/images/think.jpg" alt=""></div>
+  </div>
+  <div class="canvas search">
+    <div class="glow mode"></div>
+    <div class="text">
+      <div class="eyebrow">Search</div>
+      <h2>Look it up</h2>
+      <p>Searches the web, reads the top pages and cites every claim.</p>
+    </div>
+    <div class="phone"><img src="../../docs/images/web-search.jpg" alt=""></div>
+  </div>
+  <div class="canvas voice">
+    <div class="glow mode"></div>
+    <div class="text">
+      <div class="eyebrow">Voice</div>
+      <h2>Talk hands-free</h2>
+      <p>A spoken conversation with captions and the camera. Interrupt any time.</p>
+    </div>
+    <div class="phone"><img src="../../docs/images/voice-mode.jpg" alt=""></div>
+  </div>
+</div>
+</body>
+</html>

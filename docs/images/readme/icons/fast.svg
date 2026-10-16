@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-hidden="true">
+  <defs>
+    <radialGradient id="wash" cx="50%" cy="0%" r="100%">
+      <stop offset="0" stop-color="#EDCC8A" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#EDCC8A" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="48" height="48" rx="12" fill="#1C1E26"/>
+  <rect width="48" height="48" rx="12" fill="url(#wash)"/>
+  <rect x="0.5" y="0.5" width="47" height="47" rx="11.5" fill="none" stroke="#F7EBD1" stroke-opacity="0.14"/>
+  <g fill="none" stroke="#EDCC8A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M26 12 16 26h7l-2 10 11-15h-7z"/></g>
+</svg>

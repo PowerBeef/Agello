@@ -1,0 +1,111 @@
+/* Agello's design tokens (Agello/Support/Theme/Theme.swift) for the README art. */
+:root {
+  --glacier: #8ab0c8;
+  --lavender: #bfaadc;
+  --teal: #8cc7bf;
+  --gold: #edcc8a;
+  --silver: #adb5c2;
+
+  --canvas: #161823;
+  --canvas-bottom: #0a0b0e;
+  --stage: #1c1e26;
+  --card: #0d0e12;
+
+  --text-primary: #f2f0eb;
+  --text-secondary: #c7c2b8;
+  --text-tertiary: #9e998c;
+
+  --hairline: rgba(247, 235, 209, 0.08);
+  --stroke: rgba(247, 235, 209, 0.12);
+
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-rounded: ui-rounded, "SF Pro Rounded", -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: transparent;
+  font-family: var(--font);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The canvas every screen sits on: navy to near-black, with the mode's glow
+   anchored to the top edge (AmbientBackdrop). */
+.canvas {
+  position: relative;
+  overflow: hidden;
+  border-radius: 28px;
+  background: linear-gradient(180deg, var(--canvas), var(--canvas-bottom));
+  box-shadow: inset 0 0 0 1px var(--stroke);
+}
+
+.glow {
+  position: absolute;
+  pointer-events: none;
+  mix-blend-mode: plus-lighter;
+}
+
+.eyebrow {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.wordmark {
+  font-family: var(--font-rounded);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* An iPhone: the screenshot inside a thin dark bezel. */
+.phone {
+  position: absolute;
+  padding: 5px;
+  border-radius: 34px;
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 30px 60px rgba(0, 0, 0, 0.55),
+    0 8px 18px rgba(0, 0, 0, 0.35);
+}
+
+.phone img {
+  display: block;
+  width: 100%;
+  border-radius: 29px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 13px 0 11px;
+  border-radius: 15px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pill::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.chat { --tint: var(--glacier); --tint-rgb: 138, 176, 200; }
+.think { --tint: var(--lavender); --tint-rgb: 191, 170, 220; }
+.search { --tint: var(--teal); --tint-rgb: 140, 199, 191; }
+.voice { --tint: var(--gold); --tint-rgb: 237, 204, 138; }
+.neutral { --tint: var(--silver); --tint-rgb: 173, 181, 194; }
+
+.pill.chat, .pill.think, .pill.search, .pill.voice {
+  color: var(--tint);
+  background: rgba(var(--tint-rgb), 0.10);
+  box-shadow: inset 0 0 0 1px rgba(var(--tint-rgb), 0.34);
+}

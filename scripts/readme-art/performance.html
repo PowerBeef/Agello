@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agello performance</title>
+<link rel="stylesheet" href="brand.css">
+<style>
+  .canvas { width: 1000px; height: 330px; }
+  .glow.top {
+    left: -20%; top: -70%; width: 80%; height: 140%;
+    background: radial-gradient(closest-side, rgba(138, 176, 200, 0.30), rgba(138, 176, 200, 0.08) 60%, transparent);
+  }
+  .glow.right {
+    left: 50%; top: -60%; width: 70%; height: 130%;
+    background: radial-gradient(closest-side, rgba(237, 204, 138, 0.16), transparent);
+  }
+  .eyebrow { color: var(--glacier); }
+
+  .stats { position: absolute; left: 44px; top: 38px; width: 420px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px 28px; margin-top: 26px; }
+  .stat .value { font-family: var(--font-rounded); font-size: 46px; font-weight: 600; line-height: 1; letter-spacing: -0.02em; }
+  .stat .value small { font-size: 22px; font-weight: 600; color: var(--text-secondary); margin-left: 4px; }
+  .stat .label { margin-top: 8px; font-size: 14px; color: var(--text-secondary); }
+
+  .chart { position: absolute; left: 520px; top: 38px; width: 436px; }
+  .chart .eyebrow { color: var(--gold); }
+  .bars { margin-top: 24px; display: grid; gap: 16px; }
+  .bar { display: grid; grid-template-columns: 44px 1fr; align-items: center; gap: 14px; }
+  .bar .ctx { font-size: 14px; font-weight: 600; color: var(--text-secondary); text-align: right; }
+  .bar .track { position: relative; height: 30px; border-radius: 9px; background: rgba(255, 255, 255, 0.035); box-shadow: inset 0 0 0 1px var(--hairline); }
+  .bar .fill {
+    position: absolute; inset: 0 auto 0 0; border-radius: 9px;
+    background: linear-gradient(90deg, rgba(237, 204, 138, 0.55), rgba(237, 204, 138, 0.92));
+    box-shadow: 0 0 16px rgba(237, 204, 138, 0.28);
+  }
+  .bar .num { position: absolute; right: 10px; top: 0; line-height: 30px; font-size: 14px; font-weight: 600; color: var(--text-primary); }
+  .bar .fill + .num.inside { color: #1c1e26; }
+
+  .note { position: absolute; left: 44px; bottom: 24px; right: 44px; font-size: 12.5px; color: var(--text-tertiary); }
+</style>
+</head>
+<body>
+<div class="canvas">
+  <div class="glow top"></div>
+  <div class="glow right"></div>
+
+  <div class="stats">
+    <div class="eyebrow">On an iPhone 17 Pro</div>
+    <div class="grid">
+      <div class="stat"><div class="value">0.4<small>s</small></div><div class="label">to the first word</div></div>
+      <div class="stat"><div class="value">38<small>tok/s</small></div><div class="label">in a chat with an 8K window</div></div>
+      <div class="stat"><div class="value">1.7<small>s</small></div><div class="label">to index a 40-page PDF</div></div>
+      <div class="stat"><div class="value">1.3<small>s</small></div><div class="label">to the first spoken sentence</div></div>
+    </div>
+  </div>
+
+  <div class="chart">
+    <div class="eyebrow">Decode speed by context window</div>
+    <div class="bars">
+      <div class="bar"><span class="ctx">4K</span><span class="track"><span class="fill" style="width: 86%"></span><span class="num inside" style="right: calc(14% + 10px)">43 tok/s</span></span></div>
+      <div class="bar"><span class="ctx">8K</span><span class="track"><span class="fill" style="width: 76%"></span><span class="num inside" style="right: calc(24% + 10px)">38 tok/s</span></span></div>
+      <div class="bar"><span class="ctx">16K</span><span class="track"><span class="fill" style="width: 68%"></span><span class="num inside" style="right: calc(32% + 10px)">34 tok/s</span></span></div>
+      <div class="bar"><span class="ctx">32K</span><span class="track"><span class="fill" style="width: 54%"></span><span class="num inside" style="right: calc(46% + 10px)">27 tok/s</span></span></div>
+    </div>
+  </div>
+
+  <div class="note">Gemma 4 E4B on the GPU with speculative decoding, on Google's LiteRT-LM v0.18.0. Bars scaled to 50 tok/s.</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agello screens</title>
+<link rel="stylesheet" href="brand.css">
+<style>
+  .row { display: flex; gap: 16px; width: 1000px; height: 560px; }
+  .canvas { flex: 1; height: 100%; border-radius: 26px; }
+  .glow.mode {
+    left: -45%; top: -38%; width: 190%; height: 92%;
+    background: radial-gradient(closest-side, rgba(var(--tint-rgb), 0.40), rgba(var(--tint-rgb), 0.14) 52%, transparent);
+  }
+  .text { position: absolute; left: 22px; right: 18px; top: 24px; }
+  .text .eyebrow { color: var(--tint); }
+  .text h2 { margin-top: 10px; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+  .text p { margin-top: 6px; font-size: 14px; line-height: 1.42; color: var(--text-secondary); }
+  .phone { left: 50%; top: 148px; width: 196px; transform: translateX(-50%); }
+</style>
+</head>
+<body>
+<div class="row">
+  <div class="canvas chat">
+    <div class="glow mode"></div>
+    <div class="text">
+      <div class="eyebrow">Files</div>
+      <h2>Read the fine print</h2>
+      <p>PDFs, scans and notes, with answers that cite their pages.</p>
+    </div>
+    <div class="phone"><img src="../../docs/images/document.jpg" alt=""></div>
+  </div>
+  <div class="canvas neutral">
+    <div class="glow mode"></div>
+    <div class="text">
+      <div class="eyebrow">Chats</div>
+      <h2>Find any chat</h2>
+      <p>Projects, pins, and search by words or by meaning.</p>
+    </div>
+    <div class="phone"><img src="../../docs/images/drawer.jpg" alt=""></div>
+  </div>
+  <div class="canvas neutral">
+    <div class="glow mode"></div>
+    <div class="text">
+      <div class="eyebrow">Settings</div>
+      <h2>Make it yours</h2>
+      <p>Personalization, memory you can edit, and your search provider.</p>
+    </div>
+    <div class="phone"><img src="../../docs/images/settings.jpg" alt=""></div>
+  </div>
+  <div class="canvas neutral">
+    <div class="glow mode"></div>
+    <div class="text">
+      <div class="eyebrow">Models</div>
+      <h2>Download once</h2>
+      <p>Gemma 4 E4B and EmbeddingGemma, checked and kept on the phone.</p>
+    </div>
+    <div class="phone"><img src="../../docs/images/models.jpg" alt=""></div>
+  </div>
+</div>
+</body>
+</html>

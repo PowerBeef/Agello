@@ -1,89 +1,89 @@
 <div align="center">
 
-<img src="docs/images/icon.png" width="128" alt="The Agello app icon: a white ribbon folding into ivory to form an A, with a glacier-blue crossbar, on charcoal">
-
-# Agello
-
-### Your own AI assistant, running entirely on your iPhone.
-
-Gemma 4 on the iPhone's GPU: chat, vision, voice, documents and web search.<br>
-No account, no API key, no cloud. After a one-time download, every conversation stays on your phone.
-
-[![iOS 27](https://img.shields.io/badge/iOS-27-black?logo=apple)](#get-started)
-[![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)](#get-started)
-[![LiteRT-LM 0.18.0](https://img.shields.io/badge/LiteRT--LM-0.18.0-4285F4)](#vendored-litert-lm)
-[![Gemma 4 E4B](https://img.shields.io/badge/Model-Gemma%204%20E4B-8E75FF)](docs/USER_GUIDE.md#the-models)
-[![On-device](https://img.shields.io/badge/100%25-on--device-2EA44F)](#why-agello)
-[![Tests](https://img.shields.io/badge/tests-291%20on%20iPhone-2EA44F)](docs/TESTING.md)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
+<img src="docs/images/readme/hero.webp" width="100%" alt="Agello, your own AI assistant, running entirely on your iPhone: three iPhones show a streamed answer about Bloom filters, a web answer with numbered citations, and voice mode's glowing gold orb, beside the Chat, Think, Search and Voice mode pills">
 
 <br>
 
-<img src="docs/images/chat.jpg" width="190" alt="A streamed answer explaining Bloom filters, with bold terms, a heading and a numbered list">&nbsp;
-<img src="docs/images/web-search.jpg" width="190" alt="A web answer naming the 2026 Tour de France winner, with numbered citations and a 5 sources pill">&nbsp;
-<img src="docs/images/document.jpg" width="190" alt="A 60-page PDF summarized in three bullet points, each citing its pages">&nbsp;
-<img src="docs/images/voice-mode.jpg" width="190" alt="Voice mode: a glowing gold orb listening, with camera, microphone and end buttons">
+[![iOS 27](https://img.shields.io/badge/iOS-27-ADB5C2?style=flat-square&logo=apple&logoColor=F2F0EB&labelColor=1C1E26)](#get-started)
+[![Swift 6](https://img.shields.io/badge/Swift-6-EDCC8A?style=flat-square&logo=swift&logoColor=F2F0EB&labelColor=1C1E26)](#get-started)
+[![Gemma 4 E4B](https://img.shields.io/badge/Gemma%204-E4B-BFAADC?style=flat-square&labelColor=1C1E26)](docs/USER_GUIDE.md#the-models)
+[![LiteRT-LM 0.18.0](https://img.shields.io/badge/LiteRT--LM-0.18.0-8AB0C8?style=flat-square&labelColor=1C1E26)](#vendored-litert-lm)
+[![100% on-device](https://img.shields.io/badge/runs-100%25%20on--device-8CC7BF?style=flat-square&labelColor=1C1E26)](#meet-agello)
+[![Tested on a real iPhone](https://img.shields.io/badge/tested%20on-a%20real%20iPhone-8CC7BF?style=flat-square&labelColor=1C1E26)](docs/TESTING.md)
+[![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-ADB5C2?style=flat-square&labelColor=1C1E26)](LICENSE)
 
-**[Features](#features)** · **[Performance](#performance)** · **[How it works](#how-it-works)** · **[Engineering](#engineering-highlights)** · **[Get started](#get-started)** · **[Docs](#documentation)**
+**[Meet Agello](#meet-agello)** · **[Four modes](#four-modes)** · **[Performance](#performance)** · **[For developers](#for-developers)** · **[Docs](#documentation)**
 
 </div>
 
----
+<br>
 
-## Why Agello
+## Meet Agello
+
+Agello is a full AI assistant that lives on your iPhone. It runs Google's **Gemma 4** on the phone's own GPU, so it reads, sees, listens and talks without sending your conversations anywhere. There's no account and no subscription. Once the model is downloaded, Agello works without a connection, except for the web searches you ask for.
 
 <table>
 <tr>
 <td width="33%" valign="top">
 
-### 🔒 Private by design
-Gemma 4 E4B runs on the iPhone's GPU. Chats, photos, documents and voice never leave the phone. The network is only used to download the models once, and for web searches you ask for, which send only the query.
+<img src="docs/images/readme/icons/private.svg" width="40" height="40" alt="">
+
+**Private by design**<br>
+Chats, photos, files and recordings stay on the phone. The network is used only to download the models and for the web searches you ask for, which send only the search terms. [Privacy policy](https://powerbeef.github.io/Agello/privacy)
 
 </td>
 <td width="33%" valign="top">
 
-### ⚡ Fast
-About **0.4 s** to the first word and **~40 tokens/s** in chat on an iPhone 17 Pro, with speculative decoding. A 40-page PDF is indexed in under 2 seconds.
+<img src="docs/images/readme/icons/fast.svg" width="40" height="40" alt="">
+
+**Fast**<br>
+About **0.4 s** to the first word and **~40 tokens a second** as it writes, on an iPhone 17 Pro. A 40-page PDF is indexed in under 2 seconds.
 
 </td>
 <td width="33%" valign="top">
 
-### 🧠 Complete
-Text, vision and audio in one model, with reasoning, tools, document Q&A with page citations, web search with sources, memory, hands-free voice, Siri, widgets and the share sheet.
+<img src="docs/images/readme/icons/complete.svg" width="40" height="40" alt="">
+
+**Complete**<br>
+Text, vision and audio in one model: reasoning, tools, documents with page citations, web search with sources, memory, hands-free voice, Siri, widgets and the share sheet.
 
 </td>
 </tr>
 </table>
 
-## Features
+## Four modes
 
-**Conversations.** A ChatGPT-style chat with a side drawer: chats grouped by date, pinned chats, projects with shared instructions and files, and model-written titles. Search finds chats by words and by meaning ("Japan vacation" finds "Kyoto itinerary"). Edit or regenerate any message, and switch between versions with ‹ 2/3 ›.
+Agello's color follows what you're doing. Each mode has its own accent, and it lights the glow behind the chat, the composer's pills and the send button: **glacier** for chat, **lavender** for Think, **teal** for Search, **gold** for Voice.
 
-**Rich answers.** Live streaming with headings, tables, task lists, syntax-highlighted code with a Copy button, and typeset math. Turn on **Think** for step-by-step reasoning in a collapsible card. Built-in tools check the date and do arithmetic.
+<img src="docs/images/readme/modes.webp" width="100%" alt="Four cards, each tinted in its mode's accent. Chat, glacier: Ask anything, on the new-chat screen with four suggestions. Think, lavender: Reason it through, with a reasoning card above an answer that used the calculator. Search, teal: Look it up, with a cited answer about the 2026 Tour de France. Voice, gold: Talk hands-free, with the glowing orb listening.">
 
-**Documents.** Attach PDFs, text, Markdown, code, CSV, JSON or RTF, or scan paper with the camera. Long files are searched by meaning and answers cite their pages, like *(report.pdf, p. 23)*. "Summarize this" reads a long document section by section, and keeps going in the background on iPhones that support it.
+## What it does
 
-**Web search with sources.** One tap to look something up: Agello searches, reads the top pages, picks the relevant parts, and answers with `[1]`-style citations. DuckDuckGo by default, or your own SearXNG, Brave or Tavily.
+<img src="docs/images/readme/screens.webp" width="100%" alt="Four more screens. Files: a 60-page PDF summarized in three bullet points, each citing its pages. Chats: the drawer with search, projects and today's chats. Settings: the model ready on the GPU, personalization, memory, web search and Spotlight. Models: Gemma 4 E4B and EmbeddingGemma downloaded and ready.">
 
-**Voice and vision.** Take or pick a photo; dictate into the composer in your language; send voice messages Gemma listens to directly; or start **voice mode**, a hands-free conversation with a live orb, captions and an optional camera feed. Talk over it to interrupt.
-
-**Personal.** Tell Agello about yourself and how to respond. Opt-in memory remembers lasting facts ("Lives in Montreal"), and every memory is visible and editable.
-
-**Built for iOS.** SwiftUI with Liquid Glass chrome on a warm dark design whose accent follows what you're doing: glacier for chat, lavender for Think, teal for search, gold for voice. Siri and Shortcuts ("Ask Agello", "Talk to Agello"), the Action Button, Home and Lock Screen widgets, Control Center, Spotlight, the share sheet, and `agello://` links. Model downloads continue in the background.
-
-<p align="center">
-<img src="docs/images/new-chat.jpg" width="150" alt="A new chat: the greeting, four suggestions and the composer with Think and Search">&nbsp;
-<img src="docs/images/think.jpg" width="150" alt="Think: a lavender reasoning card above an answer that used the calculator">&nbsp;
-<img src="docs/images/drawer.jpg" width="150" alt="The drawer: search, projects and today's chats">&nbsp;
-<img src="docs/images/settings.jpg" width="150" alt="Settings: Gemma 4 E4B ready on the GPU, then personalization, memory, web search, Spotlight, models and tools">&nbsp;
-<img src="docs/images/models.jpg" width="150" alt="Models: Gemma 4 E4B and EmbeddingGemma downloaded and ready">
-</p>
+- **Conversations.** A side drawer with chats grouped by date, pinned chats, and projects that share instructions and files. Search finds chats by words and by meaning ("Japan vacation" finds "Kyoto itinerary"). Edit or regenerate any message, and switch between versions with ‹ 2/3 ›.
+- **Rich answers.** Live streaming with headings, tables, task lists, highlighted code with a Copy button, and typeset math. **Think** shows step-by-step reasoning in a card you can open, and built-in tools check the date and do arithmetic.
+- **Documents.** Attach PDFs, text, Markdown, code, CSV, JSON or RTF, or scan paper with the camera. Answers cite their pages, like *(report.pdf, p. 23)*. "Summarize this" reads a long document section by section, and keeps going in the background on iPhones that support it.
+- **Web search with sources.** One tap to look something up: Agello searches, reads the top pages, picks the relevant parts and answers with `[1]`-style citations. DuckDuckGo by default, or Brave, Tavily or your own SearXNG.
+- **Voice and vision.** Show it a photo, dictate in your language, send voice messages Gemma listens to directly, or start **voice mode**: a hands-free conversation with captions and an optional camera. Talk over it to interrupt.
+- **Personal.** Tell Agello about yourself and how to answer. Opt-in memory keeps lasting facts ("Lives in Montreal"), and you can see and edit every one.
+- **At home on iOS.** Liquid Glass, VoiceOver and Dynamic Type; Siri and Shortcuts ("Ask Agello", "Talk to Agello"), the Action Button, Home and Lock Screen widgets, Control Center, Spotlight, the share sheet and `agello://` links. Model downloads continue in the background and are checked when they finish.
 
 → The [user guide](docs/USER_GUIDE.md) covers every screen and setting.
 
+> [!NOTE]
+> Agello isn't on the App Store yet; TestFlight comes first. Until then, you can [build it from source](#get-started) for an iPhone 15 Pro or later.
+
 ## Performance
 
-Gemma 4 E4B on an iPhone 17 Pro (12 GB, iOS 27), GPU, with speculative decoding (MTP), on Google's LiteRT-LM v0.18.0 runtime (the one the app ships).
+<img src="docs/images/readme/performance.webp" width="100%" alt="On an iPhone 17 Pro: 0.4 seconds to the first word, 38 tokens per second in a chat with an 8K window, 1.7 seconds to index a 40-page PDF, 1.3 seconds to the first spoken sentence. Decode speed by context window: 43 tokens per second at 4K, 38 at 8K, 34 at 16K, 27 at 32K.">
+
+<details>
+<summary><b>Every measurement</b></summary>
+
+<br>
+
+Gemma 4 E4B on an iPhone 17 Pro (12 GB, iOS 27), GPU, with speculative decoding (MTP), on Google's LiteRT-LM v0.18.0 runtime (the one the app ships), measured before 2026-10-14. Decode speed drops as the phone warms: a cooled calibration on 2026-10-15 measured 37 / 39 / 31 / 20 tok/s.
 
 | | |
 | --- | --- |
@@ -101,13 +101,24 @@ Gemma 4 E4B on an iPhone 17 Pro (12 GB, iOS 27), GPU, with speculative decoding 
 
 For reference, Google reports 1,189 prefill and 25.1 decode tokens per second for E4B on the same GPU, without speculative decoding (model card, as of 2026-10-15).
 
-## How it works
+</details>
+
+<br>
+
+---
+
+## For developers
+
+Agello is a working reference for shipping a multimodal LLM inside a native iOS app: SwiftUI and Swift 6 concurrency, one actor that owns the runtime, a context budget that can't overflow, on-device retrieval, and a test harness that runs on the phone. The engineering notes explain each decision and the bug behind it.
+
+### How it works
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#1C1E26", "primaryTextColor": "#F2F0EB", "primaryBorderColor": "#8AB0C8", "lineColor": "#8AB0C8"}}}%%
 flowchart LR
   You(["You"]) --> UI["SwiftUI<br/>chat · voice · files"]
   UI --> AppState["AppState<br/>one generation pipeline"]
-  AppState --> Budget["Context budget<br/>fit · trim · cap"]
+  AppState --> Budget["Context budget<br/>count · trim · cap"]
   Budget --> Engine["LiteRTChatEngine<br/>Gemma 4 E4B"]
   AppState --> RAG["KnowledgeBase<br/>EmbeddingGemma"]
   AppState --> WebSearch["Web research<br/>search · read · rank"]
@@ -115,27 +126,43 @@ flowchart LR
   WebSearch --> Engine
   Engine --> GPU["LiteRT-LM<br/>Metal GPU"]
   AppState <--> Store[("SwiftData<br/>branching history")]
+
+  classDef chat fill:#1C1E26,stroke:#8AB0C8,stroke-width:1.5px,color:#F2F0EB
+  classDef think fill:#1C1E26,stroke:#BFAADC,stroke-width:1.5px,color:#F2F0EB
+  classDef search fill:#1C1E26,stroke:#8CC7BF,stroke-width:1.5px,color:#F2F0EB
+  classDef voice fill:#1C1E26,stroke:#EDCC8A,stroke-width:1.5px,color:#F2F0EB
+  classDef neutral fill:#161823,stroke:#ADB5C2,stroke-width:1px,color:#F2F0EB
+  class You voice
+  class UI,AppState,Budget chat
+  class Engine,GPU think
+  class RAG,WebSearch search
+  class Store neutral
 ```
 
 Every message takes one path through `AppState`. Pending settings are applied, then file context and web results are gathered. The native conversation is bound to the chat, and the context is fitted to the KV cache. The reply then streams into SwiftData, and memories and the title follow. A single actor owns the LiteRT-LM engine, and every engine operation runs through a serialized queue. → [Architecture](docs/ARCHITECTURE.md)
 
-## Engineering highlights
+### Engineering highlights
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-#### 🔬 Fixing Gemma's long-context math on the GPU
-On the iPhone GPU, Gemma 4 duplicated digits once a chat passed ~2K tokens ("2026" became "202026"). Device probes traced it to **position 2,048**: the model computes rotary angles from a float16 copy of the position, which can't hold integers past 2,048. Agello ships a model whose graph splits every position as `512·h + l`, so the rotary math stays exact to 32,767 on every GPU tested, M1-class Macs included. The result: **14/14 exact** copies up to 30K tokens, **1.7–2.1× faster prefill** than the float32 workaround, and **0.7 GB less memory**. [Analysis](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598) · [fix](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6159684389) · [model](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope)
+<img src="docs/images/readme/icons/rotary.svg" width="40" height="40" alt="">
+
+**Fixing Gemma's long-context math on the GPU**<br>
+On the iPhone GPU, Gemma 4 duplicated digits once a chat passed ~2K tokens ("2026" became "202026"). Device probes traced it to **position 2,048**: the model computes rotary angles from a float16 copy of the position, which can't hold integers past 2,048. Agello ships a model whose graph splits every position as `512·h + l`, so the rotary math stays exact to 32,767 on every GPU tested, M1-class Macs included. The result: **14/14 exact** copies up to 30K tokens, **1.7–2.1× faster prefill** than the float32 workaround, and **0.7 GB less memory**.<br>
+[Analysis](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598) · [fix](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6159684389) · [model](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope)
 
 </td>
 <td width="50%" valign="top">
 
-#### 🧮 A context window that never overflows
-Overflowing LiteRT-LM's KV cache corrupts its native heap. So every message is budgeted first:
-- cached tokens are measured, and new text is counted with the model's own tokenizer, as the runtime will render it;
+<img src="docs/images/readme/icons/context.svg" width="40" height="40" alt="">
+
+**A context window that never overflows**<br>
+Overflowing LiteRT-LM's KV cache corrupts its native heap, so every message is budgeted first:
+- each turn is rendered the way the runtime will see it, and counted with the model's own tokenizer;
 - older turns are trimmed, and replies are capped;
-- tool results get their own budgets.
+- tool results get their own budgets, and tool rounds are bounded.
 
 A message that can't fit is explained, never crashed on.
 
@@ -144,36 +171,44 @@ A message that can't fit is explained, never crashed on.
 <tr>
 <td valign="top">
 
-#### 🌳 Conversations as a tree
+<img src="docs/images/readme/icons/tree.svg" width="40" height="40" alt="">
+
+**Conversations as a tree**<br>
 Chat history is a versioned SwiftData schema whose turns form a tree. Edit, regenerate and the version switcher are just moves of the active leaf. The model's context is always rebuilt from the right branch, so abandoned versions never leak into an answer.
 
 </td>
 <td valign="top">
 
-#### 📚 On-device RAG with citations
-Files are read with PDFKit and Vision OCR, split into page-aware passages, and embedded in the background with EmbeddingGemma. The model reads whole files, cited excerpts or a cached summary, whichever fits half the context window, and answers cite pages.
+<img src="docs/images/readme/icons/documents.svg" width="40" height="40" alt="">
+
+**On-device RAG with citations**<br>
+Files are read with PDFKit and Vision OCR, split into page-aware, token-sized passages, and embedded in the background with EmbeddingGemma. Search ranks float16 vectors with one matrix product, and falls back to keywords for any file that can't be embedded. The model reads whole files, cited excerpts or a cached summary, whichever fits, and answers cite pages.
 
 </td>
 </tr>
 <tr>
 <td valign="top">
 
-#### 🎙️ Hands-free voice with barge-in
+<img src="docs/images/readme/icons/voice.svg" width="40" height="40" alt="">
+
+**Hands-free voice with barge-in**<br>
 Voice-activity turn detection, and one audio engine for echo-cancelled capture and sentence-by-sentence speech. The first spoken sentence arrives ~1.3 s after you stop talking, and you can interrupt at any time.
 
 </td>
 <td valign="top">
 
-#### ✅ 299 tests on a real iPhone
-227 unit tests, 49 scenarios with the real models in-process, and 23 real-tap UI flows. They run through a device harness that also simulates 8 GB iPhones and probes the runtime directly. No simulator: the failures that matter only happen on hardware.
+<img src="docs/images/readme/icons/tests.svg" width="40" height="40" alt="">
+
+**376 tests, run on a real iPhone**<br>
+296 unit tests, 56 scenarios and runtime probes with the real models in-process, and 24 real-tap UI flows, including an accessibility audit. They run through a device harness that also simulates 8 GB iPhones. No simulator: the failures that matter only happen on hardware.
 
 </td>
 </tr>
 </table>
 
-→ [Engineering notes](docs/ENGINEERING.md) · [Testing](docs/TESTING.md)
+→ [Engineering notes](docs/ENGINEERING.md) · [Testing](docs/TESTING.md) · [LiteRT-LM](docs/LITERT-LM.md)
 
-## Get started
+### Get started
 
 **You'll need** an iPhone 15 Pro or later (8 GB of memory) on iOS 27 with about 4.4 GB free, and a Mac with Xcode 27. The Apple Developer account needs the **Extended Virtual Addressing**, **Increased Memory Limit**, **Background GPU Access** and **App Groups** capabilities. Agello runs on a physical iPhone only: its LiteRT-LM path is untested in the simulator, and the failures that matter only show on hardware.
 
@@ -188,48 +223,79 @@ Voice-activity turn detection, and one audio engine for echo-cancelled capture a
 > [!NOTE]
 > If signing fails with *"PLA Update available"*, accept the latest Program License Agreement at [developer.apple.com/account](https://developer.apple.com/account).
 
-## Project layout
+Run the tests with the device harness, on the iPhone or on an Apple silicon Mac running the iPhone app:
+
+```sh
+scripts/device-harness.sh unit                      # 296 unit tests, scripted engine, ~3 min
+scripts/device-harness.sh inference                 # the real model on the iPhone
+PLATFORM=mac scripts/device-harness.sh inference    # the same on this Mac
+```
+
+### Project layout
 
 ```text
 Agello/            the app: AppState, Inference/, Knowledge/, Markdown/, ModelHub/,
-                    Persistence/, System/, Voice/, Views/, Support/
+                   Persistence/, System/, Voice/, Views/, Support/ (Theme/: the design system)
 AgelloWidgets/     widgets and Control Center controls
 AgelloShare/       share extension ("Ask Agello")
 AgelloTests/       unit tests
-AgelloDeviceTests/ on-device scenarios with the real models
-AgelloUITests/     real-tap UI flows
-scripts/            device test harness and device tools
-Vendor/LiteRT-LM/   LiteRT-LM v0.18.0 Swift package
-docs/               architecture, engineering notes, testing, user guide
+AgelloDeviceTests/ on-device scenarios and runtime probes with the real models
+AgelloUITests/     real-tap UI flows and the accessibility audit
+scripts/           device test harness, device tools, README art
+Vendor/LiteRT-LM/  LiteRT-LM v0.18.0 Swift package
+docs/              user guide, architecture, engineering notes, testing, privacy policy
 ```
 
-## Roadmap
+### Design system
 
-Phases 0–5 have shipped: foundations, the core chat experience, files, projects and memory, web search and dictation, voice mode with the camera, and system integration.
+Agello has one dark palette, warm neutrals on a navy canvas, and four mode accents. Liquid Glass stays on chrome (the composer and banners) and falls back to solid surfaces under Reduce Transparency; content sits on cards; motion uses one ease-out curve and turns off under Reduce Motion. Every token lives in `Agello/Support/Theme/`.
 
-**Next: the first release.** That means App Store metadata, an accessibility pass, and performance and battery budgets, then TestFlight.
+| Token | Color | Use |
+| --- | --- | --- |
+| Glacier | ![#8AB0C8](https://img.shields.io/badge/-8AB0C8-8AB0C8?style=flat-square) | Chat, links, selection |
+| Lavender | ![#BFAADC](https://img.shields.io/badge/-BFAADC-BFAADC?style=flat-square) | Think |
+| Teal | ![#8CC7BF](https://img.shields.io/badge/-8CC7BF-8CC7BF?style=flat-square) | Search |
+| Gold | ![#EDCC8A](https://img.shields.io/badge/-EDCC8A-EDCC8A?style=flat-square) | Voice, read aloud |
+| Silver | ![#ADB5C2](https://img.shields.io/badge/-ADB5C2-ADB5C2?style=flat-square) | Chrome with no mode: settings, sheets |
+| Canvas | ![#161823](https://img.shields.io/badge/-161823-161823?style=flat-square) | The background, fading to `#0A0B0E` |
+| Text | ![#F2F0EB](https://img.shields.io/badge/-F2F0EB-F2F0EB?style=flat-square) | Warm off-white, never pure white |
 
-## Documentation
+The README art comes from the same tokens: `scripts/readme-art/render.sh` redraws it from the screenshots in `docs/images/`.
+
+### Documentation
 
 | | |
 | --- | --- |
 | [User guide](docs/USER_GUIDE.md) | Every screen and setting, Siri and widgets, the models, troubleshooting, known limitations |
-| [LiteRT-LM](docs/LITERT-LM.md) | The LiteRT-LM the app ships, what it sets, and a map of the fork's verified runtime and model reference |
 | [Architecture](docs/ARCHITECTURE.md) | Components, the life of a message, the data model, concurrency |
 | [Engineering notes](docs/ENGINEERING.md) | The #3913 fix in full, and every reliability safeguard |
 | [Testing](docs/TESTING.md) | The suites, the device harness, and how to run them |
+| [LiteRT-LM](docs/LITERT-LM.md) | The LiteRT-LM the app ships, what it sets, and a map of the fork's verified runtime and model reference |
+| [Privacy policy](https://powerbeef.github.io/Agello/privacy) | What stays on the iPhone, and what the network is used for |
 
-## Vendored LiteRT-LM
+### Vendored LiteRT-LM
 
-`Vendor/LiteRT-LM` holds the Swift package surface of [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) v0.18.0, from our fork's [`agello` branch](https://github.com/PowerBeef/agello-litert-lm/tree/agello) with two patches to the Swift wrapper: a tool call that fails is answered with an error the model can read, instead of ending the reply; and a stream holds its conversation weakly, which fixed a 10-minute engine stall when a conversation was dropped while its stream was finishing. Upstream stores prebuilt binaries in Git LFS, which intermittently breaks Swift Package Manager resolution; the iOS build uses only Google's checksummed release XCFramework. To update, move the fork's branch, run `REF=<commit> ./Vendor/refresh-litert-lm.sh`, then update `Vendor/README.md` and run the test suites.
+`Vendor/LiteRT-LM` holds the Swift package surface of [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) v0.18.0, from our fork's [`agello` branch](https://github.com/PowerBeef/agello-litert-lm/tree/agello), with four patches to the Swift wrapper:
 
-## Contributing
+1. A tool call that fails is answered with an error the model can read, instead of ending the reply.
+2. A stream holds its conversation weakly, which fixed a 10-minute engine stall when a conversation was dropped while its stream was finishing.
+3. Streams live in a table keyed by ID, so a rejected tool call reported three times ends the stream once instead of freeing it three times; Stop also works between tool rounds, and tool rounds are bounded.
+4. `Engine.tokenize` and `countTokens`, and an embedding option that truncates long inputs instead of failing the batch.
 
-Work happens directly on `main`. Keep the unit tests and the on-device harness green, keep the interface native, and record any new dependency's license in [NOTICE](NOTICE).
+Upstream stores prebuilt binaries in Git LFS, which intermittently breaks Swift Package Manager resolution; the iOS build uses only Google's checksummed release XCFramework. [Vendor/README.md](Vendor/README.md) has the details and the refresh steps.
+
+### Contributing
+
+Work happens directly on `main`. Keep the unit tests and the on-device harness green, build UI from the design system's tokens, and record any new dependency's license in [NOTICE](NOTICE).
+
+### Roadmap
+
+- **Shipped:** the chat, files, projects and memory, web search and dictation, voice mode with the camera, and system integration. Then a reliability pass: crash fixes in the runtime wrapper, exact token counting, retrieval for CJK and number-heavy files, sampling that matches Settings, VoiceOver and the accessibility audit, MetricKit diagnostics, and a privacy policy.
+- **Next:** TestFlight, then a LiteRT-LM build of our own: in the cooled calibration it decoded 37–45 tok/s at a 32K window, against 20 for Google's binary the same night.
 
 ## License
 
-Agello is licensed under the [Apache License 2.0](LICENSE). [NOTICE](NOTICE) covers the third-party components it uses and downloads:
+Agello is licensed under the [Apache License 2.0](LICENSE). [NOTICE](NOTICE) covers the third-party components it uses and downloads, and the app shows it in Settings → About → Licenses.
 
 | Component | Distribution | License |
 | --- | --- | --- |
@@ -243,3 +309,11 @@ Agello is licensed under the [Apache License 2.0](LICENSE). [NOTICE](NOTICE) cov
 - [LiteRT](https://github.com/google-ai-edge/litert) and [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) by Google, with the [Swift guide](https://developers.google.com/edge/litert-lm/swift) and [Gemma 4 on LiteRT-LM](https://developers.google.com/edge/litert-lm/models/gemma-4)
 - [Gemma 4 E4B](https://huggingface.co/google/gemma-4-E4B-it) by Google, with the [LiteRT-LM build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) by `litert-community`; Agello downloads [a copy with float16-exact rotary positions](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope)
 - [swift-markdown](https://github.com/swiftlang/swift-markdown) by the Swift project, and [SwiftMath](https://github.com/mgriebling/SwiftMath) by Computer Inspirations
+
+<br>
+
+<div align="center">
+<img src="docs/images/icon.png" width="56" alt="The Agello app icon">
+<br>
+<sub>Agello · your own AI assistant, on your iPhone</sub>
+</div>
