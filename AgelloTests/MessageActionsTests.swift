@@ -57,6 +57,26 @@ final class MessageActionsTests: XCTestCase {
     XCTAssertEqual(thread.siblings(of: newReply).map(\.text), ["A2", "A2 again"])
   }
 
+  /// Regenerate samples (a conversation with MTP off and a seed of its own), so it can answer
+  /// differently; each try gets a new seed, and the next message goes back to the usual
+  /// conversation.
+  func testRegenerateSamplesWithAFreshSeedEachTime() async throws {
+    let thread = await twoExchanges()
+    await appState.regenerate(try XCTUnwrap(thread.orderedTurns.last), in: thread)
+    await appState.regenerate(try XCTUnwrap(thread.orderedTurns.last), in: thread)
+    let seeds = await mock.samplingSeeds
+    XCTAssertEqual(seeds.count, 2)
+    XCTAssertNotEqual(seeds.first, seeds.last, "Each try needs its own seed")
+    XCTAssertFalse(seeds.contains(0), "Seed 0 repeats the first reply")
+    // The next message rebuilds the usual (greedy, MTP) conversation with the chat's history.
+    let reseedsBefore = await mock.reseedLog.count
+    await appState.send(text: "Three", imageData: nil, audioFileURL: nil, in: thread)
+    let reseeds = await mock.reseedLog
+    XCTAssertEqual(reseeds.count, reseedsBefore + 1)
+    let seedsAfter = await mock.samplingSeeds.count
+    XCTAssertEqual(seedsAfter, 2, "An ordinary message doesn't sample")
+  }
+
   func testEditCreatesANewBranchAndKeepsTheOriginal() async throws {
     let thread = await twoExchanges()
     let first = try XCTUnwrap(thread.orderedTurns.first)

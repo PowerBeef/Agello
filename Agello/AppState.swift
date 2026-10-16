@@ -498,7 +498,7 @@ final class AppState {
     return await generate(
       prompt: prompt.text, imageData: prompt.imageData, audioFileURL: nil, in: thread,
       history: thread.textHistory(before: prompt), replacing: reply,
-      webSearch: prompt.parts.webSearch
+      webSearch: prompt.parts.webSearch, samples: true
     ) {}
   }
 
@@ -544,7 +544,7 @@ final class AppState {
   private func generate(
     prompt: String, imageData: Data?, audioFileURL: URL?, in thread: ChatThread,
     history rewound: [(role: ChatRole, text: String)]?, replacing: ChatTurn? = nil,
-    webSearch: Bool = false, persist: () -> Void
+    webSearch: Bool = false, samples: Bool = false, persist: () -> Void
   ) async -> Bool {
     guard !isGenerating, !isPreparing, !isBenchmarking else { return false }
     guard let context = modelContext else { return false }
@@ -625,6 +625,19 @@ final class AppState {
       guard await self.prepareConversation(threadID: threadID, history: history) else {
         return .notReady
       }
+      // Regenerate: a reply that differs from the one it replaces. A rebuilt conversation repeats
+      // its reply (seed 0) and MTP decodes greedily (probe 18), so this one samples with a seed
+      // of its own; the next message rebuilds the usual conversation.
+      if samples {
+        do {
+          try await self.engine.reseedSampling(
+            history: history, seed: Int.random(in: 1...Int(Int32.max)))
+        } catch {
+          self.conversationThreadID = nil
+          let chatError = error as? ChatError ?? .underlying(message: error.localizedDescription)
+          return .rejected(chatError.displayMessage)
+        }
+      }
       // The engine may have degraded to text-only (model without executors).
       if imageData != nil, self.resolved?.enableVision != true {
         return .rejected("This session is text-only, so images are disabled.")
@@ -686,6 +699,8 @@ final class AppState {
       voiceModeActive && audioFileURL != nil
       ? thread.turns.first { $0.id == reply.parentID && $0.isUser } : nil
     await consume(stream, into: reply, context: context, voiceTurn: voiceTurn)
+    // A sampling conversation (Regenerate) serves only this reply.
+    if samples { conversationThreadID = nil }
     // Sources found by the automatic web_search tool during the reply.
     let toolSources = WebSourcesRecorder.drain()
     if !toolSources.isEmpty {

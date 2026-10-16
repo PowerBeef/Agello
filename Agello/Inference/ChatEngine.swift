@@ -25,6 +25,10 @@ protocol ChatEngineProtocol: Sendable {
   var currentModelID: ModelID? { get async }
   /// Recreate the conversation, re-seeding text history (used after option changes).
   func reseed(history: [(role: ChatRole, text: String)]) async throws
+  /// Rebuild the conversation from `history` to sample its next reply (Regenerate): MTP off
+  /// (it decodes greedily) and `seed` (every new conversation otherwise starts at 0 and repeats
+  /// its reply; probe 18). Kept through `fitContext`; the next `reseed(history:)` or `load` ends it.
+  func reseedSampling(history: [(role: ChatRole, text: String)], seed: Int) async throws
   /// Make room in the context window for the next message plus a reply,
   /// replaying a trimmed `history` (the thread's turns before this message)
   /// when needed. Returns true when older turns were dropped.
@@ -103,6 +107,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// Tokens the conversation prefills before its first message (preamble and replayed history):
   /// counted when it's created, estimated if the runtime can't. `getTokenCount()` reads 0 until then.
   private var seedTokens = ContextBudget.preambleTokens
+  /// Set by ``reseedSampling(history:seed:)``: the conversation samples (no MTP, this seed).
+  private var samplingSeed: Int?
 
   var isLoaded: Bool { engine != nil && conversation != nil }
 
@@ -230,6 +236,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
           )
           self.engine = engine
           self.conversation = conversation
+          self.samplingSeed = nil
           self.seedTokens = await Self.seedTokens(
             conversation, engine: engine, history: [], systemPrompt: options.systemPrompt)
           self.resolved = attempt
@@ -348,10 +355,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 
   private static func makeConversation(
     engine: Engine, resolved: ResolvedInference, options: InferenceOptions,
-    toolsEnabled: Bool, history: [(role: ChatRole, text: String)]
+    toolsEnabled: Bool, history: [(role: ChatRole, text: String)], samplingSeed: Int? = nil
   ) async throws -> Conversation {
     let sampler = try SamplerConfig(
-      topK: resolved.topK, topP: resolved.topP, temperature: resolved.temperature)
+      topK: resolved.topK, topP: resolved.topP, temperature: resolved.temperature,
+      seed: samplingSeed ?? 0)
     var tools: [any Tool] = toolsEnabled ? [CurrentDateTimeTool(), CalculatorTool()] : []
     if options.webSearchTool { tools.append(WebSearchTool()) }
     let initial = history.suffix(maxReplayedTurns).map { turn -> LiteRTLM.Message in
@@ -371,7 +379,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         ThinkingConfig(enableThinking: true, thinkingTokenBudget: $0)
       },
       visualTokenBudget: resolved.visualTokenBudget,
-      enableSpeculativeDecoding: resolved.enableSpeculativeDecoding
+      // MTP decodes greedily whatever the sampler (probe 18): off when this one samples.
+      enableSpeculativeDecoding: samplingSeed == nil ? resolved.enableSpeculativeDecoding : false
     )
     return try await engine.createConversation(with: config)
   }
@@ -379,10 +388,21 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   // MARK: Reseed
 
   func reseed(history: [(role: ChatRole, text: String)]) async throws {
+    samplingSeed = nil
+    try await rebuild(history: history)
+  }
+
+  func reseedSampling(history: [(role: ChatRole, text: String)], seed: Int) async throws {
+    samplingSeed = seed
+    try await rebuild(history: history)
+  }
+
+  /// A new conversation holding `history`, sampling or not as it is now.
+  private func rebuild(history: [(role: ChatRole, text: String)]) async throws {
     guard let engine, let resolved, let options else { throw ChatError.engineNotReady }
     let conversation = try await Self.makeConversation(
       engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
-      history: history
+      history: history, samplingSeed: samplingSeed
     )
     self.conversation = conversation
     seedTokens = await Self.seedTokens(
@@ -427,7 +447,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     if fits(used) { return false }
 
     // The message alone, on an empty conversation: preamble, tools and the message, counted.
-    try await reseed(history: [])
+    try await rebuild(history: [])
     let alone = await tokensAfterPrefill(text: text, imageData: imageData, audioFileURL: audioFileURL)
     guard fits(alone) else { throw ChatError.messageTooLong }
     var budget = ContextBudget.historyBudget(
@@ -441,7 +461,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     for _ in 0..<4 {
       trimmed = ContextBudget.trimmedHistory(history, budget: budget, tokens: turnTokens)
       if trimmed.isEmpty { break }
-      try await reseed(history: trimmed)
+      try await rebuild(history: trimmed)
       total = await tokensAfterPrefill(text: text, imageData: imageData, audioFileURL: audioFileURL)
       if fits(total) { break }
       let over =
@@ -451,7 +471,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       trimmed = []
     }
     if trimmed.isEmpty {
-      try await reseed(history: [])
+      try await rebuild(history: [])
       total = alone
     }
     Log.engine.info(
@@ -527,6 +547,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       _ = try? conversation?.getTokenCount()
       return
     }
+    samplingSeed = nil
     let conversation = try await Self.makeConversation(
       engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
       history: [])
@@ -990,6 +1011,13 @@ actor MockChatEngine: ChatEngineProtocol {
     reseedLog.append(history.map(\.text))
     held = history.map(\.text)
     poisoned = false
+  }
+
+  /// Seeds of the sampling conversations (Regenerate), in order.
+  private(set) var samplingSeeds: [Int] = []
+  func reseedSampling(history: [(role: ChatRole, text: String)], seed: Int) async throws {
+    samplingSeeds.append(seed)
+    try await reseed(history: history)
   }
 
   /// Scripted `fitContext` outcome (tests): `.success(true)` = trimmed.

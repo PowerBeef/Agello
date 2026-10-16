@@ -229,6 +229,31 @@ final class InferenceScenarioTests: DeviceTestCase {
     XCTAssertFalse(thought.isEmpty, "No reasoning channel even with thinking forced on")
   }
 
+  /// Regenerate samples (MTP off, a seed of its own): asked to invent something, three tries
+  /// don't all give the same answer (probe 18: a rebuilt conversation repeated its reply). The
+  /// chat then goes on with the usual conversation.
+  func test06c_RegenerateGivesADifferentReply() async throws {
+    try await requireLoadedModel()
+    let thread = harness.newThread()
+    let first = await harness.ask(
+      "Invent a name for a new color and describe it in one short sentence.", in: thread)
+    XCTAssertTrue(first.accepted, appState.generationError ?? "")
+    var replies = [first.text]
+    for _ in 0..<2 {
+      let last = try XCTUnwrap(thread.orderedTurns.last)
+      let accepted = await appState.regenerate(last, in: thread)
+      XCTAssertTrue(accepted, appState.generationError ?? "")
+      replies.append(thread.orderedTurns.last?.text ?? "")
+    }
+    let next = await harness.ask("Say 'ok'.", in: thread)
+    harness.record(
+      "06c_regenerate",
+      ["replies": replies, "distinct": Set(replies).count, "next": next.text], in: self)
+    XCTAssertGreaterThan(Set(replies).count, 1, "Regenerate repeated itself: \(replies)")
+    XCTAssertTrue(next.accepted, appState.generationError ?? "")
+    XCTAssertFalse(next.text.isEmpty)
+  }
+
   func test07_ImageInput() async throws {
     try await requireLoadedModel()
     guard appState.resolved?.enableVision == true else {

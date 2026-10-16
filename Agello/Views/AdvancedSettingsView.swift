@@ -106,7 +106,7 @@ struct AdvancedSettingsView: View {
     } header: {
       Text("Sampling").eyebrowStyle()
     } footer: {
-      Text("Precise is factual (temperature 0.2), Balanced the default (0.7), Creative the most varied (1.0).")
+      Text("Replies pick the most likely words (multi-token prediction). Regenerate samples at this setting for a different answer: Precise (temperature 0.2) stays close, Balanced (0.7) varies, Creative (1.0) varies most.")
         .foregroundStyle(Theme.Text.tertiary)
     }
   }
