@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import LiteRTLM
+import OSLog
 
 // MARK: - Engine boundary types
 
@@ -424,6 +425,9 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       + ContextBudget.estimateHistory(Array(history.suffix(maxReplayedTurns)))
   }
 
+  private static let signposter = OSSignposter(
+    subsystem: "com.patricedery.agello", category: .pointsOfInterest)
+
   /// Upper bound on replayed turns (see ``makeConversation``).
   static let maxReplayedTurns = 20
 
@@ -759,6 +763,10 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 
     let started = Date()
     var firstChunkAt: Date?
+    // Instruments (Points of Interest): the reply as an interval, its first token as an event.
+    let signpostID = Self.signposter.makeSignpostID()
+    let replyInterval = Self.signposter.beginInterval("Reply", id: signpostID)
+    defer { Self.signposter.endInterval("Reply", replyInterval) }
     // Tool calls run inside LiteRT-LM and never appear in streamed chunks;
     // report the tools that actually ran (status line, chips, parts).
     let toolCursor = ToolActivity.cursor
@@ -810,7 +818,10 @@ actor LiteRTChatEngine: ChatEngineProtocol {
           continuation.finish(throwing: ChatError.generationCancelled)
           return
         }
-        if firstChunkAt == nil { firstChunkAt = Date() }
+        if firstChunkAt == nil {
+          firstChunkAt = Date()
+          Self.signposter.emitEvent("First token", id: signpostID)
+        }
         let thought = chunk.channels["thought"]
         if guardsToolRounds {
           for piece in [chunk.toString, thought ?? ""] {

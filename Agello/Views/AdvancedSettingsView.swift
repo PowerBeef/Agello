@@ -245,8 +245,21 @@ struct AdvancedSettingsView: View {
           .foregroundStyle(Theme.Status.guarded)
           .themedRow()
       }
+      ShareLink(
+        item: DiagnosticsExport(),
+        preview: SharePreview(String(localized: "Agello diagnostics"))
+      ) {
+        RowLabel(
+          title: String(localized: "Share diagnostics"), symbol: "stethoscope",
+          tint: Theme.Brand.silver)
+      }
+      .themedRow()
+      .accessibilityIdentifier("advanced.diagnostics")
     } header: {
       Text("Device").eyebrowStyle()
+    } footer: {
+      Text("Crash and performance reports from iOS and the app's log of the last hour, kept on this iPhone until you share them. The log can include parts of your questions.")
+        .foregroundStyle(Theme.Text.tertiary)
     }
   }
 

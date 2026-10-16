@@ -34,6 +34,9 @@ struct AgelloApp: App {
     let env = ProcessInfo.processInfo.environment
     let useMock = args.contains("--mock-engine") || env["AGELLO_MOCK_ENGINE"] != nil
 
+    // Crash, hang and performance reports from iOS, kept on the device (Settings → Advanced).
+    if !hostsTests { MetricsReporter.shared.start() }
+
     let opened = ChatStoreLoader.open()
     container = opened.container
 
