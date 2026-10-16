@@ -72,7 +72,7 @@ Agello's color follows what you're doing. Each mode has its own accent, and it l
 → The [user guide](docs/USER_GUIDE.md) covers every screen and setting.
 
 > [!NOTE]
-> Agello isn't on the App Store yet; TestFlight comes first. Until then, you can [build it from source](#get-started) for an iPhone 15 Pro or later.
+> Agello isn't on the App Store yet. You can [build it from source](#get-started) for an iPhone 15 Pro or later.
 
 ## Performance
 
@@ -272,6 +272,7 @@ The README art comes from the same tokens: `scripts/readme-art/render.sh` redraw
 | [Testing](docs/TESTING.md) | The suites, the device harness, and how to run them |
 | [LiteRT-LM](docs/LITERT-LM.md) | The LiteRT-LM the app ships, what it sets, and a map of the fork's verified runtime and model reference |
 | [Privacy policy](https://powerbeef.github.io/Agello/privacy) | What stays on the iPhone, and what the network is used for |
+| [Roadmap](docs/ROADMAP.md) | What has shipped, what's next, and the plan for [Agello for Mac](docs/MAC.md) |
 
 ### Vendored LiteRT-LM
 
@@ -291,7 +292,9 @@ Work happens directly on `main`. Keep the unit tests and the on-device harness g
 ### Roadmap
 
 - **Shipped:** the chat, files, projects and memory, web search and dictation, voice mode with the camera, and system integration. Then a reliability pass: crash fixes in the runtime wrapper, exact token counting, retrieval for CJK and number-heavy files, sampling that matches Settings, VoiceOver and the accessibility audit, MetricKit diagnostics, and a privacy policy.
-- **Next:** TestFlight, then a LiteRT-LM build of our own: in the cooled calibration it decoded 37–45 tok/s at a 32K window, against 20 for Google's binary the same night.
+- **Next:** a LiteRT-LM build of our own: in the cooled calibration it decoded 37–45 tok/s at a 32K window, against 20 for Google's binary the same night. Then **Agello for Mac**, a native Mac app that shares the iPhone app's code ([plan](docs/MAC.md)).
+
+→ [The full roadmap](docs/ROADMAP.md)
 
 ## License
 

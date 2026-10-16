@@ -5,9 +5,9 @@ description: First-release checklist for Agello (TestFlight and App Store), and 
 
 # Agello release checklist
 
-The roadmap's next milestone is the first release: privacy
-manifest, App Store metadata, accessibility pass, and performance and battery
-budgets. App Store Connect work goes through the `asc` CLI. Load
+This checklist is for when the user decides Agello is ready for the store.
+That call is the user's: don't schedule a release, put one on the roadmap, or
+start these steps unprompted. App Store Connect work goes through the `asc` CLI. Load
 `asc:asc-cli-usage` first, then the skill named for each step.
 
 Anything that changes the Apple account (registering IDs, creating records,
