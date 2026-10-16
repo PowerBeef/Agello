@@ -28,9 +28,7 @@ final class SpeechReader: NSObject, AVSpeechSynthesizerDelegate {
     try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: .duckOthers)
     try? AVAudioSession.sharedInstance().setActive(true)
     let utterance = AVSpeechUtterance(string: spoken)
-    if let language = NLLanguageRecognizer.dominantLanguage(for: spoken)?.rawValue {
-      utterance.voice = AVSpeechSynthesisVoice(language: language)
-    }
+    utterance.voice = VoiceText.voice(for: NLLanguageRecognizer.dominantLanguage(for: spoken)?.rawValue)
     speakingID = id
     synthesizer.speak(utterance)
   }

@@ -10,9 +10,14 @@ final class VoiceAudio: @unchecked Sendable {
   var onLevel: (@Sendable (Float, TimeInterval) -> Void)?
   /// All queued speech has played (main thread).
   var onSpeechFinished: (@Sendable () -> Void)?
+  /// Audio paused (a call, another app) or came back after a pause, a route change or a
+  /// media-services reset; false when it couldn't (main thread).
+  var onAvailabilityChanged: (@Sendable (_ available: Bool) -> Void)?
 
-  private let engine = AVAudioEngine()
-  private let player = AVAudioPlayerNode()
+  /// Replaced when audio restarts: a media-services reset invalidates the old engine.
+  private var engine = AVAudioEngine()
+  private var player = AVAudioPlayerNode()
+  private var observers: [NSObjectProtocol] = []
   private let synthesizer = AVSpeechSynthesizer()
   private let lock = NSLock()
 
@@ -35,9 +40,20 @@ final class VoiceAudio: @unchecked Sendable {
   // MARK: Lifecycle
 
   func start() throws {
+    try activateSession()
+    try startEngine()
+    observeInterruptions()
+  }
+
+  private func activateSession() throws {
     let session = AVAudioSession.sharedInstance()
-    try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker])
+    // AirPods and other headsets (voice chat implies HFP; stated for clarity).
+    try session.setCategory(
+      .playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
     try session.setActive(true)
+  }
+
+  private func startEngine() throws {
     do {
       try engine.inputNode.setVoiceProcessingEnabled(true)
       echoCancellation = true
@@ -50,7 +66,8 @@ final class VoiceAudio: @unchecked Sendable {
 
     let input = engine.inputNode
     let inputFormat = input.outputFormat(forBus: 0)
-    inputConverter = AVAudioConverter(from: inputFormat, to: recordFormat)
+    let converter = AVAudioConverter(from: inputFormat, to: recordFormat)
+    lock.withLock { inputConverter = converter }
     input.installTap(onBus: 0, bufferSize: 1_024, format: inputFormat) { [weak self] buffer, _ in
       self?.process(buffer)
     }
@@ -60,15 +77,85 @@ final class VoiceAudio: @unchecked Sendable {
   }
 
   func stop() {
+    for observer in observers { NotificationCenter.default.removeObserver(observer) }
+    observers = []
     synthesizer.stopSpeaking(at: .immediate)
+    stopEngine()
+    // An utterance cut off by the end of the session is never sent.
+    cancelUtterance()
+    lock.withLock { preroll = [] }
+    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+  }
+
+  private func stopEngine() {
     player.stop()
     engine.inputNode.removeTap(onBus: 0)
     engine.stop()
+  }
+
+  // MARK: Interruptions
+
+  /// A call or another app takes the audio, the route changes (AirPods in or out), or media
+  /// services restart: the engine stops on its own and has to be started again.
+  private func observeInterruptions() {
+    let center = NotificationCenter.default
+    observers = [
+      center.addObserver(
+        forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+      ) { [weak self] note in
+        let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt)
+          .flatMap(AVAudioSession.InterruptionType.init(rawValue:))
+        if type == .began {
+          self?.pause()
+        } else {
+          self?.restart(newEngine: false)
+        }
+      },
+      center.addObserver(
+        forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main
+      ) { [weak self] _ in self?.restart(newEngine: true) },
+      center.addObserver(
+        forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main
+      ) { [weak self] note in
+        guard let self, (note.object as? AVAudioEngine) === self.engine else { return }
+        self.restart(newEngine: false)
+      },
+    ]
+  }
+
+  private func pause() {
+    synthesizer.stopSpeaking(at: .immediate)
+    stopEngine()
+    cancelUtterance()
+    lock.withLock { pendingSpeech = 0 }
+    onAvailabilityChanged?(false)
+  }
+
+  /// Audio again, on the current route, after a pause or change; a new engine after a reset.
+  private func restart(newEngine: Bool) {
+    stopEngine()
+    cancelUtterance()
+    synthesizer.stopSpeaking(at: .immediate)
     lock.withLock {
-      file = nil
+      pendingSpeech = 0
       preroll = []
+      prerollFrames = 0
     }
-    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    if newEngine {
+      engine = AVAudioEngine()
+      player = AVAudioPlayerNode()
+    } else {
+      engine.detach(player)
+    }
+    do {
+      try activateSession()
+      try startEngine()
+      Log.lifecycle.info("voice: audio restarted (new engine \(newEngine))")
+      onAvailabilityChanged?(true)
+    } catch {
+      Log.lifecycle.error("voice: audio didn't restart: \(error.localizedDescription, privacy: .public)")
+      onAvailabilityChanged?(false)
+    }
   }
 
   // MARK: Recording
@@ -107,7 +194,8 @@ final class VoiceAudio: @unchecked Sendable {
   private func process(_ buffer: AVAudioPCMBuffer) {
     let duration = Double(buffer.frameLength) / buffer.format.sampleRate
     onLevel?(Self.level(buffer), duration)
-    guard let converter = inputConverter, let converted = convert(buffer, with: converter, to: recordFormat)
+    guard let converter = lock.withLock({ inputConverter }),
+      let converted = convert(buffer, with: converter, to: recordFormat)
     else { return }
     lock.withLock {
       if let file { try? file.write(from: converted) }
@@ -154,7 +242,7 @@ final class VoiceAudio: @unchecked Sendable {
   /// Queue a sentence; it plays after the ones before it.
   func speak(_ text: String, language: String?) {
     let utterance = AVSpeechUtterance(string: text)
-    if let language { utterance.voice = AVSpeechSynthesisVoice(language: language) }
+    utterance.voice = VoiceText.voice(for: language)
     lock.withLock { pendingSpeech += 1 }
     var converter: AVAudioConverter?
     let format = playbackFormat
@@ -192,5 +280,18 @@ final class VoiceAudio: @unchecked Sendable {
     if finished {
       DispatchQueue.main.async { [weak self] in self?.onSpeechFinished?() }
     }
+  }
+}
+
+extension VoiceText {
+  /// Languages of the installed speech voices.
+  static let voiceLanguages = Array(Set(AVSpeechSynthesisVoice.speechVoices().map(\.language)))
+    .sorted()
+
+  /// The voice for a language the recognizer named, or nil (the system's default voice).
+  static func voice(for language: String?) -> AVSpeechSynthesisVoice? {
+    language
+      .flatMap { voiceLanguage(for: $0, available: voiceLanguages) }
+      .flatMap(AVSpeechSynthesisVoice.init(language:))
   }
 }

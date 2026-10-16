@@ -56,6 +56,16 @@ final class AudioRecorder: NSObject {
     try? AVAudioSession.sharedInstance().setActive(false)
   }
 
+  /// Recordings left in the temporary folder by an earlier run (a voice message never sent, an
+  /// utterance cut off when the app quit). Called at launch, before anything records.
+  nonisolated static func removeLeftovers(in folder: URL = FileManager.default.temporaryDirectory) {
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+    for name in names
+    where (name.hasPrefix("agello-audio-") || name.hasPrefix("agello-voice-")) && name.hasSuffix(".wav") {
+      try? FileManager.default.removeItem(at: folder.appendingPathComponent(name))
+    }
+  }
+
   /// Delete the staged recording (call after the message is sent).
   func discard() {
     if isRecording { stop() }
@@ -108,7 +118,9 @@ final class AudioRecorder: NSObject {
       AVLinearPCMIsFloatKey: false,
     ]
     do {
-      try AVAudioSession.sharedInstance().setCategory(.record, mode: .measurement)
+      // AirPods and other headsets record too, not only the built-in microphone.
+      try AVAudioSession.sharedInstance().setCategory(
+        .record, mode: .measurement, options: [.allowBluetoothHFP])
       try AVAudioSession.sharedInstance().setActive(true)
       let recorder = try AVAudioRecorder(url: url, settings: settings)
       self.recorder = recorder

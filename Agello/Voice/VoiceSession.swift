@@ -77,6 +77,9 @@ final class VoiceSession {
     audio.onSpeechFinished = { [weak self] in
       Task { @MainActor in self?.speechFinished() }
     }
+    audio.onAvailabilityChanged = { [weak self] available in
+      Task { @MainActor in self?.audioAvailabilityChanged(available) }
+    }
     do {
       try audio.start()
       state = .listening
@@ -189,6 +192,14 @@ final class VoiceSession {
       replyFinished = true
       if !audio.isSpeaking, state != .hearing { state = .listening }
     }
+  }
+
+  /// A call took the audio (paused, "Starting…"), or it came back on the current route.
+  private func audioAvailabilityChanged(_ available: Bool) {
+    if state == .speaking || state == .thinking || state == .hearing { stopReply() }
+    vad = VoiceActivityDetector()
+    level = 0
+    state = available ? .listening : .starting
   }
 
   private func speechFinished() {

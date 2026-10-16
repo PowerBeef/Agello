@@ -40,6 +40,33 @@ enum VoiceText {
     return spoken.replacingOccurrences(of: #" ([.,!?;:])"#, with: "$1", options: .regularExpression)
   }
 
+  /// Sentence ends: Latin, CJK full-width, Devanagari danda, Arabic and Urdu.
+  static let sentenceEnds: Set<Character> = [
+    ".", "!", "?", "…", "\n", "。", "！", "？", "।", "॥", "؟", "۔",
+  ]
+  /// Ends that need no following space.
+  static let closesWithoutSpace: Set<Character> = ["。", "！", "？", "\n"]
+
+  /// The installed voice language for a language the recognizer named ("zh-Hans", "fr", "nb"):
+  /// voices are named by region ("zh-CN", "fr-CA", "nb-NO"). The user's own region first, then
+  /// the first voice in that language; nil when none is installed.
+  static func voiceLanguage(
+    for language: String, available: [String], preferred: [String] = Locale.preferredLanguages
+  ) -> String? {
+    let scripts = ["zh-Hans": ["zh-CN"], "zh-Hant": ["zh-TW", "zh-HK"]]
+    if let regional = scripts[language] {
+      return regional.first(where: available.contains)
+        ?? available.first { $0.hasPrefix("zh") }
+    }
+    if available.contains(language) { return language }
+    let base = String(language.prefix { $0 != "-" && $0 != "_" })
+    func sameLanguage(_ code: String) -> Bool {
+      code == base || code.hasPrefix(base + "-") || code.hasPrefix(base + "_")
+    }
+    if let own = preferred.first(where: { sameLanguage($0) && available.contains($0) }) { return own }
+    return available.first(where: sameLanguage)
+  }
+
   /// Feeds a growing answer and hands out complete sentences to speak as
   /// soon as they're done (the rest when the reply ends).
   struct SentenceStream: Equatable {
@@ -56,10 +83,13 @@ enum VoiceText {
       let characters = Array(pending)
       for (index, character) in characters.enumerated() {
         current.append(character)
-        let isEnd = ".!?…。！？\n".contains(character)
+        let isEnd = sentenceEnds.contains(character)
         let nextIsBreak = index + 1 >= characters.count ? final : characters[index + 1].isWhitespace
-        // "3.5" or "e.g." mid-word isn't an end; wait for the following space.
-        if isEnd, nextIsBreak, current.trimmingCharacters(in: .whitespaces).count > 1 {
+        // "3.5" or "e.g." mid-word isn't an end; wait for the following space. Chinese and
+        // Japanese write no space after a full stop.
+        if isEnd, nextIsBreak || closesWithoutSpace.contains(character),
+          current.trimmingCharacters(in: .whitespaces).count > 1
+        {
           let sentence = speakable(current)
           if !sentence.isEmpty { sentences.append(sentence) }
           consumed = index + 1

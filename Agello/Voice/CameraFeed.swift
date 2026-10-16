@@ -11,6 +11,10 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
   private let lock = NSLock()
   private var latest: CVPixelBuffer?
   private let context = CIContext()
+  /// Keeps frames level with the horizon whichever way the phone is held (they were always
+  /// rotated for portrait, so a landscape snapshot came out sideways).
+  private var rotation: AVCaptureDevice.RotationCoordinator?
+  private var rotationObservation: NSKeyValueObservation?
 
   static var isAvailable: Bool { AVCaptureDevice.default(for: .video) != nil }
 
@@ -36,9 +40,25 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
           if session.canAddOutput(output) { session.addOutput(output) }
           output.connection(with: .video)?.videoRotationAngle = 90
           session.commitConfiguration()
+          followRotation(of: device, connection: output.connection(with: .video))
         }
         session.startRunning()
         continuation.resume(returning: true)
+      }
+    }
+  }
+
+  /// Frames turn with the phone (camera queue).
+  private func followRotation(of device: AVCaptureDevice, connection: AVCaptureConnection?) {
+    guard let connection else { return }
+    let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+    rotation = coordinator
+    rotationObservation = coordinator.observe(
+      \.videoRotationAngleForHorizonLevelCapture, options: [.initial, .new]
+    ) { [weak self] coordinator, _ in
+      let angle = coordinator.videoRotationAngleForHorizonLevelCapture
+      self?.queue.async {
+        if connection.isVideoRotationAngleSupported(angle) { connection.videoRotationAngle = angle }
       }
     }
   }

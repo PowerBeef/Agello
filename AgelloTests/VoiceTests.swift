@@ -38,6 +38,44 @@ final class VoiceTextTests: XCTestCase {
     XCTAssertEqual(stream.next(from: "Sure! How about Sunny? Or "), ["Sure!", "How about Sunny?"])
   }
 
+  /// Chinese and Japanese write no space after a full stop: each sentence is spoken as soon as
+  /// it ends, not when the whole reply is done. Hindi and Arabic ends count too.
+  func testSentencesEndInOtherScripts() {
+    var chinese = VoiceText.SentenceStream()
+    XCTAssertEqual(chinese.next(from: "今天天气很好。我们去公园吧"), ["今天天气很好。"])
+    var japanese = VoiceText.SentenceStream()
+    XCTAssertEqual(japanese.next(from: "はい！東京は晴れです。明日は"), ["はい！", "東京は晴れです。"])
+    var hindi = VoiceText.SentenceStream()
+    XCTAssertEqual(hindi.next(from: "नमस्ते। आप कैसे हैं"), ["नमस्ते।"])
+    var arabic = VoiceText.SentenceStream()
+    XCTAssertEqual(arabic.next(from: "كيف حالك؟ أنا بخير"), ["كيف حالك؟"])
+  }
+
+  /// The language recognizer says "zh-Hans" and "fr"; voices are named "zh-CN" and "fr-CA".
+  func testRecognizedLanguagesFindTheirVoice() {
+    let voices = ["en-US", "en-GB", "fr-FR", "fr-CA", "zh-CN", "zh-TW", "ja-JP", "nb-NO"]
+    XCTAssertEqual(VoiceText.voiceLanguage(for: "zh-Hans", available: voices), "zh-CN")
+    XCTAssertEqual(VoiceText.voiceLanguage(for: "zh-Hant", available: voices), "zh-TW")
+    XCTAssertEqual(VoiceText.voiceLanguage(for: "fr", available: voices, preferred: ["fr-CA"]), "fr-CA")
+    XCTAssertEqual(VoiceText.voiceLanguage(for: "fr", available: voices, preferred: ["en-US"]), "fr-FR")
+    XCTAssertEqual(VoiceText.voiceLanguage(for: "nb", available: voices, preferred: []), "nb-NO")
+    XCTAssertEqual(VoiceText.voiceLanguage(for: "ja", available: voices, preferred: []), "ja-JP")
+    XCTAssertNil(VoiceText.voiceLanguage(for: "sw", available: voices, preferred: []))
+  }
+
+  /// Recordings an earlier run left behind are deleted at launch; other files stay.
+  func testLeftoverRecordingsAreRemoved() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Leftovers-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    for name in ["agello-audio-1.wav", "agello-voice-2.wav", "keep.wav", "agello-audio-3.txt"] {
+      try Data([1]).write(to: folder.appendingPathComponent(name))
+    }
+    AudioRecorder.removeLeftovers(in: folder)
+    let left = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
+    XCTAssertEqual(left, ["agello-audio-3.txt", "keep.wav"])
+  }
+
   func testVoiceInstructionJoinsTheSystemPrompt() {
     let prompt = SystemPrompt.compose(
       base: "Base.", personalization: Personalization(), project: nil, voice: true)

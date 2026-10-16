@@ -86,6 +86,7 @@ struct ContentView: View {
       if phase == .active { answerSharedItems() }
     }
     .task {
+      AudioRecorder.removeLeftovers()
       answerSharedItems()
       SpotlightIndex.refresh(in: context)
       appState.pruneEmptyThreads()
