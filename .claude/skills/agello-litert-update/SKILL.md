@@ -75,9 +75,16 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598
   (pointer on #2814). Follow-up with the model-side fix:
   https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6159684389
-- As of 2026-10-13 the issue is open and Google hasn't replied to either
-  comment. Check for replies with
-  `gh api repos/google-ai-edge/LiteRT-LM/issues/3913/comments`.
+- On 2026-10-14 and 15, picitujeromanov (an M1 Max losing digits below 2,048,
+  fixed by 512-token blocks) and john-rocky (both patches confirmed on an M4 Max
+  and a Pixel 8a) replied. Our answer, posted 2026-10-16, gives the 512-block
+  results, the GPU families affected (the A15 is Apple8, not the M1's Apple7)
+  and ML Drift's fp32 RoPE kernels as the widest fix:
+  https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6220359922
+- As of 2026-10-16 the issue is open, unassigned and awaiting a Google
+  developer; Google's only reply is from 2026-10-12. Check for replies with
+  `gh api repos/google-ai-edge/LiteRT-LM/issues/3913/comments`. Comments go out
+  under the user's name, without Claude attribution.
 - The follow-up also describes two WebGPU delegate bugs found while building
   the patch (FULLY_CONNECTED with float weights; REDUCE_MAX over a non-last
   axis). They don't reproduce as single ops: on 2026-10-13, standalone models
