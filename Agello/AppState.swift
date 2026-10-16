@@ -1207,6 +1207,7 @@ final class AppState {
           }
         case .finished(let stats):
           reply.stats = stats
+          if stats.reachedLimit == true { generationError = GenerationStats.reachedLimitNotice }
           finished = true
         }
       }

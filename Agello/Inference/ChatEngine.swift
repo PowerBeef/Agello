@@ -694,9 +694,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 
     // Hard guarantee against KV-cache overflow (which corrupts the native
     // heap): everything this turn adds must fit the room left. Tool rounds run
-    // inside LiteRT-LM (each = a tool result + another generation under the
-    // same cap), so with tools the room is split: a quarter per generation,
-    // an eighth per tool result, at most two tool calls (3/4 + 2/8 = 1).
+    // inside LiteRT-LM (each = a tool result + another generation), so with
+    // tools the room is split between rounds and results (ToolBudget.plan).
     let prefilled = await tokensAfterPrefill(
       text: text, imageData: imageData, audioFileURL: audioFileURL)
     guard
@@ -714,11 +713,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       return
     }
     // `web_search` is registered on its own (automatic web search) even when
-    // the on-device tools are off, so it needs the same split.
+    // the on-device tools are off, so it needs the same split. With Think the
+    // first round's reasoning budget leaves its answer room.
     let budget = ToolBudget.plan(
-      room: room, toolsOffered: toolsEnabled || options?.webSearchTool == true)
-    let cap = budget.outputCap
-    let maxOutputTokens = min(resolved.maxOutputTokens ?? cap, cap)
+      room: room, toolsOffered: toolsEnabled || options?.webSearchTool == true,
+      thinkingBudget: resolved.thinkingBudget, maxOutputTokens: resolved.maxOutputTokens)
     ToolBudget.begin(budget.limits)
     defer { ToolBudget.end() }
     // Safety net for tool rounds (results are trimmed by estimate): stop before streamed output
@@ -769,8 +768,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       // Rounds after a tool response get the same cap; at most one more round than the
       // reply's tool calls (the last answers "limit reached"), then the stream ends.
       let stream = conversation.sendMessageStream(
-        message, maxOutputTokens: maxOutputTokens, followUpMaxOutputTokens: maxOutputTokens,
-        maxToolRounds: budget.limits.maxCalls + 1)
+        message, maxOutputTokens: budget.outputCap,
+        thinkingConfig: budget.thinkingBudget.map {
+          ThinkingConfig(enableThinking: true, thinkingTokenBudget: $0)
+        },
+        followUpMaxOutputTokens: budget.followUpCap, maxToolRounds: budget.limits.maxCalls + 1)
       for try await chunk in stream {
         if Task.isCancelled {
           try? conversation.cancel()
@@ -824,9 +826,12 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         continuation.finish(throwing: ChatError.generationCancelled)
         return
       }
-      let final = stats(started: started, firstChunkAt: firstChunkAt)
+      var final = stats(started: started, firstChunkAt: firstChunkAt)
+      // The last round's decode count reached its cap (a later round's when a tool ran).
+      let lastCap = reportedTools > 0 ? budget.followUpCap : budget.outputCap
+      if let decoded = final.outputTokens, decoded >= lastCap { final.reachedLimit = true }
       Log.generation.info(
-        "finished: \(final.footerLine, privacy: .public), out=\(final.outputTokens ?? -1) cap=\(maxOutputTokens) kv=\(self.usedTokens())/\(resolved.maxNumTokens)"
+        "finished: \(final.footerLine, privacy: .public), out=\(final.outputTokens ?? -1) cap=\(budget.outputCap)/\(budget.followUpCap) think=\(budget.thinkingBudget ?? 0) kv=\(self.usedTokens())/\(resolved.maxNumTokens)"
       )
       continuation.yield(.finished(final))
       continuation.finish()

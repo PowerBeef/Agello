@@ -45,20 +45,48 @@ enum ToolBudget {
 
   /// A reply's share of the context room.
   struct Plan: Sendable, Equatable {
-    /// Largest output of one generation round.
+    /// Largest output of the first generation round, reasoning included.
     var outputCap: Int
+    /// Largest output of each round after a tool result.
+    var followUpCap: Int
+    /// The first round's reasoning budget (nil without Think), sized to leave an answer room.
+    var thinkingBudget: Int?
     var limits: Limits
   }
 
-  /// Split `room` (tokens) for one reply. Tool rounds run inside LiteRT-LM
-  /// under the same cap, so whenever any tool is registered (including
-  /// `web_search` alone) the room is split: a quarter per generation, an
-  /// eighth per tool result, at most two calls (3/4 + 2/8 = 1). Without
-  /// tools the reply gets the whole room.
-  static func plan(room: Int, toolsOffered: Bool) -> Plan {
-    toolsOffered
-      ? Plan(outputCap: room / 4, limits: Limits(maxResultTokens: room / 8, maxCalls: 2))
-      : Plan(outputCap: room, limits: Limits(maxResultTokens: room / 8, maxCalls: 0))
+  /// Tokens a Think round keeps for its answer after reasoning.
+  static let answerTokens = 256
+
+  /// Split `room` (tokens) for one reply. Tool rounds run inside LiteRT-LM, so whenever any tool
+  /// is registered (including `web_search` alone) the room is split: an eighth per tool result,
+  /// at most two calls, and the three generation rounds share the rest (a quarter each without
+  /// Think). With Think the first round grows to its reasoning budget plus an answer, up to half
+  /// the room, and the later rounds share what's left. Without tools the reply gets the whole
+  /// room. `maxOutputTokens` caps every round; the reasoning budget always leaves an answer room.
+  static func plan(
+    room: Int, toolsOffered: Bool, thinkingBudget: Int? = nil, maxOutputTokens: Int? = nil
+  ) -> Plan {
+    let resultTokens = room / 8
+    let limit = maxOutputTokens ?? .max
+    guard toolsOffered else {
+      let cap = min(room, limit)
+      return Plan(
+        outputCap: cap, followUpCap: cap, thinkingBudget: thinkingBudget.map { reasoning($0, cap: cap) },
+        limits: Limits(maxResultTokens: resultTokens, maxCalls: 0))
+    }
+    let first = min(room / 2, max(room / 4, thinkingBudget.map { $0 + answerTokens } ?? 0))
+    let followUp = (room - first - 2 * resultTokens) / 2
+    let cap = min(first, limit)
+    return Plan(
+      outputCap: cap, followUpCap: min(followUp, limit),
+      thinkingBudget: thinkingBudget.map { reasoning($0, cap: cap) },
+      limits: Limits(maxResultTokens: resultTokens, maxCalls: 2))
+  }
+
+  /// The reasoning budget that leaves a round of `cap` tokens room for its answer:
+  /// ``answerTokens``, or half the round when it's small.
+  static func reasoning(_ budget: Int, cap: Int) -> Int {
+    max(0, min(budget, max(cap / 2, cap - answerTokens)))
   }
 
   private struct State {

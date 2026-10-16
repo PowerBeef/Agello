@@ -163,6 +163,11 @@ struct GenerationStats: Sendable, Codable, Equatable {
   var decodeTokensPerSecond: Double?
   var backend: String
   var modelID: ModelID
+  /// The reply's last round stopped at its output cap: the answer may be incomplete.
+  var reachedLimit: Bool?
+
+  static let reachedLimitNotice = String(
+    localized: "The reply reached its length limit, so it may be cut short. Ask to continue, or start a new chat for long answers.")
 
   var footerLine: String {
     var parts: [String] = []

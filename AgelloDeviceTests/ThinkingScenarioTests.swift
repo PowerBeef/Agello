@@ -64,6 +64,44 @@ final class ThinkingScenarioTests: DeviceTestCase {
   /// conversation: the second keeps the first answer but drops its reasoning
   /// (the runtime rewinds and refills the answer). Then multi-turn chat keeps
   /// working and remembers earlier answers.
+  /// Think's reasoning can't use up a reply: with a 400-token cap and a 1,024-token budget the
+  /// reasoning gets 200 tokens (``ToolBudget/reasoning(_:cap:)``) and the answer the rest, and a
+  /// reply that stops at its cap says so.
+  func test01b_ThinkingLeavesRoomForTheAnswer() async throws {
+    try await requireLoadedModel()
+    appState.options.enableThinking = true
+    appState.options.thinkingBudget = 1_024
+    appState.options.maxOutputTokens = 400
+    defer {
+      appState.options.enableThinking = false
+      appState.options.maxOutputTokens = nil
+    }
+    await appState.applyCurrentOptions()
+    let puzzle = await harness.ask(
+      "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost? Reason carefully.",
+      in: harness.newThread())
+    let puzzleNotice = appState.generationError ?? ""
+    let story = await harness.ask(
+      "Write a 1,000-word story about a lighthouse keeper.", in: harness.newThread())
+    let storyNotice = appState.generationError ?? ""
+    harness.record(
+      "thinking01b_answerRoom",
+      [
+        "puzzleThought": puzzle.reply?.thought.count ?? -1, "puzzleReply": puzzle.text,
+        "puzzleOutput": puzzle.reply?.stats?.outputTokens ?? -1,
+        "puzzleReachedLimit": puzzle.reply?.stats?.reachedLimit ?? false, "puzzleNotice": puzzleNotice,
+        "storyOutput": story.reply?.stats?.outputTokens ?? -1,
+        "storyReachedLimit": story.reply?.stats?.reachedLimit ?? false, "storyNotice": storyNotice,
+      ], in: self)
+    XCTAssertTrue(puzzle.accepted, puzzleNotice)
+    XCTAssertFalse(
+      puzzle.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      "The reasoning used up the reply: \(puzzle.reply?.thought.suffix(200) ?? "")")
+    XCTAssertTrue(story.accepted, storyNotice)
+    XCTAssertEqual(story.reply?.stats?.reachedLimit, true, "A 1,000-word story fits 400 tokens?")
+    XCTAssertEqual(storyNotice, GenerationStats.reachedLimitNotice)
+  }
+
   func test02_ReasoningStaysOutOfCache() async throws {
     try await requireLoadedModel()
     appState.options.enableThinking = true

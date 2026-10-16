@@ -42,6 +42,46 @@ final class ToolHostTests: XCTestCase {
     XCTAssertLessThanOrEqual(3 * plan.outputCap + 2 * plan.limits.maxResultTokens, 4_000)
   }
 
+  /// Think's reasoning can't use up a round: the first round grows to the reasoning budget plus
+  /// an answer (up to half the room), the reasoning shrinks to leave the answer room when the
+  /// round is small, and the whole reply still fits the room.
+  func testThinkingLeavesEveryReplyAnAnswer() {
+    for room in [600, 2_000, 4_000, 7_000, 30_000] {
+      for thinking in [128, 1_024, 4_096] {
+        let plan = ToolBudget.plan(room: room, toolsOffered: true, thinkingBudget: thinking)
+        let reasoning = try? XCTUnwrap(plan.thinkingBudget)
+        XCTAssertLessThanOrEqual(reasoning ?? .max, thinking)
+        XCTAssertGreaterThanOrEqual(
+          plan.outputCap - (reasoning ?? 0), min(ToolBudget.answerTokens, plan.outputCap / 2),
+          "room \(room), thinking \(thinking)")
+        XCTAssertLessThanOrEqual(plan.outputCap, room / 2)
+        XCTAssertLessThanOrEqual(
+          plan.outputCap + 2 * plan.followUpCap + 2 * plan.limits.maxResultTokens, room)
+      }
+    }
+    // Room enough: the whole budget plus an answer.
+    let roomy = ToolBudget.plan(room: 7_000, toolsOffered: true, thinkingBudget: 1_024)
+    XCTAssertEqual(roomy.thinkingBudget, 1_024)
+    XCTAssertGreaterThanOrEqual(roomy.outputCap, 1_024 + ToolBudget.answerTokens)
+    // Without Think the split is unchanged.
+    let plain = ToolBudget.plan(room: 4_000, toolsOffered: true)
+    XCTAssertNil(plain.thinkingBudget)
+    XCTAssertEqual(plain.outputCap, 1_000)
+    XCTAssertEqual(plain.followUpCap, 1_000)
+  }
+
+  /// A reply cap set in options applies to every round, and the reasoning fits inside it.
+  func testMaxOutputTokensCapsEveryRoundAndLeavesAnAnswer() {
+    let plan = ToolBudget.plan(
+      room: 7_000, toolsOffered: true, thinkingBudget: 1_024, maxOutputTokens: 400)
+    XCTAssertEqual(plan.outputCap, 400)
+    XCTAssertEqual(plan.followUpCap, 400)
+    XCTAssertEqual(plan.thinkingBudget, 200)
+    let solo = ToolBudget.plan(room: 7_000, toolsOffered: false, thinkingBudget: 4_096)
+    XCTAssertEqual(solo.outputCap, 7_000)
+    XCTAssertEqual(solo.thinkingBudget, 4_096)
+  }
+
   func testPlanGivesTheWholeRoomWithoutTools() {
     let plan = ToolBudget.plan(room: 4_000, toolsOffered: false)
     XCTAssertEqual(plan.outputCap, 4_000)
