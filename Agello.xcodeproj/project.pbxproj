@@ -673,8 +673,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				INFOPLIST_FILE = Agello/Info.plist;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos for the on-device model to see.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone to record voice messages for the on-device model.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos and scan documents for the on-device model, and to show it what you see in voice mode.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone for voice messages, dictation and voice mode. The on-device model understands your voice; recordings stay on this iPhone.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Agello lets you attach photos for the on-device model to see.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "iphone-performance-gaming-tier";
@@ -708,8 +708,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				INFOPLIST_FILE = Agello/Info.plist;
-				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos for the on-device model to see.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone to record voice messages for the on-device model.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos and scan documents for the on-device model, and to show it what you see in voice mode.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone for voice messages, dictation and voice mode. The on-device model understands your voice; recordings stay on this iPhone.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Agello lets you attach photos for the on-device model to see.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "iphone-performance-gaming-tier";

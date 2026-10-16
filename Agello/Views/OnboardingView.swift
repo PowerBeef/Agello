@@ -59,7 +59,7 @@ struct OnboardingView: View {
         .tracking(-0.6)
         .foregroundStyle(Theme.Text.primary)
         .fixedSize(horizontal: false, vertical: true)
-      Text("Gemma 4 runs on the iPhone's GPU. No account, no cloud, no data leaving your phone.")
+      Text("Gemma 4 runs on the iPhone's GPU. No account, no cloud: your chats stay on your phone.")
         .font(.body)
         .foregroundStyle(Theme.Text.secondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -70,10 +70,10 @@ struct OnboardingView: View {
     VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
       feature(
         "lock.shield.fill", Theme.Brand.glacier, "Private by design",
-        "Your chats, photos and voice never leave this iPhone.")
+        "Your chats, photos and voice never leave this iPhone. A web search sends only the search.")
       feature(
         "airplane", Theme.Brand.teal, "Works offline",
-        "Once downloaded, the model needs no connection or account.")
+        "Once downloaded, the model needs no connection or account, except to search the web.")
       feature(
         "eye.fill", Theme.Brand.gold, "Sees and listens",
         "Ask about photos, read documents, or just talk.")
