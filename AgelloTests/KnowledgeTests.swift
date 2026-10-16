@@ -44,6 +44,44 @@ final class KnowledgeTests: XCTestCase {
     XCTAssertEqual(KeywordScorer.terms("Élan, the CAFÉ!"), ["elan", "cafe"])
   }
 
+  /// Chinese has no spaces between words: its runs become character pairs, so keywords still
+  /// match. Other text is unchanged.
+  func testKeywordTermsSplitCJKIntoCharacterPairs() {
+    XCTAssertEqual(KeywordScorer.terms("The lighthouse keeper"), ["lighthouse", "keeper"])
+    let terms = KeywordScorer.terms("北京大学的历史 and history")
+    XCTAssertTrue(terms.contains("北京"))
+    XCTAssertTrue(terms.contains("大学"))
+    XCTAssertTrue(terms.contains("history"))
+    let scores = KeywordScorer.scores(
+      query: "北京大学", documents: ["上海的天气很好。", "北京大学成立于1898年。"])
+    XCTAssertEqual(scores.indices.max { scores[$0] < scores[$1] }, 1)
+    XCTAssertEqual(scores[0], 0)
+  }
+
+  /// Passages are sized by estimated tokens: digits and ideographs are about a token each, so
+  /// their passages hold fewer characters and stay within what the embedder reads.
+  func testDenseTextGetsShorterPassages() {
+    let chinese = String(repeating: "数据显示北京的人口持续增长", count: 400)
+    let digits = String(repeating: "2026 1874 4200 3911 ", count: 400)
+    for text in [chinese, digits] {
+      let chunks = Chunker.chunks(pages: [text], paged: false)
+      XCTAssertGreaterThan(chunks.count, 1)
+      for chunk in chunks { XCTAssertLessThanOrEqual(Chunker.weight(of: chunk.text), Chunker.targetCharacters) }
+    }
+    XCTAssertEqual(Chunker.weight(of: "abc"), 3)
+    XCTAssertEqual(Chunker.weight(of: "123"), 12)
+    XCTAssertEqual(Chunker.weight(of: "北京"), 8)
+  }
+
+  func testInterleavingTakesBothRankingsInTurn() {
+    func passage(_ text: String) -> Passage {
+      Passage(documentID: UUID(), documentName: "x", pageStart: nil, pageEnd: nil, text: text, score: 0)
+    }
+    let mixed = KnowledgeBase.interleave(
+      [passage("a1"), passage("a2"), passage("a3")], [passage("b1")], limit: 4)
+    XCTAssertEqual(mixed.map(\.text), ["a1", "b1", "a2", "a3"])
+  }
+
   func testCitations() {
     var passage = Passage(
       documentID: UUID(), documentName: "report.pdf", pageStart: 3, pageEnd: 3, text: "", score: 1)
@@ -85,6 +123,29 @@ final class KnowledgeTests: XCTestCase {
     let top = try XCTUnwrap(passages.first)
     XCTAssertTrue(top.text.contains("4.2 million"), top.citation)
     XCTAssertTrue((top.pageStart!...top.pageEnd!).contains(2), top.citation)
+  }
+
+  /// A file the embedder failed on is searched by keywords, beside files searched by meaning,
+  /// and isn't retried on every question.
+  func testAFailedFileIsSearchedByKeywordsAndNotRetried() async throws {
+    let threadID = UUID()
+    let good = try XCTUnwrap(knowledge.add(report(), threadID: threadID))
+    let notes = ExtractedDocument(
+      name: "notes.txt", kind: .text, byteCount: 100,
+      pages: ["Puffin colony census: 1,240 nesting pairs on the eastern stacks."])
+    let failed = try XCTUnwrap(knowledge.add(notes, threadID: threadID))
+    await knowledge.waitForIndexing([good, failed])
+    failed.indexedWith = KnowledgeBase.failedMarker(HashingEmbedder().identifier)
+    for chunk in failed.chunks { chunk.embedding = nil }
+    try container.mainContext.save()
+
+    let documents = knowledge.documents(threadID: threadID)
+    let passages = await knowledge.search("puffin census nesting pairs", in: documents, limit: 3)
+    XCTAssertTrue(passages.contains { $0.documentName == "notes.txt" })
+    XCTAssertTrue(passages.contains { $0.documentName == "report.pdf" })
+    XCTAssertTrue(knowledge.searchesByKeywords(failed))
+    knowledge.indexPending()
+    XCTAssertFalse(knowledge.indexing.contains(failed.id))
   }
 
   /// A file attached before the embedding model arrived (never indexed).

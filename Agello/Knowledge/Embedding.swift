@@ -30,7 +30,10 @@ actor LiteRTEmbedder: TextEmbedder {
 
   private let modelURL: URL
   private var engine: EmbeddingEngine?
-  private let options = EmbeddingOptions(normalize: true, outputSize: LiteRTEmbedder.dimensions)
+  /// Truncate, never fail: an input longer than the loaded signatures (1,024 tokens) used to
+  /// fail its whole batch and the document with it.
+  private let options = EmbeddingOptions(
+    normalize: true, outputSize: LiteRTEmbedder.dimensions, inputOverflowStrategy: .truncate)
   /// Requests per native batch call.
   private static let batchSize = 8
 
@@ -69,7 +72,7 @@ actor LiteRTEmbedder: TextEmbedder {
 
   /// EmbeddingGemma's prompt formats for documents and search queries.
   static func documentPrompt(title: String, text: String) -> String {
-    "title: \(title.isEmpty ? "none" : title) | text: \(text)"
+    "title: \(title.isEmpty ? "none" : String(title.prefix(80))) | text: \(text)"
   }
 
   static func queryPrompt(_ query: String) -> String {
@@ -102,7 +105,8 @@ actor LiteRTEmbedder: TextEmbedder {
 /// Deterministic bag-of-words vectors (hashed words and word pairs): keeps
 /// retrieval working with the mock engine and in unit tests, no model needed.
 struct HashingEmbedder: TextEmbedder {
-  let identifier = "hashing@256"
+  /// v2: keyword terms split CJK runs into character pairs.
+  let identifier = "hashing@256v2"
   let relatedThreshold: Float = 0.15
   let relatedMargin: Float = 0
   static let dimensions = 256
@@ -190,11 +194,46 @@ enum KeywordScorer {
     "les", "des", "une", "est", "que", "qui", "pour", "dans", "par", "sur", "avec", "pas",
   ]
 
-  /// Lowercased, accent-folded words of 3+ characters, minus stopwords.
+  /// Lowercased, accent-folded words of 3+ characters, minus stopwords. Chinese, Japanese and
+  /// Korean aren't written with spaces between words: their runs become overlapping character
+  /// pairs, which carry most of a CJK word's meaning.
   static func terms(_ text: String) -> [String] {
     text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
       .components(separatedBy: CharacterSet.alphanumerics.inverted)
-      .filter { $0.count >= 3 && !stopwords.contains($0) }
+      .flatMap { word -> [String] in
+        guard word.unicodeScalars.contains(where: Chunker.isDense) else {
+          return word.count >= 3 && !stopwords.contains(word) ? [word] : []
+        }
+        return denseTerms(word)
+      }
+  }
+
+  /// Character pairs of the dense (CJK) runs of `word`; other runs as ordinary words.
+  private static func denseTerms(_ word: String) -> [String] {
+    var terms: [String] = []
+    var run: [Character] = []
+    var plain = ""
+    func flushRun() {
+      if run.count == 1 { terms.append(String(run)) }
+      if run.count > 1 { for i in 0..<(run.count - 1) { terms.append(String(run[i...i + 1])) } }
+      run = []
+    }
+    func flushPlain() {
+      if plain.count >= 3, !stopwords.contains(plain) { terms.append(plain) }
+      plain = ""
+    }
+    for character in word {
+      if character.unicodeScalars.contains(where: Chunker.isDense) {
+        flushPlain()
+        run.append(character)
+      } else {
+        flushRun()
+        plain.append(character)
+      }
+    }
+    flushRun()
+    flushPlain()
+    return terms
   }
 
   /// Scores each document for `query`; higher is better, 0 = no shared terms.

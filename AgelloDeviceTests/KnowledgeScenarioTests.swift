@@ -93,6 +93,38 @@ final class KnowledgeScenarioTests: DeviceTestCase {
     XCTAssertFalse(after.text.hasPrefix(ChatTurn.errorPrefix), after.text)
   }
 
+  /// Dense text: a Chinese report and a table of numbers. Their passages used to overflow the
+  /// embedder's 1,024 tokens and fail the whole file, which was then searched by keywords
+  /// (useless for Chinese) and re-embedded on every question.
+  func test01b_DenseTextIsIndexed() async throws {
+    try await requireLoadedModel()
+    _ = try await freshEmbedding()
+    let thread = harness.newThread()
+    let chinese = (1...12).map { section in
+      String(repeating: "第\(section)节：港口维护和海岸侵蚀的年度检查报告，记录了各区的巡查结果和后续维修请求。", count: 12)
+        + (section == 7 ? "卡普鲁日灯塔于1988年实现全自动化，结束了一百四十年的驻守历史。" : "")
+    }
+    let table = (1...600).map { row in "\(2_000 + row) | \(row * 37 % 1_000) | \(row * 113 % 10_000) | \(row % 7)" }
+      .joined(separator: "\n")
+    let documents = [
+      ExtractedDocument(name: "港口报告.txt", kind: .text, byteCount: 0, pages: [chinese.joined(separator: "\n\n")])
+        .prepared(),
+      ExtractedDocument(name: "readings.csv", kind: .text, byteCount: 0, pages: [table]).prepared(),
+    ].compactMap { appState.knowledge.add($0, threadID: thread.id) }
+    await appState.knowledge.waitForIndexing(documents)
+    let identifier = LiteRTEmbedder(modelURL: URL(filePath: "/")).identifier
+    let passages = await appState.knowledge.search("灯塔什么时候实现自动化？", in: documents, limit: 3)
+    harness.record(
+      "files_01b_denseText",
+      [
+        "indexedWith": documents.map { $0.indexedWith ?? "nil" },
+        "passages": documents.map(\.chunks.count),
+        "top": passages.map { String($0.text.prefix(80)) },
+      ], in: self)
+    XCTAssertEqual(documents.map(\.indexedWith), [identifier, identifier])
+    XCTAssertTrue(passages.contains { $0.text.contains("1988") }, "\(passages.map(\.text))")
+  }
+
   func test02_SummarizeLongPDFThenCitedFollowUp() async throws {
     try await requireLoadedModel()
     _ = try await freshEmbedding()

@@ -61,6 +61,22 @@ final class KnowledgeBase {
     await embedder?.unload()
   }
 
+  /// Forget the embedder (its model was deleted): the next use downloads it again.
+  func resetEmbedder() async {
+    cancelIndexing()
+    await embedder?.unload()
+    embedder = nil
+  }
+
+  /// `indexedWith` of a document the embedder failed on: searched by keywords, and not retried
+  /// with that embedder (it failed on every question and at every launch).
+  static func failedMarker(_ identifier: String) -> String { "failed:" + identifier }
+
+  /// Whether `document` is searched by keywords because embedding it failed.
+  func searchesByKeywords(_ document: ChatDocument) -> Bool {
+    document.indexedWith?.hasPrefix("failed:") ?? false
+  }
+
   // MARK: - Documents
 
   /// Save `extracted` as a document of a chat or a project, then index it.
@@ -115,7 +131,8 @@ final class KnowledgeBase {
   /// indexed with the current embedder, or no embedder is available yet).
   func index(_ document: ChatDocument) {
     guard indexTasks[document.id] == nil, let embedder = currentEmbedder(),
-      document.indexedWith != embedder.identifier
+      document.indexedWith != embedder.identifier,
+      document.indexedWith != Self.failedMarker(embedder.identifier)
     else { return }
     let id = document.id
     let chunks = document.chunks.sorted { $0.index < $1.index }
@@ -137,8 +154,14 @@ final class KnowledgeBase {
         try? modelContext?.save()
         Log.engine.info(
           "knowledge: indexed \(chunks.count) passages in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+      } catch is CancellationError {
+        // Stopped (deleted, backgrounded): indexed again later.
       } catch {
         Log.engine.error("knowledge: indexing failed: \(String(describing: error), privacy: .public)")
+        // In the background the GPU is off limits: that's not this document's fault.
+        guard !Task.isCancelled, GPUGate.isOpen, document.modelContext != nil else { return }
+        document.indexedWith = Self.failedMarker(embedder.identifier)
+        try? modelContext?.save()
       }
     }
   }
@@ -156,9 +179,12 @@ final class KnowledgeBase {
       return
     }
     let identifier = embedder.identifier
+    let failed = Self.failedMarker(identifier)
     // `nil` (never indexed) must match explicitly: SQL comparisons skip NULL.
     let descriptor = FetchDescriptor<ChatDocument>(
-      predicate: #Predicate { $0.indexedWith == nil || $0.indexedWith != identifier })
+      predicate: #Predicate {
+        $0.indexedWith == nil || ($0.indexedWith != identifier && $0.indexedWith != failed)
+      })
     for document in (try? context.fetch(descriptor)) ?? [] { index(document) }
   }
 
@@ -282,23 +308,45 @@ final class KnowledgeBase {
         pageEnd: pair.1.pageEnd, text: pair.1.text, score: score)
     }
 
-    if let embedder = currentEmbedder(),
-      documents.allSatisfy({ $0.indexedWith == embedder.identifier }),
-      let queryVector = try? await embedder.embed(query: query)
-    {
-      let candidates = chunks.compactMap { pair in
+    // Each document by meaning when it's indexed, by keywords when it isn't (yet): one file
+    // that failed to index used to send every file in the chat to keyword search.
+    let embedder = currentEmbedder()
+    let byMeaning = chunks.filter { pair in
+      embedder.map { pair.0.indexedWith == $0.identifier && pair.1.embedding != nil } ?? false
+    }
+    let meaningIDs = Set(byMeaning.map { ObjectIdentifier($0.1) })
+    let byKeywords = chunks.filter { !meaningIDs.contains(ObjectIdentifier($0.1)) }
+    var meaning: [Passage] = []
+    if let embedder, !byMeaning.isEmpty, let queryVector = try? await embedder.embed(query: query) {
+      let candidates = byMeaning.compactMap { pair in
         pair.1.embedding.map { (pair, VectorIndex.decode($0)) }
       }
-      return VectorIndex.top(limit, query: queryVector, candidates: candidates)
+      meaning = VectorIndex.top(limit, query: queryVector, candidates: candidates)
         .map { passage($0.item, score: Double($0.score)) }
     }
+    let keywordChunks = meaning.isEmpty && !byMeaning.isEmpty ? chunks : byKeywords
+    var keywords: [Passage] = []
+    if !keywordChunks.isEmpty {
+      // Keyword ranking, falling back to document order.
+      let scores = KeywordScorer.scores(query: query, documents: keywordChunks.map(\.1.text))
+      keywords = zip(keywordChunks, scores)
+        .enumerated()
+        .sorted { $0.element.1 != $1.element.1 ? $0.element.1 > $1.element.1 : $0.offset < $1.offset }
+        .prefix(limit)
+        .map { passage($0.element.0, score: $0.element.1) }
+    }
+    return Self.interleave(meaning, keywords, limit: limit)
+  }
 
-    // No embeddings yet: rank by keywords, falling back to document order.
-    let scores = KeywordScorer.scores(query: query, documents: chunks.map(\.1.text))
-    return zip(chunks, scores)
-      .enumerated()
-      .sorted { $0.element.1 != $1.element.1 ? $0.element.1 > $1.element.1 : $0.offset < $1.offset }
-      .prefix(limit)
-      .map { passage($0.element.0, score: $0.element.1) }
+  /// The best of two rankings whose scores can't be compared, taken in turn.
+  static func interleave(_ first: [Passage], _ second: [Passage], limit: Int) -> [Passage] {
+    var result: [Passage] = []
+    var a = first[...]
+    var b = second[...]
+    while result.count < limit, !a.isEmpty || !b.isEmpty {
+      if let next = a.popFirst() { result.append(next) }
+      if result.count < limit, let next = b.popFirst() { result.append(next) }
+    }
+    return result
   }
 }

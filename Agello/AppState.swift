@@ -314,6 +314,7 @@ final class AppState {
         }
         await self.unloadEngine()
       }
+      if spec.id == ModelCatalog.embeddingGemma.id { await self.knowledge.resetEmbedder() }
       self.store.deleteModel(spec)
     }
   }

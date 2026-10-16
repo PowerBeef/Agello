@@ -84,6 +84,10 @@ struct ProjectView: View {
                 if file.pageCount > 0 {
                   Text("\(file.pageCount) pages").font(.caption).foregroundStyle(Theme.Text.tertiary)
                 }
+                if appState.knowledge.searchesByKeywords(file) {
+                  Text("Keyword search").font(.caption).foregroundStyle(Theme.Text.tertiary)
+                    .accessibilityIdentifier("project.file.keywordSearch")
+                }
               }
               Spacer()
               if appState.knowledge.indexing.contains(file.id) {
