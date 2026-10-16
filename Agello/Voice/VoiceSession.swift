@@ -87,8 +87,9 @@ final class VoiceSession {
   }
 
   func end() {
-    turnTask?.cancel()
+    // Stop the reply first: cancelling only the turn's task would leave the engine busy.
     if appState.isBusy { appState.stop() }
+    turnTask?.cancel()
     audio.stop()
     if cameraOn { camera.stop() }
     appState.onVoiceReply = nil

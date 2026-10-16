@@ -53,6 +53,49 @@ final class AppStateTests: XCTestCase {
     XCTAssertFalse(appState.isGenerating)
   }
 
+  /// A stream that fails mid-way leaves the native conversation in an unknown state (the
+  /// engine stops it): the next message is answered from a rebuilt conversation.
+  func testAStreamErrorRebuildsTheConversationBeforeTheNextSend() async {
+    let thread = appState.newThread(in: context)
+    await appState.send(text: "Hi", imageData: nil, audioFileURL: nil, in: thread)
+    await mock.failNextSend(afterChunks: 1, with: .underlying(message: "INVALID_ARGUMENT: tool call"))
+    await appState.send(text: "Next", imageData: nil, audioFileURL: nil, in: thread)
+    await appState.send(text: "Again", imageData: nil, audioFileURL: nil, in: thread)
+    let seen = await mock.heldAtSend.last
+    XCTAssertEqual(seen, ["Hi", "Hello from the mock engine!", "Next", "Hello"])
+    XCTAssertEqual(thread.orderedTurns.last?.text, "Hello from the mock engine!")
+  }
+
+  /// A reply whose task is cancelled (voice mode closed) cancels the native conversation,
+  /// which then rejects messages until rebuilt: the next message must still be answered.
+  func testAnAbandonedReplyIsRebuiltBeforeTheNextSend() async {
+    let thread = appState.newThread(in: context)
+    await appState.send(text: "Hi", imageData: nil, audioFileURL: nil, in: thread)
+    let state: AppState = appState
+    let sending = Task { await state.send(text: "Long one", imageData: nil, audioFileURL: nil, in: thread) }
+    while !appState.isGenerating { try? await Task.sleep(for: .milliseconds(5)) }
+    sending.cancel()
+    _ = await sending.value
+    XCTAssertFalse(appState.isGenerating)
+    await appState.send(text: "After", imageData: nil, audioFileURL: nil, in: thread)
+    XCTAssertEqual(thread.orderedTurns.last?.text, "Hello from the mock engine!")
+  }
+
+  /// Stop while the model is still loading: nothing is sent and the draft comes back.
+  func testStopWhilePreparingSendsNothing() async {
+    await mock.setLoadDelay(.milliseconds(300))
+    let thread = appState.newThread(in: context)
+    let state: AppState = appState
+    let sending = Task { await state.send(text: "Hi", imageData: nil, audioFileURL: nil, in: thread) }
+    while !appState.isPreparing { try? await Task.sleep(for: .milliseconds(5)) }
+    appState.stop()
+    let accepted = await sending.value
+    XCTAssertFalse(accepted)
+    XCTAssertTrue(thread.orderedTurns.isEmpty)
+    let sends = await mock.sendLog
+    XCTAssertTrue(sends.isEmpty)
+  }
+
   func testConcurrentLoadsCoalesceIntoOne() async {
     await mock.setLoadDelay(.milliseconds(200))
     let state: AppState = appState

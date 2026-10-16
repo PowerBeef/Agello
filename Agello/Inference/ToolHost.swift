@@ -39,7 +39,7 @@ enum ToolBudget {
     var maxCalls: Int
   }
 
-  /// Used when no generation is in flight (tests, direct calls).
+  /// Used before any reply set a budget (tests, probes calling tools directly).
   static let unrestricted = Limits(maxResultBytes: 16_000, maxCalls: .max)
 
   /// A reply's share of the context room.
@@ -65,6 +65,8 @@ enum ToolBudget {
     var limits: Limits?
     var calls = 0
     var resultBytes = 0
+    /// The last reply ended: tool rounds still running for it get nothing.
+    var closed = false
   }
   private static let state = Mutex(State())
 
@@ -73,12 +75,19 @@ enum ToolBudget {
   }
 
   static func end() {
+    state.withLock { $0 = State(closed: true) }
+  }
+
+  /// Back to no budget at all (tests, probes that call tools directly).
+  static func reset() {
     state.withLock { $0 = State() }
   }
 
-  /// Claim one tool call. Returns nil when this reply's call limit is spent.
+  /// Claim one tool call. Returns nil when this reply's call limit is spent, or when no reply
+  /// is running any more (a tool round that outlived its reply).
   static func claim() -> Limits? {
     state.withLock { state in
+      guard !state.closed else { return nil }
       let limits = state.limits ?? unrestricted
       guard state.calls < limits.maxCalls else { return nil }
       state.calls += 1

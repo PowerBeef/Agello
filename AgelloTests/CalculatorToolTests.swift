@@ -3,9 +3,9 @@ import XCTest
 @testable import Agello
 
 final class CalculatorToolTests: XCTestCase {
-  // The tool budget is global: don't leave a spent one for the next test.
+  // The tool budget is global: don't leave a spent or closed one for the next test.
   override func tearDown() {
-    ToolBudget.end()
+    ToolBudget.reset()
     super.tearDown()
   }
 

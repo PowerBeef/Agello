@@ -2,7 +2,7 @@
 
 `Vendor/LiteRT-LM` is a pruned copy of LiteRT-LM **v0.18.0** from our fork,
 https://github.com/PowerBeef/agello-litert-lm, branch `agello`, at commit
-**85b1a776** (v0.18.0 plus the patches below). It contains only what the Xcode
+**17056fc1** (v0.18.0 plus the patches below). It contains only what the Xcode
 build needs:
 
 - `Package.swift` (pins Google's `CLiteRTLM.xcframework.zip` release binary, checksummed)
@@ -21,6 +21,20 @@ build needs:
    was released inside LiteRT-LM's final stream callback, and deleting it there
    waited for the very task running that callback: the engine stalled until
    LiteRT-LM's 10-minute timeout. Probe 9 checks it.
+3. `swift/ConversationStream.swift` (new) and `swift/Conversation.swift`:
+   streams are kept in a table keyed by an integer ID that each native send
+   passes as its callback's user data, instead of a retained pointer.
+   LiteRT-LM reports a rejected tool call up to three times as a final error,
+   and the wrapper released the stream on each, so the second report was a
+   use-after-free. Now a stream ends once and late chunks find nothing.
+   Cancelling also stops a stream between tool rounds; a reader that stops
+   iterating cancels the native work; an unreadable chunk ends the stream and
+   cancels the decode; `sendMessageStream` gains `followUpMaxOutputTokens` and
+   `maxToolRounds`. `StreamRegistryTests` drives it without a model.
+4. `swift/Engine.swift`: `tokenize` and `countTokens`
+   (`litert_lm_engine_tokenize`); `swift/EmbeddingEngineConfig.swift`:
+   `EmbeddingOptions.inputOverflowStrategy` (truncate long inputs instead of
+   failing the batch).
 
 ## Why vendored instead of a remote SPM dependency?
 

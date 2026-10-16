@@ -764,6 +764,9 @@ final class ProbeScenarioTests: DeviceTestCase {
       ("app_seed3_stream", 3, false, true, true),
     ]
     var results: [[String: String]] = []
+    // These conversations call the app's tools outside a reply: no reply budget applies.
+    ToolBudget.reset()
+    defer { ToolBudget.reset() }
     for variant in variants {
       let sampler =
         variant.greedy

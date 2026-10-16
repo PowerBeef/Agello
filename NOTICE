@@ -8,9 +8,12 @@ This product includes software developed by Google LLC:
   LiteRT-LM (Vendor/LiteRT-LM) — Copyright 2026 Google LLC
   Licensed under the Apache License, Version 2.0
   https://github.com/google-ai-edge/LiteRT-LM
-  Modified (swift/Conversation.swift): a failed tool call is answered with
-  an error response instead of throwing, and a stream holds its conversation
-  weakly (a deadlock fix); from
+  Modified (swift/Conversation.swift, swift/ConversationStream.swift and
+  others): a failed tool call is answered with an error response instead of
+  throwing; a stream holds its conversation weakly (a deadlock fix); streams
+  are found by ID and end once (a use-after-free fix), stop their native work
+  when cancelled and cap their tool rounds; a tokenizer API and an embedding
+  input-overflow option; from
   https://github.com/PowerBeef/agello-litert-lm/tree/agello
 
 This product includes the following Swift packages (resolved via Swift

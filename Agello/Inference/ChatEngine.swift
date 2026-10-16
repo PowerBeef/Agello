@@ -594,6 +594,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       continuation.finish(throwing: ChatError.underlying(message: "Already generating."))
       return
     }
+    // Stopped before it started (the reply's task was cancelled): no native work at all.
+    guard !Task.isCancelled else {
+      continuation.finish(throwing: ChatError.generationCancelled)
+      return
+    }
     generating = true
     cancelRequested = false
     defer { generating = false }
@@ -682,7 +687,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
 
     do {
-      let stream = conversation.sendMessageStream(message, maxOutputTokens: maxOutputTokens)
+      // Rounds after a tool response get the same cap; at most one more round than the
+      // reply's tool calls (the last answers "limit reached"), then the stream ends.
+      let stream = conversation.sendMessageStream(
+        message, maxOutputTokens: maxOutputTokens, followUpMaxOutputTokens: maxOutputTokens,
+        maxToolRounds: budget.limits.maxCalls + 1)
       for try await chunk in stream {
         if Task.isCancelled {
           try? conversation.cancel()
@@ -709,6 +718,14 @@ actor LiteRTChatEngine: ChatEngineProtocol {
           return
         }
       }
+      // Iteration ends without an error when this task is cancelled (the caller stopped
+      // reading); the wrapper has already stopped the native work, which leaves the
+      // conversation cancelled.
+      if Task.isCancelled {
+        Log.generation.info("cancelled (task)")
+        continuation.finish(throwing: ChatError.generationCancelled)
+        return
+      }
       let lateActivity = newToolActivity()
       if !lateActivity.isEmpty {
         continuation.yield(
@@ -731,17 +748,23 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       )
       continuation.yield(.finished(final))
       continuation.finish()
-    } catch is CancellationError {
-      Log.generation.info("cancelled (task)")
-      try? conversation.cancel()
-      continuation.finish(throwing: ChatError.generationCancelled)
     } catch {
-      if cancelRequested {
-        Log.generation.info("cancelled (user): \(String(describing: error), privacy: .public)")
+      if cancelRequested || Task.isCancelled || error is CancellationError {
+        Log.generation.info("cancelled: \(String(describing: error), privacy: .public)")
         continuation.finish(throwing: ChatError.generationCancelled)
         return
       }
+      if let streamError = error as? LiteRTLMError,
+        case .conversation(.recurringToolCallLimitExceeded) = streamError
+      {
+        Log.generation.error("tool rounds: limit reached")
+        continuation.finish(throwing: ChatError.replyTruncated)
+        return
+      }
       Log.generation.error("stream error: \(String(describing: error), privacy: .public)")
+      // The native side may still be decoding (an unreadable chunk) or hold a half-written
+      // turn: stop it; the caller rebuilds the conversation before the next send.
+      try? conversation.cancel()
       if let chatError = error as? ChatError {
         continuation.finish(throwing: chatError)
       } else {
@@ -873,7 +896,7 @@ actor MockChatEngine: ChatEngineProtocol {
     text: String, imageData: Data?, audioFileURL: URL?
   ) -> AsyncThrowingStream<ChatEvent, Error> {
     AsyncThrowingStream { continuation in
-      Task {
+      let task = Task {
         let script =
           text.localizedCaseInsensitiveContains("markdown")
           ? MockChatEngine.markdownSample : await self.script
@@ -912,6 +935,7 @@ actor MockChatEngine: ChatEngineProtocol {
         continuation.yield(.finished(stats))
         continuation.finish()
       }
+      continuation.onTermination = { _ in task.cancel() }
     }
   }
 

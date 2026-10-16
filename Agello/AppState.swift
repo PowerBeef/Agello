@@ -141,6 +141,8 @@ final class AppState {
   @ObservationIgnored private var pendingOptionsApply = false
   /// A settings change is waiting for its debounced apply.
   @ObservationIgnored private var optionsDirty = false
+  /// Bumped by Stop: a reply still being prepared checks it before each step.
+  @ObservationIgnored private var stopCount = 0
 
   private var memoryWarningObserver: NSObjectProtocol?
 
@@ -536,6 +538,8 @@ final class AppState {
     guard !isGenerating, !isPreparing, !isBenchmarking else { return false }
     guard let context = modelContext else { return false }
     generationError = nil
+    let stopsAtStart = stopCount
+    var stopped: Bool { stopCount != stopsAtStart }
     isPreparing = true
     preparingThreadID = thread.id
     defer {
@@ -550,6 +554,7 @@ final class AppState {
       applyOptionsTask?.cancel()
       await applyCurrentOptions()
     }
+    guard !stopped else { return false }
 
     let threadID = thread.id
     selectedThreadID = threadID
@@ -601,7 +606,7 @@ final class AppState {
       if rewound != nil, self.conversationThreadID == threadID { self.conversationThreadID = nil }
       return await self.prepareConversation(threadID: threadID, history: history)
     }
-    guard ready else { return false }
+    guard ready, !stopped else { return false }
 
     // The engine may have degraded to text-only (model without executors).
     if imageData != nil, resolved?.enableVision != true {
@@ -637,6 +642,7 @@ final class AppState {
       generationError = error.displayMessage
       return false
     }
+    guard !stopped else { return false }
 
     // Placeholder model turn, mutated live as chunks stream in.
     persist()
@@ -1056,6 +1062,7 @@ final class AppState {
     }
     toolStatus = nil
     defer { toolStatus = nil }
+    var finished = false
     do {
       for try await event in stream {
         switch event {
@@ -1068,7 +1075,13 @@ final class AppState {
           }
         case .finished(let stats):
           reply.stats = stats
+          finished = true
         }
+      }
+      guard finished else {
+        // The stream ended without finishing: this task was cancelled (voice mode closed,
+        // the reply abandoned), which cancels the native conversation too.
+        throw ChatError.generationCancelled
       }
       flush(final: true)
       try? context.save()
@@ -1086,20 +1099,29 @@ final class AppState {
         // LiteRT-LM leaves a cancelled conversation unusable: rebuild it from
         // the thread's history (incl. the partial reply) before the next send.
         conversationThreadID = nil
+      case .contextFull, .messageTooLong:
+        // Refused before any native work: the conversation is as it was.
+        reply.text = reply.text.isEmpty ? ChatTurn.errorPrefix + error.displayMessage : reply.text
+        try? context.save()
+        Haptics.error()
       default:
         reply.text = reply.text.isEmpty ? ChatTurn.errorPrefix + error.displayMessage : reply.text
         try? context.save()
         Haptics.error()
+        // The engine stopped a stream that failed mid-way: rebuild before the next send.
+        conversationThreadID = nil
       }
     } catch {
       flush(final: true)
       reply.text = reply.text.isEmpty ? ChatTurn.errorPrefix + error.localizedDescription : reply.text
       try? context.save()
       Haptics.error()
+      conversationThreadID = nil
     }
   }
 
   func stop() {
+    stopCount &+= 1
     BackgroundWork.shared.end(success: false)
     preparationTask?.cancel()
     webTask?.cancel()

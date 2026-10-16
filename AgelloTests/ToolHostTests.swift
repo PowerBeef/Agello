@@ -5,8 +5,18 @@ import XCTest
 /// Tool budgets (KV-cache safety) and helper-task parsing.
 final class ToolHostTests: XCTestCase {
   override func tearDown() {
-    ToolBudget.end()
+    ToolBudget.reset()
     super.tearDown()
+  }
+
+  /// A tool round that outlives its reply (the stream was stopped while a tool ran) must not
+  /// get the unrestricted budget: its result would land in a KV cache nobody budgeted.
+  func testNoToolCallsAfterTheReplyEnded() {
+    ToolBudget.begin(.init(maxResultBytes: 100, maxCalls: 2))
+    ToolBudget.end()
+    XCTAssertNil(ToolBudget.claim())
+    ToolBudget.reset()
+    XCTAssertNotNil(ToolBudget.claim(), "Direct calls (tests, probes) are unrestricted")
   }
 
   func testCallLimitIsEnforcedPerReply() {
