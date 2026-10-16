@@ -114,6 +114,7 @@ private struct ModelCardView: View {
     case .downloading(let progress):
       VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
         ProgressView(value: progress)
+          .accessibilityLabel("\(spec.displayName) download")
           .tint(tint)
         HStack {
           Text(

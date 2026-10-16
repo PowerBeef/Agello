@@ -35,6 +35,7 @@ struct LitCircleButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .font(.system(size > Theme.Size.target ? .title3 : .body, weight: .semibold))
+      .dynamicTypeSize(...DynamicTypeSize.accessibility1)
       .foregroundStyle(isEnabled ? Theme.Text.primary : Theme.Text.tertiary)
       .frame(width: size, height: size)
       .background { LitTintBackground(shape: Circle(), tint: tint, isEnabled: isEnabled) }
@@ -53,6 +54,7 @@ struct QuietCircleButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .font(.system(.body, weight: .medium))
+      .dynamicTypeSize(...DynamicTypeSize.accessibility1)
       .foregroundStyle(tint)
       .frame(width: size, height: size)
       .background { QuietBackground(shape: Circle(), isPressed: configuration.isPressed) }
@@ -75,8 +77,8 @@ struct QuietCapsuleButtonStyle: ButtonStyle {
       .padding(.horizontal, Theme.Spacing.lg)
       .frame(minHeight: height)
       .background { QuietBackground(shape: Capsule(), isPressed: configuration.isPressed) }
-      .contentShape(Capsule())
       .frame(minHeight: Theme.Size.target)
+      .contentShape(.rect)
       .animation(Theme.Motion.press, value: configuration.isPressed)
   }
 }
@@ -103,8 +105,10 @@ struct ModePillStyle: ButtonStyle {
           QuietBackground(shape: Capsule(), isPressed: configuration.isPressed)
         }
       }
-      .contentShape(Capsule())
       .frame(minHeight: Theme.Size.target)
+      .contentShape(.rect)
+      // On is said by the glyph too (filled), not by color alone.
+      .symbolVariant(isOn ? .fill : .none)
       .animation(Theme.Motion.stateChange, value: isOn)
   }
 }
@@ -155,12 +159,27 @@ struct TintTile: View {
 
 /// A settings-style row label: tinted tile, title, optional value.
 struct RowLabel: View {
+  @Environment(\.dynamicTypeSize) private var typeSize
   let title: String
   let symbol: String
   var tint: Color = Theme.Brand.glacier
   var value: String?
 
   var body: some View {
+    if typeSize.isAccessibilitySize {
+      HStack(alignment: .top, spacing: Theme.Spacing.md) {
+        TintTile(symbol: symbol, tint: tint)
+        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+          Text(title).foregroundStyle(Theme.Text.primary)
+          if let value { Text(value).foregroundStyle(Theme.Text.tertiary) }
+        }
+      }
+    } else {
+      compact
+    }
+  }
+
+  private var compact: some View {
     HStack(spacing: Theme.Spacing.md) {
       TintTile(symbol: symbol, tint: tint)
       Text(title).foregroundStyle(Theme.Text.primary).layoutPriority(1)
@@ -210,7 +229,9 @@ struct InlineBanner<Actions: View>: View {
       if showsProgress {
         ProgressView().controlSize(.small).tint(tint)
       } else {
-        Image(systemName: symbol).foregroundStyle(tint).accessibilityHidden(true)
+        Image(systemName: symbol).foregroundStyle(tint)
+          .accessibilityLabel(Self.severity(of: symbol) ?? "")
+          .accessibilityHidden(Self.severity(of: symbol) == nil)
       }
       Text(message)
         .font(.footnote)
@@ -227,6 +248,15 @@ struct InlineBanner<Actions: View>: View {
     .padding(.vertical, Theme.Spacing.md)
     .chromeSurface(in: RoundedRectangle(cornerRadius: Theme.Radius.group, style: .continuous))
     .transition(.move(edge: .top).combined(with: .opacity))
+  }
+
+  /// What VoiceOver says for the banner's icon: a warning and a notice look alike otherwise.
+  static func severity(of symbol: String) -> String? {
+    switch symbol {
+    case "exclamationmark.triangle": return String(localized: "Warning")
+    case "info.circle": return String(localized: "Notice")
+    default: return nil
+    }
   }
 }
 

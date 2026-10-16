@@ -208,10 +208,10 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
   launch arguments instead.
 
 - `ThinkingScenarioTests/test02_ReasoningStaysOutOfCache` fails on the Mac
-  with Google's v0.18.0 and the 512-block model file (cache 377 to 516 over
-  the second Think turn, as if the reasoning stayed), identically at 93122b6
-  and later. The iPhone measured the filter working before that model file;
-  run test02 on the iPhone before treating it as a regression.
+  only (Google's v0.18.0: the cache grows 139 tokens over the second Think
+  turn, as if the reasoning stayed). On the iPhone it passes (2026-10-16,
+  512-block model file: growth 16 against a floor of 43). Treat a Mac
+  failure as known; an iPhone failure is a regression.
 
 ## Launch arguments and environment
 

@@ -24,7 +24,7 @@ struct VoiceModeView: View {
           }
           .frame(maxHeight: 360)
           .padding(.horizontal, Theme.Spacing.lg)
-          .accessibilityLabel("Camera")
+          .accessibilityLabel("Camera preview")
           .accessibilityIdentifier("voice.camera")
       } else {
         Spacer()
@@ -44,6 +44,10 @@ struct VoiceModeView: View {
     .ambientBackdrop(tint, intensity: .loud)
     .task { await session.start() }
     .onDisappear { session.end() }
+    // Only failures are spoken: speech in voice mode would reach the microphone.
+    .onChange(of: session.state) { _, state in
+      if case .failed(let message) = state { Haptics.announce(message) }
+    }
     .preferredColorScheme(.dark)
   }
 
@@ -67,10 +71,10 @@ struct VoiceModeView: View {
         .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
     }
     .frame(width: size, height: size)
-    .scaleEffect(scale)
+    .scaleEffect(reduceMotion ? 1 : scale)
     .opacity(session.state == .thinking ? 0.75 : 1)
-    .animation(Theme.Motion.stateChange, value: session.level)
-    .animation(Theme.Motion.slide, value: session.cameraOn)
+    .appAnimation(Theme.Motion.stateChange, value: session.level)
+    .appAnimation(Theme.Motion.slide, value: session.cameraOn)
     return Group {
       if reduceMotion {
         core
@@ -82,12 +86,24 @@ struct VoiceModeView: View {
     }
     .contentShape(Circle())
     .onTapGesture { session.interrupt() }
-    .accessibilityLabel("Voice")
-    .accessibilityHint("Tap to interrupt the answer")
+    .accessibilityLabel("Voice conversation")
+    .accessibilityValue(session.state.label)
+    .accessibilityHint("Double-tap to interrupt the answer")
     .accessibilityAddTraits(.isButton)
   }
 
+  /// The words being said, newest at the bottom: a long answer scrolls rather than stopping at
+  /// six lines of its start.
   private var captions: some View {
+    ScrollView {
+      captionText
+    }
+    .defaultScrollAnchor(.bottom)
+    .scrollBounceBehavior(.basedOnSize)
+    .frame(maxHeight: 260)
+  }
+
+  private var captionText: some View {
     VStack(spacing: Theme.Spacing.snug) {
       if !session.heard.isEmpty {
         Text(session.heard)
@@ -103,7 +119,7 @@ struct VoiceModeView: View {
       }
     }
     .multilineTextAlignment(.center)
-    .lineLimit(6)
+    .frame(maxWidth: .infinity)
     .padding(.horizontal, Theme.Spacing.xxl)
     .appAnimation(Theme.Motion.easeOut, value: session.answer)
   }
@@ -119,6 +135,8 @@ struct VoiceModeView: View {
       .buttonStyle(QuietCircleButtonStyle(size: 56))
       .disabled(!CameraFeed.isAvailable)
       .accessibilityLabel("Camera")
+      .accessibilityValue(session.cameraOn ? "On" : "Off")
+      .accessibilityAddTraits(.isToggle)
       .accessibilityIdentifier("voice.toggleCamera")
       Button {
         session.toggleMute()

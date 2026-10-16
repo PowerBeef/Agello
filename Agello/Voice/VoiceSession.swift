@@ -8,7 +8,7 @@ import SwiftData
 /// sentence by sentence; talking over the assistant interrupts it.
 @MainActor
 @Observable
-final class VoiceSession {
+final class VoiceSession: Identifiable {
   enum State: Equatable {
     case starting, listening, hearing, thinking, speaking
     case failed(String)

@@ -37,10 +37,17 @@ struct ContentView: View {
       let progress = offset / width
       ZStack(alignment: .leading) {
         if progress > 0 {
+          // Its own layer, not the drawer's background: the drawer's accessibilityHidden(false)
+          // while open would expose the glow to VoiceOver.
+          AmbientBackdrop(tint: Theme.Brand.glacier, intensity: .whisper)
+            .frame(width: width)
           drawer
             .frame(width: width)
-            .background { AmbientBackdrop(tint: Theme.Brand.glacier, intensity: .whisper) }
             .accessibilityHidden(!drawerOpen)
+            // A named container. VoiceOver closes it with "Close menu", over the chat (an escape
+            // action here made an unnamed element the size of the drawer).
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Chats")
         }
         // The chat lays out in the safe area; its card and dimming extend
         // edge to edge so it slides aside as one panel.
@@ -56,20 +63,21 @@ struct ContentView: View {
               .shadow(color: Theme.Elevation.floating.opacity(progress), radius: 18, y: 14)
               .ignoresSafeArea()
           }
-          .overlay {
-            if progress > 0 {
-              RoundedRectangle(cornerRadius: 44, style: .continuous)
-                .fill(Color.black.opacity(0.18 * progress))
-                .ignoresSafeArea()
-                .contentShape(.rect)
-                .onTapGesture { setDrawer(open: false) }
-                .accessibilityLabel("Close menu")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityIdentifier("drawer.close")
-            }
-          }
           .offset(x: offset)
           .accessibilityHidden(drawerOpen)
+        // Over the chat, but not inside it: the chat is hidden from VoiceOver while the drawer is
+        // open, and this was the only way back to it.
+        if progress > 0 {
+          RoundedRectangle(cornerRadius: 44, style: .continuous)
+            .fill(Color.black.opacity(0.18 * progress))
+            .ignoresSafeArea()
+            .contentShape(.rect)
+            .onTapGesture { setDrawer(open: false) }
+            .offset(x: offset)
+            .accessibilityLabel("Close menu")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("drawer.close")
+        }
       }
       .simultaneousGesture(drawerDrag(width: width))
     }
@@ -272,6 +280,8 @@ struct ContentView: View {
       UIApplication.shared.sendAction(
         #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
+    // VoiceOver moves to what's now on screen.
+    defer { UIAccessibility.post(notification: .screenChanged, argument: nil) }
     withAppAnimation(Theme.Motion.panel) {
       drawerOpen = open
       dragOffset = 0

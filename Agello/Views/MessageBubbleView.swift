@@ -57,7 +57,7 @@ struct MessageBubbleView: View {
               RoundedRectangle(cornerRadius: Theme.Radius.group, style: .continuous)
                 .stroke(Theme.Surface.stroke, lineWidth: Theme.Stroke.hairline)
             }
-            .accessibilityLabel("Photo")
+            .accessibilityLabel("Attached photo")
         }
         if turn.hasAudio {
           Label("Voice message", systemImage: "waveform")
@@ -76,6 +76,9 @@ struct MessageBubbleView: View {
               Button("Edit", systemImage: "pencil", action: actions.edit)
                 .disabled(actions.isBusy)
             }
+            // The long-press menu as actions VoiceOver and Switch Control can reach.
+            .accessibilityAction(named: "Copy") { copy(turn.text) }
+            .accessibilityAction(named: "Edit") { if !actions.isBusy { actions.edit() } }
         }
         if versions.count > 1 {
           versionSwitcher
@@ -146,12 +149,14 @@ struct MessageBubbleView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  /// VoiceOver reads the reply, not its markdown syntax.
+  /// VoiceOver reads the reply, not its markdown syntax: emphasis and code marks, heading marks
+  /// at the start of a line, citation numbers. A "#" inside text (C#, issue #42) stays.
   static func spokenText(_ markdown: String) -> String {
     var text = markdown
-    for token in ["**", "__", "`", "#"] {
+    for token in ["**", "__", "`"] {
       text = text.replacingOccurrences(of: token, with: "")
     }
+    text = text.replacingOccurrences(of: #"(?m)^#{1,6}\s+"#, with: "", options: .regularExpression)
     return text.replacingOccurrences(of: #"\[(\d+)\]"#, with: "", options: .regularExpression)
   }
 
@@ -172,6 +177,7 @@ struct MessageBubbleView: View {
           Image(systemName: "chevron.down")
             .font(.caption2.weight(.semibold))
             .rotationEffect(.degrees(showsThought ? 180 : 0))
+            .accessibilityHidden(true)
         }
         .foregroundStyle(tint)
         Text(turn.thought)
@@ -190,6 +196,7 @@ struct MessageBubbleView: View {
     }
     .buttonStyle(.plain)
     .accessibilityElement(children: .contain)
+    .accessibilityValue(showsThought ? "Expanded" : "Collapsed")
     .accessibilityHint(showsThought ? "Collapses the reasoning" : "Shows all of the reasoning")
     .accessibilityIdentifier("message.reasoning")
   }
@@ -209,6 +216,7 @@ struct MessageBubbleView: View {
           Image(systemName: "chevron.down")
             .font(.caption2.weight(.semibold))
             .rotationEffect(.degrees(showsSources ? 180 : 0))
+            .accessibilityHidden(true)
         }
         .font(.system(.footnote, weight: .medium))
         .foregroundStyle(Theme.Text.secondary)
@@ -219,6 +227,7 @@ struct MessageBubbleView: View {
       }
       .buttonStyle(.plain)
       .frame(minHeight: Theme.Size.target)
+      .accessibilityValue(showsSources ? "Expanded" : "Collapsed")
       if showsSources {
         VStack(alignment: .leading, spacing: 0) {
           ForEach(sources) { source in

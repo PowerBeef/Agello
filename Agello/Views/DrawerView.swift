@@ -5,6 +5,7 @@ import SwiftUI
 /// and Settings, on a warm panel.
 struct DrawerView: View {
   @Environment(AppState.self) private var appState
+  @Environment(\.dynamicTypeSize) private var typeSize
   @Query(sort: \ChatThread.updatedAt, order: .reverse) private var threads: [ChatThread]
   @Query(sort: \Project.updatedAt, order: .reverse) private var projects: [Project]
   @State private var query = ""
@@ -141,6 +142,8 @@ struct DrawerView: View {
           } label: {
             Image(systemName: "xmark.circle.fill")
               .foregroundStyle(Theme.Text.tertiary)
+              .frame(width: Theme.Size.target, height: Theme.Size.target)
+              .contentShape(.rect)
           }
           .buttonStyle(.plain)
           .accessibilityLabel("Clear search")
@@ -244,7 +247,8 @@ struct DrawerView: View {
           Text(thread.title)
             .font(.rowTitle)
             .foregroundStyle(selected ? Theme.Text.primary : Theme.Text.secondary)
-            .lineLimit(1)
+            // At accessibility sizes one line holds only a word or two.
+            .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
           if appState.generatingThreadID == thread.id {
             ProgressView().controlSize(.mini)
           }
@@ -289,6 +293,12 @@ struct DrawerView: View {
       Button("Delete", systemImage: "trash", role: .destructive) { onDelete(thread) }
         // Its reply is still being written into this chat.
         .disabled(appState.generatingThreadID == thread.id)
+    }
+    // The long-press menu as actions VoiceOver and Switch Control can reach.
+    .accessibilityAction(named: thread.isPinned ? "Unpin" : "Pin") { onTogglePin(thread) }
+    .accessibilityAction(named: "Rename") { onRename(thread) }
+    .accessibilityAction(named: "Delete") {
+      if appState.generatingThreadID != thread.id { onDelete(thread) }
     }
     .accessibilityIdentifier("drawer.row")
   }

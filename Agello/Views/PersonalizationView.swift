@@ -37,7 +37,7 @@ struct PersonalizationView: View {
       .disabled(!draft.enabled)
 
       Section {
-        editor($draft.aboutYou, identifier: "personalization.about")
+        editor($draft.aboutYou, label: "About you", identifier: "personalization.about")
       } header: {
         Text("Anything else Agello should know about you?")
       } footer: {
@@ -47,7 +47,9 @@ struct PersonalizationView: View {
       .disabled(!draft.enabled)
 
       Section {
-        editor($draft.instructions, identifier: "personalization.instructions")
+        editor(
+          $draft.instructions, label: "How Agello should respond",
+          identifier: "personalization.instructions")
       } header: {
         Text("How should Agello respond?")
       } footer: {
@@ -66,8 +68,11 @@ struct PersonalizationView: View {
     .onDisappear(perform: save)
   }
 
-  private func editor(_ text: Binding<String>, identifier: String) -> some View {
+  private func editor(
+    _ text: Binding<String>, label: LocalizedStringKey, identifier: String
+  ) -> some View {
     TextEditor(text: text)
+      .accessibilityLabel(label)
       .frame(minHeight: 90)
       .onChange(of: text.wrappedValue) { _, value in
         if value.count > Personalization.fieldLimit {

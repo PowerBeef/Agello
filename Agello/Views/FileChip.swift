@@ -15,7 +15,8 @@ struct FileChip: View {
         Text(name)
           .font(.system(.caption, weight: .semibold))
           .foregroundStyle(Theme.Text.primary)
-          .lineLimit(1)
+          .lineLimit(2)
+          .truncationMode(.middle)
         if pageCount > 0 {
           Text(pageCount == 1 ? "1 page" : "\(pageCount) pages")
             .font(.caption2)
@@ -30,7 +31,8 @@ struct FileChip: View {
             .frame(width: 22, height: 22)
             .background { Circle().fill(Color.white.opacity(0.08)) }
             .frame(width: Theme.Size.glyph, height: Theme.Size.glyph)
-            .contentShape(Circle())
+            // A 44 pt target around the 32 pt glyph, without making the chip taller.
+            .contentShape(Rectangle().inset(by: (Theme.Size.glyph - Theme.Size.target) / 2))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Remove \(name)")
@@ -41,7 +43,8 @@ struct FileChip: View {
     .padding(.trailing, onRemove == nil ? Theme.Spacing.md : Theme.Spacing.xs)
     .padding(.vertical, Theme.Spacing.sm)
     .surfaceCard(radius: Theme.Radius.card, fill: Theme.Surface.stage)
-    .accessibilityElement(children: .combine)
+    // Its own element for the Remove button, not folded into the chip's label.
+    .accessibilityElement(children: .contain)
     .accessibilityIdentifier("message.file")
   }
 }

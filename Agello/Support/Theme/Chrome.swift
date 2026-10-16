@@ -6,6 +6,7 @@ import SwiftUI
 /// glass and keeps the solid panel.
 struct ChromeSurface<S: InsettableShape>: ViewModifier {
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.colorSchemeContrast) private var contrast
   let shape: S
   var tint: Color?
   var interactive = false
@@ -15,7 +16,10 @@ struct ChromeSurface<S: InsettableShape>: ViewModifier {
     content
       .background { shape.fill(reduceTransparency ? Theme.Surface.stage : fill) }
       .overlay {
-        shape.stroke(Theme.Surface.glassOuterStroke, lineWidth: 0.8).allowsHitTesting(false)
+        shape.stroke(
+          contrast == .increased ? Color.white.opacity(0.5) : Theme.Surface.glassOuterStroke,
+          lineWidth: 0.8
+        ).allowsHitTesting(false)
       }
       .overlay {
         shape.inset(by: 0.65).stroke(Theme.Surface.glassInnerStroke, lineWidth: 0.55)
@@ -103,12 +107,15 @@ struct LitTintBackground<S: InsettableShape>: View {
 
 /// Neutral chrome for secondary controls: a faint fill and hairline.
 struct QuietBackground<S: InsettableShape>: View {
+  @Environment(\.colorSchemeContrast) private var contrast
   let shape: S
   var isPressed = false
 
   var body: some View {
     shape
       .fill(Color.white.opacity(isPressed ? 0.10 : 0.06))
-      .overlay { shape.stroke(Color.white.opacity(0.10), lineWidth: 0.8) }
+      .overlay {
+        shape.stroke(Color.white.opacity(contrast == .increased ? 0.5 : 0.10), lineWidth: 0.8)
+      }
   }
 }

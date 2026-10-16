@@ -54,6 +54,7 @@ struct ProjectView: View {
 
         Section {
           TextEditor(text: $instructions)
+            .accessibilityLabel("Instructions")
             .frame(minHeight: 100)
             .scrollContentBackground(.hidden)
             .foregroundStyle(Theme.Text.primary)

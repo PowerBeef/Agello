@@ -33,6 +33,7 @@ struct WebSearchSettingsView: View {
         switch appState.webSettings.provider {
         case .searxng:
           TextField("https://searx.example.org", text: $appState.webSettings.searxngURL)
+            .accessibilityLabel("SearXNG server URL")
             .keyboardType(.URL)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()

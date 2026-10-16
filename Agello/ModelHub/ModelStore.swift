@@ -456,8 +456,11 @@ extension ModelStore {
       self.downloadingSpec = nil
       if let placementError {
         self.states[spec.id] = .failed(message: placementError.localizedDescription)
+        Haptics.announce(placementError.localizedDescription)
       } else {
         self.states[spec.id] = .ready
+        Haptics.success()
+        Haptics.announce(String(localized: "\(spec.displayName) is ready"))
         self.onModelReady?(spec.id)
       }
       self.startNextQueued()

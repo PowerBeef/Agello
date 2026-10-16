@@ -460,13 +460,20 @@ final class ChatFlowUITests: XCTestCase {
   }
 
   /// Deep links (widgets, Control Center, Shortcuts use them): "ask" opens a
-  /// new chat and sends the question; "voice" opens voice mode.
+  /// new chat with the question in the composer (a link never sends for the
+  /// user); "voice" opens voice mode.
   func testDeepLinks() throws {
     app.terminate()
     app.launchArguments.append("--uitest-fake-mic")
     app.launch()
     try openNewChat()
     XCUIDevice.shared.system.open(URL(string: "agello://ask?q=What%20is%202%2B2%3F")!)
+    let input = element("chat.input")
+    let filled = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", "What is 2+2?"), object: input)
+    XCTAssertEqual(XCTWaiter().wait(for: [filled], timeout: 15), .completed, "Question not in the composer")
+    XCTAssertFalse(element("message.user").exists, "A link sent the question")
+    element("chat.send").tap()
     XCTAssertTrue(element("message.user").waitForExistence(timeout: 15), "Question not sent")
     XCTAssertEqual(element("message.user").label, "What is 2+2?")
     try waitForReplyToFinish(timeout: 120)

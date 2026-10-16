@@ -30,9 +30,9 @@ struct ChatView: View {
   /// The recording in progress is dictation (text for the composer), not a
   /// voice message.
   @State private var dictating = false
-  @State private var showVoice = false
-  /// Made once per opening: built in the cover's closure, a new session (audio engine, speech
-  /// synthesizer, camera session) was made and thrown away at every update of this view.
+  /// Voice mode while open, made once per opening: built in the cover's closure, a new session
+  /// (audio engine, speech synthesizer, camera session) was made and thrown away at every update
+  /// of this view. The cover follows it (`item:`), so it never opens without its session.
   @State private var voiceSession: VoiceSession?
   @State private var reader = SpeechReader()
   /// The user message being edited in the composer, if any.
@@ -74,6 +74,13 @@ struct ChatView: View {
     }
     .appAnimation(Theme.Motion.easeOut, value: appState.generationError)
     .appAnimation(Theme.Motion.easeOut, value: appState.notice)
+    // The banner appears without moving VoiceOver's focus: say it.
+    .onChange(of: appState.generationError) { _, message in
+      if let message { Haptics.announce(message) }
+    }
+    .onChange(of: appState.notice) { _, message in
+      if let message { Haptics.announce(message) }
+    }
     .navigationTitle(thread?.title ?? "")
     .navigationBarTitleDisplayMode(.inline)
     .sheet(isPresented: $showLibrary) {
@@ -95,8 +102,8 @@ struct ChatView: View {
     } message: {
       Text("Enable microphone access in Settings to send voice messages.")
     }
-    .fullScreenCover(isPresented: $showVoice, onDismiss: { voiceSession = nil }) {
-      if let voiceSession { VoiceModeView(session: voiceSession) }
+    .fullScreenCover(item: $voiceSession) { session in
+      VoiceModeView(session: session)
     }
     .onChange(of: AppRouter.shared.voiceRequested, initial: true) { _, requested in
       guard requested else { return }
@@ -673,7 +680,6 @@ struct ChatView: View {
 
   private func openVoiceMode() {
     voiceSession = VoiceSession(appState: appState, thread: thread, makeThread: newThread)
-    showVoice = true
   }
 
   /// A link's message (`agello://ask`) in the composer, for the user to send.

@@ -24,10 +24,10 @@ enum CodeHighlighter {
   private static func color(for kind: Kind) -> Color? {
     switch kind {
     case .plain: return nil
-    case .keyword: return Color(red: 0.78, green: 0.26, blue: 0.62)
+    case .keyword: return Color(red: 0.88, green: 0.40, blue: 0.72)
     case .string: return Color(red: 0.84, green: 0.33, blue: 0.24)
     case .comment: return .secondary
-    case .number: return Color(red: 0.20, green: 0.45, blue: 0.85)
+    case .number: return Color(red: 0.45, green: 0.65, blue: 1.0)
     }
   }
 

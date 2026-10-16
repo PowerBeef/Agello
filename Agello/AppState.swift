@@ -1217,7 +1217,7 @@ final class AppState {
       }
       flush(final: true)
       try? context.save()
-      Haptics.complete()
+      Haptics.replyFinished(spoken: !voiceModeActive)
     } catch let error as ChatError {
       flush(final: true)
       switch error {

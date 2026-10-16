@@ -136,6 +136,7 @@ struct AdvancedSettingsView: View {
   private var systemPromptSection: some View {
     Section {
       TextEditor(text: $systemDraft)
+        .accessibilityLabel("System prompt")
         .frame(minHeight: 96)
         .scrollContentBackground(.hidden)
         .foregroundStyle(Theme.Text.primary)
