@@ -33,6 +33,7 @@ final class AppStateTests: XCTestCase {
   }
 
   override func tearDown() async throws {
+    GPUGate.set(true)
     appState = nil
     container = nil
     for key in Self.defaultsKeys {
@@ -110,19 +111,17 @@ final class AppStateTests: XCTestCase {
   func testSwitchingThreadsReplaysTheOpenThreadsHistory() async {
     let a = appState.newThread(in: context)
     await appState.send(text: "Hi", imageData: nil, audioFileURL: nil, in: a)
-    // A second message, so the engine holds A's context (the first exchange's
-    // title helper leaves it empty).
     await appState.send(text: "Again", imageData: nil, audioFileURL: nil, in: a)
     let b = appState.newThread(in: context)
 
     // Opening B must not continue A's native conversation.
     await appState.activate(b)
-    var log = await mock.reseedLog
-    XCTAssertEqual(log.last, [])
+    let held = await mock.held
+    XCTAssertEqual(held, [])
 
     // Re-opening A restores A's context.
     await appState.activate(a)
-    log = await mock.reseedLog
+    let log = await mock.reseedLog
     XCTAssertEqual(
       log.last, ["Hi", "Hello from the mock engine!", "Again", "Hello from the mock engine!"])
     XCTAssertEqual(appState.selectedThreadID, a.id)
@@ -131,7 +130,6 @@ final class AppStateTests: XCTestCase {
   func testReopeningSameThreadDoesNotReseed() async {
     let thread = appState.newThread(in: context)
     await appState.send(text: "Hi", imageData: nil, audioFileURL: nil, in: thread)
-    // The title helper replaced the engine's conversation: one rebuild...
     await appState.activate(thread)
     let before = await mock.reseedLog.count
     // ...then reopening the same chat doesn't replay it again.
@@ -146,6 +144,7 @@ final class AppStateTests: XCTestCase {
   func testFirstExchangeGetsAModelWrittenTitleAndContextIsRebuilt() async {
     let thread = appState.newThread(in: context)
     await appState.send(text: "Tell me about lighthouses", imageData: nil, audioFileURL: nil, in: thread)
+    await appState.runPendingHelpers()
     XCTAssertEqual(thread.title, "Mock chat")
     let prompts = await mock.helperPrompts
     XCTAssertEqual(prompts.count, 1)
@@ -168,6 +167,7 @@ final class AppStateTests: XCTestCase {
     await mock.setHelpersKeepConversation(true)
     let thread = appState.newThread(in: context)
     await appState.send(text: "Tell me about lighthouses", imageData: nil, audioFileURL: nil, in: thread)
+    await appState.runPendingHelpers()
     XCTAssertEqual(thread.title, "Mock chat")
     let reseedsBefore = await mock.reseedLog.count
     await appState.send(text: "More", imageData: nil, audioFileURL: nil, in: thread)
@@ -175,10 +175,75 @@ final class AppStateTests: XCTestCase {
     XCTAssertEqual(reseedsAfter, reseedsBefore)
   }
 
+  /// Titles and memories wait for a quiet moment: on Google's runtime each helper empties the
+  /// chat's conversation, and running one between messages made the next reply re-read the chat.
+  func testHelpersWaitForAQuietMoment() async {
+    let thread = appState.newThread(in: context)
+    await appState.send(text: "Tell me about lighthouses", imageData: nil, audioFileURL: nil, in: thread)
+    var prompts = await mock.helperPrompts
+    XCTAssertTrue(prompts.isEmpty)
+    XCTAssertTrue(appState.hasPendingHelpers)
+    // The next message continues the chat without a rebuild.
+    await appState.send(text: "More", imageData: nil, audioFileURL: nil, in: thread)
+    let seen = await mock.heldAtSend.last
+    XCTAssertEqual(seen, ["Tell me about lighthouses", "Hello from the mock engine!"])
+    await appState.runPendingHelpers()
+    prompts = await mock.helperPrompts
+    XCTAssertEqual(prompts.count, 1)
+    XCTAssertEqual(thread.title, "Mock chat")
+    XCTAssertFalse(appState.hasPendingHelpers)
+  }
+
+  /// A message sent while a helper runs is prepared after it, as one step: the helper can't
+  /// empty the conversation between the message's preparation and its context check.
+  func testAMessageSentDuringAHelperKeepsItsHistory() async {
+    appState.memoryEnabled = true
+    let thread = appState.newThread(in: context)
+    await appState.send(text: "I like tea. Suggest a snack.", imageData: nil, audioFileURL: nil, in: thread)
+    await mock.holdNextHelper()
+    let state: AppState = appState
+    let helpers = Task { await state.runPendingHelpers() }
+    while await !mock.helperWaiting { try? await Task.sleep(for: .milliseconds(5)) }
+    let second = Task { await state.send(text: "And a drink?", imageData: nil, audioFileURL: nil, in: thread) }
+    while !appState.isPreparing { try? await Task.sleep(for: .milliseconds(5)) }
+    await mock.releaseHelper()
+    await helpers.value
+    _ = await second.value
+    let seen = await mock.heldAtSend.last
+    XCTAssertEqual(seen, ["I like tea. Suggest a snack.", "Hello from the mock engine!"])
+    XCTAssertEqual(thread.orderedTurns.last?.text, "Hello from the mock engine!")
+    // The title helper didn't run during the send: it's still waiting.
+    XCTAssertTrue(appState.hasPendingHelpers)
+    await appState.runPendingHelpers()
+    XCTAssertEqual(thread.title, "Mock chat")
+  }
+
+  /// No GPU work in the background: a running helper is stopped, and it runs again on return.
+  func testBackgroundStopsAHelperThatRunsAgainLater() async {
+    let thread = appState.newThread(in: context)
+    await appState.send(text: "Tell me about lighthouses", imageData: nil, audioFileURL: nil, in: thread)
+    await mock.holdNextHelper()
+    let state: AppState = appState
+    let helpers = Task { await state.runPendingHelpers() }
+    while await !mock.helperWaiting { try? await Task.sleep(for: .milliseconds(5)) }
+    appState.enterBackground()
+    XCTAssertFalse(GPUGate.isOpen)
+    try? await Task.sleep(for: .milliseconds(50))  // the cancel reaches the engine
+    await mock.releaseHelper()
+    await helpers.value
+    XCTAssertEqual(thread.title, "Tell me about lighthouses")
+    XCTAssertTrue(appState.hasPendingHelpers)
+    appState.enterForeground()
+    XCTAssertTrue(GPUGate.isOpen)
+    await appState.runPendingHelpers()
+    XCTAssertEqual(thread.title, "Mock chat")
+  }
+
   func testUserRenamedChatKeepsItsTitle() async {
     let thread = appState.newThread(in: context)
     thread.title = "My trip"
     await appState.send(text: "Plan a day in Kyoto", imageData: nil, audioFileURL: nil, in: thread)
+    await appState.runPendingHelpers()
     XCTAssertEqual(thread.title, "My trip")
   }
 
@@ -186,6 +251,7 @@ final class AppStateTests: XCTestCase {
     await mock.setHelperResponse(#"{"title":"   "}"#)
     let thread = appState.newThread(in: context)
     await appState.send(text: "Hi there", imageData: nil, audioFileURL: nil, in: thread)
+    await appState.runPendingHelpers()
     XCTAssertEqual(thread.title, "Hi there")
   }
 
@@ -263,6 +329,7 @@ final class AppStateTests: XCTestCase {
     let accepted = await appState.send(text: "", imageData: nil, audioFileURL: voice, in: thread)
     XCTAssertTrue(accepted)
     XCTAssertEqual(thread.orderedTurns.first?.hasAudio, true)
+    await appState.runPendingHelpers()
     // "Voice message" is the provisional title the model is asked to improve.
     let prompts = await mock.helperPrompts
     XCTAssertTrue(prompts.first?.contains("User: Voice message") ?? false)

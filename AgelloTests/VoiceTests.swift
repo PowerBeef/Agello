@@ -125,13 +125,16 @@ final class VoiceTurnFlowTests: XCTestCase {
     XCTAssertEqual(updates.last?.0, "It's noon. Have a nice lunch.")
     XCTAssertEqual(updates.last?.1, true)
     XCTAssertFalse(updates.contains { $0.0.contains("⟦") })
-    XCTAssertEqual(thread.title, "Lunch time", "Titled from the transcript")
+    // Titled from the transcript; the model-written title waits until voice mode closes.
+    XCTAssertEqual(thread.title, "What time is it?")
     let prompt = await mock.systemPrompt
     XCTAssertTrue(prompt.contains(VoiceText.instruction))
 
     // Leaving voice mode removes the instruction before the next message.
     appState.voiceModeActive = false
     appState.onVoiceReply = nil
+    await appState.runPendingHelpers()
+    XCTAssertEqual(thread.title, "Lunch time")
     await mock.setScript("Sure.")
     await appState.send(text: "Thanks", imageData: nil, audioFileURL: nil, in: thread)
     let after = await mock.systemPrompt

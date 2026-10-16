@@ -141,10 +141,18 @@ final class KnowledgeBase {
     }
   }
 
+  /// Stop indexing (the app moved to the background); ``indexPending()`` resumes it.
+  func cancelIndexing() {
+    for task in indexTasks.values { task.cancel() }
+  }
+
   /// Index every document not yet indexed with the current embedder (e.g.
-  /// once the embedding model has downloaded).
+  /// once the embedding model has downloaded). Waits for the foreground: indexing runs on
+  /// the GPU.
   func indexPending() {
-    guard let context = modelContext, let embedder = currentEmbedder() else { return }
+    guard GPUGate.isOpen, let context = modelContext, let embedder = currentEmbedder() else {
+      return
+    }
     let identifier = embedder.identifier
     // `nil` (never indexed) must match explicitly: SQL comparisons skip NULL.
     let descriptor = FetchDescriptor<ChatDocument>(

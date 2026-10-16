@@ -8,6 +8,15 @@ import Foundation
 /// LiteRT-LM keeps one live conversation per engine: a helper run wipes the
 /// main conversation, which the app then rebuilds from history.
 enum HelperTasks {
+  // MARK: Scheduling
+
+  /// How long a chat must be quiet before its title and memory helpers run. On Google's
+  /// LiteRT-LM each helper empties the chat's conversation, so the next message re-reads the
+  /// whole chat: wait for a real pause. Ours keeps the conversation, so they can run soon.
+  static func idleDelay(keepsConversation: Bool) -> Duration {
+    keepsConversation ? .seconds(3) : .seconds(60)
+  }
+
   // MARK: Title
 
   static let titleSchema =

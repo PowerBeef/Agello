@@ -68,7 +68,11 @@ struct AgelloApp: App {
       Log.lifecycle.info(
         "scenePhase=\(String(describing: phase), privacy: .public) generating=\(appState.isGenerating)"
       )
-      if phase == .background { appState.enterBackground() }
+      switch phase {
+      case .background: appState.enterBackground()
+      case .active: appState.enterForeground()
+      default: break
+      }
     }
   }
 }

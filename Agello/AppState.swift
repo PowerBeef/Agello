@@ -334,16 +334,18 @@ final class AppState {
 
   /// Apply the current options: cheap reseed when only conversation-level
   /// settings changed, full reload for backend / KV-cache changes.
-  func applyCurrentOptions() async {
-    await serialized { await self.applyOptionsLocked() }
+  /// `forSend`: the message being prepared applies them first (a reply being prepared otherwise
+  /// defers them, so its conversation can't change between preparing it and sending).
+  func applyCurrentOptions(forSend: Bool = false) async {
+    await serialized { await self.applyOptionsLocked(forSend: forSend) }
   }
 
-  private func applyOptionsLocked() async {
+  private func applyOptionsLocked(forSend: Bool = false) async {
     optionsDirty = false
     // Not loaded: options are picked up by the next load. Never load a
     // multi-GB model just because a setting changed.
     guard await engine.isLoaded else { return }
-    if isGenerating || isBenchmarking {
+    if isGenerating || isBenchmarking || (isPreparing && !forSend) {
       pendingOptionsApply = true
       return
     }
@@ -390,6 +392,8 @@ final class AppState {
   func activate(_ thread: ChatThread) async -> Bool {
     selectedThreadID = thread.id
     let threadID = thread.id
+    // Leaving a chat: its helpers run now, before the switch rebuilds the conversation anyway.
+    if hasPendingHelpers, conversationThreadID != threadID { await runPendingHelpers() }
     let history = thread.textHistory
     return await serialized {
       await self.prepareConversation(threadID: threadID, history: history)
@@ -552,7 +556,7 @@ final class AppState {
     // this message, not after it.
     if optionsDirty {
       applyOptionsTask?.cancel()
-      await applyCurrentOptions()
+      await applyCurrentOptions(forSend: true)
     }
     guard !stopped else { return false }
 
@@ -601,46 +605,46 @@ final class AppState {
       }
     }
 
-    let ready = await serialized {
+    // One step, so no helper or settings change can empty the conversation between preparing
+    // it and checking that this message fits (it would be answered without its history).
+    let promptToFit = enginePrompt
+    let prepared: PreparedSend = await serialized {
       // Rewinding: the engine holds later turns that must not stay in context.
       if rewound != nil, self.conversationThreadID == threadID { self.conversationThreadID = nil }
-      return await self.prepareConversation(threadID: threadID, history: history)
-    }
-    guard ready, !stopped else { return false }
-
-    // The engine may have degraded to text-only (model without executors).
-    if imageData != nil, resolved?.enableVision != true {
-      generationError = "This session is text-only, so images are disabled."
-      return false
-    }
-    if audioFileURL != nil, resolved?.enableAudio != true {
-      generationError = "This session is text-only, so voice messages are disabled."
-      return false
-    }
-
-    // Keep the KV cache from overflowing (native heap corruption → crash):
-    // trim the replayed history if this message + a reply wouldn't fit.
-    let fit: Result<Bool, ChatError> = await serialized {
+      guard await self.prepareConversation(threadID: threadID, history: history) else {
+        return .notReady
+      }
+      // The engine may have degraded to text-only (model without executors).
+      if imageData != nil, self.resolved?.enableVision != true {
+        return .rejected("This session is text-only, so images are disabled.")
+      }
+      if audioFileURL != nil, self.resolved?.enableAudio != true {
+        return .rejected("This session is text-only, so voice messages are disabled.")
+      }
+      // Keep the KV cache from overflowing (native heap corruption → crash):
+      // trim the replayed history if this message + a reply wouldn't fit.
       do {
-        return .success(
-          try await self.engine.fitContext(
-            text: enginePrompt, imageData: imageData, audioFileURL: audioFileURL,
+        return .ready(
+          trimmed: try await self.engine.fitContext(
+            text: promptToFit, imageData: imageData, audioFileURL: audioFileURL,
             history: history))
       } catch {
-        return .failure(
-          error as? ChatError ?? .underlying(message: error.localizedDescription))
+        let chatError = error as? ChatError ?? .underlying(message: error.localizedDescription)
+        return .rejected(chatError.displayMessage)
       }
     }
-    switch fit {
-    case .success(let trimmed):
+    switch prepared {
+    case .notReady:
+      return false
+    case .rejected(let message):
+      generationError = message
+      return false
+    case .ready(let trimmed):
       if trimmed {
         conversationThreadID = threadID
         generationError =
           "Older messages were dropped from the model's memory to fit its context window."
       }
-    case .failure(let error):
-      generationError = error.displayMessage
-      return false
     }
     guard !stopped else { return false }
 
@@ -685,47 +689,87 @@ final class AppState {
       pendingOptionsApply = false
       await applyCurrentOptions()
     }
-    await learnMemories(from: voiceTurn?.text ?? prompt, reply: reply, in: thread)
-    await generateTitleIfNeeded(for: thread)
+    queueHelpers(after: reply, message: voiceTurn?.text ?? prompt, in: thread)
     SpotlightIndex.index([thread])
     return true
   }
 
-  /// After the first exchange, replace the provisional title (the first
-  /// words of the first message) with a short model-written one.
-  func generateTitleIfNeeded(for thread: ChatThread) async {
-    let path = thread.orderedTurns
-    guard path.count == 2, let first = path.first, first.isUser,
-      let reply = path.last, !reply.isUser, !reply.text.isEmpty,
-      !reply.text.hasPrefix(ChatTurn.errorPrefix)
-    else { return }
-    let provisional = Self.title(
-      prompt: first.text, hasImage: first.imageData != nil, fileName: first.parts.files.first?.name)
-    guard thread.title == provisional else { return }  // renamed by the user
-    let prompt = HelperTasks.titlePrompt(
-      user: first.text.isEmpty ? provisional : first.text, reply: reply.text)
-    let output: Data? = await serialized {
-      guard !self.isGenerating, await self.engine.isLoaded else { return nil }
-      let data: Data?
+  /// The conversation step of a send, run as one serialized operation.
+  private enum PreparedSend: Sendable {
+    /// The model couldn't load or the conversation couldn't be rebuilt (the error is set).
+    case notReady
+    case rejected(String)
+    case ready(trimmed: Bool)
+  }
+
+  /// What became of a helper the scheduler ran.
+  private enum HelperOutcome<Value: Sendable>: Sendable {
+    /// Something else needed the engine (a send, a load): try again later.
+    case skipped
+    /// Stopped (Stop, the app moved to the background): try again later.
+    case cancelled
+    case finished(Value?)
+  }
+
+  /// Runs one helper on the engine unless a send owns it, then marks the chat for a rebuild if
+  /// the helper didn't keep its conversation.
+  private func runHelper<Value: Sendable>(
+    _ work: @escaping @Sendable (any ChatEngineProtocol) async throws -> Value
+  ) async -> HelperOutcome<Value> {
+    await serialized {
+      // Never between a send's preparation and its reply.
+      guard !self.isGenerating, !self.isPreparing, await self.engine.isLoaded else { return .skipped }
+      let outcome: HelperOutcome<Value>
       do {
-        data = try await self.engine.helperJSON(
-          prompt: prompt, schemaJSON: HelperTasks.titleSchema,
-          maxOutputTokens: HelperTasks.titleMaxOutputTokens)
+        outcome = .finished(try await work(self.engine))
+      } catch ChatError.generationCancelled {
+        outcome = .cancelled
       } catch {
-        Log.engine.error("title helper failed: \(String(describing: error), privacy: .public)")
-        data = nil
+        Log.engine.error("helper failed: \(String(describing: error), privacy: .public)")
+        outcome = (error as? ChatError) == GPUGate.closedError ? .cancelled : .finished(nil)
       }
       await self.afterHelper()
-      return data
+      return outcome
     }
+  }
+
+  /// The provisional title (the first words of the first message) still waits for a
+  /// model-written one, and the chat has a finished exchange to name it from.
+  private func needsTitle(_ thread: ChatThread) -> (prompt: String, provisional: String)? {
+    let path = thread.orderedTurns
+    guard path.count >= 2, let first = path.first, first.isUser, !path[1].isUser else { return nil }
+    let reply = path[1]
+    guard !reply.text.isEmpty, !reply.text.hasPrefix(ChatTurn.errorPrefix) else { return nil }
+    let provisional = Self.title(
+      prompt: first.text, hasImage: first.imageData != nil, fileName: first.parts.files.first?.name)
+    guard thread.title == provisional else { return nil }  // renamed by the user
+    let prompt = HelperTasks.titlePrompt(
+      user: first.text.isEmpty ? provisional : first.text, reply: reply.text)
+    return (prompt, provisional)
+  }
+
+  /// Replace a chat's provisional title with a short model-written one. Returns false when it
+  /// must be tried again later.
+  @discardableResult
+  func generateTitleIfNeeded(for thread: ChatThread) async -> Bool {
+    guard let needed = needsTitle(thread) else { return true }
+    let prompt = needed.prompt
+    let provisional = needed.provisional
+    let outcome: HelperOutcome<Data> = await runHelper { engine in
+      try await engine.helperJSON(
+        prompt: prompt, schemaJSON: HelperTasks.titleSchema,
+        maxOutputTokens: HelperTasks.titleMaxOutputTokens)
+    }
+    guard case .finished(let output) = outcome else { return false }
     guard let output, let title = HelperTasks.parseTitle(output), thread.title == provisional
     else {
       Log.engine.error(
         "title helper unusable: \(output.map { String(decoding: $0, as: UTF8.self) } ?? "nil", privacy: .public)")
-      return
+      return true
     }
     thread.title = title
     try? modelContext?.save()
+    return true
   }
 
   /// Chat title from the first message; attachment-only messages get a label.
@@ -733,6 +777,86 @@ final class AppState {
     if !prompt.isEmpty { return String(prompt.prefix(42)) }
     if let fileName { return String(fileName.prefix(42)) }
     return hasImage ? "Photo" : "Voice message"
+  }
+
+  // MARK: - Helpers after a reply
+
+  /// A memory lookup waiting to run.
+  private struct PendingMemory {
+    let message: String
+    let replyID: UUID
+    let threadID: UUID
+  }
+
+  /// Title and memory work waiting for a quiet moment. On Google's LiteRT-LM each helper empties
+  /// the chat's conversation and the next message re-reads the whole chat, so helpers never run
+  /// between a reply and the next message: they run after a pause or when the user leaves the
+  /// chat, in the foreground, outside voice mode, and never while a send is pending.
+  @ObservationIgnored private var pendingTitles: [UUID] = []
+  @ObservationIgnored private var pendingMemories: [PendingMemory] = []
+  @ObservationIgnored private var helperTimer: Task<Void, Never>?
+  /// The app is active; GPU work waits for it (see ``GPUGate``).
+  @ObservationIgnored private var isInForeground = true
+
+  var hasPendingHelpers: Bool { !pendingTitles.isEmpty || !pendingMemories.isEmpty }
+
+  private var helpersCanRun: Bool {
+    isInForeground && !isBusy && !isTranscribing && !isBenchmarking && !voiceModeActive
+  }
+
+  private func queueHelpers(after reply: ChatTurn, message: String, in thread: ChatThread) {
+    if needsTitle(thread) != nil, !pendingTitles.contains(thread.id) {
+      pendingTitles.append(thread.id)
+    }
+    if memoryEnabled, HelperTasks.shouldLookForMemories(message), !reply.text.isEmpty,
+      !reply.text.hasPrefix(ChatTurn.errorPrefix)
+    {
+      pendingMemories.append(PendingMemory(message: message, replyID: reply.id, threadID: thread.id))
+    }
+    scheduleHelpers()
+  }
+
+  /// Runs the waiting helpers once the chat has been quiet for a while.
+  func scheduleHelpers() {
+    helperTimer?.cancel()
+    guard hasPendingHelpers else { return }
+    let delay = HelperTasks.idleDelay(keepsConversation: EngineCache.runtimeBuildID != nil)
+    helperTimer = Task { [weak self] in
+      try? await Task.sleep(for: delay)
+      guard !Task.isCancelled else { return }
+      await self?.runPendingHelpers()
+    }
+  }
+
+  /// Runs the waiting title and memory helpers now, if nothing else needs the engine (leaving
+  /// a chat, the idle timer, tests). Work that couldn't run stays queued.
+  func runPendingHelpers() async {
+    helperTimer?.cancel()
+    while helpersCanRun, let item = pendingMemories.first {
+      pendingMemories.removeFirst()
+      guard let thread = thread(withID: item.threadID),
+        let reply = thread.turns.first(where: { $0.id == item.replyID })
+      else { continue }
+      if await !learnMemories(from: item.message, reply: reply, in: thread) {
+        pendingMemories.insert(item, at: 0)
+        break
+      }
+    }
+    while helpersCanRun, let threadID = pendingTitles.first {
+      pendingTitles.removeFirst()
+      guard let thread = thread(withID: threadID) else { continue }
+      if await !generateTitleIfNeeded(for: thread) {
+        pendingTitles.insert(threadID, at: 0)
+        break
+      }
+    }
+    if hasPendingHelpers, !helpersCanRun { scheduleHelpers() }
+  }
+
+  private func thread(withID id: UUID) -> ChatThread? {
+    guard let context = modelContext else { return nil }
+    let descriptor = FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == id })
+    return (try? context.fetch(descriptor))?.first
   }
 
   // MARK: - Voice mode
@@ -743,6 +867,7 @@ final class AppState {
   var voiceModeActive = false {
     didSet {
       if voiceModeActive != oldValue { conversationThreadID = nil }
+      if !voiceModeActive { scheduleHelpers() }
     }
   }
 
@@ -828,6 +953,10 @@ final class AppState {
     isTranscribing = true
     defer { isTranscribing = false }
     let result: Result<String, Error> = await serialized {
+      // A send queued ahead of this recording owns the engine until its reply.
+      guard !self.isGenerating, !self.isPreparing else {
+        return .failure(ChatError.underlying(message: String(localized: "Finish or stop the current reply first.")))
+      }
       guard await self.loadIfNeeded() else {
         return .failure(ChatError.engineNotReady)
       }
@@ -1132,15 +1261,32 @@ final class AppState {
   /// deliberately (keeping the partial text) instead of letting Metal
   /// command buffers fail or the app be terminated.
   func enterBackground() {
-    guard isBusy else { return }
+    isInForeground = false
     // A continued task with background GPU access lets the reply finish.
-    if BackgroundWork.shared.isActive {
-      Log.lifecycle.info("background: reply continues as a continued processing task")
+    let continuing = BackgroundWork.shared.isActive
+    GPUGate.set(continuing)
+    if continuing {
+      Log.lifecycle.info("background: work continues as a continued processing task")
       return
     }
-    Log.lifecycle.info("background: stopping generation")
-    stop()
-    generationError = "Reply stopped because Agello moved to the background."
+    helperTimer?.cancel()
+    knowledge.cancelIndexing()
+    if isBusy {
+      Log.lifecycle.info("background: stopping generation")
+      stop()
+      generationError = "Reply stopped because Agello moved to the background."
+    } else {
+      // A title, memory or dictation helper: stopped, and queued work runs again on return.
+      Task { await engine.cancel() }
+    }
+  }
+
+  /// Back in the foreground: GPU work may start again.
+  func enterForeground() {
+    isInForeground = true
+    GPUGate.set(true)
+    knowledge.indexPendingIfAvailable()
+    scheduleHelpers()
   }
 
   // MARK: - Benchmark
@@ -1248,25 +1394,24 @@ final class AppState {
     conversationThreadID = nil
   }
 
-  /// After a reply: save lasting facts from the user's message (memory on,
-  /// and only when the message is about the user).
-  private func learnMemories(from message: String, reply: ChatTurn, in thread: ChatThread) async {
+  /// Save lasting facts from the user's message (memory on, and only when the message is
+  /// about the user). Returns false when it must be tried again later.
+  @discardableResult
+  private func learnMemories(from message: String, reply: ChatTurn, in thread: ChatThread) async -> Bool {
     guard memoryEnabled, HelperTasks.shouldLookForMemories(message), !reply.text.isEmpty,
       !reply.text.hasPrefix(ChatTurn.errorPrefix), let context = modelContext
-    else { return }
+    else { return true }
     let all = ((try? context.fetch(FetchDescriptor<MemoryItem>())) ?? []).map(\.text)
     let prompt = HelperTasks.memoryPrompt(user: message, existing: all)
-    let output: Data? = await serialized {
-      guard !self.isGenerating, await self.engine.isLoaded else { return nil }
-      let output = try? await self.engine.helperJSON(
+    let outcome: HelperOutcome<Data> = await runHelper { engine in
+      try await engine.helperJSON(
         prompt: prompt, schemaJSON: HelperTasks.memorySchema,
         maxOutputTokens: HelperTasks.memoryMaxOutputTokens)
-      await self.afterHelper()
-      return output
     }
-    guard let output else { return }
+    guard case .finished(let output) = outcome else { return false }
+    guard let output else { return true }
     let learned = HelperTasks.newMemories(HelperTasks.parseMemories(output), existing: all)
-    guard !learned.isEmpty else { return }
+    guard !learned.isEmpty else { return true }
     for text in learned { context.insert(MemoryItem(text: text, sourceThreadID: thread.id)) }
     var parts = reply.parts
     parts.toolActivity.append(
@@ -1275,6 +1420,7 @@ final class AppState {
     try? context.save()
     Log.engine.info("memory: saved \(learned.count)")
     memoriesChanged()
+    return true
   }
 
   // MARK: - Projects

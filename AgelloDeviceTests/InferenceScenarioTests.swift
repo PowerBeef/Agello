@@ -365,6 +365,8 @@ final class InferenceScenarioTests: DeviceTestCase {
     let thread = harness.newThread()
     let prompt = "Remember the code word ZORBLAX. Then explain in two sentences how lighthouses warn ships."
     let first = await harness.ask(prompt, in: thread)
+    // Titles wait for a quiet moment; run it now, as leaving the chat would.
+    await appState.runPendingHelpers()
     let provisional = AppState.title(prompt: prompt, hasImage: false)
     let recall = await harness.ask("What code word did I ask you to remember?", in: thread)
     harness.record(
@@ -393,6 +395,7 @@ final class InferenceScenarioTests: DeviceTestCase {
     }
     let first = await harness.ask(
       "I'm vegetarian and I live in Montreal. Suggest a quick dinner.", in: harness.newThread())
+    await appState.runPendingHelpers()
     let learned = ((try? harness.context.fetch(FetchDescriptor<MemoryItem>())) ?? []).map(\.text)
     let later = await harness.ask("Suggest a dinner recipe for tonight.", in: harness.newThread())
     let meats = ["chicken", "beef", "pork", "fish", "salmon", "shrimp", "bacon", "lamb", "turkey"]

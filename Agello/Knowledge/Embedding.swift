@@ -43,6 +43,9 @@ actor LiteRTEmbedder: TextEmbedder {
     var vectors: [[Float]] = []
     vectors.reserveCapacity(documents.count)
     for start in stride(from: 0, to: documents.count, by: Self.batchSize) {
+      // A deleted document or a move to the background stops the work between batches.
+      try Task.checkCancellation()
+      guard GPUGate.isOpen else { throw GPUGate.closedError }
       let batch = documents[start..<min(start + Self.batchSize, documents.count)]
       let inputs = batch.map { [Content.text(Self.documentPrompt(title: $0.title, text: $0.text))] }
       let responses = try await engine.computeEmbeddingBatch(contentsBatch: inputs, options: options)
@@ -78,6 +81,8 @@ actor LiteRTEmbedder: TextEmbedder {
     let cacheDir = try EngineCache.embeddingDirectory()
     var lastError: Error?
     for backend: Backend in [.gpu, .cpu()] {
+      // In the background a GPU load fails: don't settle for the CPU for good.
+      guard GPUGate.isOpen else { throw GPUGate.closedError }
       let candidate = EmbeddingEngine(
         config: EmbeddingEngineConfig(modelPath: modelURL.path, backend: backend, cacheDir: cacheDir))
       do {

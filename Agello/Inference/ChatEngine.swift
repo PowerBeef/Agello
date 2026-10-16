@@ -86,6 +86,9 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// The helper conversation running now, so ``cancel()`` stops it rather
   /// than the kept main conversation.
   private var helperConversation: Conversation?
+  /// A helper runs (from ``beginHelper()`` to ``endHelper``): Stop cancels it, never the main
+  /// conversation, even before its own conversation exists.
+  private var helperActive = false
   /// Human-readable trace of the most recent `load`: capabilities and every
   /// attempt on the backend ladder with its outcome (read by the device harness).
   private(set) var loadLog: [String] = []
@@ -181,6 +184,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     for attempt in attempts {
       let label = Self.describe(attempt)
       for trial in 1...2 {
+        // In the background a GPU load fails: stop rather than fall back to the CPU for good.
+        guard GPUGate.isOpen else {
+          loadLog.append("stopped: the app is in the background")
+          throw GPUGate.closedError
+        }
         let started = Date()
         do {
           let engine = try await Self.makeEngine(modelURL: modelURL, resolved: attempt)
@@ -444,6 +452,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// first, so our runtime doesn't copy its KV cache aside.
   private func beginHelper() -> Bool {
     lastHelperKeptConversation = false
+    helperActive = true
+    cancelRequested = false
     let keep =
       conversation != nil
       && DeviceProfile.keepsConversationAcrossHelpers(
@@ -459,6 +469,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     keep: Bool, engine: Engine, resolved: ResolvedInference, options: InferenceOptions
   ) async throws {
     helperConversation = nil
+    helperActive = false
     lastHelperKeptConversation = keep
     if keep {
       // Switching the engine back to the kept conversation restores its KV
@@ -473,6 +484,25 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
       history: [])
     pendingSeedTokens = preambleTokens
+  }
+
+  /// A helper stopped before it sent anything.
+  private func checkHelperNotCancelled() throws {
+    if cancelRequested { throw ChatError.generationCancelled }
+  }
+
+  /// After a helper failed or was stopped: leave a usable conversation (the kept one, or an
+  /// empty one the caller reseeds) rather than none, which would force a full engine reload.
+  private func endHelperAfterFailure(
+    keep: Bool, engine: Engine, resolved: ResolvedInference, options: InferenceOptions
+  ) async {
+    do {
+      try await endHelper(keep: keep, engine: engine, resolved: resolved, options: options)
+    } catch {
+      Log.engine.error("helper: couldn't restore a conversation: \(String(describing: error), privacy: .public)")
+    }
+    // A failed helper reports the conversation as not kept, so the caller reseeds.
+    lastHelperKeptConversation = false
   }
 
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data {
@@ -493,10 +523,14 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       let helper = try await engine.createConversation(
         with: ConversationConfig(enableResponseFormat: true, enableSpeculativeDecoding: false))
       helperConversation = helper
+      try checkHelperNotCancelled()
       let reply = try await helper.sendMessage(
         LiteRTLM.Message(prompt), maxOutputTokens: maxOutputTokens,
         responseFormat: try .json(schema: schemaJSON))
       output = reply.toString
+    } catch {
+      await endHelperAfterFailure(keep: keep, engine: engine, resolved: resolved, options: options)
+      throw error
     }
     try await endHelper(keep: keep, engine: engine, resolved: resolved, options: options)
     Log.engine.info(
@@ -517,17 +551,24 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     let started = Date()
     let keep = beginHelper()
     var outputs: [String] = []
-    for prompt in prompts {
-      if Task.isCancelled { break }
-      // No grammar here, so speculative decoding stays on for speed.
-      helperConversation = nil
-      let helper = try await engine.createConversation(
-        with: ConversationConfig(enableSpeculativeDecoding: resolved.enableSpeculativeDecoding))
-      helperConversation = helper
-      let reply = try await helper.sendMessage(
-        LiteRTLM.Message(prompt), maxOutputTokens: maxOutputTokens)
-      outputs.append(reply.toString.trimmingCharacters(in: .whitespacesAndNewlines))
-      await progress(outputs.count)
+    do {
+      for prompt in prompts {
+        // Stop ends the run with the outputs so far.
+        if Task.isCancelled || cancelRequested { break }
+        // No grammar here, so speculative decoding stays on for speed.
+        helperConversation = nil
+        let helper = try await engine.createConversation(
+          with: ConversationConfig(enableSpeculativeDecoding: resolved.enableSpeculativeDecoding))
+        helperConversation = helper
+        if cancelRequested { break }
+        let reply = try await helper.sendMessage(
+          LiteRTLM.Message(prompt), maxOutputTokens: maxOutputTokens)
+        outputs.append(reply.toString.trimmingCharacters(in: .whitespacesAndNewlines))
+        await progress(outputs.count)
+      }
+    } catch {
+      await endHelperAfterFailure(keep: keep, engine: engine, resolved: resolved, options: options)
+      throw error
     }
     try await endHelper(keep: keep, engine: engine, resolved: resolved, options: options)
     Log.engine.info(
@@ -555,11 +596,15 @@ actor LiteRTChatEngine: ChatEngineProtocol {
           samplerConfig: try SamplerConfig(topK: 1, topP: 1, temperature: 0),
           enableSpeculativeDecoding: resolved.enableSpeculativeDecoding))
       helperConversation = helper
+      try checkHelperNotCancelled()
       let reply = try await helper.sendMessage(
         LiteRTLM.Message(contents: [
           .text(Dictation.instruction), .audioFile(audioFileURL.path),
         ]), maxOutputTokens: Dictation.maxOutputTokens)
       text = reply.toString
+    } catch {
+      await endHelperAfterFailure(keep: keep, engine: engine, resolved: resolved, options: options)
+      throw error
     }
     try await endHelper(keep: keep, engine: engine, resolved: resolved, options: options)
     Log.engine.info(
@@ -778,7 +823,13 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     Log.generation.info("cancel requested (generating=\(self.generating))")
     guard generating else { return }
     cancelRequested = true
-    try? (helperConversation ?? conversation)?.cancel()
+    if helperActive {
+      // Before its conversation exists the helper sees `cancelRequested`; the kept main
+      // conversation must not be cancelled (it would reject the next message).
+      try? helperConversation?.cancel()
+    } else {
+      try? conversation?.cancel()
+    }
   }
 }
 
@@ -814,6 +865,9 @@ actor MockChatEngine: ChatEngineProtocol {
   private var gate: CheckedContinuation<Void, Never>?
   /// A helper is waiting at the gate.
   private(set) var helperWaiting = false
+  /// Stop arrived while a helper ran: it ends with ``ChatError/generationCancelled``.
+  private var helperCancelRequested = false
+  private var helperRunning = false
   func holdNextHelper() { gateNextHelper = true }
   func releaseHelper() {
     gate?.resume()
@@ -824,6 +878,9 @@ actor MockChatEngine: ChatEngineProtocol {
   /// leaves it on this runtime.
   private func beginHelper() async throws {
     if generating { throw ChatError.underlying(message: "Busy generating.") }
+    helperRunning = true
+    helperCancelRequested = false
+    defer { helperRunning = false }
     if gateNextHelper {
       gateNextHelper = false
       helperWaiting = true
@@ -831,6 +888,10 @@ actor MockChatEngine: ChatEngineProtocol {
       helperWaiting = false
     }
     if !helpersKeepConversation { held = [] }
+    if helperCancelRequested {
+      lastHelperKeptConversation = false
+      throw ChatError.generationCancelled
+    }
     lastHelperKeptConversation = helpersKeepConversation
   }
   /// Simulated load latency (exposes overlapping-load races in tests).
@@ -968,6 +1029,7 @@ actor MockChatEngine: ChatEngineProtocol {
 
   func cancel() async {
     if generating { cancelRequested = true }
+    if helperRunning { helperCancelRequested = true }
   }
 
   /// Rich reply for UI checks of markdown rendering (prompt contains "markdown").

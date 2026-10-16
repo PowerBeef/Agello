@@ -69,6 +69,7 @@ final class MemoryFlowTests: XCTestCase {
     let thread = appState.newThread(in: context)
     await appState.send(
       text: "I'm vegetarian. Suggest a dinner.", imageData: nil, audioFileURL: nil, in: thread)
+    await appState.runPendingHelpers()
     XCTAssertEqual(memories.map(\.text), ["Is vegetarian"])
     XCTAssertEqual(memories.first?.sourceThreadID, thread.id)
     let reply = try XCTUnwrap(thread.orderedTurns.last)
@@ -93,6 +94,7 @@ final class MemoryFlowTests: XCTestCase {
     appState.memoryEnabled = true
     await appState.send(
       text: "What is 2+2?", imageData: nil, audioFileURL: nil, in: appState.newThread(in: context))
+    await appState.runPendingHelpers()
     let prompts = await mock.helperPrompts
     XCTAssertFalse(prompts.contains { $0.contains("Already remembered") })
     XCTAssertTrue(memories.isEmpty)
