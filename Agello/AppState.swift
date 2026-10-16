@@ -29,6 +29,8 @@ final class AppState {
 
   var engineState: ChatEngineState = .idle
   var resolved: ResolvedInference?
+  /// The most vision tokens per image the loaded model accepts (Settings offers no more).
+  private(set) var visionTokenLimit = VisualDetail.defaultLimit
   var options = InferenceOptions() {
     didSet { persistOptions() }
   }
@@ -286,6 +288,7 @@ final class AppState {
         enableTools: enableTools
       )
       resolved = plan
+      visionTokenLimit = await engine.maxVisionTokenBudget ?? VisualDetail.defaultLimit
       appliedSystemPrompt = effectiveOptions.systemPrompt
       engineState = .ready
       return true

@@ -78,6 +78,21 @@ enum VisualDetail: String, Codable, Sendable, CaseIterable {
     }
   }
 
+  /// Most vision tokens per image when the model file doesn't say: Gemma 4's default, and the
+  /// most its E2B and E4B files accept.
+  static let defaultLimit = 280
+
+  /// The levels a model file accepts, from its largest budget per image.
+  static func offered(limit: Int) -> [VisualDetail] {
+    let offered = allCases.filter { Int($0.tokenBudget) <= limit }
+    return offered.isEmpty ? [.fast] : offered
+  }
+
+  /// This level, or the largest accepted one below it (what the engine uses).
+  func clamped(limit: Int) -> VisualDetail {
+    Self.offered(limit: limit).last { $0.tokenBudget <= tokenBudget } ?? .fast
+  }
+
   var displayName: String {
     switch self {
     case .fast: return "Fast (140)"

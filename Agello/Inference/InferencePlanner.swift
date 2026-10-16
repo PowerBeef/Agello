@@ -263,8 +263,11 @@ enum InferencePlanner {
     out.enableAudio = out.enableAudio && caps.audio
     if !out.enableVision {
       out.visualTokenBudget = nil
-    } else if caps.maxVisionTokenBudget > 0, let budget = out.visualTokenBudget {
-      out.visualTokenBudget = min(budget, Int32(caps.maxVisionTokenBudget))
+    } else if let budget = out.visualTokenBudget {
+      // A file that doesn't say gets Gemma 4's default, the most its phone files accept.
+      let limit =
+        caps.maxVisionTokenBudget > 0 ? caps.maxVisionTokenBudget : VisualDetail.defaultLimit
+      out.visualTokenBudget = min(budget, Int32(limit))
     }
     if caps.maxContextTokens > 0 {
       out.maxNumTokens = min(out.maxNumTokens, caps.maxContextTokens)

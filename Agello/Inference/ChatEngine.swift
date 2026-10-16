@@ -59,6 +59,8 @@ protocol ChatEngineProtocol: Sendable {
   /// finished with the main conversation as it was. False when it was replaced
   /// by an empty one, or the helper failed: reseed before the next send.
   var lastHelperKeptConversation: Bool { get async }
+  /// The most vision tokens per image the loaded model file accepts (nil when it doesn't say).
+  var maxVisionTokenBudget: Int? { get async }
 }
 
 // MARK: - Live engine
@@ -83,6 +85,9 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// ``ChatError/generationCancelled`` and the caller must reseed.
   private var cancelRequested = false
   private(set) var lastHelperKeptConversation = false
+  var maxVisionTokenBudget: Int? {
+    capabilities.flatMap { $0.maxVisionTokenBudget > 0 ? $0.maxVisionTokenBudget : nil }
+  }
   /// The helper conversation running now, so ``cancel()`` stops it rather
   /// than the kept main conversation.
   private var helperConversation: Conversation?
@@ -193,6 +198,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
           + "maxContext=\(caps.maxContextTokens) maxVisionBudget=\(caps.maxVisionTokenBudget)")
     } else {
       capabilities = nil
+      // Assume what Gemma 4's phone files support (vision tokens clamped to their default).
+      plan = InferencePlanner.applyCapabilities(.full, to: plan)
       loadLog.append("caps: unavailable (ModelInfo failed)")
     }
 
@@ -457,7 +464,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   private func plan(for options: InferenceOptions, model: ModelID) -> ResolvedInference {
     let plan = InferencePlanner.resolve(
       options: options, model: model, memoryBytes: DeviceProfile.current.physicalMemoryBytes)
-    return capabilities.map { InferencePlanner.applyCapabilities($0, to: plan) } ?? plan
+    return InferencePlanner.applyCapabilities(capabilities ?? .full, to: plan)
   }
 
   /// Whether engine-level settings changed (needs full `load`, not just reseed).
@@ -1126,6 +1133,7 @@ actor MockChatEngine: ChatEngineProtocol {
   /// Whether helpers keep the main conversation, as our runtime does (tests).
   private(set) var helpersKeepConversation = false
   func setHelpersKeepConversation(_ value: Bool) { helpersKeepConversation = value }
+  var maxVisionTokenBudget: Int? { nil }
   private(set) var lastHelperKeptConversation = false
 
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data {

@@ -118,8 +118,8 @@ struct AdvancedSettingsView: View {
       Toggle("Audio (voice)", isOn: bindable.options.enableAudio)
         .themedRow()
       if appState.options.enableVision {
-        Picker("Image detail", selection: bindable.options.visualDetail) {
-          ForEach(VisualDetail.allCases, id: \.self) { detail in
+        Picker("Image detail", selection: visualDetailBinding) {
+          ForEach(VisualDetail.offered(limit: appState.visionTokenLimit), id: \.self) { detail in
             Text(detail.displayName).tag(detail)
           }
         }
@@ -263,6 +263,15 @@ struct AdvancedSettingsView: View {
     )
   }
 
+  /// Only the levels the model accepts; a saved one it can't use (Detailed on E4B) shows as the
+  /// level the engine uses instead.
+  private var visualDetailBinding: Binding<VisualDetail> {
+    Binding(
+      get: { appState.options.visualDetail.clamped(limit: appState.visionTokenLimit) },
+      set: { appState.options.visualDetail = $0 }
+    )
+  }
+
   private var contextBinding: Binding<Int> {
     Binding(
       get: {
@@ -282,6 +291,7 @@ struct AdvancedSettingsView: View {
       resolved.enableVision && resolved.enableAudio ? "vision+audio"
       : resolved.enableVision ? "vision" : resolved.enableAudio ? "audio" : "text-only"
     parts.append(mm)
+    if let budget = resolved.visualTokenBudget { parts.append("\(budget) tokens per image") }
     return parts.joined(separator: " · ")
   }
 }

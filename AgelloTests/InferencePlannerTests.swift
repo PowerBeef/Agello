@@ -141,6 +141,25 @@ final class InferencePlannerTests: XCTestCase {
     XCTAssertTrue(out.enableSpeculativeDecoding)
   }
 
+  /// Gemma 4 E4B's file accepts 280 vision tokens per image: Settings offers Fast and Balanced,
+  /// and a saved Detailed is what the engine uses, Balanced.
+  func testImageDetailOffersOnlyWhatTheFileAccepts() {
+    XCTAssertEqual(VisualDetail.offered(limit: 280), [.fast, .balanced])
+    XCTAssertEqual(VisualDetail.offered(limit: 1_120), VisualDetail.allCases)
+    XCTAssertEqual(VisualDetail.detailed.clamped(limit: 280), .balanced)
+    XCTAssertEqual(VisualDetail.fast.clamped(limit: 280), .fast)
+    XCTAssertEqual(VisualDetail.detailed.clamped(limit: 560), .detailed)
+  }
+
+  /// A file that doesn't state its limit (or can't be inspected) gets 280, not 560.
+  func testUnknownVisionLimitUsesTheGemmaDefault() {
+    var options = InferenceOptions()
+    options.visualDetail = .detailed
+    let plan = InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: roomy)
+    XCTAssertEqual(plan.visualTokenBudget, 560)
+    XCTAssertEqual(InferencePlanner.applyCapabilities(.full, to: plan).visualTokenBudget, 280)
+  }
+
   func testApplyCapabilitiesFullKeepsPlan() {
     let plan = InferencePlanner.resolve(
       options: InferenceOptions(), model: .e4b, memoryBytes: roomy)
