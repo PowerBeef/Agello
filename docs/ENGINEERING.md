@@ -2,7 +2,7 @@
 
 How Agello keeps a 4-billion-parameter model fast, correct and stable on a phone. Every safeguard here comes from a failure reproduced on a real iPhone by the [test harness](TESTING.md).
 
-- [Fixing long-context math on the GPU (LiteRT-LM #3913)](#fixing-long-context-math-on-the-gpu-litert-lm-3913)
+- [Long-context digits on the GPU (LiteRT-LM #3913)](#long-context-digits-on-the-gpu-litert-lm-3913)
 - [A context window that never overflows](#a-context-window-that-never-overflows)
 - [One engine, one conversation](#one-engine-one-conversation)
 - [Branching conversations](#branching-conversations)
@@ -10,13 +10,13 @@ How Agello keeps a 4-billion-parameter model fast, correct and stable on a phone
 - [Memory, background and lifecycle](#memory-background-and-lifecycle)
 - [Model quirks we don't trust](#model-quirks-we-dont-trust)
 
-## Fixing long-context math on the GPU (LiteRT-LM #3913)
+## Long-context digits on the GPU (LiteRT-LM #3913)
 
 **Symptom.** On the iPhone GPU, Gemma 4 E4B started duplicating digits once a chat passed a few thousand tokens: "March 2026" became "March 202026". The CPU and 32-bit GPU activations were correct, so the app first worked around it by rebuilding the engine in float32 for long chats, at about half the decode speed.
 
 **Root cause.** A device probe that copies a 48-digit number from increasing positions showed the errors start at exactly **position 2,048**. The model computes rotary angles from a float copy of the token position. With 16-bit activations that copy is float16, whose 11-bit significand holds every integer only up to 2,048; past it, positions round to even numbers and attention sees the wrong angle. The full analysis is [on the upstream issue](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598).
 
-**Fix: rewrite the graph, not the runtime.** LiteRT-LM's runtime is a prebuilt binary, so the fix edits the model file instead ([`patch_rope.py`](https://github.com/PowerBeef/agello-litert-lm/tree/agello/tools/model-surgery)). It splits every position as `512·h + l`:
+**Workaround: patch the model file, not the runtime.** LiteRT-LM's runtime is a prebuilt binary, so the fix edits the model file instead ([`patch_rope.py`](https://github.com/PowerBeef/agello-litert-lm/tree/agello/tools/model-surgery)). It splits every position as `512·h + l`:
 
 - `l` (0–511) goes through the model's existing MUL / SIN / COS;
 - the phase of `512·h` comes from small precomputed tables selected with `onehot(h)`;
@@ -34,6 +34,14 @@ Every float stays exact up to position 32,767. The first revision used 2,048-tok
 | Memory after loading | **2.04 GB** | 2.76 GB | |
 
 So every chat now runs at full float16 speed with no precision switch: 1.7–2.1× faster prefill, up to 2× faster decoding, 0.7 GB less memory, and no engine reload when a chat grows. The app downloads [the patched model](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope), pinned to a commit; `test15_LongContextDigitFidelity` and probe 12 guard it.
+
+**Credits, and the fix upstream.** The workaround came out of [the discussion on #3913](https://github.com/google-ai-edge/LiteRT-LM/issues/3913) with other developers:
+
+- [@john-rocky](https://github.com/john-rocky)'s copy-fidelity suite first showed the errors growing with prompt length, on an M4 Max. Later runs by @john-rocky confirmed the patched files on that Mac and on a Pixel 8a's GPU. They also showed that a Gemma 4 E2B file exported with litert-torch's `odml.rope` composite is exact at float16 without any patch. That points to the proper fix being in the converter's export, requested in [litert-torch#1343](https://github.com/google-ai-edge/litert-torch/issues/1343).
+- [@picitujeromanov](https://github.com/picitujeromanov) found the M1-class loss below position 2,048, and that 512-token blocks fix it.
+- Google's LiteRT-LM team reproduced the issue.
+
+Once a re-exported model or a runtime fix ships, the app can go back to Google's file (`agello-litert-update`, "When Google fixes #3913").
 
 ## A context window that never overflows
 

@@ -5,7 +5,7 @@ What has shipped, what's next, and what waits for hardware. Updated 2026-10-16.
 ## Shipped
 
 - **The app.** Chat, files, projects and memory, web search and dictation, voice mode with the camera, and system integration (Siri and Shortcuts, widgets, Control Center, Spotlight, the share sheet). The original plan is in [archive/agello-overhaul.md](archive/agello-overhaul.md).
-- **Long-context digits ([#3913](ENGINEERING.md)).** Agello downloads a model file whose rotary positions are split into 512-token blocks. It copies digits exactly to 32K tokens on every GPU tested, M1-class Macs included.
+- **Long-context digits ([#3913](ENGINEERING.md#long-context-digits-on-the-gpu-litert-lm-3913)).** Agello downloads a model file whose rotary positions are split into 512-token blocks, a workaround worked out with other developers on the issue. It copies digits exactly to 32K tokens on every GPU tested, M1-class Macs included.
 - **Reliability and polish (October 2026):**
   - **The runtime wrapper.** A tool call the runtime rejects can no longer crash a reply, Stop works between tool rounds, and tool rounds are bounded.
   - **Context.** Every message is counted exactly, with the runtime's own renderer and tokenizer. A 32K window budgets only the positions that exist.

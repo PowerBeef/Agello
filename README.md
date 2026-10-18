@@ -149,9 +149,15 @@ Every message takes one path through `AppState`. Pending settings are applied, t
 
 <img src="docs/images/readme/icons/rotary.svg" width="40" height="40" alt="">
 
-**Fixing Gemma's long-context math on the GPU**<br>
-On the iPhone GPU, Gemma 4 duplicated digits once a chat passed ~2K tokens ("2026" became "202026"). Device probes traced it to **position 2,048**: the model computes rotary angles from a float16 copy of the position, which can't hold integers past 2,048. Agello ships a model whose graph splits every position as `512·h + l`, so the rotary math stays exact to 32,767 on every GPU tested, M1-class Macs included. The result: **14/14 exact** copies up to 30K tokens, **1.7–2.1× faster prefill** than the float32 workaround, and **0.7 GB less memory**.<br>
-[Analysis](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598) · [fix](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6159684389) · [model](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope)
+**Long chats on the GPU ([LiteRT-LM #3913](https://github.com/google-ai-edge/LiteRT-LM/issues/3913))**<br>
+With 16-bit activations on the GPU, Gemma 4 started repeating digits in long chats ("2026" became "202026"). The model computes rotary angles from a float copy of each token's position, and float16 can't hold every integer past 2,048. Until this is fixed upstream, Agello downloads a copy of the model whose graph splits positions into 512-token blocks, which keeps those values exact to 32K tokens. The weights are unchanged, and long chats keep float16 speed instead of falling back to float32.
+
+The workaround came out of the discussion on the issue:
+- [@john-rocky](https://github.com/john-rocky): the copy-fidelity suite that first showed the errors growing with prompt length, checks of the patched files on an M4 Max and an Android GPU, and the finding that a Gemma 4 E2B file exported with litert-torch's RoPE composite avoids the problem at the source ([litert-torch#1343](https://github.com/google-ai-edge/litert-torch/issues/1343)).
+- [@picitujeromanov](https://github.com/picitujeromanov): a second precision loss on M1-class GPUs, which is why the blocks are 512 tokens.
+- Google's LiteRT-LM team reproduced the issue.
+
+[Notes](docs/ENGINEERING.md#long-context-digits-on-the-gpu-litert-lm-3913) · [model](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope)
 
 </td>
 <td width="50%" valign="top">
@@ -268,7 +274,7 @@ The README art comes from the same tokens: `scripts/readme-art/render.sh` redraw
 | --- | --- |
 | [User guide](docs/USER_GUIDE.md) | Every screen and setting, Siri and widgets, the models, troubleshooting, known limitations |
 | [Architecture](docs/ARCHITECTURE.md) | Components, the life of a message, the data model, concurrency |
-| [Engineering notes](docs/ENGINEERING.md) | The #3913 fix in full, and every reliability safeguard |
+| [Engineering notes](docs/ENGINEERING.md) | The #3913 workaround in full, and every reliability safeguard |
 | [Testing](docs/TESTING.md) | The suites, the device harness, and how to run them |
 | [LiteRT-LM](docs/LITERT-LM.md) | The LiteRT-LM the app ships, what it sets, and a map of the fork's verified runtime and model reference |
 | [Privacy policy](https://powerbeef.github.io/Agello/privacy) | What stays on the iPhone, and what the network is used for |
@@ -310,7 +316,8 @@ Agello is licensed under the [Apache License 2.0](LICENSE). [NOTICE](NOTICE) cov
 ## Acknowledgements
 
 - [LiteRT](https://github.com/google-ai-edge/litert) and [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) by Google, with the [Swift guide](https://developers.google.com/edge/litert-lm/swift) and [Gemma 4 on LiteRT-LM](https://developers.google.com/edge/litert-lm/models/gemma-4)
-- [Gemma 4 E4B](https://huggingface.co/google/gemma-4-E4B-it) by Google, with the [LiteRT-LM build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) by `litert-community`; Agello downloads [a copy with float16-exact rotary positions](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope)
+- [Gemma 4 E4B](https://huggingface.co/google/gemma-4-E4B-it) by Google, with the [LiteRT-LM build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) by `litert-community`; Agello downloads [a copy with its rotary positions patched for float16 GPUs](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope)
+- The developers on [LiteRT-LM #3913](https://github.com/google-ai-edge/LiteRT-LM/issues/3913), [@john-rocky](https://github.com/john-rocky) and [@picitujeromanov](https://github.com/picitujeromanov), and Google's LiteRT-LM team, whose reproductions, tests and findings shaped that patched model
 - [swift-markdown](https://github.com/swiftlang/swift-markdown) by the Swift project, and [SwiftMath](https://github.com/mgriebling/SwiftMath) by Computer Inspirations
 
 <br>
