@@ -81,7 +81,18 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   results, the GPU families affected (the A15 is Apple8, not the M1's Apple7)
   and ML Drift's fp32 RoPE kernels as the widest fix:
   https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6220359922
-- As of 2026-10-16 the issue is open, unassigned and awaiting a Google
+- On 2026-10-18 john-rocky showed a Gemma 4 E2B file exported with
+  litert-torch's `odml.rope` composite (`--use_rope_composite=True`) exact at
+  fp16 on an M4 Max, and asked for it as the default in
+  google-ai-edge/litert-torch#1343 (triaged 2026-10-21, assigned to
+  john-rocky). Our reply, posted 2026-10-23, accepts the offer to run that
+  file on the M6 (WebGPU, iOS library, our build) and the iPhone 17 Pro, asks
+  for an E4B export, and points to #4001:
+  https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6359855208
+- LiteRT-LM #4001 reports the same failure on Android (Adreno 840 with E4B,
+  Adreno 740 with E2B), FLOAT32 the only workaround. Don't present our patched
+  file as its fix without A/B runs on that repro (asked there on 2026-10-17).
+- As of 2026-10-23 the issue is open, unassigned and awaiting a Google
   developer; Google's only reply is from 2026-10-12. Check for replies with
   `gh api repos/google-ai-edge/LiteRT-LM/issues/3913/comments`. Comments go out
   under the user's name, without Claude attribution.
