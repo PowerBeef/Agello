@@ -15,8 +15,9 @@ The handoff between work sessions: read this first, then the section of the plan
   - The `agello-litert-update` skill has the thread's history.
 - **Our LiteRT-LM build (Next, item 1) has started** on the fork's `agello-next` (2026-10-24, not pushed). Builds now use Xcode 27.1.
   - M0.1 of [MAC.md](MAC.md) (`78e7edc4`): the Mac slice is a versioned framework, the iOS slice's plist names the device SDK, and the package requires iOS and macOS 27.
-  - Runtime fix (a) (`3fa97211`): no MTP round past the end of the KV cache. Agello's `test05_ToolCall` passes on this Mac with that build.
-  - Next: fixes (b) to (d), then the release dry run. Agello for Mac (item 2) continues with M0.2 and M0.3.
+  - Runtime fix (a) (`3fa97211`): no MTP round past the end of the KV cache.
+  - Runtime fix (b) (`8acc748c`): one final chunk per conversation send at the C boundary, for every binding. Agello's `test05_ToolCall` and probe 15 pass on this Mac with that build.
+  - Next: fixes (c) and (d), then the release dry run. Agello for Mac (item 2) continues with M0.2 and M0.3.
 
 ## Shipped
 
@@ -35,7 +36,7 @@ The handoff between work sessions: read this first, then the section of the plan
 ## Next
 
 1. **Our LiteRT-LM build** (the fork's `agello-next` branch).
-   - Runtime fixes: the speculative-decoding bound at the end of the cache (done), one final event per message, a sampler per conversation, and reply stats without benchmark mode.
+   - Runtime fixes: the speculative-decoding bound at the end of the cache (done), one final event per message (done), a sampler per conversation, and reply stats without benchmark mode.
    - Then a release with iPhone and Mac slices, the iPhone gate on that exact build, and publishing.
    - On an iPhone 17 Pro, in a cooled calibration, it decoded 37–45 tokens a second at a 32K window. Google's binary decoded 20 the same night.
 2. **Agello for Mac.** A native Mac app that shares the iPhone app's code, with full parity, widgets and the share extension included. It runs on our build's Metal Mac slice and ships as a notarized DMG. The plan, phases M0 to M9, is in [MAC.md](MAC.md). It depends on item 1 for its runtime.
