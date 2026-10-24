@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - The Mac is the development bed while the phone is away. Its speed and memory aren't the iPhone's, and every change that ships still needs an iPhone run.
 - Run tests with `scripts/device-harness.sh` (below). The iPhone must be connected and unlocked for the whole run.
 - Don't edit files in the target folders (`Agello*/`) while a harness run is building: stage changes elsewhere and apply them after the run.
+- Start each session with the "Current status" section of `docs/ROADMAP.md`, and update it whenever the status changes (a run finishes, a phase starts, a thread moves).
 - Commit after each verified chunk, directly on `main`. Push only when asked.
 - Disk space on this Mac is limited. After a run, delete the scratch it made (one-off `build/device-harness-*` folders once their numbers are recorded, engine caches written beside models in `~/Models/agello/`, stale bench builds), and check `df -h /` before large builds.
 - Use the project skills in `.claude/skills/` before the work they cover:
@@ -21,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Agello is an iPhone-only SwiftUI app (iOS 27.0, Swift 6 language mode, no default MainActor isolation) that runs Gemma 4 E4B on-device through LiteRT-LM, with EmbeddingGemma for search by meaning. `README.md` is the project page (features, performance, highlights); `docs/` holds the user guide, architecture, engineering notes (the #3913 fix, reliability safeguards), testing, the roadmap (`ROADMAP.md`) and the approved plan for a native Mac app (`MAC.md`); `docs/archive/` is a superseded plan.
 
 - One shared scheme, `Agello`, builds the app, the `AgelloWidgets` and `AgelloShare` extensions, and the test targets `AgelloTests` (unit), `AgelloDeviceTests` (real-model scenarios) and `AgelloUITests`.
-- Packages: `Vendor/LiteRT-LM` (local: the Swift wrapper from the fork's `agello` branch, v0.18.0 plus two Swift patches (tool-call errors, a stream's weak reference to its conversation), and Google's checksummed prebuilt `CLiteRTLM.xcframework`), `swift-markdown`, `SwiftMath`. Record any new dependency's license in `NOTICE`, and copy it to `Agello/Resources/NOTICE.txt` (Settings → Licenses shows that copy; `cmp NOTICE Agello/Resources/NOTICE.txt`).
+- Packages: `Vendor/LiteRT-LM` (local: the Swift wrapper from the fork's `agello` branch, v0.18.0 plus four Swift patches (tool-call errors, a stream's weak reference to its conversation, streams kept by ID with bounded tool rounds, the tokenizer and embedding overflow; `Vendor/README.md` lists them), and Google's checksummed prebuilt `CLiteRTLM.xcframework`), `swift-markdown`, `SwiftMath`. Record any new dependency's license in `NOTICE`, and copy it to `Agello/Resources/NOTICE.txt` (Settings → Licenses shows that copy; `cmp NOTICE Agello/Resources/NOTICE.txt`).
 - `../LiteRT-LM` is a clone of the fork with the full C++ runtime source; `.claude/settings.json` makes it readable from here.
 - `docs/LITERT-LM.md` maps what Agello uses of LiteRT-LM to the fork's verified reference (`../LiteRT-LM/docs/agello/reference/`): take runtime and model facts for docs and commit messages from its `facts.md`.
 
