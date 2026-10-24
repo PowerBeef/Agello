@@ -19,7 +19,8 @@ The handoff between work sessions: read this first, then the section of the plan
   - Runtime fix (b) (`8acc748c`): one final chunk per conversation send at the C boundary, for every binding. Agello's `test05_ToolCall` and probe 15 pass on this Mac with that build.
   - Runtime fix (c) (`f1b88286`): the sampler follows the active session, so presets and Regenerate's seeds apply on our build too (probe 18).
   - Fix (d), in Agello (`3c4f42a`): on our build, reply stats come from its telemetry and benchmark mode stays off, from 8 ms of CPU per decoded token to 0.7 on the Mac. Google's binary keeps benchmark mode. Checked on this Mac on both runtimes; the iPhone run is still to do.
-  - Next: the release dry run (4.2). Agello for Mac (item 2) continues with M0.2 and M0.3.
+  - Next: the release dry run (4.2).
+- **Agello for Mac (Next, item 2) has started** (2026-10-24): M0.2 and M0.3 of [MAC.md](MAC.md) are done. The `AgelloMac` target builds a sandboxed, hardened app whose runtime self-test passes on our build, GPU and CPU. Open in M0: the notarization dry run (Developer ID and the maintainer's API key). Next: M1, splitting the shared code from the iOS code.
 
 ## Shipped
 
