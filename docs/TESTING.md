@@ -33,6 +33,8 @@ scripts/device-harness.sh screenshots # opt-in tour with the real model (README 
 ONLY=AgelloTests/AppStateTests scripts/device-harness.sh unit   # part of a suite
 ```
 
+One run goes at a time on a machine: a second start exits with 3 while the first holds `build/.harness.lock`. The script keeps the Mac awake until it ends.
+
 ### On a Mac
 
 `PLATFORM=mac` runs the suites on the Mac itself: it runs the iPhone app ("Designed for iPad/iPhone") through the same Metal path and the iOS build of LiteRT-LM, which makes it a development bed when no iPhone is at hand. The UI suites and the memory simulation stay iPhone-only, and the Mac's speed and memory aren't an iPhone's: every change still gets an iPhone run before it ships.

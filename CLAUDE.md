@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Ground rules
 
-- Test on the physical iPhone, or on this Mac running the iPhone app (`PLATFORM=mac`, "Designed for iPad/iPhone", same Metal path). Never build, test, or take screenshots in the simulator: our runtime has no simulator build, and the failures that matter only show on hardware.
+- Test on the physical iPhone, or on this Mac running the iPhone app (`PLATFORM=mac`, "Designed for iPad/iPhone", same Metal path). Never build, test, or take screenshots in the simulator: our runtime has no simulator build, and the failures that matter only show on hardware. `.claude/settings.json` denies the desktop app's simulator tools.
 - The Mac is the development bed while the phone is away. Its speed and memory aren't the iPhone's, and every change that ships still needs an iPhone run.
-- Run tests with `scripts/device-harness.sh` (below). The iPhone must be connected and unlocked for the whole run.
-- Don't edit files in the target folders (`Agello*/`) while a harness run is building: stage changes elsewhere and apply them after the run.
-- Start each session with the "Current status" section of `docs/ROADMAP.md`, and update it whenever the status changes (a run finishes, a phase starts, a thread moves).
-- Commit after each verified chunk, directly on `main`. Push only when asked.
+- Run tests with `scripts/device-harness.sh` (below), one run at a time. The iPhone must be connected and unlocked for the whole run.
+- Don't edit files in the target folders (`Agello*/`) while a harness run is building: stage changes elsewhere and apply them after the run. A hook denies Edit and Write there during the build; edits through Bash aren't checked, and the rule still holds for them.
+- Start each session with the "Current status" section of `docs/ROADMAP.md` (the session-start hook prints it), and update it whenever the status changes (a run finishes, a phase starts, a thread moves).
+- Commit after each verified chunk, directly on `main` (a worktree session's branch is merged into `main`, below). Push only when asked.
 - Disk space on this Mac is limited. After a run, delete the scratch it made (one-off `build/device-harness-*` folders once their numbers are recorded, engine caches written beside models in `~/Models/agello/`, stale bench builds), and check `df -h /` before large builds.
 - Use the project skills in `.claude/skills/` before the work they cover:
   - `agello-device-testing`: running and reading the harness, writing scenarios, known failures.
@@ -53,6 +53,17 @@ scripts/device-run.sh logs 20       # relaunch the installed app, save 20 s of i
 - Suites take 3–15 minutes: run them with the Bash tool's `run_in_background` and wait for the notification. Results land in `build/device-harness/` (`build/mac-harness/` on the Mac); the exit code is 65 when tests fail.
 - Tests build Debug (`@testable import`); measure speed in Release. MobileBuildMCP (from your user-scope MCP config; `.mobilebuildmcp/config.yaml` keeps it to device workflows) reads the same `config.yaml`, but run tests through the harness: it sets each suite's environment and collects the results.
 - `--mock-engine` (or the `AGELLO_MOCK_ENGINE` environment variable) runs the whole UI on the scripted engine, without a model.
+
+## Claude desktop app
+
+The project is worked on in the Claude Code desktop app on this Mac. `.claude/settings.json` and `.claude/hooks/` set it up, and work the same in the CLI.
+
+- **Session start.** A hook prints the roadmap's "Current status", the git state (changed files, commits not pushed), free disk, whether the iPhone is reachable, and any harness run in progress.
+- **Harness runs.** Start suites with the Bash tool's `run_in_background`: you're told when the run ends, and the script keeps the Mac awake (`caffeinate`) until then, so a run can outlast the turn. To let the user watch one, open a Terminal panel tab on `tail -n +1 -f build/device-harness/<suite>.log | /opt/homebrew/bin/xcbeautify`.
+- **The lock.** The script holds `build/.harness.lock` in the main checkout and exits with 3 while another run holds it, from any session or worktree; the edit hook reads it. A lock whose process has gone is replaced. Never delete a live one.
+- **Parallel sessions** share the iPhone and this Mac: one harness run at a time, and Mac speed numbers measured while another session builds are suspect.
+- **Worktrees.** A parallel session can run in a worktree (`.claude/worktrees/`, git-ignored). New worktrees branch from the local `HEAD` (`worktree.baseRef` is `"head"`), so unpushed commits come along, and `.worktreeinclude` copies `.mobilebuildmcp/config.yaml` in. The session commits to its own `claude/…` branch. Once it's verified, rebase it onto `main` if `main` has moved, merge it from a session in the main checkout (`git merge --ff-only refs/heads/<branch>`), and don't push the branch. Each worktree builds into its own DerivedData (about 1 GB) and `build/`, so remove it once merged (Settings → This computer → Storage lists them). The sibling checkouts (`../LiteRT-LM`, `../agello-arms/`) don't resolve from inside a worktree: fork work runs from the main checkout, or in a session opened on the fork.
+- **Looking at the app without the phone.** After a `PLATFORM=mac` run has installed it, `open -b com.patricedery.agello --args --mock-engine` opens the iPhone app on this Mac (drop `--mock-engine` for the real model), and computer use can look at it and tap through it once the user grants access to Agello. It's the build of that last run. Quit it with `osascript -e 'tell application id "com.patricedery.agello" to quit'` before the next run.
 
 ## Architecture
 

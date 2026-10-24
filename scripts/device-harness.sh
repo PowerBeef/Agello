@@ -39,6 +39,9 @@
 #      Homebrew's, looked up directly so other xcbeautify copies in PATH are ignored).
 # Outputs: $OUT/<suite>.xcresult, $OUT/<suite>.log (raw xcodebuild output),
 #          $OUT/attachments/, $OUT/harness-report.json
+# One run at a time on this machine: while another run holds the lock
+# (build/.harness.lock in the main checkout), the script exits with 3.
+# The script keeps this Mac awake until it exits.
 set -eu
 
 SUITE="${1:-all}"
@@ -62,13 +65,43 @@ case "$PLATFORM" in
     # The Mac's destination id is its provisioning UDID.
     DEVICE_ID="$(system_profiler SPHardwareDataType | sed -n 's/.*Provisioning UDID: *//p')"
     OUT="${OUT:-$ROOT/build/mac-harness}"
-    # Keep the Mac awake until this script exits.
-    caffeinate -dims -w $$ &
     ;;
   *) echo "Unknown PLATFORM: $PLATFORM (iphone or mac)" >&2; exit 2 ;;
 esac
+
+# One run at a time on this machine, from any checkout or worktree; the
+# Claude Code hooks read the lock (scripts/lib/harness-lock.sh).
+# shellcheck source=scripts/lib/harness-lock.sh
+. "$ROOT/scripts/lib/harness-lock.sh"
+LOCK="$(harness_lock_dir "$ROOT")"
+mkdir -p "$(dirname "$LOCK")"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  # A run that has just taken the lock may not have written its info yet.
+  sleep 1
+  if running="$(harness_lock_info "$LOCK")"; then
+    echo "Another harness run is in progress ($LOCK):" >&2
+    echo "$running" | sed 's/^/  /' >&2
+    exit 3
+  fi
+  rm -rf "$LOCK"
+  mkdir "$LOCK"
+fi
+trap 'rm -rf "$LOCK"' EXIT
+trap 'exit 130' HUP INT TERM
+STARTED="$(date '+%Y-%m-%d %H:%M')"
+LAST=yes
+# Records the suite being run, whose log the hooks read.
+write_lock_info() {
+  printf 'pid=%s\nroot=%s\nplatform=%s\nsuite=%s\nlog=%s\nlast=%s\nstarted=%s\n' \
+    $$ "$ROOT" "$PLATFORM" "$1" "$OUT/$1.log" "$LAST" "$STARTED" >"$LOCK/info.tmp"
+  mv "$LOCK/info.tmp" "$LOCK/info"
+}
+# Keep this Mac awake until the script exits: an iPhone run needs it too.
+caffeinate -dims -w $$ &
+
 BUNDLE_ID="com.patricedery.agello"
 mkdir -p "$OUT"
+write_lock_info "$SUITE"
 # Lets the in-app report survive crash relaunches within this run only.
 export TEST_RUNNER_HARNESS_RUN_ID="run-$(date +%s)"
 # Engine telemetry level for our LiteRT-LM builds (ignored by Google's): 2 records span timings
@@ -108,7 +141,8 @@ run_suite() {
   name="$1"
   shift
   result="$OUT/$name.xcresult"
-  rm -rf "$result"
+  rm -rf "$result" "$OUT/$name.log"
+  write_lock_info "$name"
   echo "==> $name"
   # sh has no pipefail: keep xcodebuild's exit status in a file.
   status_file="$OUT/.$name.status"
@@ -197,14 +231,17 @@ case "$SUITE" in
       echo "ONLY needs a single suite (unit, inference, ui…), not all." >&2
       exit 2
     fi
+    LAST=no
     run_suite unit -only-testing:AgelloTests "$@" || status=$?
     inference_status=0
+    [ "$PLATFORM" = mac ] && LAST=yes
     run_suite inference -only-testing:AgelloDeviceTests/InferenceScenarioTests \
       -only-testing:AgelloDeviceTests/KnowledgeScenarioTests \
       -only-testing:AgelloDeviceTests/WebScenarioTests "$@" || inference_status=$?
     [ "$status" -eq 0 ] && status=$inference_status
     if [ "$PLATFORM" = iphone ]; then
       ui_status=0
+      LAST=yes
       run_suite ui -only-testing:AgelloUITests "$@" || ui_status=$?
       [ "$status" -eq 0 ] && status=$ui_status
     fi

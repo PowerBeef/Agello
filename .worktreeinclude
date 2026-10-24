@@ -1,0 +1,3 @@
+# Git-ignored files Claude Code copies into each new worktree (.gitignore syntax).
+# The device config: the harness, device-run.sh and MobileBuildMCP read it.
+.mobilebuildmcp/config.yaml

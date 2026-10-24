@@ -27,7 +27,13 @@ MobileBuildMCP is configured with the `device` workflow only.
    connected.
 4. Don't edit files in the target folders (`Agello*/`) while a run is
    building: stage changes elsewhere and apply them after the run. Files
-   outside them (docs, `.claude/`, `scripts/`) are safe to edit.
+   outside them (docs, `.claude/`, `scripts/`) are safe to edit. The
+   `guard-target-edits` hook denies Edit and Write there until the run's last
+   suite has started testing; edits made through Bash aren't checked.
+5. For `ui` and `screenshots`, turn on a Focus (Do Not Disturb) on the
+   iPhone: notification banners, Claude's own included when Remote Control
+   pushes to this phone, land on top of the app under test and in the
+   screenshots.
 
 ## Running suites
 
@@ -47,6 +53,22 @@ Start suites with the Bash tool's `run_in_background: true` and send the
 console to a file (`> "$scratchpad/inference.console" 2>&1`). You're notified
 when the command ends, so don't poll. Chain suites in one command with `;`
 when they should run back to back.
+
+- **One run at a time.** The script takes `build/.harness.lock` in the main
+  checkout and exits with 3, printing the other run's suite, pid and
+  checkout, while another run holds it (from another session or worktree
+  too). Wait for that run rather than deleting its lock; a lock whose process
+  has gone is replaced at the next start. Chained runs are separate runs to
+  the edit hook: it lets edits through once the first is testing, and the
+  next one builds them, so leave the targets alone until the last has
+  started testing.
+- **Watching.** The raw log grows as the run goes. A Terminal panel tab
+  (`run_in_terminal`) on
+  `tail -n +1 -f build/device-harness/<suite>.log | /opt/homebrew/bin/xcbeautify`
+  lets the user follow it; stop the tab after the run.
+- **Staying awake.** The script runs `caffeinate` until it exits, on the
+  iPhone and the Mac, so a run outlasts the turn that started it. A closed
+  lid still puts the Mac to sleep.
 
 Pick the narrowest suite that covers the change: `unit` for pure logic
 (planner, budgets, schema, markdown, parsers), `inference` or `files` for
@@ -92,7 +114,9 @@ PLATFORM=mac ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scrip
   - Settings: `defaults read <container>/Data/Library/Preferences/com.patricedery.agello`.
 - Logs: `log stream --level debug --predicate 'subsystem == "com.patricedery.agello"'`.
   Crash reports: `~/Library/Logs/DiagnosticReports/Agello-*.ips`.
-- The script keeps the Mac awake (`caffeinate`) until it exits.
+- To look at the app outside a run, open the last run's build with
+  `open -b com.patricedery.agello --args --mock-engine` (CLAUDE.md, "Claude
+  desktop app").
 
 ## Outside test runs
 

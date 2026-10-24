@@ -38,6 +38,9 @@ fastlane/test_output
 # Claude Code personal settings (prompt approvals, MCP approvals)
 .claude/settings.local.json
 
+# Worktrees of the desktop app's parallel sessions
+.claude/worktrees/
+
 # SourceKit-LSP build server config (machine-local; xcode-build-server config)
 buildServer.json
 
