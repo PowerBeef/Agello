@@ -12,6 +12,7 @@
 		500000000000000000000006 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 500000000000000000000005 /* SwiftMath */; };
 		60000000000000000000000C /* AgelloWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 600000000000000000000001 /* AgelloWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		70000000000000000000000C /* AgelloShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 700000000000000000000001 /* AgelloShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		800000000000000000000008 /* LiteRTLM in Frameworks */ = {isa = PBXBuildFile; productRef = 80000000000000000000000C /* LiteRTLM */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -84,6 +85,7 @@
 		400000000000000000000011 /* AgelloUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgelloUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		600000000000000000000001 /* AgelloWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AgelloWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		700000000000000000000001 /* AgelloShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AgelloShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		800000000000000000000001 /* Agello.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Agello.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -145,6 +147,14 @@
 			);
 			target = 400000000000000000000013 /* AgelloUITests */;
 		};
+		800000000000000000000007 /* Exceptions for "AgelloMac" folder in "AgelloMac" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				AgelloMac.entitlements,
+			);
+			target = 800000000000000000000002 /* AgelloMac */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -198,6 +208,14 @@
 			path = AgelloShare;
 			sourceTree = "<group>";
 		};
+		800000000000000000000006 /* AgelloMac */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				800000000000000000000007 /* Exceptions for "AgelloMac" folder in "AgelloMac" target */,
+			);
+			path = AgelloMac;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -246,6 +264,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		800000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				800000000000000000000008 /* LiteRTLM in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -258,6 +284,7 @@
 				400000000000000000000012 /* AgelloUITests */,
 				600000000000000000000006 /* AgelloWidgets */,
 				700000000000000000000006 /* AgelloShare */,
+				800000000000000000000006 /* AgelloMac */,
 				100000000000000000000015 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -271,6 +298,7 @@
 				400000000000000000000011 /* AgelloUITests.xctest */,
 				600000000000000000000001 /* AgelloWidgets.appex */,
 				700000000000000000000001 /* AgelloShare.appex */,
+				800000000000000000000001 /* Agello.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -410,6 +438,29 @@
 			productReference = 700000000000000000000001 /* AgelloShare.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		800000000000000000000002 /* AgelloMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 800000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloMac" */;
+			buildPhases = (
+				800000000000000000000003 /* Sources */,
+				800000000000000000000004 /* Frameworks */,
+				800000000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AgelloMac;
+			packageProductDependencies = (
+				80000000000000000000000C /* LiteRTLM */,
+			);
+			fileSystemSynchronizedGroups = (
+				800000000000000000000006 /* AgelloMac */,
+			);
+			productName = AgelloMac;
+			productReference = 800000000000000000000001 /* Agello.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -441,6 +492,9 @@
 					700000000000000000000002 = {
 						CreatedOnToolsVersion = 27.0;
 					};
+					800000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+					};
 				};
 			};
 			buildConfigurationList = 100000000000000000000018 /* Build configuration list for PBXProject "Agello" */;
@@ -467,6 +521,7 @@
 				400000000000000000000013 /* AgelloUITests */,
 				600000000000000000000002 /* AgelloWidgets */,
 				700000000000000000000002 /* AgelloShare */,
+				800000000000000000000002 /* AgelloMac */,
 			);
 		};
 /* End PBXProject section */
@@ -514,6 +569,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		800000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -553,6 +615,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		700000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		800000000000000000000003 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -980,6 +1049,70 @@
 			};
 			name = Release;
 		};
+		80000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				CODE_SIGN_ENTITLEMENTS = AgelloMac/AgelloMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AgelloMac/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Agello;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos for the on-device model, and to show it what you see in voice mode.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone for voice messages, dictation and voice mode. The on-device model understands your voice; recordings stay on this Mac.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.agello.mac;
+				PRODUCT_MODULE_NAME = Agello;
+				PRODUCT_NAME = Agello;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		80000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				CODE_SIGN_ENTITLEMENTS = AgelloMac/AgelloMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AgelloMac/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Agello;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos for the on-device model, and to show it what you see in voice mode.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone for voice messages, dictation and voice mode. The on-device model understands your voice; recordings stay on this Mac.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.agello.mac;
+				PRODUCT_MODULE_NAME = Agello;
+				PRODUCT_NAME = Agello;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1046,6 +1179,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		800000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				80000000000000000000000A /* Debug */,
+				80000000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -1089,6 +1231,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 500000000000000000000004 /* XCRemoteSwiftPackageReference "SwiftMath" */;
 			productName = SwiftMath;
+		};
+		80000000000000000000000C /* LiteRTLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 100000000000000000000005 /* XCLocalSwiftPackageReference "Vendor/LiteRT-LM" */;
+			productName = LiteRTLM;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

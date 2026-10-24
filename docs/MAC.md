@@ -89,6 +89,11 @@ Agello main      : M0.2–3 ─ M1 ─ M2 ─ M3 ─ M4 ─ M5 ─ M6 ─ M7 ─
   - The self-test on GPU and on a forced CPU under the hardened runtime.
   - A notarization dry run (`notarytool`, with the maintainer's API key, after asking) and `spctl -a -vvv`.
   - The committed package still compiles.
+- **M0.2 and M0.3 done on 2026-10-24,** with the M0 choices confirmed as recommended (sandbox, `com.patricedery.agello.mac`, `group.com.patricedery.agello`):
+  - The `AgelloMac` target and scheme were added to the project by hand, with their own `8…` object IDs as the other targets have; `xcodebuild -list` and both platforms' builds accept it. `AgelloMac/` holds `App/AgelloMacApp.swift` (a placeholder window), `App/RuntimeSelfTest.swift`, `Info.plist` (the `agello` URL scheme) and the entitlements above.
+  - Signed with Apple Development on our runtime (`agello-next` `4ef5d92e2600`): `codesign --verify --deep --strict` passes, the hardened runtime is on, the entitlements are the ones listed, and the framework sits in `Contents/Frameworks` as `Versions/A`.
+  - The self-test passes in the sandbox under the hardened runtime, with no library-validation exception: GPU (load 8.9 s without a cache, 63 tokens in 1.5 s, a 768-dimension embedding) and forced CPU (3.9 s, 64 tokens in 5.4 s). It also compiles against Google's committed package.
+  - Open: automatic signing chose the wildcard "Mac Team Provisioning Profile", whose entitlements don't list the App Group; the app still launched. The explicit App ID with App Groups, and the group container's access, come with the extensions (M6) and Developer ID (M8). The notarization dry run and `spctl` wait for a Developer ID build and the maintainer's API key.
 
 ## M1: split shared from iOS code (the iPhone app behaves the same)
 

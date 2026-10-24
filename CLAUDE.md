@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Agello is an iPhone-only SwiftUI app (iOS 27.0, Swift 6 language mode, no default MainActor isolation) that runs Gemma 4 E4B on-device through LiteRT-LM, with EmbeddingGemma for search by meaning. `README.md` is the project page (features, performance, highlights); `docs/` holds the user guide, architecture, engineering notes (the #3913 fix, reliability safeguards), testing, the roadmap (`ROADMAP.md`) and the approved plan for a native Mac app (`MAC.md`); `docs/archive/` is a superseded plan.
 
-- One shared scheme, `Agello`, builds the app, the `AgelloWidgets` and `AgelloShare` extensions, and the test targets `AgelloTests` (unit), `AgelloDeviceTests` (real-model scenarios) and `AgelloUITests`.
+- One shared scheme, `Agello`, builds the app, the `AgelloWidgets` and `AgelloShare` extensions, and the test targets `AgelloTests` (unit), `AgelloDeviceTests` (real-model scenarios) and `AgelloUITests`. A second scheme, `AgelloMac`, builds Agello for Mac from `AgelloMac/` (bundle `com.patricedery.agello.mac`, sandboxed; [MAC.md](docs/MAC.md)): so far a placeholder window and the runtime self-test.
 - Packages: `Vendor/LiteRT-LM` (local: the Swift wrapper from the fork's `agello` branch, v0.18.0 plus four Swift patches (tool-call errors, a stream's weak reference to its conversation, streams kept by ID with bounded tool rounds, the tokenizer and embedding overflow; `Vendor/README.md` lists them), and Google's checksummed prebuilt `CLiteRTLM.xcframework`), `swift-markdown`, `SwiftMath`. Record any new dependency's license in `NOTICE`, and copy it to `Agello/Resources/NOTICE.txt` (Settings → Licenses shows that copy; `cmp NOTICE Agello/Resources/NOTICE.txt`).
 - `../LiteRT-LM` is a clone of the fork with the full C++ runtime source; `.claude/settings.json` makes it readable from here.
 - `docs/LITERT-LM.md` maps what Agello uses of LiteRT-LM to the fork's verified reference (`../LiteRT-LM/docs/agello/reference/`): take runtime and model facts for docs and commit messages from its `facts.md`.
@@ -38,6 +38,8 @@ ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-har
 swiftlint                           # repo root; keep 0 errors (size warnings on the big types are expected)
 xcodebuild build -project Agello.xcodeproj -scheme Agello \
   -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO -quiet   # compile check, no phone needed
+xcodebuild build -project Agello.xcodeproj -scheme AgelloMac \
+  -destination 'generic/platform=macOS' CODE_SIGNING_ALLOWED=NO -quiet # Agello for Mac, compile check
 scripts/device-run.sh logs 20       # relaunch the installed app, save 20 s of its logs
 ```
 
@@ -53,6 +55,7 @@ scripts/device-run.sh logs 20       # relaunch the installed app, save 20 s of i
 - Suites take 3–15 minutes: run them with the Bash tool's `run_in_background` and wait for the notification. Results land in `build/device-harness/` (`build/mac-harness/` on the Mac); the exit code is 65 when tests fail.
 - Tests build Debug (`@testable import`); measure speed in Release. MobileBuildMCP (from your user-scope MCP config; `.mobilebuildmcp/config.yaml` keeps it to device workflows) reads the same `config.yaml`, but run tests through the harness: it sets each suite's environment and collects the results.
 - `--mock-engine` (or the `AGELLO_MOCK_ENGINE` environment variable) runs the whole UI on the scripted engine, without a model.
+- Agello for Mac runs only on our runtime: `Vendor/use-local-litert.sh` first (never commit it), then build it signed (`-scheme AgelloMac -destination 'platform=macOS,arch=arm64' -allowProvisioningUpdates`). Its runtime self-test, `Agello.app/Contents/MacOS/Agello --runtime-self-test [--cpu]`, loads E4B, validates it, generates 64 tokens and embeds a sentence inside the sandbox, prints one JSON line and exits 0 when every step passed. It reads the models from its container: clone them in with `cp -c ~/Models/agello/*.litertlm ~/Library/Containers/com.patricedery.agello.mac/Data/Library/Application\ Support/Models/`.
 
 ## Claude desktop app
 
