@@ -20,7 +20,7 @@ The reference for the Mac/iPhone split is Vocello 3.0 ([PowerBeef/Vocello](https
   - a `NavigationSplitView` sidebar, a Settings scene reusing the same screen, and command menus;
   - one design-token namespace with desktop metrics;
   - shared components rather than copied screens ("copying drifted every number").
-- **Runtime.** Google's v0.18.0 Mac binary (`CLiteRTLM_mac`, already in `Vendor/LiteRT-LM/Package.swift`) runs on WebGPU and processes prompts about 3.5× slower. Our `agello-next` build already produces a `macos-arm64` slice with Metal (M6: about 3,400 tok/s prefill and about 49 tok/s decode, 47–50 at a 32K window), but its framework layout must be fixed before it can be signed inside an app.
+- **Runtime.** Google's v0.18.0 Mac binary (`CLiteRTLM_mac`, already in `Vendor/LiteRT-LM/Package.swift`) runs on WebGPU and processes prompts about 3.5× slower. Our `agello-next` build already produces a `macos-arm64` slice with Metal (M6: about 3,400 tok/s prefill and about 49 tok/s decode, 47–50 at a 32K window), but its macOS slice was a shallow, iOS-style bundle rather than the versioned framework macOS expects (repackaged in M0.1).
 
 **Decisions (2026-10-16):**
 1. Our Metal runtime from the start.
@@ -69,6 +69,10 @@ Agello main      : M0.2–3 ─ M1 ─ M2 ─ M3 ─ M4 ─ M5 ─ M6 ─ M7 ─
    - `Package.swift`: `.iOS("27.0"), .macOS("27.0")`.
    - Check that `release-xcframework.sh` zips symlinks (`-y`).
    - Trace the `dlopen`, `posix_spawn` and `fork` imports, and confirm they're fallback-only under the hardened runtime and the sandbox.
+   - **Done on 2026-10-24** (`78e7edc4`, not pushed):
+     - The script restructures both slices after Bazel. rules_apple 3.22.0 builds the iOS environment plist in the default iOS configuration, the simulator on Apple silicon; the script sets the device SDK's keys. `zip -y` was already there.
+     - An ad-hoc signed stub app accepted the old shallow slice as well as the versioned one (`codesign --verify --deep --strict`), so the versioned layout is the documented macOS form, not a fix for a signing failure. The notarization dry run below is the real check.
+     - `fork`, `execvp` and `posix_spawn` come from Rust's libstd, linked whole with tokenizers, llguidance and minijinja; none of the runtime crates spawns a process. `dlopen` comes from the sampler factory, LiteRT's accelerator registration and dispatch, the OpenCL wrapper and miniaudio. In a run on the M6 (`DYLD_PRINT_APIS`), the runtime's only own loads are the optional Metal and WebGPU sampler dylibs, which aren't there, so it falls back to the statically linked sampler. The self-test in item 3 checks that fallback under the hardened runtime.
 2. **Agello `Vendor/use-local-litert.sh`:** keep symlinks, assert `Versions/A`, and print both slices' platforms.
 3. **AgelloMac skeleton** (`AgelloMac/App/AgelloMacApp.swift`, `RuntimeSelfTest.swift`, `Info.plist`, `AgelloMac.entitlements`):
    - **`--runtime-self-test`** loads E4B on the GPU, runs `validate()`, generates 64 tokens and embeds one sentence, prints JSON and exits. It stays: the DMG check reuses it.

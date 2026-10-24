@@ -13,9 +13,10 @@ The handoff between work sessions: read this first, then the section of the plan
   - It's 2–3× slower, but its int8 export recipe also differs. We asked for the same export without the composite, to time the two side by side.
   - Waiting for: that export, an E4B export, and an E2B export with a longer cache. Probe 20 (`AgelloDeviceTests/LabSuiteProbe.swift`) and agello-bench rerun the same cases on any of them.
   - The `agello-litert-update` skill has the thread's history.
-- **Not started:** our LiteRT-LM build (Next, item 1) and Agello for Mac (item 2). Both begin in the fork's `agello-next` branch:
-  - the runtime fixes in item 1;
-  - M0 in [MAC.md](MAC.md): a versioned macOS framework, the iOS slice's platform plist, package platforms set to iOS and macOS 27.
+- **Our LiteRT-LM build (Next, item 1) has started** on the fork's `agello-next` (2026-10-24, not pushed). Builds now use Xcode 27.1.
+  - M0.1 of [MAC.md](MAC.md) (`78e7edc4`): the Mac slice is a versioned framework, the iOS slice's plist names the device SDK, and the package requires iOS and macOS 27.
+  - Runtime fix (a) (`3fa97211`): no MTP round past the end of the KV cache. Agello's `test05_ToolCall` passes on this Mac with that build.
+  - Next: fixes (b) to (d), then the release dry run. Agello for Mac (item 2) continues with M0.2 and M0.3.
 
 ## Shipped
 
@@ -34,7 +35,7 @@ The handoff between work sessions: read this first, then the section of the plan
 ## Next
 
 1. **Our LiteRT-LM build** (the fork's `agello-next` branch).
-   - Runtime fixes: the speculative-decoding bound at the end of the cache, one final event per message, a sampler per conversation, and reply stats without benchmark mode.
+   - Runtime fixes: the speculative-decoding bound at the end of the cache (done), one final event per message, a sampler per conversation, and reply stats without benchmark mode.
    - Then a release with iPhone and Mac slices, the iPhone gate on that exact build, and publishing.
    - On an iPhone 17 Pro, in a cooled calibration, it decoded 37–45 tokens a second at a 32K window. Google's binary decoded 20 the same night.
 2. **Agello for Mac.** A native Mac app that shares the iPhone app's code, with full parity, widgets and the share extension included. It runs on our build's Metal Mac slice and ships as a notarized DMG. The plan, phases M0 to M9, is in [MAC.md](MAC.md). It depends on item 1 for its runtime.

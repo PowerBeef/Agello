@@ -205,6 +205,16 @@ nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
 - **Build:** `agello/build-xcframework.sh` in the worktree writes
   `dist/CLiteRTLM.xcframework` and `dist/BUILD-INFO.txt` (commits, SHA-256s).
   Its `WORKSPACE` pins LiteRT and ML Drift by commit and archive sha256.
+  - After an Xcode update the build fails at once in `xcode-locator`: run
+    `bazelisk sync --configure --repo_env=HERMETIC_PYTHON_VERSION=3.13`
+    (without the variable it picks Homebrew's newest Python). The new
+    compiler then rebuilds everything, about 8 minutes on the M6.
+  - Never edit the worktree's sources while Bazel builds: it can store
+    objects compiled from the edited files under the old files' digests, in
+    the local action cache and the disk cache, and a later build of the old
+    sources gets them back (2026-10-24: an A/B "control" arm carried the fix).
+    If it happens, delete `~/.cache/bazel-disk`, run `bazelisk clean` and
+    rebuild; check an arm with `strings` on a symbol only the change adds.
 - **Changing LiteRT or ML Drift:** uncomment the `--override_repository`
   lines in the worktree's `.bazelrc.user` to build from the local checkouts.
   After pushing, re-pin: the new commit and `shasum -a 256` of
