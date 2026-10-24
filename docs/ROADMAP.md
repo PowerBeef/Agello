@@ -7,7 +7,7 @@ What has shipped, what's next, and what waits for hardware. Updated 2026-10-24.
 The handoff between work sessions: read this first, then the section of the plan it points to.
 
 - **The app** hasn't changed since the iPhone run of 2026-10-16, which passed every default suite (`unit`, `inference`, `files`, `web`, `thinking`, `ui`, probes 17–19). It ships on Google's LiteRT-LM v0.18.0 with our patched model file.
-- **The iPhone 17 Pro is available again** (2026-10-24). The opt-in `calibrate` and `memory` suites and the manual checks below haven't been run on it yet.
+- **The iPhone 17 Pro is available again** (2026-10-24). The opt-in `calibrate` and `memory` suites passed on it that day, on Google's v0.18.0: the baseline for the budgets (Next, item 3). The manual checks below are still to do.
 - **#3913 upstream:** a model exported with litert-torch's RoPE composite fixes the bug at the source.
   - john-rocky's Gemma 4 E2B export is exact on the iPhone 17 Pro and on all three Mac M6 setups: 118/118 cases, against 35/118 for the stock file (the iPhone and Mac runs were posted on 2026-10-24).
   - It's 2–3× slower, but its int8 export recipe also differs. We asked for the same export without the composite, to time the two side by side.
@@ -38,20 +38,20 @@ The handoff between work sessions: read this first, then the section of the plan
    - Then a release with iPhone and Mac slices, the iPhone gate on that exact build, and publishing.
    - On an iPhone 17 Pro, in a cooled calibration, it decoded 37–45 tokens a second at a 32K window. Google's binary decoded 20 the same night.
 2. **Agello for Mac.** A native Mac app that shares the iPhone app's code, with full parity, widgets and the share extension included. It runs on our build's Metal Mac slice and ships as a notarized DMG. The plan, phases M0 to M9, is in [MAC.md](MAC.md). It depends on item 1 for its runtime.
-3. **Energy and performance budgets,** written down and checked with the `calibrate` suite and MetricKit.
+3. **Energy and performance budgets,** written down and checked with the `calibrate` suite and MetricKit. The baseline is Google's v0.18.0 on the iPhone 17 Pro, measured on 2026-10-24 at a nominal thermal state throughout:
+   - **`calibrate`** at 4K / 8K / 16K / 32K windows. First token: 1.5 / 2.1 / 5.8 / 16.0 s for 1.3K / 2.3K / 4.4K / 8.4K-token prompts. Decode: 37 / 39 / 45 / 27 tok/s on a one-sentence reply, and 82 / 74 / 68 / 55 on a 120-token list drawn from the prompt. Peak footprint: 1.2 / 1.3 / 1.9 / 3.4 GB.
+   - **`memory`,** an 8 GB iPhone simulated at 5.0 / 4.0 / 3.5 GB usable. E4B loads at 8K with vision, audio and MTP each time, and text, an image, audio, and 2.3K and 4.4K-token prompts all pass. The app peaks at 2.7 GB, leaving 2.3 / 1.3 / 0.8 GB after 1 / 2 / 3 memory warnings, and decode slows to 41 / 35 / 29 tok/s. It's an optimistic bound: the phone keeps its full RAM for the model file.
 4. **#3913 follow-up.** Run the next exports from the thread (above) through probe 20 and agello-bench. If a re-exported Google file or a runtime fix ships, check it with probe 10 and the `inference` suite, and the catalog can go back to Google's file (`agello-litert-update`, "When Google fixes #3913").
 
 ## Waiting for the iPhone
 
 The phone is available as of 2026-10-24.
 
-
 - **Manual checks:**
   - AirPods in voice mode and dictation;
   - a phone call during voice mode;
   - the voice camera in landscape;
   - the prompt before a cellular download.
-- **Opt-in suites:** `calibrate` and `memory`.
 - **The runtime gate** for item 1, and the iPhone checks the Mac work queues ([MAC.md](MAC.md), M1).
 
 ## Later
