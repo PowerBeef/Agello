@@ -319,6 +319,18 @@ class DeviceTestCase: XCTestCase {
   }
 }
 
+/// The process's CPU time, every thread, user and system. Tests run inside the app, so it
+/// includes the engine's threads.
+enum ProcessCPU {
+  static func seconds() -> Double {
+    var usage = rusage()
+    getrusage(RUSAGE_SELF, &usage)
+    let user = Double(usage.ru_utime.tv_sec) + Double(usage.ru_utime.tv_usec) / 1e6
+    let system = Double(usage.ru_stime.tv_sec) + Double(usage.ru_stime.tv_usec) / 1e6
+    return user + system
+  }
+}
+
 /// The engine's own telemetry (agello/telemetry in our LiteRT-LM builds): counters, span timings,
 /// GPU time, anomalies and memory since the scenario started. Looked up at run time, so the
 /// harness also runs against Google's binary, which doesn't have it. The harness script sets

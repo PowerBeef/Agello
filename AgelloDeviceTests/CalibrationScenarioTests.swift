@@ -74,11 +74,17 @@ final class CalibrationScenarioTests: DeviceTestCase {
       // The one-sentence reply above decodes 30-60 tokens, too few for a steady
       // rate (runs differ by about 10%); a longer follow-up in the same chat
       // measures decode over a few hundred.
+      // The process's CPU time over the follow-up, per token: GPU waits that spin (benchmark
+      // mode) cost CPU here, waits that sleep don't.
+      let cpuBefore = ProcessCPU.seconds()
       let followUp = await harness.ask(
         "List ten details from the text, one short sentence each.", in: thread)
+      let cpuSeconds = ProcessCPU.seconds() - cpuBefore
       let followUpStats = followUp.reply?.stats
       values["longDecodeTokPerSec"] = followUpStats?.decodeTokensPerSecond ?? -1
       values["longOutputTokens"] = followUpStats?.outputTokens ?? -1
+      values["longCpuMsPerToken"] =
+        (followUpStats?.outputTokens).map { $0 > 0 ? cpuSeconds * 1000 / Double($0) : -1 } ?? -1
       values["longReplyAccepted"] = followUp.accepted
       values["footprintAfterFollowUpGB"] = Double(MemoryProbe.footprintBytes()) / 1e9
       values["thermalStateAfterFollowUp"] = ProcessInfo.processInfo.thermalState.rawValue

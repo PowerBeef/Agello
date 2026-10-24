@@ -176,9 +176,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     spec: ModelSpec, modelURL: URL, options: InferenceOptions, memoryBytes: UInt64,
     enableTools: Bool
   ) async throws -> ResolvedInference {
-    // Stats collection for the per-reply footer (TTFT, tok/s).
+    // Stats collection for the per-reply footer (TTFT, tok/s): benchmark mode on Google's
+    // binary; telemetry on ours, where benchmark mode would make every GPU wait spin.
     ExperimentalFlags.optIntoExperimentalAPIs()
-    ExperimentalFlags.enableBenchmark = true
+    ExperimentalFlags.enableBenchmark = !RuntimeTelemetry.inUse
+    if RuntimeTelemetry.inUse { RuntimeTelemetry.recordSpans() }
     // Reasoning never stays in the KV cache: at the next message the runtime
     // rewinds and refills the answer without it. That keeps the room for
     // the conversation, and matches a reseed from saved history (which has
@@ -763,6 +765,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 
     let started = Date()
     var firstChunkAt: Date?
+    // Our runtime's totals before the reply; its stats are the difference (RuntimeTelemetry).
+    let telemetryBefore = RuntimeTelemetry.inUse ? RuntimeTelemetry.totals() : nil
     // Instruments (Points of Interest): the reply as an interval, its first token as an event.
     let signpostID = Self.signposter.makeSignpostID()
     let replyInterval = Self.signposter.beginInterval("Reply", id: signpostID)
@@ -778,8 +782,22 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
 
     func stats(started: Date, firstChunkAt: Date?) -> GenerationStats {
-      // Token counts and speed from the runtime; time to first token from this reply's own
-      // clock (the runtime's figure is the conversation's first reply, not this one).
+      // Token counts and speed from the runtime (its telemetry on our builds, BenchmarkInfo on
+      // Google's); time to first token from this reply's own clock (the runtime's figure is the
+      // conversation's first reply, not this one).
+      if let telemetryBefore, let after = RuntimeTelemetry.totals(),
+        let reply = ReplyTelemetry(before: telemetryBefore, after: after)
+      {
+        return GenerationStats(
+          timeToFirstToken: firstChunkAt?.timeIntervalSince(started),
+          totalTime: Date().timeIntervalSince(started),
+          inputTokens: reply.inputTokens,
+          outputTokens: reply.outputTokens,
+          decodeTokensPerSecond: reply.decodeTokensPerSecond,
+          backend: resolved.backendLabel,
+          modelID: spec.id
+        )
+      }
       if let info = try? conversation.getBenchmarkInfo() {
         return GenerationStats(
           timeToFirstToken: firstChunkAt?.timeIntervalSince(started),

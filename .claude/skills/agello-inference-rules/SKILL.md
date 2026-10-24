@@ -157,7 +157,19 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   whatever the preset; with MTP off the conversation's sampler applies, but
   every conversation starts at seed 0, so a rebuilt conversation repeats the
   same reply. A varied reply needs MTP off and a seed of its own
-  (`SamplerConfig(seed:)`); that's how Regenerate samples.
+  (`SamplerConfig(seed:)`); that's how Regenerate samples. Our build does the
+  same since `agello-next` `f1b88286` (4.1c); before it, the engine's first
+  conversation (the load's validation, greedy) fixed the sampler for every
+  conversation, so presets and Regenerate's seeds never applied (probe 18 on
+  the M6, 2026-10-24).
+- Reply stats: Google's binary gives them only in benchmark mode
+  (`ExperimentalFlags.enableBenchmark`, `getBenchmarkInfo`). On ours benchmark
+  mode makes every GPU wait spin (Mac calibration, 2026-10-24: 7.5–8.7 ms of
+  CPU per decoded token, against 0.7 ms with it off), so `load` leaves it off
+  and `RuntimeTelemetry` takes a reply's tokens and decode speed from the
+  runtime's telemetry totals before and after it (level 2, for decode times).
+  Don't turn benchmark mode on for ours; `LiteRTLM.benchmark` sets it for
+  itself and restores it.
 - Visual tokens per image: E4B's file accepts at most 280
   (`VisualDetail.offered(limit:)`); a file that can't be inspected gets 280.
 
