@@ -89,10 +89,21 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   file on the M6 (WebGPU, iOS library, our build) and the iPhone 17 Pro, asks
   for an E4B export, and points to #4001:
   https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6359855208
+- 2026-10-24: john-rocky shared the E2B composite export
+  (`mlboydaisuke/gemma-4-E2B-it-litert-lm-rope-composite`, 8,192-token cache,
+  int8 weights, no MTP drafter). Probe 20 (`AgelloDeviceTests/LabSuiteProbe.swift`,
+  the research suites on files in Documents/lab) and agello-bench ran it:
+  118/118 exact on the iPhone 17 Pro, the iPhone app on the M6, Google's macOS
+  library (WebGPU) and our build (Metal); the stock E2B 35/118 everywhere. The
+  composite file was 2-3x slower, but its int8 recipe differs too, so we asked
+  for the same export without the flag. Posted:
+  https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6385900547
+  The lab files are in `~/Models/agello/lab` and the phone's Documents/lab, kept
+  as controls for the E4B export.
 - LiteRT-LM #4001 reports the same failure on Android (Adreno 840 with E4B,
   Adreno 740 with E2B), FLOAT32 the only workaround. Don't present our patched
   file as its fix without A/B runs on that repro (asked there on 2026-10-17).
-- As of 2026-10-23 the issue is open, unassigned and awaiting a Google
+- As of 2026-10-24 the issue is open, unassigned and awaiting a Google
   developer; Google's only reply is from 2026-10-12. Check for replies with
   `gh api repos/google-ai-edge/LiteRT-LM/issues/3913/comments`. Comments go out
   under the user's name, without Claude attribution.
