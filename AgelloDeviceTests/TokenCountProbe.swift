@@ -10,7 +10,8 @@ extension ProbeScenarioTests {
   /// and the runtime adds one token (BOS) the text doesn't show; later it's only the new turn.
   /// Each count is compared with the runtime's own prefill count.
   ///
-  /// Mac, Google's v0.18.0 binary (2026-10-16): exact on every turn, plain and Think.
+  /// Mac, Google's v0.18.0 binary (2026-10-16): exact on every turn, plain and Think. Mac, our
+  /// runtime (2026-10-27): exact too, once a Think turn's refill is told apart (below).
   func test17_RenderedMessagesCountExactly() async throws {
     _ = try await harness.ensureDownloaded(ModelCatalog.e4b)
     await appState.engine.unload()
@@ -50,14 +51,23 @@ extension ProbeScenarioTests {
         let reply = try await conversation.sendMessage(message, maxOutputTokens: 48)
         let info = try conversation.getBenchmarkInfo()
         let after = try conversation.getTokenCount()
+        // Our runtime refills a Think reply without its reasoning right after it, so that refill
+        // is the turn's last prefill (2 or 3 tokens, 2026-10-27), and the message's own prefill is
+        // what the cache gained besides it. Google's refills at the next message instead.
+        let gained = after - before
+        let refilled =
+          EngineCache.runtimeBuildID != nil
+          && gained != info.lastPrefillTokenCount + info.lastDecodeTokenCount
+        let prefilled = refilled ? gained - info.lastPrefillTokenCount : info.lastPrefillTokenCount
         rows.append([
-          "arm": arm.name, "turn": index, "predicted": predicted,
-          "prefilled": info.lastPrefillTokenCount, "decoded": info.lastDecodeTokenCount,
+          "arm": arm.name, "turn": index, "predicted": predicted, "prefilled": prefilled,
+          "lastPrefill": info.lastPrefillTokenCount, "refilled": refilled,
+          "decoded": info.lastDecodeTokenCount,
           "kvBefore": before, "kvAfter": after, "preface": preface,
           "rendered": String(rendered.prefix(400)), "reply": String(reply.toString.prefix(120)),
         ])
-        if predicted + (before == 0 ? 1 : 0) != info.lastPrefillTokenCount {
-          mismatches.append("\(arm.name) turn \(index): predicted \(predicted), prefilled \(info.lastPrefillTokenCount)")
+        if predicted + (before == 0 ? 1 : 0) != prefilled {
+          mismatches.append("\(arm.name) turn \(index): predicted \(predicted), prefilled \(prefilled)")
         }
       }
     }

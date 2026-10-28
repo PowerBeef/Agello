@@ -14,6 +14,9 @@ extension ProbeScenarioTests {
   func test16_MemoryAfterUnload() async throws {
     _ = try await harness.ensureDownloaded(ModelCatalog.e4b)
     await appState.engine.unload()
+    // An earlier scenario may have left the knowledge base's EmbeddingGemma loaded (probe 7
+    // indexes a file: about 0.12 GB of Metal), which the app keeps for searches.
+    await appState.knowledge.unloadEmbedder()
     var rows: [[String: Any]] = []
     func row(_ label: String, _ ok: Bool? = nil) async {
       let unload = await harness.liveEngine?.lastUnload ?? ""
@@ -32,9 +35,16 @@ extension ProbeScenarioTests {
       XCTAssertTrue(loaded, "\(label): \(appState.engineState)")
       let exchange = await work()
       await appState.engine.unload()
+      // Metal releases the engine's buffers just after the unload returns (rows read up to
+      // 0.25 GB a moment before the check on our runtime, 2026-10-27).
+      var metal = MemoryProbe.breakdown()["graphics"] ?? 0
+      for _ in 0..<20 where metal >= 0.1 {
+        try? await Task.sleep(for: .milliseconds(100))
+        metal = MemoryProbe.breakdown()["graphics"] ?? 0
+      }
       await row(label, exchange.accepted && !exchange.text.isEmpty && !exchange.text.hasPrefix(ChatTurn.errorPrefix))
       // No engine's Metal buffers remain (a fresh launch holds none).
-      XCTAssertLessThan(MemoryProbe.breakdown()["graphics"] ?? 0, 0.1, "\(label): Metal memory left")
+      XCTAssertLessThan(metal, 0.1, "\(label): Metal memory left")
     }
     let summarize = "\n\nSummarize the text above in one sentence."
 
