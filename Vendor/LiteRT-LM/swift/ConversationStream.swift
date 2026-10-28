@@ -45,11 +45,28 @@ extension NSLock {
     self.text = text
   }
 
-  /// Reads a native chunk, which is only valid during its callback.
+  /// Reads a native chunk, which is only valid during its callback. A chunk that can't be read
+  /// ends the stream like an error.
   init(native chunk: OpaquePointer?) {
-    isFinal = litert_lm_stream_chunk_is_final(chunk)
-    error = litert_lm_stream_chunk_get_error(chunk).map { String(cString: $0) }
-    text = litert_lm_stream_chunk_get_text(chunk).map { String(cString: $0) }
+    let makeError: (String) -> LiteRTLMError = { .conversation(.invalidResponse($0)) }
+    do {
+      isFinal = try LiteRTLMError.get(false, "litert_lm_stream_chunk_is_final", makeError) {
+        litert_lm_stream_chunk_is_final(chunk, $0)
+      }
+      // A chunk without an error or text yields a nil result.
+      let errorPointer: UnsafePointer<CChar>? = try LiteRTLMError.get(
+        nil, "litert_lm_stream_chunk_get_error", makeError
+      ) { litert_lm_stream_chunk_get_error(chunk, $0) }
+      let textPointer: UnsafePointer<CChar>? = try LiteRTLMError.get(
+        nil, "litert_lm_stream_chunk_get_text", makeError
+      ) { litert_lm_stream_chunk_get_text(chunk, $0) }
+      error = errorPointer.map { String(cString: $0) }
+      text = textPointer.map { String(cString: $0) }
+    } catch {
+      isFinal = true
+      self.error = error.localizedDescription
+      text = nil
+    }
   }
 }
 

@@ -8,11 +8,15 @@ final class AboutTests: XCTestCase {
   func testLicensesListEveryComponent() {
     let notice = LicensesView.notice
     for component in [
-      "LiteRT-LM", "swift-markdown", "swift-cmark", "SwiftMath", "GUST Font License",
-      "SIL Open Font License", "Gemma 4 E4B", "EmbeddingGemma 2",
+      "LiteRT-LM", "LiteRT and ML Drift", "Abseil C++", "XNNPACK", "llguidance", "swift-markdown",
+      "swift-cmark", "SwiftMath", "GUST Font License", "SIL Open Font License", "Gemma 4 E4B",
+      "EmbeddingGemma 2",
     ] {
       XCTAssertTrue(notice.contains(component), "NOTICE.txt doesn't mention \(component)")
     }
+    // The runtime's license texts come with it, and the screen shows every paragraph.
+    XCTAssertTrue(notice.contains("TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION"))
+    XCTAssertEqual(LicensesView.paragraphs.joined(separator: "\n\n"), notice)
   }
 
   func testPrivacyPolicyIsServedOverHTTPS() {

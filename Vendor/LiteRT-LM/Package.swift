@@ -18,8 +18,9 @@ import PackageDescription
 let package = Package(
   name: "LiteRTLM",
   platforms: [
-    .iOS(.v15),
-    .macOS(.v12),
+    // Agello: the slices are built for iOS 27 and macOS 27 (agello/BUILD).
+    .iOS("27.0"),
+    .macOS("27.0"),
   ],
   products: [
     .library(
@@ -32,27 +33,17 @@ let package = Package(
     ),
   ],
   targets: [
-    // The Prebuilt Binary Target for iOS
+    // Agello: one XCFramework with iPhone and Mac slices, built from this branch with LiteRT's
+    // Metal accelerator linked statically (agello/build-xcframework.sh writes dist/).
     .binaryTarget(
       name: "CLiteRTLM",
-      url:
-        "https://github.com/google-ai-edge/LiteRT-LM/releases/download/v0.18.0/CLiteRTLM.xcframework.zip",
-      checksum: "d765b99592d4ec3d0c9e2bd69469454af06c834861340672da1891c0c121c347"
-    ),
-    // The Prebuilt Binary Target for Mac
-    .binaryTarget(
-      name: "CLiteRTLM_mac",
-      url:
-        "https://github.com/google-ai-edge/LiteRT-LM/releases/download/v0.18.0/CLiteRTLM_mac.xcframework.zip",
-      checksum: "5f6ee68d95eeccb084c6e66d5ee47255e3020fa0fb29696dd0301ae26d6cfb4f"
+      url: "https://github.com/PowerBeef/agello-litert-lm/releases/download/agello-next-20261024/CLiteRTLM.xcframework.zip",
+      checksum: "9c6e4029bf33ae1150a87c15c7d17804e85cc5eb5e69a1980a195fbf76b1ba15"
     ),
     // The Swift Wrapper Target
     .target(
       name: "LiteRTLM",
-      dependencies: [
-        .target(name: "CLiteRTLM", condition: .when(platforms: [.iOS])),
-        .target(name: "CLiteRTLM_mac", condition: .when(platforms: [.macOS])),
-      ],
+      dependencies: ["CLiteRTLM"],
       path: "swift",
       exclude: [
         "apple_fm",

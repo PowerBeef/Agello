@@ -26,4 +26,8 @@ if ! grep -q "checksum: \"$CHECKSUM\"" "$ROOT/Vendor/LiteRT-LM/Package.swift"; t
   echo "Vendor/LiteRT-LM/Package.swift's binary target wasn't rewritten: is REF on agello-next?" >&2
   exit 1
 fi
+# A different CLiteRTLM.framework under the same module name leaves a stale precompiled module
+# in DerivedData ("module.modulemap has been modified since the module file was built").
+rm -rf "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/CLiteRTLM-*.pcm \
+  "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Products/Debug-*/CLiteRTLM.framework
 echo "Vendored $REPO@$REF with release $TAG (checksum $CHECKSUM)."

@@ -1,25 +1,26 @@
 # Roadmap
 
-What has shipped, what's next, and what waits for hardware. Updated 2026-10-24.
+What has shipped, what's next, and what waits for hardware. Updated 2026-10-28.
 
 ## Current status
 
 The handoff between work sessions: read this first, then the section of the plan it points to.
 
-- **The app** hasn't changed since the iPhone run of 2026-10-16, which passed every default suite (`unit`, `inference`, `files`, `web`, `thinking`, `ui`, probes 17–19). It ships on Google's LiteRT-LM v0.18.0 with our patched model file.
+- **The app runs on our LiteRT-LM build** since 2026-10-28: release [`agello-next-20261024`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-next-20261024) (build id `99b8f5f6ea49`, from `agello-next` at `f1b88286`), with our patched model file. On this Mac that exact build passed `unit`, `inference`, `files`, `web`, `thinking` and the probes. Its iPhone run (4.3) is next. The last iPhone run, on Google's v0.18.0 on 2026-10-16, passed every default suite.
 - **The iPhone 17 Pro is available again** (2026-10-24). The opt-in `calibrate` and `memory` suites passed on it that day, on Google's v0.18.0: the baseline for the budgets (Next, item 3). The manual checks below are still to do.
 - **#3913 upstream:** a model exported with litert-torch's RoPE composite fixes the bug at the source.
   - john-rocky's Gemma 4 E2B export is exact on the iPhone 17 Pro and on all three Mac M6 setups: 118/118 cases, against 35/118 for the stock file (the iPhone and Mac runs were posted on 2026-10-24).
   - It's 2–3× slower, but its int8 export recipe also differs. We asked for the same export without the composite, to time the two side by side.
   - Waiting for: that export, an E4B export, and an E2B export with a longer cache. Probe 20 (`AgelloDeviceTests/LabSuiteProbe.swift`) and agello-bench rerun the same cases on any of them.
   - The `agello-litert-update` skill has the thread's history.
-- **Our LiteRT-LM build (Next, item 1) has started** on the fork's `agello-next` (2026-10-24, not pushed). Builds now use Xcode 27.1.
+- **Our LiteRT-LM build (Next, item 1)** on the fork's `agello-next` (started 2026-10-24, pushed and released 2026-10-28). Builds now use Xcode 27.1.
   - M0.1 of [MAC.md](MAC.md) (`78e7edc4`): the Mac slice is a versioned framework, the iOS slice's plist names the device SDK, and the package requires iOS and macOS 27.
   - Runtime fix (a) (`3fa97211`): no MTP round past the end of the KV cache.
   - Runtime fix (b) (`8acc748c`): one final chunk per conversation send at the C boundary, for every binding. Agello's `test05_ToolCall` and probe 15 pass on this Mac with that build.
   - Runtime fix (c) (`f1b88286`): the sampler follows the active session, so presets and Regenerate's seeds apply on our build too (probe 18).
   - Fix (d), in Agello (`3c4f42a`): on our build, reply stats come from its telemetry and benchmark mode stays off, from 8 ms of CPU per decoded token to 0.7 on the Mac. Google's binary keeps benchmark mode. Checked on this Mac on both runtimes; the iPhone run is still to do.
-  - Next: the release dry run (4.2).
+  - Release (4.2, 4.4): the dry run's files, published unchanged as `agello-next-20261024` on 2026-10-28 after the Mac suites passed (`agello-next` pushed). The third-party notices are in `NOTICE` and the Licenses screen; no new required-reason APIs.
+  - Next: the iPhone gate (4.3) on that exact build: the default suites, then `calibrate` and `memory` against the baseline below.
 - **Agello for Mac (Next, item 2) has started** (2026-10-24): M0.2 and M0.3 of [MAC.md](MAC.md) are done. The `AgelloMac` target builds a sandboxed, hardened app whose runtime self-test passes on our build, GPU and CPU. Open in M0: the notarization dry run (Developer ID and the maintainer's API key). Next: M1, splitting the shared code from the iOS code.
 
 ## Shipped
@@ -40,7 +41,7 @@ The handoff between work sessions: read this first, then the section of the plan
 
 1. **Our LiteRT-LM build** (the fork's `agello-next` branch).
    - Runtime fixes, all done: the speculative-decoding bound at the end of the cache, one final event per message, a sampler per conversation, and reply stats without benchmark mode.
-   - Then a release with iPhone and Mac slices, the iPhone gate on that exact build, and publishing.
+   - Released with iPhone and Mac slices and vendored on 2026-10-28. Left: the iPhone gate on that exact build.
    - On an iPhone 17 Pro, in a cooled calibration, it decoded 37–45 tokens a second at a 32K window. Google's binary decoded 20 the same night.
 2. **Agello for Mac.** A native Mac app that shares the iPhone app's code, with full parity, widgets and the share extension included. It runs on our build's Metal Mac slice and ships as a notarized DMG. The plan, phases M0 to M9, is in [MAC.md](MAC.md). It depends on item 1 for its runtime.
 3. **Energy and performance budgets,** written down and checked with the `calibrate` suite and MetricKit. The baseline is Google's v0.18.0 on the iPhone 17 Pro, measured on 2026-10-24 at a nominal thermal state throughout:
@@ -75,6 +76,6 @@ Each of these is measured, then kept or dropped:
 
 ## Open decisions
 
-- **Default context** once our build ships: ours decodes at nearly the same speed from 4K to 32K.
+- **Default context** on our build, after its iPhone run: it decodes at nearly the same speed from 4K to 32K.
 - **An iPhone 15 or 16 Pro** to validate our build before it ships to those devices.
 - **For the Mac:** the sandbox, the App Group, the bundle ID, Sparkle updates, supported Macs, and the iPhone app's availability on the Mac App Store ([MAC.md](MAC.md), "Open decisions").

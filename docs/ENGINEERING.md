@@ -16,7 +16,7 @@ How Agello keeps a 4-billion-parameter model fast, correct and stable on a phone
 
 **Root cause.** A device probe that copies a 48-digit number from increasing positions showed the errors start at exactly **position 2,048**. The model computes rotary angles from a float copy of the token position. With 16-bit activations that copy is float16, whose 11-bit significand holds every integer only up to 2,048; past it, positions round to even numbers and attention sees the wrong angle. The full analysis is [on the upstream issue](https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598).
 
-**Workaround: patch the model file, not the runtime.** LiteRT-LM's runtime is a prebuilt binary, so the fix edits the model file instead ([`patch_rope.py`](https://github.com/PowerBeef/agello-litert-lm/tree/agello/tools/model-surgery)). It splits every position as `512·h + l`:
+**Workaround: patch the model file, not the runtime.** When this was found, the app ran Google's prebuilt runtime binary, so the fix edits the model file instead, which works on any runtime, ours included ([`patch_rope.py`](https://github.com/PowerBeef/agello-litert-lm/tree/agello/tools/model-surgery)). It splits every position as `512·h + l`:
 
 - `l` (0–511) goes through the model's existing MUL / SIN / COS;
 - the phase of `512·h` comes from small precomputed tables selected with `onehot(h)`;

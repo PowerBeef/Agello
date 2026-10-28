@@ -8,15 +8,23 @@ struct LicensesView: View {
       .flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
   }()
 
+  /// The notice's paragraphs. With the runtime's license texts it runs to about 2,600 lines, too
+  /// long to lay out as one `Text`, so the list builds only the paragraphs on screen.
+  static let paragraphs: [String] = notice.components(separatedBy: "\n\n")
+
   var body: some View {
     ScrollView {
-      Text(Self.notice)
-        .font(.footnote.monospaced())
-        .foregroundStyle(Theme.Text.secondary)
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Theme.Spacing.lg)
-        .accessibilityIdentifier("licenses.text")
+      LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
+        ForEach(Self.paragraphs.indices, id: \.self) { index in
+          Text(Self.paragraphs[index])
+            .font(.footnote.monospaced())
+            .foregroundStyle(Theme.Text.secondary)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+      .padding(Theme.Spacing.lg)
+      .accessibilityIdentifier("licenses.text")
     }
     .ambientBackdrop(Theme.Brand.silver, intensity: .whisper)
     .navigationTitle("Licenses")

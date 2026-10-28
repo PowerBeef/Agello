@@ -20,7 +20,7 @@ The reference for the Mac/iPhone split is Vocello 3.0 ([PowerBeef/Vocello](https
   - a `NavigationSplitView` sidebar, a Settings scene reusing the same screen, and command menus;
   - one design-token namespace with desktop metrics;
   - shared components rather than copied screens ("copying drifted every number").
-- **Runtime.** Google's v0.18.0 Mac binary (`CLiteRTLM_mac`, already in `Vendor/LiteRT-LM/Package.swift`) runs on WebGPU and processes prompts about 3.5× slower. Our `agello-next` build already produces a `macos-arm64` slice with Metal (M6: about 3,400 tok/s prefill and about 49 tok/s decode, 47–50 at a 32K window), but its macOS slice was a shallow, iOS-style bundle rather than the versioned framework macOS expects (repackaged in M0.1).
+- **Runtime.** Google's v0.18.0 Mac binary (`CLiteRTLM_mac`, in `Vendor/LiteRT-LM/Package.swift` until 2026-10-28) runs on WebGPU and processes prompts about 3.5× slower. Our `agello-next` build already produces a `macos-arm64` slice with Metal (M6: about 3,400 tok/s prefill and about 49 tok/s decode, 47–50 at a 32K window), but its macOS slice was a shallow, iOS-style bundle rather than the versioned framework macOS expects (repackaged in M0.1).
 
 **Decisions (2026-10-16):**
 1. Our Metal runtime from the start.
@@ -49,12 +49,11 @@ The reference for the Mac/iPhone split is Vocello 3.0 ([PowerBeef/Vocello](https
 ## How it interleaves with Phase 4 (our runtime)
 
 ```
-Fork agello-next : M0.1 ─ 4.1(a–d) runtime fixes ─ 4.2 dry-run artifact (both slices) ─ [iPhone back] 4.3 gate ─ 4.4 publish (maintainer's OK)
+Fork agello-next : M0.1 ─ 4.1(a–d) runtime fixes ─ 4.2 dry-run artifact (both slices) ─ 4.4 publish (done) ─ [iPhone back] 4.3 gate
 Agello main      : M0.2–3 ─ M1 ─ M2 ─ M3 ─ M4 ─ M5 ─ M6 ─ M7 ─ M8 (dry runs) ──── needs 4.4 ──── M9 Mac gate + publish (maintainer's OK)
 ```
-- **Until 4.4, the committed `Vendor/LiteRT-LM` stays Google's.**
-  - With it, AgelloMac only compiles (Google's `CLiteRTLM_mac` exports every symbol the wrapper uses) and runs `unit` on the scripted engine.
-  - Real-engine Mac runs use `Vendor/use-local-litert.sh`. Rerun it after each fork rebuild, and never commit it.
+- **4.4 is done, ahead of 4.3 (2026-10-28):** the maintainer switched to our runtime before the iPhone was back, once the Mac suites passed. The committed `Vendor/LiteRT-LM` is our release `agello-next-20261024` for both platforms, and 4.3's iPhone batch runs on that committed package.
+  - Real-engine Mac runs use the committed package. `Vendor/use-local-litert.sh` tests a local fork build: rerun it after each rebuild, and never commit it.
   - `AgelloMac/App/RuntimeGuard.swift` refuses to load E4B when `EngineCache.runtimeBuildID == nil` and shows a notice instead. The guard stays: the Mac supports only our runtime, and its cache and helper policies assume it.
   - The harness refuses Mac device suites without our build.
   - No conditional targets and no project hacks.

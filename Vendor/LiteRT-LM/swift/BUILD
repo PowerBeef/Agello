@@ -38,6 +38,8 @@ swift_library(
         "Message.swift",
         "ModelInfo.swift",
         "ResponseFormat.swift",
+        "Telemetry.swift",
+        "BuildInfo.swift",
         "Tool.swift",
         "ToolManager.swift",
     ],
@@ -119,6 +121,8 @@ C_LITERT_LM_PUBLIC_HDRS = [
     "//c:error_reporter.h",
     "//c:experimental.h",
     "//c:model_info.h",
+    "//c:telemetry.h",
+    "//c:build_info.h",
 ]
 
 swift_interop_hint(
@@ -189,15 +193,15 @@ genrule(
     cmd = """
        mkdir -p CLiteRTLM_mac/Headers
        # Copy the universal dylib
-       cp $(location :CLiteRTLM_universal) CLiteRTLM_mac/libCLiteRTLM_mac.dylib
+       cp $(execpath :CLiteRTLM_universal) CLiteRTLM_mac/libCLiteRTLM_mac.dylib
        # Copy the headers
-       cp $(location //c:api_export.h) CLiteRTLM_mac/Headers/
-       cp $(location //c:conversation.h) CLiteRTLM_mac/Headers/
-       cp $(location //c:embedding_engine.h) CLiteRTLM_mac/Headers/
-       cp $(location //c:engine.h) CLiteRTLM_mac/Headers/
-       cp $(location //c:error_reporter.h) CLiteRTLM_mac/Headers/
-       cp $(location //c:experimental.h) CLiteRTLM_mac/Headers/
-       cp $(location //c:model_info.h) CLiteRTLM_mac/Headers/
+       cp $(execpath //c:api_export.h) CLiteRTLM_mac/Headers/
+       cp $(execpath //c:conversation.h) CLiteRTLM_mac/Headers/
+       cp $(execpath //c:embedding_engine.h) CLiteRTLM_mac/Headers/
+       cp $(execpath //c:engine.h) CLiteRTLM_mac/Headers/
+       cp $(execpath //c:error_reporter.h) CLiteRTLM_mac/Headers/
+       cp $(execpath //c:experimental.h) CLiteRTLM_mac/Headers/
+       cp $(execpath //c:model_info.h) CLiteRTLM_mac/Headers/
        # Create module map
        cat << 'EOF' > CLiteRTLM_mac/Headers/module.modulemap
 module CLiteRTLM {

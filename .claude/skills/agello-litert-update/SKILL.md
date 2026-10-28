@@ -5,10 +5,11 @@ description: Update the vendored LiteRT-LM package (Vendor/LiteRT-LM), work in t
 
 # Updating LiteRT-LM
 
-`Vendor/LiteRT-LM` holds only the Swift package surface of
-`google-ai-edge/LiteRT-LM`: `Package.swift` (with the checksummed
-`CLiteRTLM.xcframework` release download), `swift/`, and `LICENSE`. It's
-vendored because upstream Git LFS breaks Swift Package Manager resolution.
+`Vendor/LiteRT-LM` holds only the Swift package surface of our fork's
+`agello-next` branch: `Package.swift` (with the checksummed
+`CLiteRTLM.xcframework` download of our release, `agello-next-20261024` since
+2026-10-28), `swift/`, and `LICENSE`. It's vendored because upstream Git LFS
+breaks Swift Package Manager resolution.
 
 ## The fork
 
@@ -22,8 +23,8 @@ project (its own CLAUDE.md and skills don't load):
 | --- | --- |
 | `origin` | `PowerBeef/agello-litert-lm` (push here) |
 | `upstream` | `google-ai-edge/LiteRT-LM` (fetch only; push is disabled) |
-| `agello` branch | Tag `v0.18.0` plus Agello's Swift patches (see below); `Vendor/LiteRT-LM` is vendored from it. Also holds `docs/agello/` and `tools/agello-bench`. |
-| `agello-next` branch | The source build (below): upstream's 0.19.0 nightly source (tag `agello-base-20261013`) plus our patches. Worktree at `../agello-arms/next/LiteRT-LM`. Not in the app yet. |
+| `agello` branch | Tag `v0.18.0` plus Agello's Swift patches (see below), for Google's prebuilt binary; `Vendor/LiteRT-LM` came from it until 2026-10-28. Also holds `docs/agello/` and `tools/agello-bench`. |
+| `agello-next` branch | The source build (below): upstream's 0.19.0 nightly source (tag `agello-base-20261013`) plus our patches. Worktree at `../agello-arms/next/LiteRT-LM`. The app vendors its releases: `agello-next-20261024` (`f1b88286`) since 2026-10-28. |
 | `research/3913` tag | The #3913 research (below); a branch until 2026-10-15, so links to `tree/research/3913` still resolve |
 | Release tags | Live on upstream's `release/vX.Y.Z` branches (fetch from `upstream`), not on `main` |
 
@@ -231,10 +232,13 @@ nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
   after every rebuild, and check the build id in the harness report's device
   record (`runtimeBuild`) before trusting a run. Never commit `Vendor/LiteRT-LM`
   while it points at the local build. Then run the `PLATFORM=mac` suites;
-  the app ships Google's binary until the source build has had an iPhone run
-  and the user decides how to host it.
+  the app ships our release (`agello-next-20261024` since 2026-10-28; the
+  user switched once the Mac suites passed, before its iPhone run).
 - **Shipping it:** `agello/release-xcframework.sh <tag>` on the fork (a dry run
-  without `--publish`; publishing needs the user's OK), then
+  without `--publish`; publishing needs the user's OK). `--publish` rebuilds
+  first: to publish the dry run's files you tested, run the script's
+  `gh release create` line on `dist/release/<tag>/` instead (done for
+  `agello-next-20261024`; check the zip's slices against `BUILD-INFO.txt`). Then
   `REF=<commit> TAG=<tag> Vendor/use-release-litert.sh` here. `BUILD.md` on the
   fork covers the release, the third-party notices (for `NOTICE`) and the
   privacy manifest check (no new required-reason categories as of 2026-10-15).

@@ -7,7 +7,7 @@
 [![iOS 27](https://img.shields.io/badge/iOS-27-ADB5C2?style=flat-square&logo=apple&logoColor=F2F0EB&labelColor=1C1E26)](#get-started)
 [![Swift 6](https://img.shields.io/badge/Swift-6-EDCC8A?style=flat-square&logo=swift&logoColor=F2F0EB&labelColor=1C1E26)](#get-started)
 [![Gemma 4 E4B](https://img.shields.io/badge/Gemma%204-E4B-BFAADC?style=flat-square&labelColor=1C1E26)](docs/USER_GUIDE.md#the-models)
-[![LiteRT-LM 0.18.0](https://img.shields.io/badge/LiteRT--LM-0.18.0-8AB0C8?style=flat-square&labelColor=1C1E26)](#vendored-litert-lm)
+[![LiteRT-LM, our Metal build](https://img.shields.io/badge/LiteRT--LM-our%20Metal%20build-8AB0C8?style=flat-square&labelColor=1C1E26)](#vendored-litert-lm)
 [![100% on-device](https://img.shields.io/badge/runs-100%25%20on--device-8CC7BF?style=flat-square&labelColor=1C1E26)](#meet-agello)
 [![Tested on a real iPhone](https://img.shields.io/badge/tested%20on-a%20real%20iPhone-8CC7BF?style=flat-square&labelColor=1C1E26)](docs/TESTING.md)
 [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-ADB5C2?style=flat-square&labelColor=1C1E26)](LICENSE)
@@ -83,7 +83,7 @@ Agello's color follows what you're doing. Each mode has its own accent, and it l
 
 <br>
 
-Gemma 4 E4B on an iPhone 17 Pro (12 GB, iOS 27), GPU, with speculative decoding (MTP), on Google's LiteRT-LM v0.18.0 runtime (the one the app ships), measured before 2026-10-14. Decode speed drops as the phone warms: a cooled calibration on 2026-10-15 measured 37 / 39 / 31 / 20 tok/s.
+Gemma 4 E4B on an iPhone 17 Pro (12 GB, iOS 27), GPU, with speculative decoding (MTP), on Google's LiteRT-LM v0.18.0 runtime (the one the app used until 2026-10-28), measured before 2026-10-14. Decode speed drops as the phone warms: a cooled calibration on 2026-10-15 measured 37 / 39 / 31 / 20 tok/s. The app now runs our own build of the runtime, whose iPhone run is still to come; in that cooled calibration an earlier version of it decoded 37–45 tok/s at a 32K window.
 
 | | |
 | --- | --- |
@@ -248,7 +248,7 @@ AgelloTests/       unit tests
 AgelloDeviceTests/ on-device scenarios and runtime probes with the real models
 AgelloUITests/     real-tap UI flows and the accessibility audit
 scripts/           device test harness, device tools, README art
-Vendor/LiteRT-LM/  LiteRT-LM v0.18.0 Swift package
+Vendor/LiteRT-LM/  LiteRT-LM Swift package, pinned to our runtime release
 docs/              user guide, architecture, engineering notes, testing, privacy policy
 ```
 
@@ -282,14 +282,14 @@ The README art comes from the same tokens: `scripts/readme-art/render.sh` redraw
 
 ### Vendored LiteRT-LM
 
-`Vendor/LiteRT-LM` holds the Swift package surface of [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) v0.18.0, from our fork's [`agello` branch](https://github.com/PowerBeef/agello-litert-lm/tree/agello), with four patches to the Swift wrapper:
+`Vendor/LiteRT-LM` holds the Swift package surface of [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) from our fork's [`agello-next` branch](https://github.com/PowerBeef/agello-litert-lm/tree/agello-next), and the app runs our own build of the runtime, release [`agello-next-20261024`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-next-20261024): LiteRT-LM with our forks of LiteRT and ML Drift, on Metal on the iPhone and the Mac. Over Google's v0.18.0 binary, speculative decoding stays within the cache, each message ends with one final event, a chat's sampler settings apply, and reply stats come from the runtime's telemetry instead of its benchmark mode. The Swift wrapper has four patches:
 
 1. A tool call that fails is answered with an error the model can read, instead of ending the reply.
 2. A stream holds its conversation weakly, which fixed a 10-minute engine stall when a conversation was dropped while its stream was finishing.
 3. Streams live in a table keyed by ID, so a rejected tool call reported three times ends the stream once instead of freeing it three times; Stop also works between tool rounds, and tool rounds are bounded.
 4. `Engine.tokenize` and `countTokens`, and an embedding option that truncates long inputs instead of failing the batch.
 
-Upstream stores prebuilt binaries in Git LFS, which intermittently breaks Swift Package Manager resolution; the iOS build uses only Google's checksummed release XCFramework. [Vendor/README.md](Vendor/README.md) has the details and the refresh steps.
+Upstream stores prebuilt binaries in Git LFS, which intermittently breaks Swift Package Manager resolution; the build uses only the checksummed XCFramework attached to our release. [Vendor/README.md](Vendor/README.md) has the details and the update steps.
 
 ### Contributing
 
@@ -298,7 +298,7 @@ Work happens directly on `main`. Keep the unit tests and the on-device harness g
 ### Roadmap
 
 - **Shipped:** the chat, files, projects and memory, web search and dictation, voice mode with the camera, and system integration. Then a reliability pass: crash fixes in the runtime wrapper, exact token counting, retrieval for CJK and number-heavy files, sampling that matches Settings, VoiceOver and the accessibility audit, MetricKit diagnostics, and a privacy policy.
-- **Next:** a LiteRT-LM build of our own: in the cooled calibration it decoded 37–45 tok/s at a 32K window, against 20 for Google's binary the same night. Then **Agello for Mac**, a native Mac app that shares the iPhone app's code ([plan](docs/MAC.md)).
+- **Next:** the iPhone run of our own LiteRT-LM build, which the app now uses: in the cooled calibration an earlier version decoded 37–45 tok/s at a 32K window, against 20 for Google's binary the same night. Then **Agello for Mac**, a native Mac app that shares the iPhone app's code ([plan](docs/MAC.md)).
 
 → [The full roadmap](docs/ROADMAP.md)
 

@@ -88,5 +88,5 @@ Agello/
 └── Support/            the design system (Theme/), haptics, image preparation, diagnostics
 AgelloWidgets/         Home/Lock Screen widgets and Control Center controls
 AgelloShare/           share extension: "Ask Agello"
-Vendor/LiteRT-LM/       LiteRT-LM v0.18.0 Swift package (prebuilt runtime)
+Vendor/LiteRT-LM/       LiteRT-LM Swift package (our runtime release, iPhone and Mac)
 ```
