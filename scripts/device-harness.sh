@@ -255,4 +255,7 @@ if [ -n "$scopes" ]; then
   run_suite "$SUITE" $only "$@" || status=$?
 fi
 pull_report
+# What the project's disk use is now, and any scratch the run left (one-off OUT folders included).
+echo
+"$ROOT/scripts/storage.sh" brief || true
 exit $status

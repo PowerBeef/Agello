@@ -161,7 +161,11 @@ Everything lands in `build/device-harness/` (`build/mac-harness/` on the Mac):
 | `attachments/<suite>/` | Per-scenario JSON metrics (device suites) and screenshots (UI tests) |
 | `harness-report.json` | In-app report pulled from the device: every recorded scenario of the last run, and the device (hardware, `isiOSAppOnMac`, GPU family, Metal working set) |
 
-The script's exit code is `xcodebuild`'s (65 = test failures).
+The script's exit code is `xcodebuild`'s (65 = test failures). It ends with
+`scripts/storage.sh brief`: the project's disk use against its budget, and any
+scratch the run left. An `OUT=build/<name>` run is scratch once its numbers are
+recorded (in the roadmap, a doc or a commit message); then run
+`scripts/storage.sh clean`.
 
 On our own LiteRT-LM build (see `agello-litert-update`, "The source build"),
 each scenario in `harness-report.json` also carries `telemetry`, the engine's

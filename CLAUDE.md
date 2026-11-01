@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Don't edit files in the target folders (`Agello*/`) while a harness run is building: stage changes elsewhere and apply them after the run. A hook denies Edit and Write there during the build; edits through Bash aren't checked, and the rule still holds for them.
 - Start each session with the "Current status" section of `docs/ROADMAP.md` (the session-start hook prints it), and update it whenever the status changes (a run finishes, a phase starts, a thread moves).
 - Commit after each verified chunk, directly on `main` (a worktree session's branch is merged into `main`, below). Push only when asked.
-- Disk space on this Mac is limited. After a run, delete the scratch it made (one-off `build/device-harness-*` folders once their numbers are recorded, engine caches written beside models in `~/Models/agello/`, stale bench builds), and check `df -h /` before large builds.
+- Disk space on this Mac is limited, and the project has a storage budget: 30 GB, with 50 GB kept free on `/`. `scripts/storage.sh` itemizes everything the project writes (models and lab models, the app containers, DerivedData, worktrees, Bazel, the fork checkouts and bench builds) as kept, to review, or scratch; the session-start hook and every harness run print its summary. Act on it: `scripts/storage.sh clean` deletes the scratch (one-off harness OUT folders once their numbers are recorded, engine caches beside the models or from another runtime build, DerivedData of removed checkouts, Bazel's disk cache beyond 6 GB), ask the user about what it lists to review, and when the project is over budget ask which kept items can go. Put new scratch where the script looks, or teach the script about it.
 - Use the project skills in `.claude/skills/` before the work they cover:
   - `agello-device-testing`: running and reading the harness, writing scenarios, known failures.
   - `agello-inference-rules`: before changing the engine, `AppState` generation, budgets, or helpers.
@@ -41,6 +41,7 @@ xcodebuild build -project Agello.xcodeproj -scheme Agello \
 xcodebuild build -project Agello.xcodeproj -scheme AgelloMac \
   -destination 'generic/platform=macOS' CODE_SIGNING_ALLOWED=NO -quiet # Agello for Mac, compile check
 scripts/device-run.sh logs 20       # relaunch the installed app, save 20 s of its logs
+scripts/storage.sh                  # the project's disk use against its budget; `clean` deletes the scratch
 ```
 
 `ONLY` takes `Target/Class[/method]` entries inside the chosen suite (not with `all`):
@@ -61,7 +62,7 @@ scripts/device-run.sh logs 20       # relaunch the installed app, save 20 s of i
 
 The project is worked on in the Claude Code desktop app on this Mac. `.claude/settings.json` and `.claude/hooks/` set it up, and work the same in the CLI.
 
-- **Session start.** A hook prints the roadmap's "Current status", the git state (changed files, commits not pushed), free disk, whether the iPhone is reachable, and any harness run in progress.
+- **Session start.** A hook prints the roadmap's "Current status", the git state (changed files, commits not pushed), the project's disk use (`scripts/storage.sh brief`), whether the iPhone is reachable, and any harness run in progress.
 - **Harness runs.** Start suites with the Bash tool's `run_in_background`: you're told when the run ends, and the script keeps the Mac awake (`caffeinate`) until then, so a run can outlast the turn. To let the user watch one, open a Terminal panel tab on `tail -n +1 -f build/device-harness/<suite>.log | /opt/homebrew/bin/xcbeautify`.
 - **The lock.** The script holds `build/.harness.lock` in the main checkout and exits with 3 while another run holds it, from any session or worktree; the edit hook reads it. A lock whose process has gone is replaced. Never delete a live one.
 - **Parallel sessions** share the iPhone and this Mac: one harness run at a time, and Mac speed numbers measured while another session builds are suspect.

@@ -1,7 +1,7 @@
 #!/bin/sh
 # SessionStart hook: prints what a session needs before it starts work, into
-# Claude's context. The roadmap's "Current status", git state, free disk, the
-# iPhone's connection, and any harness run in progress.
+# Claude's context. The roadmap's "Current status", git state, the project's
+# disk use, the iPhone's connection, and any harness run in progress.
 # In a desktop worktree session this runs in the main checkout
 # ($CLAUDE_PROJECT_DIR); the session's own checkout is the input's `cwd`.
 set -u
@@ -26,12 +26,9 @@ else
   echo "- Git: worktree \`$branch\` ($top), $changed changed files; main has $unpushed commits not pushed. Merge the branch into main once verified (see CLAUDE.md, \"Claude desktop app\")."
 fi
 
-free_kb="$(df -k / | awk 'NR == 2 {print $4}')"
-free_gb=$((free_kb / 1048576))
-if [ "$free_gb" -lt 30 ]; then
-  echo "- Disk: ${free_gb} GB free on /, low: clean up scratch before a build."
-else
-  echo "- Disk: ${free_gb} GB free on /."
+# The project's disk use against its budget, with any scratch to delete (scripts/storage.sh).
+if ! "$MAIN/scripts/storage.sh" brief 2>/dev/null; then
+  echo "- Storage: $(df -h / | awk 'NR == 2 {print $4}') free on / (scripts/storage.sh failed: run it to see why)."
 fi
 
 # The iPhone from DEVICE_ID or .mobilebuildmcp/config.yaml, as device.sh reads it.
