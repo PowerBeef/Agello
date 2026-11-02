@@ -609,18 +609,10 @@ struct ChatView: View {
   /// reply streams.
   private var inputBar: some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-      TextField(
-        "Ask anything", text: $draft,
-        prompt: Text("Ask anything").foregroundStyle(Theme.Text.placeholder), axis: .vertical
-      )
-      .font(.body)
-      .foregroundStyle(Theme.Text.primary)
-      .lineLimit(1...8)
-      .textFieldStyle(.plain)
-      .padding(.horizontal, Theme.Spacing.sm)
-      .padding(.top, Theme.Spacing.sm)
-      .focused($inputFocused)
-      .accessibilityIdentifier("chat.input")
+      ComposerField(text: $draft, focus: $inputFocused)
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.top, Theme.Spacing.sm)
+        .accessibilityIdentifier("chat.input")
       HStack(spacing: Theme.Spacing.sm) {
         attachMenu
         // Titled pills when they fit, icons otherwise; priority over the
@@ -654,17 +646,10 @@ struct ChatView: View {
         photoItem = nil
       }
     }
-    .fullScreenCover(isPresented: $showCamera) {
-      CameraPicker { data in
-        pendingImage = data
-      }
-      .ignoresSafeArea()
-    }
-    .fullScreenCover(isPresented: $showScanner) {
-      DocumentScanner { pages in
-        read { try await DocumentIngestor.extract(scannedPages: pages, name: scanName()) }
-      }
-      .ignoresSafeArea()
+    .captureSources(camera: $showCamera, scanner: $showScanner) { data in
+      pendingImage = data
+    } onScan: { pages in
+      read { try await DocumentIngestor.extract(scannedPages: pages, name: scanName()) }
     }
     .fileImporter(
       isPresented: $showFiles, allowedContentTypes: DocumentIngestor.supportedTypes,
@@ -733,11 +718,11 @@ struct ChatView: View {
   private var attachMenu: some View {
     Menu {
       Button("Camera", systemImage: "camera") { showCamera = true }
-        .disabled(!CameraPicker.isAvailable)
+        .disabled(!CaptureSources.cameraAvailable)
       Button("Photos", systemImage: "photo.on.rectangle") { showPhotos = true }
       Button("Files", systemImage: "folder") { showFiles = true }
       Button("Scan document", systemImage: "doc.viewfinder") { showScanner = true }
-        .disabled(!DocumentScanner.isAvailable)
+        .disabled(!CaptureSources.scannerAvailable)
       Button("Voice message", systemImage: "waveform") {
         dictating = false
         Task { await recorder.toggle() }

@@ -410,7 +410,7 @@ struct MessageBubbleView: View {
   }
 
   private func copy(_ text: String) {
-    UIPasteboard.general.string = text
+    Platform.copy(text)
     Haptics.complete()
     copied = true
     Task {

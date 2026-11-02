@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 /// The design system: one dark palette, warm neutrals, and a mode accent
 /// that lights the backdrop, the composer and the primary action.
@@ -129,18 +128,6 @@ enum Theme {
     static let xxxl: CGFloat = 32
   }
 
-  enum Size {
-    /// Minimum tappable control (HIG).
-    static let target: CGFloat = 44
-    /// Composer pills and chips.
-    static let pill: CGFloat = 36
-    /// Icon tiles in grouped rows.
-    static let tile: CGFloat = 30
-    /// Inline glyph buttons (message actions); the hit area stays 44.
-    static let glyph: CGFloat = 32
-    static let hero: CGFloat = 64
-  }
-
   // MARK: - Elevation
 
   enum Elevation {
@@ -211,6 +198,6 @@ private struct ReduceMotionAnimation<V: Equatable>: ViewModifier {
 /// `withAnimation` that respects Reduce Motion.
 @MainActor
 func withAppAnimation<Result>(_ animation: Animation, _ body: () throws -> Result) rethrows -> Result {
-  if UIAccessibility.isReduceMotionEnabled { return try body() }
+  if Platform.reduceMotion { return try body() }
   return try withAnimation(animation, body)
 }
