@@ -165,7 +165,7 @@ The phone is away, so these are moves and seams that keep iOS defaults. Each one
 ## M3: platform policy on the Mac
 
 - **Memory classes** (pure, in `DeviceProfile`, tested). The app limit is the Metal working set: about 5.5 GB on 8 GB Macs, about 11 GB on 16 GB.
-  - Maximum context: 16K on 8 GB Macs, 32K at 16 GB and up. Default stays 8K.
+  - Maximum context: 16K on 8 GB Macs, 32K at 16 GB and up. Chat: 8K then; 16K when memory allows since 2026-11-02, as on the iPhone.
   - The 400 MB stop applies to the Mac's estimate of available memory.
   - `keepsConversationAcrossHelpers` is driven by that same estimate.
 - **Memory pressure.** A pure `MemoryPolicy.action(level:isBusy:)` drives `AppState.relieveMemoryPressure(level:)`.
@@ -186,7 +186,10 @@ The phone is away, so these are moves and seams that keep iOS defaults. Each one
   - **Downloads:** the metered-network prompt says "a metered connection" and "Wait for Another Network" on the Mac (`Platform`).
   - **`AgelloMacDeviceTests`** (moved up from M7): the device suites run natively, `PLATFORM=macos-native` `inference`, `files`, `web`, `thinking` and `probes`, with `ONLY` mapped and the models cloned in.
   - **Checked** (2026-11-02, this Mac busy with other jobs, so correctness only): native `unit` 315/315, `inference` 23/23, `files` 4/4, `web` 3/3, `thinking` 3/3 (it fails with the iPhone app on this Mac on Google's runtime), `probes` 17 passed and 4 skipped (lab models and variables not set); `PLATFORM=mac unit` 315 passed, 1 skipped.
-  - **Still to do:** `calibrate` and probe 21 (five minutes of replies with the app hidden, against the app shown) on a quiet Mac; a download resuming after a quit (needs the window); the `RuntimeGuard` described above isn't written yet.
+  - **Speed on a quiet Mac** (2026-11-02, M6 with 16 GB, nominal thermal state throughout):
+    - `calibrate` (native) at 4K / 8K / 16K / 32K: first token 0.8 / 0.8 / 1.7 / 3.4 s for 1.3K / 2.3K / 4.4K / 8.4K-token prompts (prefill 1.6K / 2.8K / 2.6K / 2.5K tok/s); decode 70 / 75 / 72 / 77 tok/s on the sentence and 143 / 131 / 136 / 124 on the 120-token list (MTP on, as the app runs); 0.7 ms of CPU per decoded token, as in October with benchmark mode off; peak footprint 1.4 / 1.5 / 2.3 / 4.0 GB. The M6 numbers above (49 tok/s decode, 3,400 prefill) come from agello-bench without MTP and at the C boundary, so they bound rather than match these.
+    - Probe 21: two replies with the app shown at 72.6 and 75.5 tok/s, then five minutes hidden with `WorkActivity` held, 51 replies, all accepted, at 74.9–75.6 tok/s (5.9 s each), and one after a minute hidden and idle with no activity at 74.9. A hidden window neither stops nor slows a reply.
+  - **Still to do:** a download resuming after a quit (needs the window); the `RuntimeGuard` described above isn't written yet.
 
 ## M4: Mac shell and UI (one screen per commit, identifiers kept)
 
