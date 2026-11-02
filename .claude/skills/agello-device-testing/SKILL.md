@@ -113,7 +113,9 @@ PLATFORM=mac ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scrip
   `for d in ~/Library/Containers/*/; do [ "$(plutil -extract MCMMetadataIdentifier raw "$d.com.apple.containermanagerd.metadata.plist" 2>/dev/null)" = com.patricedery.agello ] && echo "$d"; done`.
   - Skip downloads: clone the models from `~/Models/agello/` into
     `Data/Library/Application Support/Models/` with `cp -c`.
-  - Lab models for the probes go in `Data/Documents/lab/`.
+  - Lab models for the probes go in `Data/Documents/lab/`. Download them with
+    `hf download … --local-dir ~/Models/agello/lab`, never into the shared
+    Hugging Face cache (`agello-litert-update`, "Lab models").
   - Settings: `defaults read <container>/Data/Library/Preferences/com.patricedery.agello`.
 - Logs: `log stream --level debug --predicate 'subsystem == "com.patricedery.agello"'`.
   Crash reports: `~/Library/Logs/DiagnosticReports/Agello-*.ips`.

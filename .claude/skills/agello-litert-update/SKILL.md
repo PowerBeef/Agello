@@ -119,7 +119,9 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   file as its fix without A/B runs on that repro (asked there on 2026-10-17).
 - As of 2026-10-24 the issue is open, unassigned and awaiting a Google
   developer; Google's only reply is from 2026-10-12. Check for replies with
-  `gh api repos/google-ai-edge/LiteRT-LM/issues/3913/comments`. Comments go out
+  `gh api repos/google-ai-edge/LiteRT-LM/issues/3913/comments`, and for new
+  exports with `hf_fs ls hf://models/mlboydaisuke` (or `hf models list --author
+  mlboydaisuke`): the 2026-10-25 files went unseen for a week. Comments go out
   under the user's name, without Claude attribution.
 - The follow-up also describes two WebGPU delegate bugs found while building
   the patch (FULLY_CONNECTED with float weights; REDUCE_MAX over a non-last
@@ -142,21 +144,31 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
     the first revision `13d5aa4c`, left in place); main model and MTP drafter;
     weights unchanged. `--block 2048` reproduces the first revision.
   - The output is deterministic: the model card lists the sha256 of both files.
-- **When litert-community updates the E4B file:**
-  1. Run `patch_rope.py --split --block 512` on the new file.
-  2. Upload it to the same Hugging Face repo, with the model card's sha256
-     and source revision updated.
-  3. Update `ModelCatalog.e4b` (`revision`, `sizeBytes`, `sha256`: the file's LFS id from
-     `https://huggingface.co/api/models/<repo>/tree/<revision>`). Downloads are checked
-     against it. EmbeddingGemma is pinned the same way (`ModelCatalog.embeddingGemma`).
-  4. Run the `inference` suite (`test15_LongContextDigitFidelity`) and probe 12.
+- **When litert-community updates the E4B file** (the `hf` CLI and the
+  plugin's Hub tools, CLAUDE.md "Hugging Face"; load `huggingface-skills:hf-cli`):
+  1. See what changed: `hf models list litert-community/gemma-4-E4B-it-litert-lm --format json`
+     (each file's `last_commit`), or `hub_repo_details`.
+  2. Download it to scratch, never the shared cache:
+     `hf download litert-community/gemma-4-E4B-it-litert-lm <file> --revision <commit> --local-dir <scratch>`.
+  3. Run `patch_rope.py --split --block 512` on it.
+  4. On the user's go, upload it to the same repo with the model card's sha256
+     and source revision updated:
+     `hf upload PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope <file> <file> --commit-message "…"`
+     (no Claude attribution).
+  5. Update `ModelCatalog.e4b` (`revision`, `sizeBytes`, `sha256`) from
+     `hf models list PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope --revision <commit> --format json`:
+     the file's `size` and `lfs.sha256`. Downloads are checked against it.
+     EmbeddingGemma is pinned the same way (`ModelCatalog.embeddingGemma`).
+  6. Run the `inference` suite (`test15_LongContextDigitFidelity`) and probe 12.
 - **When Google fixes #3913** (a new LiteRT-LM release or a re-exported model):
   - Run `ONLY=AgelloDeviceTests/ProbeScenarioTests/test10_PositionBoundary scripts/device-harness.sh probes`
     against their file.
   - If FP16 copies exactly past position 2,048, the catalog can go back to
     their file.
-- **Lab models for the probes:** copy them to the app's `Documents/lab` with
-  `devicectl device copy to`, and delete them with
+- **Lab models for the probes:** download them with
+  `hf download <repo> <file> --local-dir ~/Models/agello/lab` and check the sha256 against the
+  poster's or the Hub's (`hf models list <repo> --format json`, `lfs.sha256`). Copy them to
+  the app's `Documents/lab` with `devicectl device copy to`, and delete them with
   `TEST_RUNNER_LAB_REMOVE=<file> ONLY=…/test13_RemoveLabModels scripts/device-harness.sh probes`.
   - Probe 11 needs `ishift-2048.litertlm` (`patch_rope.py … -2048 … --int`).
   - Probe 12 needs `split.litertlm` (`--split --block 512`).

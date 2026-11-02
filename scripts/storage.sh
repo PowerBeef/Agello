@@ -170,6 +170,14 @@ else
 fi
 row keep "$(kb "$HOME/.cache/bazel-repo")" "~/.cache/bazel-repo: Bazel's downloads"
 
+# The shared Hugging Face cache holds other projects' models and isn't counted. A repo of ours
+# there means an `hf download` without --local-dir: a second copy of a model.
+for d in "$HOME"/.cache/huggingface/hub/models--{PowerBeef02,litert-community,mlboydaisuke}--*; do
+  [ -d "$d" ] || continue
+  repo="$(basename "$d" | sed 's/^models--//; s/--/\//')"
+  row review "$(kb "$d")" "~/.cache/huggingface: $repo, a project model in the shared HF cache (download with --local-dir; remove with hf cache rm $repo)"
+done
+
 # The fork checkouts, with agello-bench builds and release files apart.
 bench="$PROJECTS/LiteRT-LM/tools/agello-bench"
 benches=0
