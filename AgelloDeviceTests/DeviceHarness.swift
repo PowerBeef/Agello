@@ -1,7 +1,10 @@
 import Metal
 import SwiftData
-import UIKit
 import XCTest
+
+#if canImport(UIKit)
+  import UIKit
+#endif
 
 @testable import Agello
 
@@ -61,16 +64,19 @@ final class DeviceHarness {
     appState.options = baselineOptions
     appState.enableTools = true
     appState.webSettings = baselineWeb
-    // Long downloads and generations must not be interrupted by auto-lock.
-    UIApplication.shared.isIdleTimerDisabled = true
+    #if canImport(UIKit)
+      // Long downloads and generations must not be interrupted by auto-lock (the harness keeps a
+      // Mac awake with caffeinate).
+      UIApplication.shared.isIdleTimerDisabled = true
+    #endif
     let gpu = MTLCreateSystemDefaultDevice()
     report["device"] = [
-      "model": UIDevice.current.model,
+      "model": Self.deviceModel,
       "hwMachine": Self.sysctl("hw.machine"),
       "hwModel": Self.sysctl("hw.model"),
       // A Mac running the iPhone app (scripts/device-harness.sh PLATFORM=mac).
       "isiOSAppOnMac": ProcessInfo.processInfo.isiOSAppOnMac,
-      "system": "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)",
+      "system": Self.systemDescription,
       "memoryGB": DeviceProfile.current.memoryGB,
       "profile": DeviceProfile.current.summary,
       "gpu": gpu?.name ?? "none",
@@ -100,6 +106,23 @@ final class DeviceHarness {
   private static var reportURL: URL? {
     FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
       .appendingPathComponent("harness-report.json")
+  }
+
+  /// UIKit's device name on iPhone (and the iPhone app on a Mac); Agello for Mac has no UIDevice.
+  private static var deviceModel: String {
+    #if canImport(UIKit)
+      UIDevice.current.model
+    #else
+      "Mac"
+    #endif
+  }
+
+  private static var systemDescription: String {
+    #if canImport(UIKit)
+      "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
+    #else
+      "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"
+    #endif
   }
 
   private static func sysctl(_ name: String) -> String {

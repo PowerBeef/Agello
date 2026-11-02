@@ -85,6 +85,13 @@
 			remoteGlobalIDString = 800000000000000000000002;
 			remoteInfo = AgelloMac;
 		};
+		B00000000000000000000007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 100000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 800000000000000000000002;
+			remoteInfo = AgelloMac;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
@@ -96,6 +103,7 @@
 		700000000000000000000001 /* AgelloShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AgelloShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		800000000000000000000001 /* Agello.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Agello.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000001 /* AgelloMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgelloMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B00000000000000000000001 /* AgelloMacDeviceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgelloMacDeviceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -173,6 +181,14 @@
 			);
 			target = A00000000000000000000002 /* AgelloMacTests */;
 		};
+		B00000000000000000000008 /* Exceptions for "AgelloDeviceTests" folder in "AgelloMacDeviceTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				.swiftlint.yml,
+				MemoryEnvelopeScenarioTests.swift,
+			);
+			target = B00000000000000000000002 /* AgelloMacDeviceTests */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -198,6 +214,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				400000000000000000000045 /* Exceptions for "AgelloDeviceTests" folder in "AgelloDeviceTests" target */,
+				B00000000000000000000008 /* Exceptions for "AgelloDeviceTests" folder in "AgelloMacDeviceTests" target */,
 			);
 			path = AgelloDeviceTests;
 			sourceTree = "<group>";
@@ -307,6 +324,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B00000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -336,6 +360,7 @@
 				700000000000000000000001 /* AgelloShare.appex */,
 				800000000000000000000001 /* Agello.app */,
 				A00000000000000000000001 /* AgelloMacTests.xctest */,
+				B00000000000000000000001 /* AgelloMacDeviceTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -523,6 +548,27 @@
 			productReference = A00000000000000000000001 /* AgelloMacTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		B00000000000000000000002 /* AgelloMacDeviceTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B00000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloMacDeviceTests" */;
+			buildPhases = (
+				B00000000000000000000003 /* Sources */,
+				B00000000000000000000004 /* Frameworks */,
+				B00000000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B00000000000000000000006 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				400000000000000000000002 /* AgelloDeviceTests */,
+			);
+			name = AgelloMacDeviceTests;
+			productName = AgelloMacDeviceTests;
+			productReference = B00000000000000000000001 /* AgelloMacDeviceTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -545,6 +591,10 @@
 						TestTargetID = 100000000000000000000002;
 					};
 					A00000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = 800000000000000000000002;
+					};
+					B00000000000000000000002 = {
 						CreatedOnToolsVersion = 27.0;
 						TestTargetID = 800000000000000000000002;
 					};
@@ -589,6 +639,7 @@
 				700000000000000000000002 /* AgelloShare */,
 				800000000000000000000002 /* AgelloMac */,
 				A00000000000000000000002 /* AgelloMacTests */,
+				B00000000000000000000002 /* AgelloMacDeviceTests */,
 			);
 		};
 /* End PBXProject section */
@@ -644,6 +695,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A00000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B00000000000000000000005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -709,6 +767,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B00000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -741,6 +806,11 @@
 			isa = PBXTargetDependency;
 			target = 800000000000000000000002 /* AgelloMac */;
 			targetProxy = A00000000000000000000007 /* PBXContainerItemProxy */;
+		};
+		B00000000000000000000006 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 800000000000000000000002 /* AgelloMac */;
+			targetProxy = B00000000000000000000007 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1227,6 +1297,54 @@
 			};
 			name = Release;
 		};
+		B0000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.patricedery.agello.mac.devicetests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agello.app/Contents/MacOS/Agello";
+			};
+			name = Debug;
+		};
+		B0000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = FK2D8X36G2;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.patricedery.agello.mac.devicetests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agello.app/Contents/MacOS/Agello";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1307,6 +1425,15 @@
 			buildConfigurations = (
 				A0000000000000000000000A /* Debug */,
 				A0000000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B00000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloMacDeviceTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B0000000000000000000000A /* Debug */,
+				B0000000000000000000000B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

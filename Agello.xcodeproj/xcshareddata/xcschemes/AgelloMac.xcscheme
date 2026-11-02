@@ -41,6 +41,17 @@
                ReferencedContainer = "container:Agello.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "B00000000000000000000002"
+               BuildableName = "AgelloMacDeviceTests.xctest"
+               BlueprintName = "AgelloMacDeviceTests"
+               ReferencedContainer = "container:Agello.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

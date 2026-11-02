@@ -152,16 +152,27 @@ unload. UI tests launch the app normally and see its UI.
 ## Agello for Mac
 
 `PLATFORM=macos-native` runs Agello for Mac's own app (scheme `AgelloMac`,
-bundle `com.patricedery.agello.mac`) and its test bundles on this Mac. So far
-`unit` only (`AgelloMacTests`: the `AgelloTests/` files, minus
-`BackgroundWorkTests`); the device suites come with `AgelloMacDeviceTests`
-(docs/MAC.md, M7). Results land in `build/macos-harness/`. `ONLY` takes the
-same IDs as on iPhone: `AgelloTests/…` runs those tests in `AgelloMacTests`.
+bundle `com.patricedery.agello.mac`) and its test bundles on this Mac:
+`AgelloMacTests` (the `AgelloTests/` files, minus `BackgroundWorkTests`) and
+`AgelloMacDeviceTests` (the `AgelloDeviceTests/` files, minus
+`MemoryEnvelopeScenarioTests`). Every suite but `memory`, `ui` and
+`screenshots` (M7) runs. Results land in `build/macos-harness/`. `ONLY` takes
+the same IDs as on iPhone: `AgelloTests/…` and `AgelloDeviceTests/…` run in
+the Mac bundles. The script clones E4B and EmbeddingGemma from
+`~/Models/agello/` into the container when they're missing.
 
 ```sh
 PLATFORM=macos-native scripts/device-harness.sh unit
 PLATFORM=macos-native ONLY=AgelloTests/ShellModelTests scripts/device-harness.sh unit
+PLATFORM=macos-native scripts/device-harness.sh inference
 ```
+
+- Probe 21 (`test21_RepliesWhileHidden`, macOS only) replies for five minutes
+  with the app hidden and compares decode speed with the app shown; probe 22
+  drives critical memory pressure on the real engine. Speed comparisons (probe
+  21, `calibrate`) need a quiet Mac: skip probe 21 with
+  `-skip-testing:AgelloMacDeviceTests/ProbeScenarioTests/test21_RepliesWhileHidden`
+  while other jobs run.
 
 - Its data lives in `~/Library/Containers/com.patricedery.agello.mac/Data/`:
   the chat store (`Library/Application Support/default.store`, not the App

@@ -29,13 +29,13 @@
 # Env: PLATFORM (iphone, the default; mac: this Mac runs the iPhone app
 #      "Designed for iPad/iPhone" through its Metal path; ui, screenshots and
 #      memory stay iPhone-only, and `all` skips ui; macos-native: Agello for
-#      Mac's own app and tests, scheme AgelloMac: `unit` (AgelloMacTests) so
-#      far, the device suites arrive with AgelloMacDeviceTests, docs/MAC.md M7),
+#      Mac's own app and tests, scheme AgelloMac, AgelloMacTests and
+#      AgelloMacDeviceTests: not ui and screenshots yet (M7) nor memory),
 #      DEVICE_ID (iPhone only; default: deviceId from the git-ignored .mobilebuildmcp/config.yaml),
 #      ONLY (run part of a suite: comma- or space-separated test identifiers
 #      inside it, e.g. ONLY=AgelloTests/AppStateTests/testMockModeSendsWithoutDownloadedModel
 #      scripts/device-harness.sh unit; not with `all`; with macos-native,
-#      AgelloTests/… runs the same tests in AgelloMacTests),
+#      AgelloTests/… and AgelloDeviceTests/… run the same tests in the Mac bundles),
 #      OUT (default: build/device-harness, build/mac-harness with PLATFORM=mac,
 #      build/macos-harness with PLATFORM=macos-native),
 #      AGELLO_TELEMETRY (engine telemetry level in our LiteRT-LM builds, default 2),
@@ -72,10 +72,12 @@ case "$PLATFORM" in
     OUT="${OUT:-$ROOT/build/mac-harness}"
     ;;
   macos-native)
-    if [ "$SUITE" != unit ]; then
-      echo "PLATFORM=macos-native runs unit only so far (AgelloMacTests); the device suites come with M7." >&2
-      exit 2
-    fi
+    case "$SUITE" in
+      ui | screenshots | memory)
+        echo "The $SUITE suite doesn't run with PLATFORM=macos-native (ui and screenshots come with M7)." >&2
+        exit 2
+        ;;
+    esac
     OUT="${OUT:-$ROOT/build/macos-harness}"
     ;;
   *) echo "Unknown PLATFORM: $PLATFORM (iphone, mac or macos-native)" >&2; exit 2 ;;
@@ -85,10 +87,12 @@ if [ "$PLATFORM" = macos-native ]; then
   SCHEME=AgelloMac
   DESTINATION="platform=macOS,arch=arm64"
   UNIT_TESTS=AgelloMacTests
+  DEVICE_TESTS=AgelloMacDeviceTests
 else
   SCHEME=Agello
   DESTINATION="id=$DEVICE_ID"
   UNIT_TESTS=AgelloTests
+  DEVICE_TESTS=AgelloDeviceTests
 fi
 
 # One run at a time on this machine, from any checkout or worktree; the
@@ -122,7 +126,17 @@ write_lock_info() {
 caffeinate -dims -w $$ &
 
 BUNDLE_ID="com.patricedery.agello"
-[ "$PLATFORM" = macos-native ] && BUNDLE_ID="com.patricedery.agello.mac"
+if [ "$PLATFORM" = macos-native ]; then
+  BUNDLE_ID="com.patricedery.agello.mac"
+  # The models as APFS clones of ~/Models/agello (no space, no download): ModelCatalog's files.
+  models="$HOME/Library/Containers/$BUNDLE_ID/Data/Library/Application Support/Models"
+  mkdir -p "$models"
+  for file in gemma-4-E4B-it-fp16-rope.litertlm embeddinggemma-2-text-270m.litertlm; do
+    if [ ! -f "$models/$file" ] && [ -f "$HOME/Models/agello/$file" ]; then
+      cp -c "$HOME/Models/agello/$file" "$models/$file"
+    fi
+  done
+fi
 mkdir -p "$OUT"
 write_lock_info "$SUITE"
 # Lets the in-app report survive crash relaunches within this run only.
@@ -211,7 +225,10 @@ filters() {
   for test in $(echo "$ONLY" | tr ',' ' '); do
     # The same test IDs on both: AgelloTests/… names the Mac's copy in AgelloMacTests.
     if [ "$PLATFORM" = macos-native ]; then
-      case "$test" in AgelloTests | AgelloTests/*) test="AgelloMacTests${test#AgelloTests}" ;; esac
+      case "$test" in
+        AgelloTests | AgelloTests/*) test="AgelloMacTests${test#AgelloTests}" ;;
+        AgelloDeviceTests | AgelloDeviceTests/*) test="AgelloMacDeviceTests${test#AgelloDeviceTests}" ;;
+      esac
     fi
     in_suite=no
     for scope in "$@"; do
@@ -229,25 +246,25 @@ status=0
 scopes=""
 case "$SUITE" in
   unit) scopes="$UNIT_TESTS" ;;
-  inference) scopes="AgelloDeviceTests/InferenceScenarioTests" ;;
-  files) scopes="AgelloDeviceTests/KnowledgeScenarioTests" ;;
-  web) scopes="AgelloDeviceTests/WebScenarioTests" ;;
+  inference) scopes="$DEVICE_TESTS/InferenceScenarioTests" ;;
+  files) scopes="$DEVICE_TESTS/KnowledgeScenarioTests" ;;
+  web) scopes="$DEVICE_TESTS/WebScenarioTests" ;;
   ui) scopes="AgelloUITests" ;;
   thinking)
     export TEST_RUNNER_HARNESS_THINKING=1
-    scopes="AgelloDeviceTests/ThinkingScenarioTests"
+    scopes="$DEVICE_TESTS/ThinkingScenarioTests"
     ;;
   memory)
     export TEST_RUNNER_HARNESS_MEMORY=1
-    scopes="AgelloDeviceTests/MemoryEnvelopeScenarioTests"
+    scopes="$DEVICE_TESTS/MemoryEnvelopeScenarioTests"
     ;;
   probes)
     export TEST_RUNNER_HARNESS_PROBES=1
-    scopes="AgelloDeviceTests/ProbeScenarioTests"
+    scopes="$DEVICE_TESTS/ProbeScenarioTests"
     ;;
   calibrate)
     export TEST_RUNNER_HARNESS_CALIBRATE=1
-    scopes="AgelloDeviceTests/CalibrationScenarioTests"
+    scopes="$DEVICE_TESTS/CalibrationScenarioTests"
     ;;
   screenshots)
     export TEST_RUNNER_HARNESS_SCREENSHOTS=1
@@ -259,12 +276,12 @@ case "$SUITE" in
       exit 2
     fi
     LAST=no
-    run_suite unit -only-testing:AgelloTests "$@" || status=$?
+    run_suite unit -only-testing:"$UNIT_TESTS" "$@" || status=$?
     inference_status=0
-    [ "$PLATFORM" = mac ] && LAST=yes
-    run_suite inference -only-testing:AgelloDeviceTests/InferenceScenarioTests \
-      -only-testing:AgelloDeviceTests/KnowledgeScenarioTests \
-      -only-testing:AgelloDeviceTests/WebScenarioTests "$@" || inference_status=$?
+    [ "$PLATFORM" != iphone ] && LAST=yes
+    run_suite inference -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests \
+      -only-testing:"$DEVICE_TESTS"/KnowledgeScenarioTests \
+      -only-testing:"$DEVICE_TESTS"/WebScenarioTests "$@" || inference_status=$?
     [ "$status" -eq 0 ] && status=$inference_status
     if [ "$PLATFORM" = iphone ]; then
       ui_status=0
