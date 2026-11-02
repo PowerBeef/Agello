@@ -101,6 +101,19 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6385900547
   The lab files are in `~/Models/agello/lab` and the phone's Documents/lab, kept
   as controls for the E4B export.
+- 2026-10-25: john-rocky posted the E2B export without the flag (the control,
+  `gemma-4-E2B-it-no-ropecomposite.litertlm`), E2B composite with a 32,768
+  cache (`…-ropecomposite-32k.litertlm`), both in the E2B repo, and the E4B
+  composite (`mlboydaisuke/gemma-4-E4B-it-litert-lm-rope-composite`, 8.21 GB,
+  int8). On his M4 Max: composites 118/118 (the 32k file 12/12 on `xl`
+  t12000–t30000), the control 37/118, and flag vs no flag within 1 % in speed.
+  Our runs on them are next (draft: `build/drafts/issue-3913-new-exports.md`).
+- 2026-10-31: elbrinner (iPhone 15 Pro, E2B, v0.17.1, a RAG bench): fp32 fixes
+  two long cases; a ~250-token case differs between Metal (fp16 and fp32) and
+  CPU. Drafted reply (`build/drafts/issue-3913-elbrinner.md`): ask whether the
+  long prompts pass 2,048, point to the composite and `patch_rope.py`, and
+  suggest greedy runs to rule out the samplers (Google's Metal sampler vs the
+  CPU top-p one; seed 0 for every conversation on v0.18.0).
 - LiteRT-LM #4001 reports the same failure on Android (Adreno 840 with E4B,
   Adreno 740 with E2B), FLOAT32 the only workaround. Don't present our patched
   file as its fix without A/B runs on that repro (asked there on 2026-10-17).

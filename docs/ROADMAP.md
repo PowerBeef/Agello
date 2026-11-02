@@ -20,7 +20,8 @@ The handoff between work sessions: read this first, then the section of the plan
 - **#3913 upstream:** a model exported with litert-torch's RoPE composite fixes the bug at the source.
   - john-rocky's Gemma 4 E2B export is exact on the iPhone 17 Pro and on all three Mac M6 setups: 118/118 cases, against 35/118 for the stock file (the iPhone and Mac runs were posted on 2026-10-24).
   - It's 2–3× slower, but its int8 export recipe also differs. We asked for the same export without the composite, to time the two side by side.
-  - Waiting for: that export, an E4B export, and an E2B export with a longer cache. Probe 20 (`AgelloDeviceTests/LabSuiteProbe.swift`) and agello-bench rerun the same cases on any of them.
+  - On 2026-10-25 john-rocky posted all three (E2B without the flag, E2B with a 32K cache, E4B composite; 18.4 GB together, int8 weights): exact on his M4 Max but for the control (37/118), and the flag costs under 1 % there, so the slowdown was the int8 recipe. **Next:** our runs of the three with probe 20 (`AgelloDeviceTests/LabSuiteProbe.swift`) and agello-bench; the reply is drafted in `build/drafts/issue-3913-new-exports.md`. They don't fit the storage budget at once.
+  - On 2026-10-31 elbrinner reported an iPhone 15 Pro with E2B (v0.17.1): fp32 fixes two long RAG cases but not a short one (~250 tokens) where Metal differs from CPU at fp16 and fp32. A reply suggesting greedy runs to rule out the samplers is drafted in `build/drafts/issue-3913-elbrinner.md`.
   - The `agello-litert-update` skill has the thread's history.
 - **Our LiteRT-LM build (Next, item 1)** on the fork's `agello-next` (started 2026-10-24, pushed and released 2026-10-28). Builds now use Xcode 27.1.
   - M0.1 of [MAC.md](MAC.md) (`78e7edc4`): the Mac slice is a versioned framework, the iOS slice's plist names the device SDK, and the package requires iOS and macOS 27.
