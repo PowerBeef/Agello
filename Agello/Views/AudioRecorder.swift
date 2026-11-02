@@ -53,7 +53,7 @@ final class AudioRecorder: NSObject {
     finishedURL = recorder?.url
     recorder = nil
     isRecording = false
-    try? AVAudioSession.sharedInstance().setActive(false)
+    AudioSessionControl.deactivate()
   }
 
   /// Recordings left in the temporary folder by an earlier run (a voice message never sent, an
@@ -118,15 +118,12 @@ final class AudioRecorder: NSObject {
       AVLinearPCMIsFloatKey: false,
     ]
     do {
-      // AirPods and other headsets record too, not only the built-in microphone.
-      try AVAudioSession.sharedInstance().setCategory(
-        .record, mode: .measurement, options: [.allowBluetoothHFP])
-      try AVAudioSession.sharedInstance().setActive(true)
+      try AudioSessionControl.activateForRecording()
       let recorder = try AVAudioRecorder(url: url, settings: settings)
       self.recorder = recorder
       guard recorder.record() else {
         self.recorder = nil
-        try? AVAudioSession.sharedInstance().setActive(false)
+        AudioSessionControl.deactivate()
         errorMessage = "Couldn't start recording."
         return
       }

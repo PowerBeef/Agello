@@ -49,11 +49,7 @@ final class VoiceAudio: @unchecked Sendable {
   }
 
   private func activateSession() throws {
-    let session = AVAudioSession.sharedInstance()
-    // AirPods and other headsets (voice chat implies HFP; stated for clarity).
-    try session.setCategory(
-      .playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
-    try session.setActive(true)
+    try AudioSessionControl.activateForVoiceChat()
   }
 
   private func startEngine() throws {
@@ -87,7 +83,7 @@ final class VoiceAudio: @unchecked Sendable {
     // An utterance cut off by the end of the session is never sent.
     cancelUtterance()
     lock.withLock { preroll = [] }
-    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    AudioSessionControl.deactivate(resumingOthers: true)
   }
 
   private func stopEngine() {
@@ -101,29 +97,17 @@ final class VoiceAudio: @unchecked Sendable {
   /// A call or another app takes the audio, the route changes (AirPods in or out), or media
   /// services restart: the engine stops on its own and has to be started again.
   private func observeInterruptions() {
-    let center = NotificationCenter.default
-    observers = [
-      center.addObserver(
-        forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
-      ) { [weak self] note in
-        let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt)
-          .flatMap(AVAudioSession.InterruptionType.init(rawValue:))
-        if type == .began {
-          self?.pause()
-        } else {
-          self?.restart(newEngine: false)
-        }
-      },
-      center.addObserver(
-        forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main
-      ) { [weak self] _ in self?.restart(newEngine: true) },
-      center.addObserver(
+    observers = AudioSessionControl.observeInterruptions(
+      began: { [weak self] in self?.pause() },
+      ended: { [weak self] in self?.restart(newEngine: false) },
+      reset: { [weak self] in self?.restart(newEngine: true) })
+    observers.append(
+      NotificationCenter.default.addObserver(
         forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main
       ) { [weak self] note in
         guard let self, (note.object as? AVAudioEngine) === self.engine else { return }
         self.restart(newEngine: false)
-      },
-    ]
+      })
   }
 
   private func pause() {

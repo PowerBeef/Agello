@@ -24,9 +24,7 @@ final class SpeechReader: NSObject, AVSpeechSynthesizerDelegate {
     stop()
     let spoken = MarkdownDocument(parsing: text).plainText
     guard !spoken.isEmpty else { return }
-    // .playback so replies are audible with the silent switch on.
-    try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: .duckOthers)
-    try? AVAudioSession.sharedInstance().setActive(true)
+    AudioSessionControl.activateForSpeech()
     let utterance = AVSpeechUtterance(string: spoken)
     utterance.voice = VoiceText.voice(for: NLLanguageRecognizer.dominantLanguage(for: spoken)?.rawValue)
     speakingID = id
@@ -41,7 +39,7 @@ final class SpeechReader: NSObject, AVSpeechSynthesizerDelegate {
 
   private func finished() {
     speakingID = nil
-    try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    AudioSessionControl.deactivate(resumingOthers: true)
   }
 
   nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
