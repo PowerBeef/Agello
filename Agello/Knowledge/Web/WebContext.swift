@@ -37,12 +37,17 @@ enum WebContext {
     return "<sources>\n\(body)\n</sources>"
   }
 
+  /// The sources are reference material for whatever the message asks: framed as a question to
+  /// answer from them ("Use these sources to answer… Question:"), a request like "create a
+  /// calculator app" came back as a summary of what the pages say (2026-11-02).
   static func instructions(today: Date = .now) -> String {
     let date = today.formatted(date: .complete, time: .omitted)
-    return "You searched the web for the user's question (today is \(date)). Use these sources "
-      + "to answer, and cite them with bracketed numbers like [1] or [2][3] right after the facts "
-      + "they support. Prefer the most recent information. If the sources don't answer the "
-      + "question, say so."
+    return "You searched the web for the user's message (today is \(date)). The sources below are "
+      + "reference material: do what the message asks, whether that's answering, writing, coding "
+      + "or explaining, as fully as you would without them, and use them where they help. Cite "
+      + "them with bracketed numbers like [1] or [2][3] right after the facts you take from them. "
+      + "Prefer the most recent information. If the message asks for facts the sources don't "
+      + "cover, say so."
   }
 
   /// The prompt for an answer from web sources (and attached files, whose
@@ -50,7 +55,7 @@ enum WebContext {
   static func prompt(question: String, sources: [Source], filePrompt: String? = nil, today: Date = .now)
     -> String
   {
-    let ask = filePrompt ?? "Question: \(question)"
+    let ask = filePrompt ?? "Message: \(question)"
     return [instructions(today: today), sourcesBlock(sources), ask].joined(separator: "\n\n")
   }
 

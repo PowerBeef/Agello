@@ -170,7 +170,9 @@ final class WebTests: XCTestCase {
     let prompt = WebContext.prompt(
       question: "Who won?", sources: [source], today: Date(timeIntervalSince1970: 1_791_600_000))
     XCTAssertTrue(prompt.contains("[1] Results — cyclingstage.com\nPogačar won.\n…\nBy 6:26."))
-    XCTAssertTrue(prompt.hasSuffix("Question: Who won?"))
+    XCTAssertTrue(prompt.hasSuffix("Message: Who won?"))
+    // A request, not only a question: the sources are reference material for doing it.
+    XCTAssertTrue(prompt.contains("do what the message asks"))
     XCTAssertEqual(source.record.url, "https://www.cyclingstage.com/x")
   }
 

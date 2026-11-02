@@ -51,7 +51,7 @@ final class FileContextTests: XCTestCase {
       ])
     XCTAssertTrue(prompt.contains("<file name=\"notes.md\">\nBuy boats.\n</file>"))
     XCTAssertTrue(prompt.contains("[report.pdf, p. 2]\nBudget: 4.2M."))
-    XCTAssertTrue(prompt.hasSuffix("Question: What's the budget?"))
+    XCTAssertTrue(prompt.hasSuffix("Message: What's the budget?"))
     XCTAssertTrue(prompt.contains("cite"))
   }
 
@@ -126,7 +126,7 @@ final class FileChatTests: XCTestCase {
     let log = await mock.sendLog
     let sent = try XCTUnwrap(log.last)
     XCTAssertTrue(sent.contains("<file name=\"notes.md\">\nBuy boats and rope."), sent)
-    XCTAssertTrue(sent.hasSuffix("Question: What should I buy?"))
+    XCTAssertTrue(sent.hasSuffix("Message: What should I buy?"))
     // The saved message is what the user typed, with the file attached.
     let user = try XCTUnwrap(thread.orderedTurns.first)
     XCTAssertEqual(user.text, "What should I buy?")
@@ -184,7 +184,7 @@ final class FileChatTests: XCTestCase {
     XCTAssertEqual(thread.title, "lease.pdf")
     let log = await mock.sendLog
     let sent = try XCTUnwrap(log.last)
-    XCTAssertTrue(sent.hasSuffix("Question: Describe the attached files."))
+    XCTAssertTrue(sent.hasSuffix("Message: Describe the attached files."))
   }
 
   func testDeletingAChatDeletesItsFiles() throws {

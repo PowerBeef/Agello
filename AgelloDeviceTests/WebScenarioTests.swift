@@ -38,6 +38,29 @@ final class WebScenarioTests: DeviceTestCase {
     XCTAssertFalse(followSources.isEmpty)
   }
 
+  /// Search on for a request, not a question: the reply does what was asked, with the sources as
+  /// reference. Framed as a question to answer from the sources, this exact message (from the
+  /// iPhone, 2026-11-02) came back as "it is possible…" and a summary of five pages.
+  func test01b_SearchStillDoesTheTask() async throws {
+    try await requireLoadedModel()
+    _ = try await harness.ensureDownloaded(ModelCatalog.embeddingGemma, timeout: 900)
+    let reply = await harness.ask(
+      "Create a beautiful calculator app for mobile in a single self contained html file",
+      in: harness.newThread(), webSearch: true)
+    let text = reply.text.lowercased()
+    let built = text.contains("<html") || text.contains("<!doctype") || text.contains("```html")
+    harness.record(
+      "web01b_searchStillDoesTheTask",
+      [
+        "seconds": reply.seconds, "built": built, "replyPrefix": String(reply.text.prefix(300)),
+        "sources": reply.reply?.parts.sources.count ?? 0,
+        "outputTokens": reply.reply?.stats?.outputTokens ?? -1,
+        "reachedLimit": reply.reply?.stats?.reachedLimit ?? false,
+      ], in: self)
+    XCTAssertTrue(reply.accepted, appState.generationError ?? "rejected")
+    XCTAssertTrue(built, "No HTML in the reply: \(reply.text.prefix(400))")
+  }
+
   func test02_AutomaticSearch() async throws {
     try await requireLoadedModel()
     appState.webSettings.automatic = true

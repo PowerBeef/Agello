@@ -38,9 +38,10 @@ enum FileContext {
   /// the user's question.
   static func prompt(question: String, materials: [Material]) -> String {
     var blocks: [String] = [
-      "The user attached files. Use them to answer. When you use a fact from a file, cite it "
-        + "like (report.pdf, p. 4), or (notes.md) for files without pages. If the files don't "
-        + "contain the answer, say so."
+      "The user attached files. Do what the message asks with them: answer from them, summarize, "
+        + "rewrite, translate or build on them. When you use a fact from a file, cite it like "
+        + "(report.pdf, p. 4), or (notes.md) for files without pages. If the message asks about "
+        + "something the files don't contain, say so."
     ]
     for material in materials {
       switch material {
@@ -54,7 +55,7 @@ enum FileContext {
         blocks.append("<excerpts>\n\(body)\n</excerpts>")
       }
     }
-    blocks.append("Question: \(question.isEmpty ? "Describe the attached files." : question)")
+    blocks.append("Message: \(question.isEmpty ? "Describe the attached files." : question)")
     return blocks.joined(separator: "\n\n")
   }
 
