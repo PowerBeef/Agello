@@ -1,7 +1,6 @@
 import Foundation
 import LiteRTLM
 import SwiftData
-import UIKit
 
 /// Result of an on-demand benchmark run (1024 prefill / 256 decode tokens,
 /// matching Google's published methodology).
@@ -149,7 +148,7 @@ final class AppState {
   /// Bumped by Stop: a reply still being prepared checks it before each step.
   @ObservationIgnored private var stopCount = 0
 
-  private var memoryWarningObserver: NSObjectProtocol?
+  @ObservationIgnored private var memoryPressure: MemoryPressureMonitor?
 
   init(useMockEngine: Bool = false, store: ModelStore? = nil) {
     self.store = store ?? ModelStore()
@@ -193,10 +192,7 @@ final class AppState {
     self.store.onModelReady = { [weak self] model in
       if model == ModelCatalog.embeddingGemma.id { self?.knowledge.indexPending() }
     }
-    memoryWarningObserver = NotificationCenter.default.addObserver(
-      forName: UIApplication.didReceiveMemoryWarningNotification, object: nil,
-      queue: .main
-    ) { [weak self] _ in
+    memoryPressure = MemoryPressureMonitor { [weak self] in
       guard let self else { return }
       Log.lifecycle.warning("memory warning (\(MemoryProbe.summary, privacy: .public))")
       Task { @MainActor in

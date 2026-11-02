@@ -50,11 +50,6 @@ enum MemoryProbe {
     return result == KERN_SUCCESS ? info : nil
   }
 
-  /// Bytes the app can still allocate before hitting its jetsam limit.
-  static func availableBytes() -> UInt64 {
-    UInt64(os_proc_available_memory())
-  }
-
   static var summary: String {
     String(
       format: "footprint %.2f GB, available %.2f GB",

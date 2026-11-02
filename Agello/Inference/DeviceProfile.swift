@@ -14,11 +14,9 @@ struct DeviceProfile: Sendable, Equatable {
   }
 
   static var current: DeviceProfile {
-    let available = MemoryProbe.availableBytes()
-    return DeviceProfile(
+    DeviceProfile(
       physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory,
-      // Footprint + still-available = the limit, independent of current usage.
-      appMemoryLimitBytes: available > 0 ? MemoryProbe.footprintBytes() + available : nil)
+      appMemoryLimitBytes: MemoryProbe.appMemoryLimitBytes())
   }
 
   var memoryGB: Double { Double(physicalMemoryBytes) / 1_000_000_000.0 }
