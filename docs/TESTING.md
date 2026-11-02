@@ -48,7 +48,7 @@ The first run registers the Mac for development with the signing team. Results l
 
 ### Looking at the iPhone
 
-With iPhone Mirroring on this Mac, the phone's screen is a window: you can look at the app and tap through it without picking up the phone, and so can Claude's computer use. The session pauses after a few minutes idle (click **Connect** to resume), and a test run takes over the phone: the mirror waits until the phone is locked again. Look before or after a run, not during.
+With iPhone Mirroring on this Mac, the phone's screen is a window: you can look at the app and tap through it without picking up the phone, and so can Claude's computer use. The session pauses after a few minutes idle (click **Connect** to resume), and a test run takes over the phone: the mirror waits until the phone is locked again. Opening the mirror during a run locks the phone and stops the run. Look before or after a run, not during.
 
 ### Tuning the model's behavior
 

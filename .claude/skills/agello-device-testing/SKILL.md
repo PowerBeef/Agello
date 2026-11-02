@@ -158,6 +158,12 @@ with the background `app_*` tools (`app_screenshot`, `app_click`,
   d'utilisation" until the phone is locked. That lock is the user's call: look
   before or after runs, never during, and don't lock the phone to get the
   mirror back.
+- Opening the mirror locks the phone, which stops a running suite: the app
+  goes to the background and Xcode waits with "Unlock iPhone … to Continue",
+  then relaunches and runs nothing (2026-11-02, probe 20 after 45 cases). The
+  tests keep the screen awake themselves (`isIdleTimerDisabled`), so Auto-Lock
+  isn't the danger. Before a long iPhone run, ask the user to leave the mirror
+  closed, and split long probes into one arm per run.
 - The app on the phone is the last iPhone run's build (Debug, the test host).
   It shares the user's chats and settings, so start a new chat for a check.
 
