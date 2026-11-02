@@ -96,11 +96,18 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   Measured on the iPhone (two Think turns): 399 cached tokens with the
   filter, 536 with it explicitly off; `ThinkingScenarioTests/test02`
   guards it with `cachedTokenCount()`.
-- Chat uses a 16K cache on every device, and it isn't a setting (since
+- Chat uses a 16K cache when memory allows, and it isn't a setting (since
   2026-11-02; a saved custom window is dropped at launch). On our runtime
   decode hardly depends on the window (iPhone 17 Pro: 39 / 42 / 42 tok/s at
-  8K / 16K / 32K); 16K peaks at 1.9 GB, within 8 GB iPhones' worst case, and
-  32K at 3.5 GB, which isn't. Don't raise it without the memory suite.
+  8K / 16K / 32K); 16K peaks at 1.9 GB and 32K at 3.5 GB. Each load measures
+  the room left (`MemoryProbe.roomBytes`: the jetsam limit or Metal's working
+  set, less the footprint) after the old engine is gone, and takes 8K below
+  3.5 GB (`DeviceProfile.contextTokens`): at 3.38 GB a 16K load, an image and
+  a 2K-token prompt were killed (memory suite at 3.5 GB usable). The engine
+  keeps that window for later plans (`loadedContextTokens`), so a settings
+  change doesn't reload to try 16K again. Budgets read the engine's
+  `resolved.maxNumTokens`, never the default. Don't raise it without the
+  memory suite.
 - When history is trimmed, the reply reserve stays free: a quarter of the
   window plus the reasoning budget, at most a third (4,096 or 5,120 tokens at
   16K; 512 plus reasoning before 2026-11-02). A message fits when it leaves

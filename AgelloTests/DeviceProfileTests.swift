@@ -9,6 +9,20 @@ final class DeviceProfileTests: XCTestCase {
     XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 6_000_000_000), 4096)
   }
 
+  /// 16K when memory allows (2026-11-02): the memory suite's 3.5 GB envelope left 3.38 GB at load
+  /// and went over the limit at 16K; its 4.0 GB envelope left 3.75 GB and passed.
+  func testContextFollowsTheRoomAtLoad() {
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 16_384, roomBytes: 3_380_000_000), 8_192)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 16_384, roomBytes: 3_750_000_000), 16_384)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 16_384, roomBytes: 3_500_000_000), 16_384)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 16_384, roomBytes: 0), 8_192)
+    // No limit reported (simulator): the standard window. A Mac's working set leaves plenty.
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 16_384, roomBytes: nil), 16_384)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 16_384, roomBytes: 5_300_000_000), 16_384)
+    // A smaller standard window never grows.
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 4_096, roomBytes: 1_000_000_000), 4_096)
+  }
+
   func testLongContextCeilingFollowsAppMemoryLimit() {
     // 32,000: the most positions LiteRT-LM allocates for these files.
     XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 8_600_000_000), 32_000)

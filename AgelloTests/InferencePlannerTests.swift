@@ -41,6 +41,22 @@ final class InferencePlannerTests: XCTestCase {
       InferencePlanner.maxTokens)
   }
 
+  /// The load's window replaces the device default; an override still wins.
+  func testLoadWindowAndOverride() {
+    var options = InferenceOptions()
+    XCTAssertEqual(
+      InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: roomy, contextTokens: 8_192)
+        .maxNumTokens,
+      8_192)
+    XCTAssertEqual(
+      InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: roomy).maxNumTokens, 16_384)
+    options.maxNumTokensOverride = 32_768
+    XCTAssertEqual(
+      InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: roomy, contextTokens: 8_192)
+        .maxNumTokens,
+      32_000)
+  }
+
   /// A 32K request allocates 32,000 positions; budgets must use what exists.
   func testThirtyTwoKMeansTheAllocatedThirtyTwoThousand() {
     var options = InferenceOptions()

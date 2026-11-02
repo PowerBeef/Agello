@@ -76,8 +76,9 @@ final class MemoryEnvelopeScenarioTests: DeviceTestCase {
     }
     step("ballast")
 
-    // The app's own window (16K on every device since 2026-11-02; 8K before, with 16K only for
-    // the long prompt), so every step below runs as users' replies do.
+    // The app's own window, so every step below runs as users' replies do: 16K when memory
+    // allows at load, 8K below 3.5 GB left (2026-11-02; 8K before, with 16K only for the long
+    // prompt).
     appState.options.maxNumTokensOverride = nil
     await appState.applyCurrentOptions()
     await appState.ensureEngineLoaded()
@@ -112,13 +113,13 @@ final class MemoryEnvelopeScenarioTests: DeviceTestCase {
       ["ok": Self.ok(long), "inputTokens": long.reply?.stats?.inputTokens ?? -1,
        "ttftSeconds": long.reply?.stats?.timeToFirstToken ?? -1])
 
-    let reloaded = appState.resolved?.maxNumTokens == DeviceProfile.standardContextTokens
+    let window = appState.resolved?.maxNumTokens ?? 0
     let longer = await harness.ask(
       CalibrationScenarioTests.filler(bytes: 16_384) + "\n\nSummarize the text above in one sentence.",
       in: harness.newThread())
     step(
       "long 4K prompt",
-      ["loaded": reloaded, "ok": Self.ok(longer),
+      ["window": window, "ok": Self.ok(longer),
        "inputTokens": longer.reply?.stats?.inputTokens ?? -1,
        "ttftSeconds": longer.reply?.stats?.timeToFirstToken ?? -1])
 

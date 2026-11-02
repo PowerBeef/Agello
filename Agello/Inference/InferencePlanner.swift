@@ -220,11 +220,14 @@ enum InferencePlanner {
   /// calibration scenario).
   static let maxTokens = ContextBudget.maxAllocatedPositions
 
-  /// Resolve user options + model + device into concrete engine settings.
+  /// Resolve user options + model + device into concrete engine settings. `contextTokens` is the
+  /// window chosen for this load from the memory left (``DeviceProfile/contextTokens(standard:roomBytes:)``);
+  /// nil takes the device's default. An override (tests, probes) wins over both.
   static func resolve(
     options: InferenceOptions,
     model: ModelID,
-    memoryBytes: UInt64
+    memoryBytes: UInt64,
+    contextTokens: Int? = nil
   ) -> ResolvedInference {
     let maxNumTokens: Int
     if let override = options.maxNumTokensOverride {
@@ -232,7 +235,7 @@ enum InferencePlanner {
         requested: min(max(minTokens, override), maxTokens))
     } else {
       maxNumTokens = ContextBudget.allocatedPositions(
-        requested: DeviceProfile.defaultMaxTokens(model: model, memoryBytes: memoryBytes))
+        requested: contextTokens ?? DeviceProfile.defaultMaxTokens(model: model, memoryBytes: memoryBytes))
     }
 
     return ResolvedInference(

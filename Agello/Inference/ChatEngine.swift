@@ -82,6 +82,9 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// The plan the current engine was built for, before backend/modality
   /// fallbacks (engine-level settings are compared against this).
   private var builtPlan: ResolvedInference?
+  /// The window the last load chose from the memory left (16K, or 8K when short). Later plans
+  /// keep it, so a settings change doesn't reload the engine to try 16K again.
+  private var loadedContextTokens: Int?
   private var toolsEnabled = true
   private var generating = false
   /// Set by ``cancel()`` during a generation. LiteRT-LM leaves the
@@ -192,12 +195,22 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
 
     unloadAndRecord()
-    var plan = InferencePlanner.resolve(options: options, model: spec.id, memoryBytes: memoryBytes)
+    // 16K when memory allows: measured after the old engine is gone.
+    let room = MemoryProbe.roomBytes()
+    let contextTokens = DeviceProfile.contextTokens(
+      standard: DeviceProfile.defaultMaxTokens(model: spec.id, memoryBytes: memoryBytes), roomBytes: room)
+    loadedContextTokens = contextTokens
+    var plan = InferencePlanner.resolve(
+      options: options, model: spec.id, memoryBytes: memoryBytes, contextTokens: contextTokens)
 
     // Introspect the model file (cheap, no engine needed) and intersect the
     // plan with real capabilities: MTP support, thinking, modalities, and
     // the model's context / visual-token limits.
     loadLog = lastUnload.map { [$0] } ?? []
+    loadLog.append(
+      String(
+        format: "window: %d tokens with %@ left", plan.maxNumTokens,
+        room.map { String(format: "%.2f GB", Double($0) / 1e9) } ?? "no limit"))
     if let caps = Self.inspect(modelURL: modelURL) {
       capabilities = caps
       plan = InferencePlanner.applyCapabilities(caps, to: plan)
@@ -489,7 +502,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// Plan for `options` on this model, intersected with the file's capabilities.
   private func plan(for options: InferenceOptions, model: ModelID) -> ResolvedInference {
     let plan = InferencePlanner.resolve(
-      options: options, model: model, memoryBytes: DeviceProfile.current.physicalMemoryBytes)
+      options: options, model: model, memoryBytes: DeviceProfile.current.physicalMemoryBytes,
+      contextTokens: loadedContextTokens)
     return InferencePlanner.applyCapabilities(capabilities ?? .full, to: plan)
   }
 

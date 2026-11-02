@@ -69,11 +69,28 @@ struct DeviceProfile: Sendable, Equatable {
     return availableBytes >= peak + lowMemoryStopBytes
   }
 
-  /// The chat context, the same on every device and no longer a setting (2026-11-02). On our
-  /// runtime decode hardly depends on the window (iPhone 17 Pro, cooled: 39 / 42 / 42 tok/s at
-  /// 8K / 16K / 32K; on Google's v0.18.0 it fell 39 → 34 → 27), and 16K peaks at 1.9 GB, within
-  /// the 8 GB iPhones' worst case (the memory suite at 3.5 GB usable). 32K would peak at 3.5 GB.
+  /// The chat context, no longer a setting (2026-11-02). On our runtime decode hardly depends on
+  /// the window (iPhone 17 Pro, cooled: 39 / 42 / 42 tok/s at 8K / 16K / 32K; on Google's v0.18.0
+  /// it fell 39 → 34 → 27), and 16K peaks at 1.9 GB. 32K would peak at 3.5 GB. A load short of
+  /// memory takes ``reducedContextTokens`` instead (``contextTokens(standard:roomBytes:)``).
   static let standardContextTokens = 16_384
+
+  /// The window of a load with less than ``roomForStandardContextBytes`` left.
+  static let reducedContextTokens = 8_192
+
+  /// Room the app needs left as it loads to take the standard window. A 16K engine holds about
+  /// 0.8 GB more than an 8K one (iPhone 17 Pro: 1.92 against 1.13 GB). With 3.38 GB left at load
+  /// (the memory suite at 3.5 GB usable, an 8 GB iPhone under heavy pressure), a 16K load, an
+  /// image and a 2K-token prompt went over the limit; with 3.75 GB (4.0 GB usable) every step
+  /// passed, and at 8K every step passed at 3.5 GB (2026-11-02).
+  static let roomForStandardContextBytes: UInt64 = 3_500_000_000
+
+  /// The window a load takes: `standard`, or ``reducedContextTokens`` when the app has less than
+  /// ``roomForStandardContextBytes`` left (`roomBytes`, nil where no limit is reported).
+  static func contextTokens(standard: Int, roomBytes: UInt64?) -> Int {
+    guard let roomBytes, roomBytes < roomForStandardContextBytes else { return standard }
+    return min(standard, reducedContextTokens)
+  }
 
   /// The KV-cache size (`maxNumTokens`). Supported devices (iPhone 15 Pro and later, Macs with
   /// 8 GB) all have 8 GB+; smaller values only apply to the simulator.
