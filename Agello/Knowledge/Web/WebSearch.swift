@@ -72,6 +72,7 @@ enum SearchKeys {
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
       kSecAttrAccount as String: provider.rawValue, kSecReturnData as String: true,
+      kSecUseDataProtectionKeychain as String: true,
     ]
     guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
       let data = result as? Data
@@ -81,9 +82,11 @@ enum SearchKeys {
   }
 
   static func setKey(_ key: String?, for provider: SearchProvider) {
+    // The data-protection keychain: iOS's only one, and on the Mac the one that keeps
+    // accessibility classes and no login-keychain prompts (it has no effect on iOS).
     let base: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-      kSecAttrAccount as String: provider.rawValue,
+      kSecAttrAccount as String: provider.rawValue, kSecUseDataProtectionKeychain as String: true,
     ]
     SecItemDelete(base as CFDictionary)
     guard let key = key?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }

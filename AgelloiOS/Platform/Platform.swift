@@ -11,6 +11,13 @@ enum Platform {
   /// the group container, where every install's chats already are.
   static let chatStoreGroupContainer = ModelConfiguration.GroupContainer.automatic
 
+  /// The prompt before a large download on a metered network (cellular, Low Data Mode).
+  static func meteredDownloadTitle(size: String) -> String {
+    String(localized: "Download \(size) over cellular?")
+  }
+  static let waitForUnmeteredNetwork = String(localized: "Wait for Wi-Fi")
+  static let waitingForUnmeteredNetwork = String(localized: "Waiting for Wi-Fi…")
+
   /// Puts `text` on the clipboard.
   @MainActor
   static func copy(_ text: String) {

@@ -12,6 +12,14 @@ enum Platform {
   /// through ShareInbox, never the store (docs/MAC.md, open decisions 1 and 3).
   static let chatStoreGroupContainer = ModelConfiguration.GroupContainer.none
 
+  /// The prompt before a large download on a metered network: on a Mac, Personal Hotspot or a
+  /// network in Low Data Mode.
+  static func meteredDownloadTitle(size: String) -> String {
+    String(localized: "Download \(size) over a metered connection?")
+  }
+  static let waitForUnmeteredNetwork = String(localized: "Wait for Another Network")
+  static let waitingForUnmeteredNetwork = String(localized: "Waiting for another network…")
+
   /// Puts `text` on the clipboard.
   @MainActor
   static func copy(_ text: String) {

@@ -18,6 +18,8 @@ struct AgelloMacApp: App {
   @NSApplicationDelegateAdaptor(MacAppDelegate.self) private var appDelegate
   @State private var appState: AppState
   @State private var shell: ShellModel
+  /// Holds off App Nap while the app works (WorkActivity).
+  @State private var workActivity: WorkActivity?
   let container: ModelContainer
 
   init() {
@@ -25,6 +27,9 @@ struct AgelloMacApp: App {
     container = bootstrap.container
     _appState = State(initialValue: bootstrap.appState)
     _shell = State(initialValue: bootstrap.shell)
+    if !AppBootstrap.hostsTests {
+      _workActivity = State(initialValue: WorkActivity(appState: bootstrap.appState))
+    }
   }
 
   // AppState and the shell's model belong to the app, not the window: a reply keeps going when

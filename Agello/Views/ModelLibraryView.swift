@@ -36,12 +36,12 @@ struct CellularDownloadConfirmation: ViewModifier {
 
   func body(content: Content) -> some View {
     content.confirmationDialog(
-      spec.map { String(localized: "Download \($0.sizeDisplay) over cellular?") } ?? "",
+      spec.map { Platform.meteredDownloadTitle(size: $0.sizeDisplay) } ?? "",
       isPresented: Binding(get: { spec != nil }, set: { if !$0 { spec = nil } }),
       titleVisibility: .visible, presenting: spec
     ) { spec in
       Button("Download now") { appState.store.startDownload(spec, overCellular: true) }
-      Button("Wait for Wi-Fi") { appState.store.startDownload(spec, overCellular: false) }
+      Button(Platform.waitForUnmeteredNetwork) { appState.store.startDownload(spec, overCellular: false) }
       Button("Cancel", role: .cancel) {}
     } message: { spec in
       Text("\(spec.displayName) is a large download. It may use a lot of your data plan.")
@@ -119,7 +119,7 @@ private struct ModelCardView: View {
         HStack {
           Text(
             appState.store.waitingForWiFi.contains(spec.id)
-              ? String(localized: "Waiting for Wi-Fi…")
+              ? Platform.waitingForUnmeteredNetwork
               : String(localized: "Downloading… \(Int(progress * 100))%"))
             .font(.caption)
             .monospacedDigit()

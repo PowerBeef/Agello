@@ -115,7 +115,7 @@ struct OnboardingView: View {
           HStack {
             Text(
               appState.store.waitingForWiFi.contains(spec.id)
-                ? String(localized: "Waiting for Wi-Fi…")
+                ? Platform.waitingForUnmeteredNetwork
                 : String(localized: "Downloading \(spec.displayName)…"))
             Spacer()
             Text("\(Int(progress * 100))%")
