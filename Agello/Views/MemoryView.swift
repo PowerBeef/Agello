@@ -21,7 +21,7 @@ struct MemoryView: View {
           .accessibilityIdentifier("memory.enabled")
       } footer: {
         Text(
-          "Agello remembers lasting facts you share, like preferences or where you live, and uses them in new chats. Memories stay on this iPhone."
+          "Agello remembers lasting facts you share, like preferences or where you live, and uses them in new chats. Memories stay on this \(Platform.deviceName)."
         )
       }
       .themedRow()

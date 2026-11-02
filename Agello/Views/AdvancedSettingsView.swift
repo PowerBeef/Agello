@@ -24,7 +24,7 @@ struct AdvancedSettingsView: View {
     }
     .themedList()
     .navigationTitle("Advanced")
-    .navigationBarTitleDisplayMode(.inline)
+    .inlineTitleDisplay()
     .onAppear {
       if !draftLoaded {
         systemDraft = appState.options.systemPrompt
@@ -128,7 +128,7 @@ struct AdvancedSettingsView: View {
     } header: {
       Text("Voice & Vision").eyebrowStyle()
     } footer: {
-      Text("Images and voice are processed on this iPhone. Higher detail answers better but uses more context.")
+      Text("Images and voice are processed on this \(Platform.deviceName). Higher detail answers better but uses more context.")
         .foregroundStyle(Theme.Text.tertiary)
     }
   }
@@ -259,7 +259,7 @@ struct AdvancedSettingsView: View {
     } header: {
       Text("Device").eyebrowStyle()
     } footer: {
-      Text("Crash and performance reports from iOS and the app's log of the last hour, kept on this iPhone until you share them. The log can include parts of your questions.")
+      Text("Crash and performance reports from \(Platform.osName) and the app's log of the last hour, kept on this \(Platform.deviceName) until you share them. The log can include parts of your questions.")
         .foregroundStyle(Theme.Text.tertiary)
     }
   }

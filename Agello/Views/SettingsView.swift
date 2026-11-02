@@ -22,7 +22,7 @@ struct SettingsView: View {
       }
       .themedList(Theme.Brand.glacier)
       .navigationTitle("Settings")
-      .navigationBarTitleDisplayMode(.large)
+      .largeTitleDisplay()
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
           Button("Done") { dismiss() }
@@ -81,9 +81,9 @@ struct SettingsView: View {
   private var statusLine: String {
     switch appState.engineState {
     case .ready:
-      guard let resolved = appState.resolved else { return String(localized: "On this iPhone") }
+      guard let resolved = appState.resolved else { return String(localized: "On this \(Platform.deviceName)") }
       return String(
-        localized: "On this iPhone · \(resolved.backendLabel) · \(resolved.maxNumTokens / 1024)K context")
+        localized: "On this \(Platform.deviceName) · \(resolved.backendLabel) · \(resolved.maxNumTokens / 1024)K context")
     case .generating: return String(localized: "Writing a reply…")
     case .loading(let progress): return progress
     case .failed: return String(localized: "See the chat for details")
@@ -174,7 +174,7 @@ struct SettingsView: View {
     } header: {
       Text("Model").eyebrowStyle()
     } footer: {
-      Text("Tools let the assistant check the date and calculate, fully on this iPhone.")
+      Text("Tools let the assistant check the date and calculate, fully on this \(Platform.deviceName).")
         .foregroundStyle(Theme.Text.tertiary)
     }
   }

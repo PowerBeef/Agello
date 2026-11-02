@@ -28,6 +28,6 @@ struct LicensesView: View {
     }
     .ambientBackdrop(Theme.Brand.silver, intensity: .whisper)
     .navigationTitle("Licenses")
-    .navigationBarTitleDisplayMode(.inline)
+    .inlineTitleDisplay()
   }
 }

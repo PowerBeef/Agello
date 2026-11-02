@@ -82,7 +82,7 @@ struct ChatView: View {
       if let message { Haptics.announce(message) }
     }
     .navigationTitle(thread?.title ?? "")
-    .navigationBarTitleDisplayMode(.inline)
+    .inlineTitleDisplay()
     .sheet(isPresented: $showLibrary) {
       NavigationStack {
         ModelLibraryView()
@@ -102,7 +102,7 @@ struct ChatView: View {
     } message: {
       Text("Enable microphone access in Settings to send voice messages.")
     }
-    .fullScreenCover(item: $voiceSession) { session in
+    .fullScreenOrSheet(item: $voiceSession) { session in
       VoiceModeView(session: session)
     }
     .onChange(of: AppRouter.shared.voiceRequested, initial: true) { _, requested in

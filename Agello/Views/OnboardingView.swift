@@ -54,12 +54,12 @@ struct OnboardingView: View {
       Text("Agello")
         .font(.wordmark)
         .foregroundStyle(Theme.Brand.glacier)
-      Text("Your own AI, entirely on this iPhone.")
+      Text("Your own AI, entirely on this \(Platform.deviceName).")
         .font(.system(.largeTitle, weight: .bold))
         .tracking(-0.6)
         .foregroundStyle(Theme.Text.primary)
         .fixedSize(horizontal: false, vertical: true)
-      Text("Gemma 4 runs on the iPhone's GPU. No account, no cloud: your chats stay on your phone.")
+      Text("Gemma 4 runs on the \(Platform.deviceName)'s GPU. No account, no cloud: your chats stay on your \(Platform.deviceName).")
         .font(.body)
         .foregroundStyle(Theme.Text.secondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -70,7 +70,7 @@ struct OnboardingView: View {
     VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
       feature(
         "lock.shield.fill", Theme.Brand.glacier, "Private by design",
-        "Your chats, photos and voice never leave this iPhone. A web search sends only the search.")
+        "Your chats, photos and voice never leave this \(Platform.deviceName). A web search sends only the search.")
       feature(
         "airplane", Theme.Brand.teal, "Works offline",
         "Once downloaded, the model needs no connection or account, except to search the web.")

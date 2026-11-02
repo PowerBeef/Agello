@@ -59,7 +59,7 @@ struct DrawerView: View {
               if appliedQuery.isEmpty {
                 EmptyStateView(
                   symbol: "bubble.left.and.bubble.right", title: "No chats yet",
-                  message: "Your conversations stay on this iPhone.")
+                  message: "Your conversations stay on this \(Platform.deviceName).")
               } else {
                 EmptyStateView(
                   symbol: "magnifyingglass", title: "No results",

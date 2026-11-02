@@ -160,7 +160,7 @@ struct ProjectView: View {
       }
       .themedList(Theme.Brand.glacier)
       .navigationTitle(name.isEmpty ? String(localized: "Project") : name)
-      .navigationBarTitleDisplayMode(.inline)
+      .inlineTitleDisplay()
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
           Button("Done") {
@@ -185,7 +185,7 @@ struct ProjectView: View {
           dismiss()
         }
       } message: {
-        Text("Its chats and files will be removed from this iPhone.")
+        Text("Its chats and files will be removed from this \(Platform.deviceName).")
       }
       .onAppear {
         guard !loaded else { return }

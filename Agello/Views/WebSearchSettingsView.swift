@@ -18,7 +18,7 @@ struct WebSearchSettingsView: View {
           .accessibilityIdentifier("web.automatic")
       } footer: {
         Text(
-          "Use the Search button in the composer to search for one message. With automatic search, the model searches on its own when a question needs current information. Only search queries and the pages read are sent; your conversation stays on this iPhone."
+          "Use the Search button in the composer to search for one message. With automatic search, the model searches on its own when a question needs current information. Only search queries and the pages read are sent; your conversation stays on this \(Platform.deviceName)."
         )
       }
       .themedRow()
@@ -34,9 +34,7 @@ struct WebSearchSettingsView: View {
         case .searxng:
           TextField("https://searx.example.org", text: $appState.webSettings.searxngURL)
             .accessibilityLabel("SearXNG server URL")
-            .keyboardType(.URL)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
+            .urlField()
         case .brave:
           SecureField("Brave Search API key", text: $braveKey)
             .onSubmit { SearchKeys.setKey(braveKey, for: .brave) }
@@ -77,7 +75,7 @@ struct WebSearchSettingsView: View {
     case .searxng:
       return String(localized: "Your SearXNG instance must allow the JSON format. DuckDuckGo and Wikipedia are fallbacks.")
     case .brave, .tavily:
-      return String(localized: "Uses your own API key, stored in this iPhone's Keychain. DuckDuckGo and Wikipedia are fallbacks.")
+      return String(localized: "Uses your own API key, stored in this \(Platform.deviceName)'s Keychain. DuckDuckGo and Wikipedia are fallbacks.")
     }
   }
 }
