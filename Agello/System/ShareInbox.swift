@@ -103,6 +103,13 @@ enum ShareInbox {
 /// Shared with the share extension.
 enum ImageDownsampler {
   static func jpeg(from data: Data, maxPixels: Int, quality: Double = 0.85) -> Data? {
+    guard let image = cgImage(from: data, maxPixels: maxPixels) else { return nil }
+    return jpeg(image, quality: quality)
+  }
+
+  /// The image in `data`, upright and at most `maxPixels` on its longer side, decoded without
+  /// the full-size bitmap: for a resize, or a thumbnail on screen.
+  static func cgImage(from data: Data, maxPixels: Int) -> CGImage? {
     let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
     guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
     let options: [CFString: Any] = [
@@ -111,9 +118,7 @@ enum ImageDownsampler {
       kCGImageSourceThumbnailMaxPixelSize: maxPixels,
       kCGImageSourceShouldCacheImmediately: true,
     ]
-    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-    else { return nil }
-    return jpeg(image, quality: quality)
+    return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
   }
 
   static func jpeg(_ image: CGImage, quality: Double = 0.85) -> Data? {

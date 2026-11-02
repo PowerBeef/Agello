@@ -47,8 +47,9 @@ struct MessageBubbleView: View {
         ForEach(turn.parts.files) { file in
           FileChip(record: file)
         }
-        if let data = turn.imageData, let image = UIImage(data: data) {
-          Image(uiImage: image)
+        // 1,024 pixels fill the bubble's width at 3x.
+        if let data = turn.imageData, let image = ImageDownsampler.cgImage(from: data, maxPixels: 1_024) {
+          Image(image, scale: 1, label: Text("Attached photo"))
             .resizable()
             .scaledToFit()
             .frame(maxHeight: 220)
@@ -57,7 +58,6 @@ struct MessageBubbleView: View {
               RoundedRectangle(cornerRadius: Theme.Radius.group, style: .continuous)
                 .stroke(Theme.Surface.stroke, lineWidth: Theme.Stroke.hairline)
             }
-            .accessibilityLabel("Attached photo")
         }
         if turn.hasAudio {
           Label("Voice message", systemImage: "waveform")

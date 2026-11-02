@@ -75,7 +75,7 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
     guard let pixels = lock.withLock({ latest }) else { return nil }
     let image = CIImage(cvPixelBuffer: pixels)
     guard let cgImage = context.createCGImage(image, from: image.extent),
-      let jpeg = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.85)
+      let jpeg = ImageDownsampler.jpeg(cgImage, quality: 0.85)
     else { return nil }
     return ImagePreparer.prepare(jpeg) ?? jpeg
   }

@@ -1,6 +1,5 @@
 import Foundation
 import PDFKit
-import UIKit
 import UniformTypeIdentifiers
 import Vision
 
@@ -202,12 +201,27 @@ enum DocumentIngestor {
     return ExtractedDocument(name: name, kind: .pdf, byteCount: size, pages: pages)
   }
 
-  private static func render(_ page: PDFPage) -> CGImage? {
+  /// The page as the reader sees it (rotation applied) on white, at one pixel per point of
+  /// `scale`. PDFKit's thumbnail did the same on iOS but fit a sideways page into the upright size.
+  static func render(_ page: PDFPage) -> CGImage? {
     let bounds = page.bounds(for: .mediaBox)
+    let sideways = page.rotation % 180 != 0
+    let width = sideways ? bounds.height : bounds.width
+    let height = sideways ? bounds.width : bounds.height
     // ~200 dpi on letter-size pages: enough for OCR, bounded memory.
-    let scale = min(2.8, CGFloat(ocrMaxDimension) / max(bounds.width, bounds.height))
-    let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
-    return page.thumbnail(of: size, for: .mediaBox).cgImage
+    let scale = min(2.8, CGFloat(ocrMaxDimension) / max(width, height))
+    let pixelWidth = Int((width * scale).rounded())
+    let pixelHeight = Int((height * scale).rounded())
+    guard pixelWidth > 0, pixelHeight > 0, let sRGB = CGColorSpace(name: CGColorSpace.sRGB),
+      let context = CGContext(
+        data: nil, width: pixelWidth, height: pixelHeight, bitsPerComponent: 8, bytesPerRow: 0,
+        space: sRGB, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+    else { return nil }
+    context.setFillColor(CGColor(gray: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight))
+    context.scaleBy(x: CGFloat(pixelWidth) / width, y: CGFloat(pixelHeight) / height)
+    page.draw(with: .mediaBox, to: context)
+    return context.makeImage()
   }
 
   // MARK: - OCR

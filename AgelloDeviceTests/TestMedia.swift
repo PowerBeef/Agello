@@ -1,19 +1,33 @@
 import AVFoundation
-import UIKit
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 
 /// Deterministic multimodal inputs generated on device.
 enum TestMedia {
-  /// A solid-color JPEG, prepared the same way the app prepares photos.
-  @MainActor
-  static func solidColorJPEG(_ color: UIColor, size: CGFloat = 512) -> Data {
-    let format = UIGraphicsImageRendererFormat()
-    format.scale = 1
-    let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size), format: format)
-    let image = renderer.image { context in
-      color.setFill()
-      context.fill(CGRect(x: 0, y: 0, width: size, height: size))
-    }
-    return image.jpegData(compressionQuality: 0.9)!
+  /// An sRGB color for ``solidColorJPEG(_:size:)``.
+  struct Swatch {
+    let red: CGFloat
+    let green: CGFloat
+    let blue: CGFloat
+
+    static let red = Swatch(red: 1, green: 0, blue: 0)
+    static let blue = Swatch(red: 0, green: 0, blue: 1)
+  }
+
+  /// A solid-color JPEG, `size` pixels square, drawn with Core Graphics (the same on iOS and macOS).
+  static func solidColorJPEG(_ color: Swatch, size: Int = 512) -> Data {
+    let context = CGContext(
+      data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    context.setFillColor(CGColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: size, height: size))
+    let output = NSMutableData()
+    let destination = CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil)!
+    CGImageDestinationAddImage(
+      destination, context.makeImage()!, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+    CGImageDestinationFinalize(destination)
+    return output as Data
   }
 
   /// Speak `text` with the system voice and write it as 16 kHz mono 16-bit

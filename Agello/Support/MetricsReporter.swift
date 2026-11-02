@@ -2,7 +2,6 @@ import CoreTransferable
 import Foundation
 import MetricKit
 import OSLog
-import UIKit
 import UniformTypeIdentifiers
 
 /// MetricKit's metrics and diagnostics (crashes, hangs, CPU and disk-write exceptions), kept on

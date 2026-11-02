@@ -529,11 +529,12 @@ struct ChatView: View {
     }
     if pendingImage != nil || recorder.finishedURL != nil || recorder.isRecording {
       HStack(spacing: Theme.Spacing.sm) {
-        if let data = pendingImage, let uiImage = UIImage(data: data) {
+        // 256 pixels cover the 44-point square at 3x, whatever the photo's shape.
+        if let data = pendingImage, let thumbnail = ImageDownsampler.cgImage(from: data, maxPixels: 256) {
           Button {
             pendingImage = nil
           } label: {
-            Image(uiImage: uiImage)
+            Image(decorative: thumbnail, scale: 1)
               .resizable()
               .scaledToFill()
               .frame(width: Theme.Size.target, height: Theme.Size.target)

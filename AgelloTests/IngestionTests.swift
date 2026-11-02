@@ -1,5 +1,4 @@
 import PDFKit
-import UIKit
 import XCTest
 
 @testable import Agello
@@ -107,14 +106,8 @@ final class IngestionTests: XCTestCase {
 
   func testPDFTextIsExtractedPerPage() async throws {
     let url = directory.appendingPathComponent("report.pdf")
-    let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792))
-    try renderer.writePDF(to: url) { context in
-      for page in 1...3 {
-        context.beginPage()
-        ("Quarterly report page \(page). Revenue grew in region \(page)." as NSString)
-          .draw(at: CGPoint(x: 72, y: 72), withAttributes: [.font: UIFont.systemFont(ofSize: 14)])
-      }
-    }
+    try TestImages.writePDF(
+      pages: (1...3).map { "Quarterly report page \($0). Revenue grew in region \($0)." }, to: url)
     let document = try await DocumentIngestor.extract(from: url)
     XCTAssertEqual(document.kind, .pdf)
     XCTAssertEqual(document.pages.count, 3)
@@ -210,12 +203,7 @@ final class IngestionTests: XCTestCase {
   /// A password-protected PDF says so instead of "couldn't be read".
   func testLockedPDFsSayTheyAreLocked() async throws {
     let plain = directory.appendingPathComponent("plain.pdf")
-    let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792))
-    try renderer.writePDF(to: plain) { context in
-      context.beginPage()
-      ("Confidential salary table." as NSString)
-        .draw(at: CGPoint(x: 72, y: 72), withAttributes: [.font: UIFont.systemFont(ofSize: 14)])
-    }
+    try TestImages.writePDF(pages: ["Confidential salary table."], to: plain)
     let locked = directory.appendingPathComponent("locked.pdf")
     let pdf = try XCTUnwrap(PDFDocument(url: plain))
     XCTAssertTrue(
@@ -229,18 +217,26 @@ final class IngestionTests: XCTestCase {
   }
 
   func testOCRReadsRenderedText() async throws {
-    let format = UIGraphicsImageRendererFormat()
-    format.scale = 2
-    let image = UIGraphicsImageRenderer(size: CGSize(width: 600, height: 160), format: format).image { ctx in
-      UIColor.white.setFill()
-      ctx.fill(CGRect(x: 0, y: 0, width: 600, height: 160))
-      ("Invoice total 1234 dollars" as NSString).draw(
-        at: CGPoint(x: 20, y: 50),
-        withAttributes: [.font: UIFont.systemFont(ofSize: 36), .foregroundColor: UIColor.black])
-    }
-    let document = try await DocumentIngestor.extract(scannedPages: [image.cgImage!], name: "Scan")
+    let image = try XCTUnwrap(
+      TestImages.text(
+        "Invoice total 1234 dollars", size: CGSize(width: 600, height: 160), fontSize: 36,
+        at: CGPoint(x: 20, y: 50), scale: 2))
+    let document = try await DocumentIngestor.extract(scannedPages: [image], name: "Scan")
     XCTAssertEqual(document.kind, .scan)
     XCTAssertTrue(document.pages[0].contains("1234"), document.pages[0])
+  }
+
+  /// OCR sees a page as the reader does, at most `ocrMaxDimension` pixels, sideways pages included.
+  func testPagesRenderUprightAtTheOCRSize() throws {
+    let url = directory.appendingPathComponent("rotated.pdf")
+    try TestImages.writePDF(pages: ["Upright", "Sideways"], to: url)
+    let pdf = try XCTUnwrap(PDFDocument(url: url))
+    let upright = try XCTUnwrap(DocumentIngestor.render(try XCTUnwrap(pdf.page(at: 0))))
+    XCTAssertEqual([upright.width, upright.height], [1_700, 2_200])
+    let page = try XCTUnwrap(pdf.page(at: 1))
+    page.rotation = 90
+    let sideways = try XCTUnwrap(DocumentIngestor.render(page))
+    XCTAssertEqual([sideways.width, sideways.height], [2_200, 1_700])
   }
 }
 
