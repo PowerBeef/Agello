@@ -1,7 +1,5 @@
 @preconcurrency import AVFoundation
 import CoreImage
-import SwiftUI
-import UIKit
 
 /// The back camera for voice mode: a live preview, and the latest frame as
 /// a JPEG when the user finishes speaking ("what am I looking at?").
@@ -26,7 +24,7 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
         if session.inputs.isEmpty {
           session.beginConfiguration()
           session.sessionPreset = .hd1280x720
-          guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+          guard let device = CameraSource.device(),
             let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input)
           else {
             session.commitConfiguration()
@@ -38,7 +36,7 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
           output.alwaysDiscardsLateVideoFrames = true
           output.setSampleBufferDelegate(self, queue: queue)
           if session.canAddOutput(output) { session.addOutput(output) }
-          output.connection(with: .video)?.videoRotationAngle = 90
+          output.connection(with: .video)?.videoRotationAngle = CameraSource.initialRotationAngle
           session.commitConfiguration()
           followRotation(of: device, connection: output.connection(with: .video))
         }
@@ -86,24 +84,4 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
     guard let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
     lock.withLock { latest = pixels }
   }
-}
-
-/// Live camera preview.
-struct CameraPreview: UIViewRepresentable {
-  let session: AVCaptureSession
-
-  final class PreviewView: UIView {
-    override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
-    // swiftlint:disable:next force_cast - guaranteed by layerClass
-    var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
-  }
-
-  func makeUIView(context: Context) -> PreviewView {
-    let view = PreviewView()
-    view.previewLayer.session = session
-    view.previewLayer.videoGravity = .resizeAspectFill
-    return view
-  }
-
-  func updateUIView(_ view: PreviewView, context: Context) {}
 }
