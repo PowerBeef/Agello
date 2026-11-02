@@ -177,6 +177,47 @@ final class MarkdownTests: XCTestCase {
 
   // MARK: Highlighter
 
+  /// Words can start with "@" (Swift's @State, CSS's @media, Python's decorators): the tokenizer
+  /// read an empty word there and never advanced, so any code block with an "@" hung the app
+  /// (the iPhone froze on a calculator web app's @media, 2026-11-02).
+  func testAtSignsEndTheirWords() {
+    let code = "@media (max-width: 400px) { .key { color: red; } }\n@State private var x = 1\n@decorator"
+    for language in ["css", "swift", "python", nil] {
+      XCTAssertEqual(CodeHighlighter.tokens(code, language: language).map(\.text).joined(), code)
+    }
+  }
+
+  /// A web app's worth of code (about 30,000 characters) tokenizes quickly and loses nothing:
+  /// a streaming block is highlighted again at every update.
+  func testLongCodeTokenizesQuickly() {
+    let unit = """
+      // Handles a key press on the keypad.
+      @media (max-width: 400px) { .key { padding: 4px; } }
+      function press(key) {
+        const value = display.value === "0" ? key : display.value + key; /* append */
+        display.value = value.length > 12 ? value.slice(0, 12) : value;
+        return 3.14 * 2;
+      }
+
+      """
+    let code = String(repeating: unit, count: 30_000 / unit.count + 1)
+    let started = ContinuousClock.now
+    let tokens = CodeHighlighter.tokens(code, language: "html")
+    let elapsed = ContinuousClock.now - started
+    XCTAssertEqual(tokens.map(\.text).joined(), code)
+    XCTAssertLessThan(elapsed, .seconds(3), "\(code.count) characters took \(elapsed)")
+  }
+
+  @MainActor
+  func testHighlightCacheAndPlainLongBlocks() {
+    let code = "let x = 42 // answer"
+    let first = CodeHighlightCache.highlighted(code, language: "swift")
+    XCTAssertEqual(CodeHighlightCache.highlighted(code, language: "swift"), first)
+    XCTAssertNotEqual(first, AttributedString(code))
+    let long = String(repeating: "x = 1\n", count: CodeHighlighter.maxHighlightedCharacters / 6 + 1)
+    XCTAssertEqual(CodeHighlightCache.highlighted(long, language: "python"), AttributedString(long))
+  }
+
   func testHighlighterTokens() {
     let tokens = CodeHighlighter.tokens("let x = \"hi\" // note\nreturn 42", language: "swift")
     XCTAssertTrue(tokens.contains(.init(kind: .keyword, text: "let")))

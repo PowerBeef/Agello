@@ -191,7 +191,7 @@ struct CodeBlockView: View {
       .padding(.vertical, Theme.Spacing.xxs)
       Rectangle().fill(Theme.Surface.hairline).frame(height: Theme.Stroke.hairline)
       ScrollView(.horizontal, showsIndicators: false) {
-        Text(CodeHighlighter.highlight(code, language: language))
+        Text(CodeHighlightCache.highlighted(code, language: language))
           .font(.callout.monospaced())
           .textSelection(.enabled)
           // Ideal size in both axes: inside a horizontal scroll view the

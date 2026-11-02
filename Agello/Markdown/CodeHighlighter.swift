@@ -11,6 +11,9 @@ enum CodeHighlighter {
     var text: String
   }
 
+  /// Blocks longer than this stay plain: a bound on the one-time cost of a finished block.
+  static let maxHighlightedCharacters = 30_000
+
   static func highlight(_ code: String, language: String?) -> AttributedString {
     var result = AttributedString()
     for token in tokens(code, language: language) {
@@ -35,6 +38,10 @@ enum CodeHighlighter {
     let family = Family(language)
     let keywords = family.keywords
     let characters = Array(code)
+    // Markers compared in place, without building arrays at every character.
+    let lineMarkers = family.lineComments.map(Array.init)
+    let blockOpen: [Character] = ["/", "*"]
+    let blockClose: [Character] = ["*", "/"]
     var tokens: [Token] = []
     var plain = ""
     var index = 0
@@ -49,23 +56,23 @@ enum CodeHighlighter {
       tokens.append(Token(kind: kind, text: String(characters[index..<end])))
       index = end
     }
-    func starts(_ prefix: String, at position: Int) -> Bool {
-      let p = Array(prefix)
-      guard position + p.count <= characters.count else { return false }
-      return Array(characters[position..<(position + p.count)]) == p
+    func starts(_ prefix: [Character], at position: Int) -> Bool {
+      guard position + prefix.count <= characters.count else { return false }
+      for offset in prefix.indices where characters[position + offset] != prefix[offset] { return false }
+      return true
     }
 
     while index < characters.count {
       let character = characters[index]
       // Comments
-      if family.lineComments.contains(where: { starts($0, at: index) }) {
+      if lineMarkers.contains(where: { $0.first == character && starts($0, at: index) }) {
         let end = characters[index...].firstIndex(of: "\n") ?? characters.count
         emit(.comment, upTo: end)
         continue
       }
-      if family.blockComments, starts("/*", at: index) {
+      if family.blockComments, character == "/", starts(blockOpen, at: index) {
         var end = index + 2
-        while end < characters.count, !starts("*/", at: end) { end += 1 }
+        while end < characters.count, !starts(blockClose, at: end) { end += 1 }
         emit(.comment, upTo: min(characters.count, end + 2))
         continue
       }
@@ -92,7 +99,10 @@ enum CodeHighlighter {
       }
       // Identifiers / keywords
       if isIdentifierStart(character) {
-        var end = index
+        // The first character always belongs to the word: "@" starts one (Swift's @State, CSS's
+        // @media) but isn't an identifier character, and starting at it read an empty word that
+        // never advanced. Any code block with an "@" hung the app (2026-11-02).
+        var end = index + 1
         while end < characters.count, isIdentifier(characters[end]) { end += 1 }
         let word = String(characters[index..<end])
         if keywords.contains(word) {
@@ -194,5 +204,30 @@ enum CodeHighlighter {
       "or", "not", "null", "as", "limit",
     ]
     static let php: Set<String> = ["echo", "array", "foreach", "as", "fn", "use", "namespace", "elseif"]
+  }
+}
+
+/// Highlighted code blocks by language and text: a finished reply renders again when the chat
+/// scrolls or another reply streams, and its blocks shouldn't be tokenized each time.
+@MainActor
+enum CodeHighlightCache {
+  private final class Box {
+    let value: AttributedString
+    init(_ value: AttributedString) { self.value = value }
+  }
+  private static let cache: NSCache<NSString, Box> = {
+    let cache = NSCache<NSString, Box>()
+    cache.countLimit = 100
+    return cache
+  }()
+
+  static func highlighted(_ code: String, language: String?) -> AttributedString {
+    let key = "\(language ?? "")\u{1}\(code)" as NSString
+    if let hit = cache.object(forKey: key) { return hit.value }
+    let value =
+      code.count > CodeHighlighter.maxHighlightedCharacters
+      ? AttributedString(code) : CodeHighlighter.highlight(code, language: language)
+    cache.setObject(Box(value), forKey: key)
+    return value
   }
 }

@@ -84,6 +84,30 @@ final class ChatFlowUITests: XCTestCase {
     XCTAssertGreaterThan(lastModelText().count, 400, "The reply was too short to scroll")
   }
 
+  /// A long code block streaming in keeps the app responsive: "Create a beautiful calculator
+  /// app…" with Search off froze the iPhone mid-reply (2026-11-02), the growing block highlighted
+  /// again at every update. Each snapshot needs the app's main thread, so a freeze shows as a slow
+  /// one.
+  func testLongCodeReplyStaysResponsive() throws {
+    try XCTSkipIf(Self.isSimulator, "Needs real generation")
+    try openNewChat()
+    send("Create a beautiful calculator app for mobile in a single self contained html file")
+    XCTAssertTrue(element("chat.stop").waitForExistence(timeout: 30), "The reply never started")
+    var slowest: TimeInterval = 0
+    var samples = 0
+    let deadline = Date().addingTimeInterval(120)
+    while element("chat.stop").exists, Date() < deadline {
+      let started = Date()
+      _ = try? element("message.model").snapshot()
+      slowest = max(slowest, Date().timeIntervalSince(started))
+      samples += 1
+      Thread.sleep(forTimeInterval: 1)
+    }
+    XCTAssertGreaterThan(samples, 10, "Too few samples while streaming")
+    XCTAssertLessThan(slowest, 5, "The app stopped answering for \(Int(slowest)) s while the code streamed")
+    XCTAssertTrue(lastModelText().contains("<"), "No code in the reply: \(lastModelText().prefix(200))")
+  }
+
   /// Audit #10.
   func testStopMidReply() throws {
     try XCTSkipIf(Self.isSimulator, "Needs real generation")
