@@ -18,16 +18,66 @@ enum ReadableText {
     )?.first.map(HTMLText.plain)
       ?? HTMLText.firstMatch(#"<title[^>]*>(.*?)</title>"#, in: html)?.first.map(HTMLText.plain)
 
-    var body = remove(
+    // Code samples keep their lines and indentation: set aside before the page is flattened.
+    var code: [String] = []
+    var body = setAsideCode(in: html, into: &code)
+    body = remove(
       ["script", "style", "noscript", "svg", "nav", "header", "footer", "aside", "form", "button",
-        "iframe", "template", "select", "figure"],
-      from: html)
+        "iframe", "template", "select"],
+      from: body)
+    // Figures are illustrations and captions, unless they hold code (many sites wrap it in one).
+    body = body.replacingOccurrences(
+      of: "(?is)<figure\\b[^>]*>(?:(?!</figure>|\(codeMarker)).)*</figure>", with: " ",
+      options: .regularExpression)
     body = body.replacingOccurrences(of: "(?s)<!--.*?-->", with: "", options: .regularExpression)
     let region = largest("article", in: body) ?? largest("main", in: body)
       ?? HTMLText.firstMatch(#"<body[^>]*>(.*)</body>"#, in: body)?.first ?? body
-    let text = toText(region)
+    let text = restoreCode(toText(region), code)
     return Page(
       title: title?.isEmpty == false ? title : nil, text: String(text.prefix(maxCharacters)))
+  }
+
+  private static let codeMarker = "AGELLOCODEBLOCK"
+
+  /// `<pre>` blocks, highlighting spans and all, as fenced code (`language-…` classes become the
+  /// fence's language), each replaced by a marker paragraph until the page is text again. Flattened
+  /// with the rest, code lost its line breaks and indentation (2026-11-02).
+  static func setAsideCode(in html: String, into blocks: inout [String]) -> String {
+    guard
+      let regex = try? NSRegularExpression(
+        pattern: "<pre\\b([^>]*)>(.*?)</pre>", options: [.caseInsensitive, .dotMatchesLineSeparators])
+    else { return html }
+    var output = ""
+    var last = html.startIndex
+    for match in regex.matches(in: html, range: NSRange(html.startIndex..., in: html)) {
+      guard let whole = Range(match.range, in: html), let attributes = Range(match.range(at: 1), in: html),
+        let inner = Range(match.range(at: 2), in: html)
+      else { continue }
+      output += html[last..<whole.lowerBound]
+      last = whole.upperBound
+      let language =
+        HTMLText.firstMatch(
+          #"language-([A-Za-z0-9+#-]+)"#, in: String(html[attributes]) + String(html[inner].prefix(300))
+        )?.first?.lowercased() ?? ""
+      let code = HTMLText.decodeEntities(
+        String(html[inner])
+          .replacingOccurrences(of: "(?i)<br\\s*/?>", with: "\n", options: .regularExpression)
+          .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+      ).replacingOccurrences(of: "\r\n", with: "\n").trimmingCharacters(in: .newlines)
+      guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+      blocks.append("```\(language)\n\(code)\n```")
+      output += "\n\n<p>\(codeMarker)\(blocks.count - 1)\(codeMarker)</p>\n\n"
+    }
+    output += html[last...]
+    return output
+  }
+
+  static func restoreCode(_ text: String, _ blocks: [String]) -> String {
+    var text = text
+    for (index, block) in blocks.enumerated() {
+      text = text.replacingOccurrences(of: "\(codeMarker)\(index)\(codeMarker)", with: block)
+    }
+    return text
   }
 
   /// Remove whole elements (with content, across lines) by tag name.

@@ -123,8 +123,63 @@ enum Chunker {
   }
 
   /// Paragraphs, with paragraphs longer than a passage split into sentences
-  /// (and sentences longer than a passage cut by length).
+  /// (and sentences longer than a passage cut by length). Fenced code stays one piece up to two
+  /// passages (EmbeddingGemma reads about 1,024 tokens), else is cut by lines into fenced pieces:
+  /// split at its blank lines and sentences, a code sample came apart (2026-11-02).
   static func split(_ text: String) -> [String] {
+    var units: [String] = []
+    var prose: [String] = []
+    var code: [String]?
+    for line in text.components(separatedBy: "\n") {
+      if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+        if let open = code {
+          units += codePieces(open + [line])
+          code = nil
+        } else {
+          units += paragraphs(prose.joined(separator: "\n"))
+          prose = []
+          code = [line]
+        }
+      } else if code != nil {
+        code?.append(line)
+      } else {
+        prose.append(line)
+      }
+    }
+    if let open = code { units += codePieces(open + ["```"]) }
+    units += paragraphs(prose.joined(separator: "\n"))
+    return units
+  }
+
+  /// A fenced block whole, or cut by lines (at a blank line where one comes late enough) into
+  /// pieces that each keep the opening fence and close.
+  private static func codePieces(_ lines: [String]) -> [String] {
+    let limit = 2 * targetCharacters
+    let whole = lines.joined(separator: "\n")
+    guard weight(of: whole) > limit, lines.count > 2 else { return [whole] }
+    let open = lines[0]
+    var pieces: [String] = []
+    var current: [String] = []
+    var used = 0
+    func close(through end: Int) {
+      pieces.append(([open] + current[..<end] + ["```"]).joined(separator: "\n"))
+      current.removeFirst(end)
+      used = current.reduce(0) { $0 + weight(of: $1) + 1 }
+    }
+    for line in lines.dropFirst().dropLast() {
+      let cost = weight(of: line) + 1
+      if used + cost > limit, !current.isEmpty {
+        let blank = current.lastIndex { $0.trimmingCharacters(in: .whitespaces).isEmpty }
+        close(through: blank.map { $0 > current.count / 4 ? $0 + 1 : current.count } ?? current.count)
+      }
+      current.append(line)
+      used += cost
+    }
+    if !current.isEmpty { close(through: current.count) }
+    return pieces
+  }
+
+  private static func paragraphs(_ text: String) -> [String] {
     let paragraphs = text
       .components(separatedBy: "\n\n")
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }

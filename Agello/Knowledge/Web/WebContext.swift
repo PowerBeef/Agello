@@ -4,9 +4,15 @@ import Foundation
 /// "[1]" markers into links. Pure (unit-tested).
 enum WebContext {
   /// Tokens for web results: the share of the window for material (``FileContext/budget``)
-  /// less what the chat's files already take, and never under a quarter of it.
-  static func budget(window: Int, question: String, alongsideFileTokens fileTokens: Int = 0) -> Int {
-    let share = FileContext.budget(window: window, question: question)
+  /// less what the chat's files already take, and never under a quarter of it. A request (code,
+  /// a plan) takes a third of the window instead of half, leaving more for the work itself.
+  static func budget(
+    window: Int, question: String, alongsideFileTokens fileTokens: Int = 0, forRequest: Bool = false
+  ) -> Int {
+    let share =
+      forRequest
+      ? max(512, window / 3 - ContextBudget.estimateTokens(question))
+      : FileContext.budget(window: window, question: question)
     return max(share / 4, share - fileTokens)
   }
 
@@ -62,41 +68,59 @@ enum WebContext {
   // MARK: Query planning
 
   static let querySchema =
-    #"{"type":"object","properties":{"queries":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":3}},"required":["queries"]}"#
-  static let queryMaxOutputTokens = 80
+    #"{"type":"object","properties":{"queries":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":3},"request":{"type":"boolean"}},"required":["queries","request"]}"#
+  static let queryMaxOutputTokens = 100
 
-  /// Prompt for 1–3 search queries that resolve a follow-up question.
+  /// What a Search message needs: the queries, and whether it asks for something to be made.
+  struct Plan: Equatable, Sendable {
+    var queries: [String]
+    var isRequest: Bool
+  }
+
+  /// Prompt for 1–3 search queries for what the new message needs: the facts that answer a
+  /// question, or the techniques, APIs and facts that make a request (code, a plan) well, with
+  /// room for one complete example. Until 2026-11-02 a first message was searched as typed (for
+  /// "create a calculator app": tutorials restating the task); planned for techniques only, the
+  /// probe 24 calculators lost the complete examples they had relied on and came back broken.
   static func queryPrompt(
     question: String, history: [(role: ChatRole, text: String)], today: Date = .now
   ) -> String {
     let recent = history.suffix(4).map { turn in
       "\(turn.role == .user ? "User" : "Assistant"): \(ContextBudget.prefix(turn.text, maxBytes: 400))"
     }.joined(separator: "\n")
+    let conversation = recent.isEmpty ? "" : "Conversation so far:\n\(recent)\n\n"
     return """
       Today is \(today.formatted(date: .complete, time: .omitted)).
 
-      Conversation so far:
-      \(recent)
+      \(conversation)New message: \(question)
 
-      New question: \(question)
-
-      Write 1 to 3 short web search queries that would find the answer to the new question. \
-      Make each query self-contained (resolve names and pronouns from the conversation). Use the \
-      language of the question.
+      Write 1 to 3 short web search queries for what's needed to handle the new message well. \
+      For a question, search for the facts that answer it. For a request to write, code, build, \
+      plan or design something, search for the specific techniques, APIs, specifications or facts \
+      needed to do it well; one query may look for a complete, well-regarded example of the whole \
+      thing. Make each query \
+      self-contained (resolve names and pronouns from the conversation). Use the language of the \
+      message. Set request to true when the message asks for something to be made rather than \
+      for an answer.
       """
   }
 
-  static func parseQueries(_ json: Data) -> [String] {
+  static func parsePlan(_ json: Data) -> Plan {
     guard
       let object = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any],
       let queries = object["queries"] as? [String]
-    else { return [] }
+    else { return Plan(queries: [], isRequest: false) }
     var seen = Set<String>()
-    return queries.compactMap { raw in
+    let cleaned = queries.compactMap { raw -> String? in
       let query = raw.trimmingCharacters(in: .whitespacesAndNewlines.union(.init(charactersIn: "\"")))
       guard query.count >= 2, seen.insert(query.lowercased()).inserted else { return nil }
       return String(query.prefix(200))
     }.prefix(3).map { $0 }
+    return Plan(queries: cleaned, isRequest: object["request"] as? Bool ?? false)
+  }
+
+  static func parseQueries(_ json: Data) -> [String] {
+    parsePlan(json).queries
   }
 
   /// The search query for a first question (no planning needed).
@@ -177,9 +201,10 @@ final class WebResearch {
   }
 
   /// Run `queries` through the provider chain, read the best pages, and keep
-  /// the passages most relevant to `question` within `budgetTokens`.
+  /// the passages most relevant to `rankingQueries` (default: `question`) within `budgetTokens`.
   func research(
-    queries: [String], question: String, settings: WebSearchSettings, budgetTokens: Int,
+    queries: [String], question: String, rankingQueries: [String]? = nil,
+    settings: WebSearchSettings, budgetTokens: Int,
     firstIndex: Int = 1, progress: @MainActor (String) -> Void
   ) async throws -> Findings {
     // 1. Search, every query at once (each through the provider chain), in query order.
@@ -245,7 +270,7 @@ final class WebResearch {
       }
     }
     progress(String(localized: "Picking the relevant parts…"))
-    let order = await rank(passages.map(\.text), question: question)
+    let order = await rank(passages.map(\.text), against: rankingQueries ?? [question])
 
     // 4. Keep the best passages within budget; number sources by first use.
     var used = 0
@@ -289,23 +314,31 @@ final class WebResearch {
   /// (up to 200) took seconds of GPU time before the reply could start.
   static let passagesToEmbed = 40
 
-  private func rank(_ passages: [String], question: String) async -> [Int] {
+  /// Each passage scores its best match among `queries`: a request's needs are several (the
+  /// layout, the arithmetic, the viewport), each answered by different pages. One more query
+  /// embedding per query; the shortlist embedded stays the same size.
+  private func rank(_ passages: [String], against queries: [String]) async -> [Int] {
     guard !passages.isEmpty else { return [] }
-    let scores = KeywordScorer.scores(query: question, documents: passages)
+    let scores = KeywordScorer.scores(query: queries.joined(separator: " "), documents: passages)
     let byKeywords = passages.indices.sorted {
       scores[$0] != scores[$1] ? scores[$0] > scores[$1] : $0 < $1
     }
     let shortlist = Array(byKeywords.prefix(Self.passagesToEmbed))
-    if let embedder = knowledge.currentEmbedder(),
-      let query = try? await embedder.embed(query: question),
-      let vectors = try? await embedder.embed(
-        documents: shortlist.map { (title: "none", text: passages[$0]) }),
-      vectors.count == shortlist.count
-    {
-      // The shortlist by meaning, then the rest by keywords.
-      let byMeaning = VectorIndex.top(shortlist.count, query: query, candidates: Array(zip(shortlist, vectors)))
-        .map(\.item)
-      return byMeaning + byKeywords.dropFirst(shortlist.count)
+    if let embedder = knowledge.currentEmbedder() {
+      var queryVectors: [[Float]] = []
+      for query in queries {
+        if let vector = try? await embedder.embed(query: query) { queryVectors.append(vector) }
+      }
+      if !queryVectors.isEmpty,
+        let vectors = try? await embedder.embed(
+          documents: shortlist.map { (title: "none", text: passages[$0]) }),
+        vectors.count == shortlist.count
+      {
+        // The shortlist by meaning, then the rest by keywords.
+        let best = vectors.map { vector in queryVectors.map { VectorIndex.dot($0, vector) }.max() ?? 0 }
+        let byMeaning = shortlist.indices.sorted { best[$0] > best[$1] }.map { shortlist[$0] }
+        return byMeaning + byKeywords.dropFirst(shortlist.count)
+      }
     }
     return byKeywords
   }

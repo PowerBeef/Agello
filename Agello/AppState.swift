@@ -970,33 +970,32 @@ final class AppState {
   /// Sources already attached to the reply before the automatic tool runs.
   @ObservationIgnored private var toolSourceOffset = 0
 
-  /// Plan queries (the model resolves follow-ups; a first question is
-  /// searched as asked), then research them.
+  /// Plan queries (what the message needs, follow-ups resolved from the conversation), then
+  /// research them: passages rank by their best match to the message or a planned need, and a
+  /// request leaves more room for the work.
   private func searchWeb(
     question: String, history: [(role: ChatRole, text: String)], firstIndex: Int,
     fileTokens: Int = 0
   ) async -> WebOutcome {
-    var queries = [WebContext.directQuery(question)]
-    if !history.isEmpty {
-      preparingStatus = String(localized: "Planning the search…")
-      let prompt = WebContext.queryPrompt(question: question, history: history)
-      let output: Data? = await serialized {
-        let output = try? await self.engine.helperJSON(
-          prompt: prompt, schemaJSON: WebContext.querySchema,
-          maxOutputTokens: WebContext.queryMaxOutputTokens)
-        await self.afterHelper()
-        return output
-      }
-      let planned = output.map(WebContext.parseQueries) ?? []
-      if !planned.isEmpty { queries = planned }
+    preparingStatus = String(localized: "Planning the search…")
+    let prompt = WebContext.queryPrompt(question: question, history: history)
+    let output: Data? = await serialized {
+      let output = try? await self.engine.helperJSON(
+        prompt: prompt, schemaJSON: WebContext.querySchema,
+        maxOutputTokens: WebContext.queryMaxOutputTokens)
+      await self.afterHelper()
+      return output
     }
+    let plan = output.map(WebContext.parsePlan) ?? WebContext.Plan(queries: [], isRequest: false)
+    let queries = plan.queries.isEmpty ? [WebContext.directQuery(question)] : plan.queries
     if Task.isCancelled { return .cancelled }
     let window = resolved?.maxNumTokens ?? 8_192
     do {
       let findings = try await webResearch.research(
-        queries: queries, question: question, settings: webSettings,
+        queries: queries, question: question,
+        rankingQueries: [question] + plan.queries, settings: webSettings,
         budgetTokens: WebContext.budget(
-          window: window, question: question, alongsideFileTokens: fileTokens),
+          window: window, question: question, alongsideFileTokens: fileTokens, forRequest: plan.isRequest),
         firstIndex: firstIndex
       ) { status in self.preparingStatus = status }
       return findings.sources.isEmpty

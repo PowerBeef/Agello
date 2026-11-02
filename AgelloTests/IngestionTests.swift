@@ -241,6 +241,26 @@ final class IngestionTests: XCTestCase {
 }
 
 extension IngestionTests {
+  /// A fenced code block stays in one passage, its blank lines included.
+  func testFencedCodeStaysInOnePassage() {
+    let prose = String(repeating: "Some explanation of the code that follows. ", count: 20)
+    let code = "```swift\nstruct A {\n  var x = 1\n\n  func f() {}\n}\n```"
+    let chunks = Chunker.chunks(pages: [prose + "\n\n" + code + "\n\n" + prose], paged: false)
+    XCTAssertTrue(chunks.contains { $0.text.contains(code) }, chunks.map(\.text).joined(separator: "\n---\n"))
+  }
+
+  /// A long one is cut by lines into pieces that each stay fenced, no line lost.
+  func testLongFencedCodeIsCutIntoFencedPieces() {
+    let body = (1...400).map { "let value\($0) = \($0) * 2" }.joined(separator: "\n")
+    let pieces = Chunker.split("```swift\n\(body)\n```")
+    XCTAssertGreaterThan(pieces.count, 1)
+    for piece in pieces {
+      XCTAssertTrue(piece.hasPrefix("```swift\n") && piece.hasSuffix("\n```"), piece)
+      XCTAssertLessThanOrEqual(Chunker.weight(of: piece), 2 * Chunker.targetCharacters + 40)
+    }
+    XCTAssertEqual(pieces.map { $0.split(separator: "\n").count - 2 }.reduce(0, +), 400)
+  }
+
   func testSubstantialPassagesEndAtPageBreaks() {
     let page = String(repeating: "A sentence of reasonable length here. ", count: 25)  // ~950 chars
     let chunks = Chunker.chunks(pages: [page, page, page], paged: true)

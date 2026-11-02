@@ -141,7 +141,7 @@ final class WebTests: XCTestCase {
     let prompt = WebContext.queryPrompt(
       question: "By how much?", history: [(.user, "Who won the Tour?"), (.model, "Pogačar.")])
     XCTAssertTrue(prompt.contains("User: Who won the Tour?"))
-    XCTAssertTrue(prompt.contains("New question: By how much?"))
+    XCTAssertTrue(prompt.contains("New message: By how much?"))
   }
 
   func testCitationsBecomeLinks() {
@@ -174,6 +174,48 @@ final class WebTests: XCTestCase {
     // A request, not only a question: the sources are reference material for doing it.
     XCTAssertTrue(prompt.contains("do what the message asks"))
     XCTAssertEqual(source.record.url, "https://www.cyclingstage.com/x")
+  }
+
+  /// Every Search message is planned, a first one too: a request gets queries for what it needs
+  /// (searched as typed, "create a calculator app" found tutorials restating the task).
+  func testQueryPlanForAFirstMessageAndARequest() {
+    let first = WebContext.queryPrompt(
+      question: "Create a calculator app", history: [], today: Date(timeIntervalSince1970: 1_791_600_000))
+    XCTAssertFalse(first.contains("Conversation so far"))
+    XCTAssertTrue(first.contains("New message: Create a calculator app"))
+    XCTAssertTrue(first.contains("techniques, APIs"))
+    let followUp = WebContext.queryPrompt(
+      question: "And on iPad?", history: [(.user, "Make a SwiftUI list"), (.model, "Here it is")])
+    XCTAssertTrue(followUp.contains("Conversation so far:\nUser: Make a SwiftUI list"))
+    let plan = WebContext.parsePlan(
+      Data(#"{"queries":["css grid keypad","safe eval javascript"],"request":true}"#.utf8))
+    XCTAssertEqual(plan, WebContext.Plan(queries: ["css grid keypad", "safe eval javascript"], isRequest: true))
+    XCTAssertFalse(WebContext.parsePlan(Data(#"{"queries":["tour de france 2026"]}"#.utf8)).isRequest)
+  }
+
+  /// A request's sources take a third of the window instead of half: more room for the work.
+  func testRequestsLeaveMoreRoomForTheWork() {
+    let question = WebContext.budget(window: 16_384, question: "Who won?")
+    let request = WebContext.budget(window: 16_384, question: "Make a calculator", forRequest: true)
+    XCTAssertLessThan(request, question)
+    XCTAssertEqual(request, 16_384 / 3 - ContextBudget.estimateTokens("Make a calculator"))
+  }
+
+  /// Code samples keep their lines, indentation and language, figures that hold them included.
+  func testPageCodeKeepsItsLines() {
+    let html = """
+      <html><body><article><h1>Adding</h1><p>A function that adds two numbers, explained at length \
+      for the reader, so that this article has more than enough text to be picked as the main \
+      content of the page by the extractor, which wants a couple of hundred characters at least.</p>
+      <figure class="highlight"><pre><code class="language-js"><span class="k">function</span> add(a, b) {
+        <span class="k">return</span> a &amp;&amp; b ? a + b : 0;
+      }</code></pre></figure>
+      <figure><img src="x.png"><figcaption>A diagram</figcaption></figure>
+      <p>That's all.</p></article></body></html>
+      """
+    let text = ReadableText.extract(html: html).text
+    XCTAssertTrue(text.contains("```js\nfunction add(a, b) {\n  return a && b ? a + b : 0;\n}\n```"), text)
+    XCTAssertFalse(text.contains("A diagram"))
   }
 
   func testSettingsDecodeTolerantly() throws {
