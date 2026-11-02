@@ -167,6 +167,14 @@ PLATFORM=macos-native ONLY=AgelloTests/ShellModelTests scripts/device-harness.sh
 PLATFORM=macos-native scripts/device-harness.sh inference
 ```
 
+- Probe 24 (`test24_QualityBench`) is the quality bench: eight realistic
+  requests (web apps, Swift and Python code, facts, an explanation, an email,
+  a trip plan, with and without Search) through the whole app, each reply
+  attached in full as `quality-<id>.md`, generated web apps tried in a web
+  view. Run it in Agello for Mac with its own `OUT` before and after a change
+  to prompts, Search or budgets, then `scripts/quality-codecheck.sh <OUT>`
+  type-checks the Swift and compiles the Python; read the replies side by
+  side. `TEST_RUNNER_BENCH_ONLY=id,id` runs some cases.
 - Probe 21 (`test21_RepliesWhileHidden`, macOS only) replies for five minutes
   with the app hidden and compares decode speed with the app shown; probe 22
   drives critical memory pressure on the real engine. Speed comparisons (probe
