@@ -77,6 +77,7 @@ Turns form a tree through `parentID`. Each thread stores its active leaf, and th
 ```text
 Agello/
 ├── AppState.swift      the hub: generation pipeline, settings, engine lifecycle
+├── App/                launch: the store, AppState and the shell's model (AppBootstrap)
 ├── Inference/          engine actor, planner, context budget, device policy, tools, helpers
 ├── Knowledge/          file reading, chunking, embeddings, vector index, web research
 ├── Markdown/           parsing, code highlighting, rendering
@@ -84,9 +85,9 @@ Agello/
 ├── Persistence/        versioned SwiftData schema, branching, store loading
 ├── System/             App Intents, deep links, Spotlight, share inbox
 ├── Voice/              voice mode: capture, speech, turn detection, camera
-├── Views/              chat, drawer, composer, settings, projects, onboarding
+├── Views/              chat, drawer, composer, settings, projects, onboarding; Shell/: the shell's model and routing
 └── Support/            the design system (Theme/), image preparation, diagnostics
-AgelloiOS/             the iPhone app only: app entry, root view, camera and scanner, background work, haptics, Info.plist
+AgelloiOS/             the iPhone app only: app entry, the drawer shell, camera and scanner, background work, Info.plist; Platform/, one file per seam
 AgelloMac/             Agello for Mac (docs/MAC.md): so far a placeholder window and the runtime self-test
 AgelloWidgets/         Home/Lock Screen widgets and Control Center controls
 AgelloShare/           share extension: "Ask Agello"

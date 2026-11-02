@@ -1,4 +1,3 @@
-import CoreSpotlight
 import SwiftData
 import SwiftUI
 
@@ -7,7 +6,7 @@ import SwiftUI
 /// left edge; tap or swipe the chat back to close.
 struct ContentView: View {
   @Environment(AppState.self) private var appState
-  @Environment(\.modelContext) private var context
+  @Environment(ShellModel.self) private var shell
   @Environment(\.scenePhase) private var scenePhase
   @Query(sort: \ChatThread.updatedAt, order: .reverse) private var threads: [ChatThread]
 
@@ -15,11 +14,6 @@ struct ContentView: View {
   /// Live finger offset while dragging the drawer (relative to its resting place).
   @State private var dragOffset: CGFloat = 0
   @State private var dragging = false
-  @State private var showSettings = false
-  @State private var renaming: ChatThread?
-  @State private var renameText = ""
-  @State private var deleting: ChatThread?
-  @State private var openProject: Project?
   @AppStorage("onboardingDone") private var onboardingDone = false
   /// Decided once at launch, so finishing the download doesn't dismiss the
   /// welcome screen before "Start chatting".
@@ -31,6 +25,7 @@ struct ContentView: View {
   }
 
   var body: some View {
+    @Bindable var shell = shell
     GeometryReader { geometry in
       let width = min(geometry.size.width * 0.84, 360)
       let offset = min(max((drawerOpen ? width : 0) + dragOffset, 0), width)
@@ -81,22 +76,14 @@ struct ContentView: View {
       }
       .simultaneousGesture(drawerDrag(width: width))
     }
-    .onContinueUserActivity(CSSearchableItemActionType) { activity in
-      if let id = SpotlightIndex.chatID(from: activity) { AppRouter.shared.handle(.openChat(id)) }
-    }
-    .onOpenURL { url in
-      if let action = AppRouter.action(for: url) { AppRouter.shared.handle(action) }
-    }
-    .onChange(of: AppRouter.shared.pending, initial: true) {
-      if let action = AppRouter.shared.take() { perform(action) }
-    }
+    .routesExternalRequests(perform: perform)
     .onChange(of: scenePhase) { _, phase in
-      if phase == .active { answerSharedItems() }
+      if phase == .active { shell.answerSharedItems() }
     }
     .task {
       AudioRecorder.removeLeftovers()
-      answerSharedItems()
-      SpotlightIndex.refresh(in: context)
+      shell.answerSharedItems()
+      SpotlightIndex.refresh(in: shell.context)
       appState.pruneEmptyThreads()
       appState.knowledge.indexPendingIfAvailable()
       presentOnboarding = OnboardingView.shouldShow(
@@ -106,26 +93,22 @@ struct ContentView: View {
     .onChange(of: appState.selectedThreadID) { appState.pruneEmptyThreads() }
     // Presented screens get AppState explicitly: running on a Mac, the
     // onboarding cover didn't inherit it and the app crashed at launch.
-    .sheet(isPresented: $showSettings) {
+    .sheet(isPresented: $shell.showSettings) {
       SettingsView()
         .environment(appState)
     }
-    .sheet(item: $openProject) { project in
+    .sheet(item: $shell.openProject) { project in
       ProjectView(
         project: project,
         onOpenChat: { thread in
-          openProject = nil
-          appState.newChatProjectID = nil
-          appState.selectedThreadID = thread.id
+          shell.openChat(fromProject: thread)
           setDrawer(open: false)
         },
         onNewChat: {
-          openProject = nil
-          appState.selectedThreadID = nil
-          appState.newChatProjectID = project.id
+          shell.newChat(in: project)
           setDrawer(open: false)
         },
-        onDelete: { appState.deleteProject(project, in: context) }
+        onDelete: { shell.delete(project) }
       )
       .environment(appState)
     }
@@ -133,27 +116,7 @@ struct ContentView: View {
       OnboardingView { presentOnboarding = false }
         .environment(appState)
     }
-    .alert("Rename chat", isPresented: isRenaming) {
-      TextField("Title", text: $renameText)
-        .submitLabel(.done)
-        .onSubmit {
-          commitRename()
-          renaming = nil
-        }
-        .accessibilityIdentifier("rename.field")
-      Button("Save") { commitRename() }
-      Button("Cancel", role: .cancel) {}
-    }
-    .confirmationDialog(
-      "Delete this chat?", isPresented: isDeleting, titleVisibility: .visible,
-      presenting: deleting
-    ) { thread in
-      Button("Delete", role: .destructive) {
-        appState.deleteThread(thread, in: context)
-      }
-    } message: { _ in
-      Text("It will be removed from this iPhone.")
-    }
+    .shellDialogs(shell)
   }
 
   // MARK: - Chat
@@ -194,10 +157,10 @@ struct ContentView: View {
                   thread.isPinned ? "Unpin" : "Pin",
                   systemImage: thread.isPinned ? "pin.slash" : "pin"
                 ) {
-                  togglePin(thread)
+                  shell.togglePin(thread)
                 }
-                Button("Rename", systemImage: "pencil") { startRename(thread) }
-                Button("Delete", systemImage: "trash", role: .destructive) { deleting = thread }
+                Button("Rename", systemImage: "pencil") { shell.startRename(thread) }
+                Button("Delete", systemImage: "trash", role: .destructive) { shell.deleting = thread }
                   .disabled(appState.generatingThreadID == thread.id)
               } label: {
                 Image(systemName: "ellipsis")
@@ -216,62 +179,30 @@ struct ContentView: View {
   private var drawer: some View {
     DrawerView(
       onSelect: { thread in
-        appState.newChatProjectID = nil
-        appState.selectedThreadID = thread.id
+        shell.select(thread)
         setDrawer(open: false)
       },
       onNewChat: newChat,
-      onRename: startRename,
-      onTogglePin: togglePin,
-      onDelete: { deleting = $0 },
+      onRename: shell.startRename,
+      onTogglePin: shell.togglePin,
+      onDelete: { shell.deleting = $0 },
       onSettings: {
-        showSettings = true
+        shell.showSettings = true
       },
-      onOpenProject: { openProject = $0 },
-      onNewProject: {
-        openProject = appState.newProject(named: String(localized: "New project"), in: context)
-      },
-      onMove: { thread, projectID in appState.move(thread, toProject: projectID) })
+      onOpenProject: { shell.openProject = $0 },
+      onNewProject: shell.newProject,
+      onMove: shell.move)
   }
 
-  /// Items shared from other apps while Agello wasn't open.
-  private func answerSharedItems() {
-    Task { await appState.answerSharedItems() }
-  }
-
-  /// Carry out a request from Siri, Shortcuts, widgets, Spotlight, or a link.
+  /// Carry out a request from Siri, Shortcuts, widgets, Spotlight, or a link, with the drawer
+  /// closed.
   private func perform(_ action: AppRouter.Action) {
-    showSettings = false
-    openProject = nil
     setDrawer(open: false)
-    switch action {
-    case .newChat:
-      newChat()
-    case .voice:
-      newChat()
-      AppRouter.shared.voiceRequested = true
-    case .openChat(let id):
-      appState.newChatProjectID = nil
-      if threads.contains(where: { $0.id == id }) { appState.selectedThreadID = id }
-    case .ask(let question):
-      guard !appState.isBusy else {
-        appState.generationError = String(localized: "Finish or stop the current reply first.")
-        return
-      }
-      newChat()
-      let thread = appState.newThread(in: context)
-      appState.selectedThreadID = thread.id
-      Task { await appState.send(text: question, imageData: nil, audioFileURL: nil, in: thread) }
-    case .draft(let text):
-      newChat()
-      AppRouter.shared.draftRequested = text
-    }
+    shell.perform(action)
   }
 
   private func newChat() {
-    // Saved on the first message, so unused new chats never pile up.
-    appState.newChatProjectID = nil
-    appState.selectedThreadID = nil
+    shell.newChat()
     setDrawer(open: false)
   }
 
@@ -308,33 +239,6 @@ struct ContentView: View {
       }
   }
 
-  // MARK: - Rename / delete
-
-  private var isRenaming: Binding<Bool> {
-    Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })
-  }
-
-  private var isDeleting: Binding<Bool> {
-    Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })
-  }
-
-  private func togglePin(_ thread: ChatThread) {
-    thread.isPinned.toggle()
-    try? context.save()
-    Haptics.complete()
-  }
-
-  private func startRename(_ thread: ChatThread) {
-    renameText = thread.title
-    renaming = thread
-  }
-
-  private func commitRename() {
-    let title = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let thread = renaming, !title.isEmpty else { return }
-    thread.title = String(title.prefix(80))
-    try? context.save()
-  }
 }
 
 extension ModelStore {

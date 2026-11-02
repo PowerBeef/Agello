@@ -31,12 +31,7 @@ struct SettingsView: View {
       }
       // Advanced edits options too: it is pushed on this stack, so these
       // stay alive while it shows.
-      .onChange(of: appState.options) {
-        appState.scheduleApplyOptions()
-      }
-      .onChange(of: appState.enableTools) {
-        appState.scheduleApplyOptions()
-      }
+      .appliesEngineSettings(appState)
     }
   }
 

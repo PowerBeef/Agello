@@ -2,7 +2,7 @@
 
 A native macOS version of Agello that shares most of the iPhone app's code and architecture.
 
-**Status:** approved 2026-10-16; not started. The work is paused before M0. [The roadmap](ROADMAP.md) places it among the other work.
+**Status:** approved 2026-10-16. M0.2–M0.3 done 2026-10-24 (the notarization dry run is open) and M1 done 2026-11-01; next is M2. [The roadmap](ROADMAP.md) places it among the other work.
 
 ## Context
 
@@ -133,6 +133,13 @@ The phone is away, so these are moves and seams that keep iOS defaults. Each one
    - `Agello/Views/Sidebar/ChatListModel.swift` and `ChatRows.swift` take the rows, the debounced search and the context menu from `DrawerView`.
    - `Agello/Views/Settings/AppliesEngineSettings.swift` takes SettingsView's engine `onChange` hooks (lines 34–39).
    - Before-and-after mock screenshots of the iPhone app on this Mac.
+- **M1 done on 2026-11-01** (nine commits from `c1c0fa8`, the last the shared shell), checked against Vocello 3.0's `main` again: its split hasn't changed since October 16 (its later Mac work is the CLI, Sparkle and build settings). Each step passed `swiftlint`, the iOS compile check (tests included), the `AgelloMac` compile check and `PLATFORM=mac unit`; the memory, audio and camera seams also passed `inference` (23/23), and the photo changes test07, test09a and test09b. Nothing in `Agello/` imports UIKit or names a UIKit type now. Where it differs from the plan above:
+  - **Following Vocello's rule** ("extract shared presentation only when both apps immediately use it"), `ChatListModel` and `ChatRows` wait for the Mac sidebar (M4). The drawer is already shared code, and DrawerView compiles for macOS as it is. M1.6 extracted what every shell needs from M2 on: `AppBootstrap`, `ShellModel` (now unit-tested, `ShellModelTests`), `.routesExternalRequests`, `.shellDialogs` and `.appliesEngineSettings`.
+  - **No before-and-after screenshots:** screen access to Agello was declined on this Mac. The moves are verbatim, and the iPhone's `ui` and `screenshots` suites confirm the pixels in the queued iPhone batch.
+  - `ThemeMetrics.swift` holds `Theme.Size`, the only metrics there are (no `Theme.Layout` or font roles exist yet). `Platform` has `copy`, `reduceMotion`, `deviceName` and `osName`; `isDesktop` comes with its first caller.
+  - The shims add `largeTitleDisplay()` (Settings). 15 strings use `Platform.deviceName`; onboarding's "stay on your phone" now reads "on your iPhone".
+  - Also fixed on the way: a race in `StreamRegistryTests/testToolRoundsStopAtTheLimit`, and sideways PDF pages now reach OCR at the full 2,200 px.
+  - **Queued for the iPhone:** the default suites with `ui` (voice mode's audio session and interruptions, the camera preview and its rotation, the composer, the camera and scanner covers, the rename and delete dialogs), then `screenshots` against the last tour.
 
 ## M2: AgelloMac compiles and runs the shared app
 

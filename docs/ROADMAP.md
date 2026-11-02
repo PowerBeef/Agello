@@ -21,7 +21,7 @@ The handoff between work sessions: read this first, then the section of the plan
   - Fix (d), in Agello (`3c4f42a`): on our build, reply stats come from its telemetry and benchmark mode stays off, from 8 ms of CPU per decoded token to 0.7 on the Mac. Google's binary keeps benchmark mode. Checked on this Mac on both runtimes; the iPhone run is still to do.
   - Release (4.2, 4.4): the dry run's files, published unchanged as `agello-next-20261024` on 2026-10-28 after the Mac suites passed (`agello-next` pushed). The third-party notices are in `NOTICE` and the Licenses screen; no new required-reason APIs.
   - Next: the iPhone gate (4.3) on that exact build: the default suites, then `calibrate` and `memory` against the baseline below.
-- **Agello for Mac (Next, item 2) has started** (2026-10-24): M0.2 and M0.3 of [MAC.md](MAC.md) are done. The `AgelloMac` target builds a sandboxed, hardened app whose runtime self-test passes on our build, GPU and CPU. Open in M0: the notarization dry run (Developer ID and the maintainer's API key). Next: M1, splitting the shared code from the iOS code.
+- **Agello for Mac (Next, item 2) has started** (2026-10-24): M0.2 and M0.3 of [MAC.md](MAC.md) are done. The `AgelloMac` target builds a sandboxed, hardened app whose runtime self-test passes on our build, GPU and CPU. Open in M0: the notarization dry run (Developer ID and the maintainer's API key). M1 is done (2026-11-01): the iPhone-only code is in `AgelloiOS/`, behind one type per platform seam, and the shared shell is extracted, with Vocello 3.0 as the reference again; its iPhone batch is queued below. Next: M2, the Mac compiling and running the shared app.
 
 ## Shipped
 
@@ -58,7 +58,7 @@ The phone is available as of 2026-10-24.
   - a phone call during voice mode;
   - the voice camera in landscape;
   - the prompt before a cellular download.
-- **The runtime gate** for item 1, and the iPhone checks the Mac work queues ([MAC.md](MAC.md), M1).
+- **The runtime gate** for item 1, and the iPhone checks the Mac work queues ([MAC.md](MAC.md), M1): the default suites with `ui`, then `screenshots` against the last tour, so the iPhone app is shown unchanged by M1.
 
 ## Later
 
