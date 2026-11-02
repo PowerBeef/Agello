@@ -53,7 +53,8 @@ enum WebContext {
       + "or explaining, as fully as you would without them, and use them where they help. Cite "
       + "them with bracketed numbers like [1] or [2][3] right after the facts you take from them. "
       + "Prefer the most recent information. If the message asks for facts the sources don't "
-      + "cover, say so."
+      + "cover, say so. If the sources don't bear on the message at all, reply as you would "
+      + "without them and don't mention them."
   }
 
   /// The prompt for an answer from web sources (and attached files, whose
@@ -67,21 +68,38 @@ enum WebContext {
 
   // MARK: Query planning
 
+  /// Questions and requests come with 1–3 queries, the other kinds with none: the grammar holds
+  /// the model to it. With queries optional, the iPhone named "By how many minutes?" a question
+  /// and wrote none, and the message searched as typed found minute calculators.
   static let querySchema =
-    #"{"type":"object","properties":{"queries":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":3},"request":{"type":"boolean"}},"required":["queries","request"]}"#
+    #"{"anyOf":[{"type":"object","properties":{"kind":{"type":"string","enum":["chat","reaction","edit","creative","arithmetic","answered"]},"queries":{"type":"array","items":{"type":"string"},"maxItems":0}},"required":["kind","queries"]},"#
+    + #"{"type":"object","properties":{"kind":{"type":"string","enum":["question","request"]},"queries":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":3}},"required":["kind","queries"]}]}"#
   static let queryMaxOutputTokens = 100
 
-  /// What a Search message needs: the queries, and whether it asks for something to be made.
+  /// Kinds of message that search: the rest need nothing from the web. One word each: on our
+  /// runtime a space inside an enum value fails the grammar ("Failed to commit token: ▁talk",
+  /// the tokenizer's word-start marker read as its own bytes, 2026-11-02).
+  static let searchedKinds: Set<String> = ["question", "request"]
+
+  /// What a Search message needs: whether to search at all, the queries, and whether it asks for
+  /// something to be made. Search on lets the model search when the message needs it; until
+  /// 2026-11-02 every message was searched, and "Hello there" came back as a reasoned reply about
+  /// pages on professional greetings. The decision rides the planning call every Search message
+  /// already made, so skipping costs nothing and saves the reading and ranking. The planner names
+  /// the kind of message and the code decides: asked whether to search, E4B skipped whatever it
+  /// thought it could do alone, a SwiftUI request for current APIs and "How do I center a div with
+  /// CSS grid?" included (`WebScenarioTests/test04`).
   struct Plan: Equatable, Sendable {
     var queries: [String]
     var isRequest: Bool
+    var needsSearch = true
   }
 
-  /// Prompt for 1–3 search queries for what the new message needs: the facts that answer a
-  /// question, or the techniques, APIs and facts that make a request (code, a plan) well, with
-  /// room for one complete example. Until 2026-11-02 a first message was searched as typed (for
-  /// "create a calculator app": tutorials restating the task); planned for techniques only, the
-  /// probe 24 calculators lost the complete examples they had relied on and came back broken.
+  /// Prompt for the message's kind and 1–3 search queries for what it needs: the facts that
+  /// answer a question, or the techniques, APIs and facts that make a request (code, a plan) well,
+  /// with room for one complete example. Until 2026-11-02 a first message was searched as typed
+  /// (for "create a calculator app": tutorials restating the task); planned for techniques only,
+  /// the probe 24 calculators lost the complete examples they had relied on and came back broken.
   static func queryPrompt(
     question: String, history: [(role: ChatRole, text: String)], today: Date = .now
   ) -> String {
@@ -94,14 +112,24 @@ enum WebContext {
 
       \(conversation)New message: \(question)
 
-      Write 1 to 3 short web search queries for what's needed to handle the new message well. \
-      For a question, search for the facts that answer it. For a request to write, code, build, \
-      plan or design something, search for the specific techniques, APIs, specifications or facts \
-      needed to do it well; one query may look for a complete, well-regarded example of the whole \
-      thing. Make each query \
-      self-contained (resolve names and pronouns from the conversation). Use the language of the \
-      message. Set request to true when the message asks for something to be made rather than \
-      for an answer.
+      Give the kind of the new message:
+      - chat: a greeting, thanks or small talk
+      - reaction: a reaction to the last reply
+      - edit: rewriting, translating, summarizing or fixing text given in the conversation
+      - creative: a poem or a story
+      - arithmetic: a simple calculation
+      - answered: a follow-up that the conversation so far already answers
+      - question: any other question, of fact or how-to
+      - request: a request to write code, build, plan or design something
+
+      For a question or a request, write 1 to 3 short web search queries for what's needed to \
+      handle it well; for any other kind, leave queries empty. For a question, search for the \
+      facts that answer it. For a request, search for the specific techniques, APIs, \
+      specifications or facts needed to do it well; one query may look for a complete, \
+      well-regarded example of the whole thing. Make each query self-contained: resolve names and \
+      pronouns from the conversation, and give a follow-up the subject it's about (after a \
+      question about the newest iPhone, "How much is it?" searches for that iPhone's price). Use \
+      the language of the message.
       """
   }
 
@@ -110,24 +138,29 @@ enum WebContext {
       let object = (try? JSONSerialization.jsonObject(with: json)) as? [String: Any],
       let queries = object["queries"] as? [String]
     else { return Plan(queries: [], isRequest: false) }
+    let kind = object["kind"] as? String
+    if let kind, !searchedKinds.contains(kind) { return Plan(queries: [], isRequest: false, needsSearch: false) }
     var seen = Set<String>()
     let cleaned = queries.compactMap { raw -> String? in
       let query = raw.trimmingCharacters(in: .whitespacesAndNewlines.union(.init(charactersIn: "\"")))
       guard query.count >= 2, seen.insert(query.lowercased()).inserted else { return nil }
       return String(query.prefix(200))
     }.prefix(3).map { $0 }
-    return Plan(queries: cleaned, isRequest: object["request"] as? Bool ?? false)
+    return Plan(queries: cleaned, isRequest: kind == "request" || object["request"] as? Bool == true)
   }
 
   static func parseQueries(_ json: Data) -> [String] {
     parsePlan(json).queries
   }
 
-  /// The search query for a first question (no planning needed).
-  static func directQuery(_ question: String) -> String {
-    let collapsed = question.components(separatedBy: .whitespacesAndNewlines)
-      .filter { !$0.isEmpty }.joined(separator: " ")
-    return String(collapsed.prefix(200))
+  /// The search query when planning gave none: the message as typed, after the previous user
+  /// message for a follow-up ("By how many minutes?" alone finds minute calculators).
+  static func directQuery(_ question: String, history: [(role: ChatRole, text: String)] = []) -> String {
+    func collapsed(_ text: String) -> String {
+      text.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.joined(separator: " ")
+    }
+    let previous = history.last { $0.role == .user }.map { String(collapsed($0.text).prefix(120)) + " " } ?? ""
+    return String((previous + collapsed(question)).prefix(200))
   }
 
   // MARK: Citations

@@ -609,6 +609,8 @@ final class AppState {
         return false
       case .failed(let message):
         notice = message
+      case .notNeeded:
+        break
       case .found(let findings):
         enginePrompt = WebContext.prompt(
           question: prompt, sources: findings.sources, filePrompt: filePrompt)
@@ -962,6 +964,7 @@ final class AppState {
   enum WebOutcome: Sendable {
     case found(WebResearch.Findings)
     case failed(String)
+    case notNeeded  // small talk: answered as without Search
     case cancelled
   }
 
@@ -987,7 +990,8 @@ final class AppState {
       return output
     }
     let plan = output.map(WebContext.parsePlan) ?? WebContext.Plan(queries: [], isRequest: false)
-    let queries = plan.queries.isEmpty ? [WebContext.directQuery(question)] : plan.queries
+    if !plan.needsSearch { return .notNeeded }
+    let queries = plan.queries.isEmpty ? [WebContext.directQuery(question, history: history)] : plan.queries
     if Task.isCancelled { return .cancelled }
     let window = resolved?.maxNumTokens ?? 8_192
     do {

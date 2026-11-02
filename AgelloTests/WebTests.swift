@@ -193,6 +193,31 @@ final class WebTests: XCTestCase {
     XCTAssertFalse(WebContext.parsePlan(Data(#"{"queries":["tour de france 2026"]}"#.utf8)).isRequest)
   }
 
+  /// Search when needed: "Hello there" came back as a reply about pages on professional greetings
+  /// (2026-11-02). The planner names the message's kind; questions and requests search, and an
+  /// answer without a kind still searches.
+  func testSearchOnlyWhenNeeded() {
+    let prompt = WebContext.queryPrompt(question: "Hello there", history: [])
+    XCTAssertTrue(prompt.contains("- chat: a greeting") && prompt.contains("- request: a request to write code"))
+    let skip = WebContext.parsePlan(Data(#"{"kind":"chat","queries":["greetings"]}"#.utf8))
+    XCTAssertEqual(skip, WebContext.Plan(queries: [], isRequest: false, needsSearch: false))
+    let question = WebContext.parsePlan(Data(#"{"kind":"question","queries":["swift 6.3"]}"#.utf8))
+    XCTAssertEqual(question, WebContext.Plan(queries: ["swift 6.3"], isRequest: false))
+    let request = WebContext.parsePlan(Data(#"{"kind":"request","queries":["css grid keypad"]}"#.utf8))
+    XCTAssertEqual(request, WebContext.Plan(queries: ["css grid keypad"], isRequest: true))
+    XCTAssertTrue(WebContext.parsePlan(Data(#"{"queries":["swift 6.3"]}"#.utf8)).needsSearch)
+    XCTAssertTrue(WebContext.parsePlan(Data("not json".utf8)).needsSearch)
+    XCTAssertTrue(WebContext.instructions().contains("don't bear on the message"))
+    // The grammar asks queries of questions and requests only.
+    XCTAssertTrue(WebContext.querySchema.contains(#""enum":["question","request"]},"queries":{"type":"array","items":{"type":"string"},"minItems":1"#))
+    // A follow-up planned without queries searches after the previous user message.
+    XCTAssertEqual(
+      WebContext.directQuery(
+        "By how many minutes?", history: [(.user, "Who won the 2026 Tour de France?"), (.model, "Pogačar.")]),
+      "Who won the 2026 Tour de France? By how many minutes?")
+    XCTAssertEqual(WebContext.directQuery("  Swift   6.2 "), "Swift 6.2")
+  }
+
   /// A request's sources take a third of the window instead of half: more room for the work.
   func testRequestsLeaveMoreRoomForTheWork() {
     let question = WebContext.budget(window: 16_384, question: "Who won?")

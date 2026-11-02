@@ -166,6 +166,10 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   one grammar matcher, so verify masks come from the wrong position and a
   rejected draft stays committed (reference `troubleshooting.md`).
   `helperJSON` turns MTP off; plain-text helpers keep it.
+- JSON-schema enums take one-word values: on our runtime a space inside an
+  enum or const value fails the grammar ("Failed to commit token: ▁talk",
+  the tokenizer's word-start marker read as its own bytes; 2026-11-02, the
+  Search plan's `kind`). Free strings are fine.
 - Don't trust the model file's `thinking` or `functionCalling` flags: Gemma 4
   files report both as unsupported, yet both work.
 - Sampling (probe 18, Google's v0.18.0): with MTP on, every reply is greedy
