@@ -5,6 +5,7 @@
 
 included:
   - Agello
+  - AgelloiOS
   - AgelloWidgets
   - AgelloShare
   - AgelloMac

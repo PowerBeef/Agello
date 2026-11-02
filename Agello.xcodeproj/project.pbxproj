@@ -89,7 +89,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		400000000000000000000043 /* Exceptions for "Agello" folder in "Agello" target */ = {
+		900000000000000000000007 /* Exceptions for "AgelloiOS" folder in "Agello" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -161,7 +161,6 @@
 		400000000000000000000041 /* Agello */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				400000000000000000000043 /* Exceptions for "Agello" folder in "Agello" target */,
 				600000000000000000000008 /* Exceptions for "Agello" folder in "AgelloWidgets" target */,
 				700000000000000000000008 /* Exceptions for "Agello" folder in "AgelloShare" target */,
 			);
@@ -214,6 +213,14 @@
 				800000000000000000000007 /* Exceptions for "AgelloMac" folder in "AgelloMac" target */,
 			);
 			path = AgelloMac;
+			sourceTree = "<group>";
+		};
+		900000000000000000000006 /* AgelloiOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				900000000000000000000007 /* Exceptions for "AgelloiOS" folder in "Agello" target */,
+			);
+			path = AgelloiOS;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -279,6 +286,7 @@
 			isa = PBXGroup;
 			children = (
 				400000000000000000000041 /* Agello */,
+				900000000000000000000006 /* AgelloiOS */,
 				400000000000000000000042 /* AgelloTests */,
 				400000000000000000000002 /* AgelloDeviceTests */,
 				400000000000000000000012 /* AgelloUITests */,
@@ -330,6 +338,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				400000000000000000000041 /* Agello */,
+				900000000000000000000006 /* AgelloiOS */,
 			);
 			productName = Agello;
 			productReference = 100000000000000000000016 /* Agello.app */;
@@ -731,7 +740,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CODE_SIGN_ENTITLEMENTS = Agello/Agello.entitlements;
+				CODE_SIGN_ENTITLEMENTS = AgelloiOS/Agello.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = FK2D8X36G2;
 				CURRENT_PROJECT_VERSION = 1;
@@ -741,7 +750,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				INFOPLIST_FILE = Agello/Info.plist;
+				INFOPLIST_FILE = AgelloiOS/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos and scan documents for the on-device model, and to show it what you see in voice mode.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone for voice messages, dictation and voice mode. The on-device model understands your voice; recordings stay on this iPhone.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Agello lets you attach photos for the on-device model to see.";
@@ -766,7 +775,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CODE_SIGN_ENTITLEMENTS = Agello/Agello.entitlements;
+				CODE_SIGN_ENTITLEMENTS = AgelloiOS/Agello.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = FK2D8X36G2;
 				CURRENT_PROJECT_VERSION = 1;
@@ -776,7 +785,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				INFOPLIST_FILE = Agello/Info.plist;
+				INFOPLIST_FILE = AgelloiOS/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos and scan documents for the on-device model, and to show it what you see in voice mode.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone for voice messages, dictation and voice mode. The on-device model understands your voice; recordings stay on this iPhone.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Agello lets you attach photos for the on-device model to see.";

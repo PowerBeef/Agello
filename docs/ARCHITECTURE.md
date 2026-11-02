@@ -82,10 +82,12 @@ Agello/
 ├── Markdown/           parsing, code highlighting, rendering
 ├── ModelHub/           model catalog and background downloads
 ├── Persistence/        versioned SwiftData schema, branching, store loading
-├── System/             App Intents, deep links, Spotlight, share inbox, background work
+├── System/             App Intents, deep links, Spotlight, share inbox
 ├── Voice/              voice mode: capture, speech, turn detection, camera
 ├── Views/              chat, drawer, composer, settings, projects, onboarding
-└── Support/            the design system (Theme/), haptics, image preparation, diagnostics
+└── Support/            the design system (Theme/), image preparation, diagnostics
+AgelloiOS/             the iPhone app only: app entry, root view, camera and scanner, background work, haptics, Info.plist
+AgelloMac/             Agello for Mac (docs/MAC.md): so far a placeholder window and the runtime self-test
 AgelloWidgets/         Home/Lock Screen widgets and Control Center controls
 AgelloShare/           share extension: "Ask Agello"
 Vendor/LiteRT-LM/       LiteRT-LM Swift package (our runtime release, iPhone and Mac)
