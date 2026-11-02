@@ -1,8 +1,8 @@
-import Foundation
+import SwiftData
 import SwiftUI
 
-/// Agello for Mac. Until the shared app joins this target (MAC.md, M2), it's a placeholder
-/// window and the runtime self-test.
+/// Agello for Mac: the shared app in one main window. `--runtime-self-test` runs the runtime
+/// check instead (RuntimeSelfTest).
 @main
 enum AgelloMacMain {
   static func main() {
@@ -15,16 +15,34 @@ enum AgelloMacMain {
 }
 
 struct AgelloMacApp: App {
+  @NSApplicationDelegateAdaptor(MacAppDelegate.self) private var appDelegate
+  @State private var appState: AppState
+  @State private var shell: ShellModel
+  let container: ModelContainer
+
+  init() {
+    let bootstrap = AppBootstrap()
+    container = bootstrap.container
+    _appState = State(initialValue: bootstrap.appState)
+    _shell = State(initialValue: bootstrap.shell)
+  }
+
+  // AppState and the shell's model belong to the app, not the window: a reply keeps going when
+  // the window closes, and the app never calls `enterBackground` (replies don't stop when it
+  // isn't frontmost).
   var body: some Scene {
-    WindowGroup(id: "main") {
-      VStack(spacing: 8) {
-        Text("Agello for Mac")
-          .font(.title2.weight(.semibold))
-        Text("Under construction: the shared app arrives in M2.")
-          .foregroundStyle(.secondary)
+    Window("Agello", id: "main") {
+      if AppBootstrap.hostsTests {
+        Color.clear
+      } else {
+        MacRootView()
+          .environment(appState)
+          .environment(shell)
+          // One tuned dark theme (see Theme).
+          .preferredColorScheme(.dark)
+          .tint(Theme.Brand.glacier)
       }
-      .padding(40)
-      .frame(minWidth: 420, minHeight: 240)
     }
+    .modelContainer(container)
   }
 }

@@ -53,8 +53,8 @@ for d in "$MAIN"/build/*; do
   name="$(basename "$d")"
   size="$(kb "$d")"
   case "$name" in
-    device-harness | mac-harness) row keep "$size" "build/$name: the latest harness results" ;;
-    device-harness-* | mac-harness-*)
+    device-harness | mac-harness | macos-harness) row keep "$size" "build/$name: the latest harness results" ;;
+    device-harness-* | mac-harness-* | macos-harness-*)
       row scratch "$size" "build/$name: one-off harness results (once their numbers are recorded)" "$d" ;;
     *) other=$((other + ${size:-0})) ;;
   esac

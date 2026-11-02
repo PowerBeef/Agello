@@ -149,6 +149,27 @@ second E4B engine next to theirs. Device memory figures recorded before
 Probe 16 (`test16_MemoryAfterUnload`) checks that nothing stays after an
 unload. UI tests launch the app normally and see its UI.
 
+## Agello for Mac
+
+`PLATFORM=macos-native` runs Agello for Mac's own app (scheme `AgelloMac`,
+bundle `com.patricedery.agello.mac`) and its test bundles on this Mac. So far
+`unit` only (`AgelloMacTests`: the `AgelloTests/` files, minus
+`BackgroundWorkTests`); the device suites come with `AgelloMacDeviceTests`
+(docs/MAC.md, M7). Results land in `build/macos-harness/`. `ONLY` takes the
+same IDs as on iPhone: `AgelloTests/…` runs those tests in `AgelloMacTests`.
+
+```sh
+PLATFORM=macos-native scripts/device-harness.sh unit
+PLATFORM=macos-native ONLY=AgelloTests/ShellModelTests scripts/device-harness.sh unit
+```
+
+- Its data lives in `~/Library/Containers/com.patricedery.agello.mac/Data/`:
+  the chat store (`Library/Application Support/default.store`, not the App
+  Group's) and the models (`Library/Application Support/Models/`, APFS clones
+  of `~/Models/agello/`).
+- Both apps are named Agello: filter logs by image path,
+  `log stream --predicate 'subsystem == "com.patricedery.agello" AND processImagePath CONTAINS "Products/Debug/Agello.app"'`.
+
 ## Reading results
 
 Everything lands in `build/device-harness/` (`build/mac-harness/` on the Mac):

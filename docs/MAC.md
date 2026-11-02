@@ -2,7 +2,7 @@
 
 A native macOS version of Agello that shares most of the iPhone app's code and architecture.
 
-**Status:** approved 2026-10-16. M0.2–M0.3 done 2026-10-24 (the notarization dry run is open) and M1 done 2026-11-01; next is M2. [The roadmap](ROADMAP.md) places it among the other work.
+**Status:** approved 2026-10-16. M0.2–M0.3 done 2026-10-24 (the notarization dry run is open) M1 and M2 done 2026-11-01; next is M3. [The roadmap](ROADMAP.md) places it among the other work.
 
 ## Context
 
@@ -154,6 +154,13 @@ The phone is away, so these are moves and seams that keep iOS defaults. Each one
   - `PLATFORM=macos-native unit`
   - a real chat on the GPU with local vendoring
   - `PLATFORM=mac unit` unchanged
+- **M2 done on 2026-11-01.** `AgelloMac` compiles all of `Agello/` with the Mac side of each M1 seam in `AgelloMac/Platform/` (no-op haptics and audio session; `host_statistics64` and Metal's working set for memory; a memory-pressure `DispatchSource`; `systemPreferredCamera`; AppKit's preview layer and SwiftMath label; `NSPasteboard`; the iPhone's sizes in `ThemeMetrics` until M4; capture sources unavailable until M5; a `BackgroundWork` stub). Only one shared file needed a change: `ModelStore.activeSpecDownloaded` had been declared in the iPhone's `ContentView`.
+  - `AgelloMacApp` fills `AppBootstrap` in a single `Window`; `MacAppDelegate` sets dark Aqua, secure restorable state and no window tabbing; `MacRootView` puts the drawer's chat list in a `NavigationSplitView` sidebar beside `ChatView`, with the shared sheets, dialogs and routing. The app never calls `enterBackground`. Downloads reuse the background `URLSession` (no relaunch handler on the Mac).
+  - The Mac icon: the iPhone artwork on the macOS grid (824 px rounded square in 1,024), ten sizes in the shared `AppIcon`. `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` moved to the project level.
+  - **The chat store moved for the Mac only:** SwiftData's default follows the App Group, and on this Mac the group container holds the iPhone app's store, which the Mac app's wildcard profile can't open (macOS denied it, and the app fell back to memory). `Platform.chatStoreGroupContainer` keeps `.automatic` on iPhone (where every install's chats are) and is `.none` on the Mac: `default.store` in its own container, as decisions 1 and 3 intended.
+  - `AgelloMacTests` (hosted by the Mac app) and `PLATFORM=macos-native unit` in the harness, results in `build/macos-harness/`; `ONLY=AgelloTests/…` maps to it.
+  - Checked: both compile checks; `PLATFORM=macos-native unit` 310/310 in the sandboxed app; `PLATFORM=mac unit` unchanged; launched for real, the Mac app's `AppState` loads E4B on the GPU (vision, audio, MTP, 8K) in 14.4 s cold and 2.2 s from its cache, with the store in its container. A chat typed in the window is the user's check (screen access to the app was declined).
+  - Seen for M3: the Mac's available-memory estimate read 2.3–2.6 GB on this 16 GB Mac, busy with builds (free, inactive, speculative and purgeable pages), which M3's memory classes have to account for before it drives `keepsConversationAcrossHelpers` and the 400 MB stop.
 
 ## M3: platform policy on the Mac
 

@@ -240,7 +240,3 @@ struct ContentView: View {
   }
 
 }
-
-extension ModelStore {
-  var activeSpecDownloaded: Bool { isDownloaded(activeSpec) }
-}

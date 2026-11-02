@@ -1,6 +1,7 @@
 #!/bin/sh
-# On-device test harness for Agello: the physical iPhone, or this Mac running
-# the iPhone app (PLATFORM=mac). Never the simulator.
+# On-device test harness for Agello: the physical iPhone, this Mac running
+# the iPhone app (PLATFORM=mac), or Agello for Mac itself (PLATFORM=macos-native).
+# Never the simulator.
 #
 # Usage:
 #   scripts/device-harness.sh [unit|inference|files|web|ui|all|thinking|memory|calibrate|probes|screenshots] [extra xcodebuild args...]
@@ -25,14 +26,18 @@
 #              screen (attachments/screenshots/) for the README and App Store.
 #   all        unit, inference + files, then ui.
 #
-# Env: PLATFORM (iphone, the default, or mac: this Mac runs the iPhone app
+# Env: PLATFORM (iphone, the default; mac: this Mac runs the iPhone app
 #      "Designed for iPad/iPhone" through its Metal path; ui, screenshots and
-#      memory stay iPhone-only, and `all` skips ui),
+#      memory stay iPhone-only, and `all` skips ui; macos-native: Agello for
+#      Mac's own app and tests, scheme AgelloMac: `unit` (AgelloMacTests) so
+#      far, the device suites arrive with AgelloMacDeviceTests, docs/MAC.md M7),
 #      DEVICE_ID (iPhone only; default: deviceId from the git-ignored .mobilebuildmcp/config.yaml),
 #      ONLY (run part of a suite: comma- or space-separated test identifiers
 #      inside it, e.g. ONLY=AgelloTests/AppStateTests/testMockModeSendsWithoutDownloadedModel
-#      scripts/device-harness.sh unit; not with `all`),
-#      OUT (default: build/device-harness, or build/mac-harness with PLATFORM=mac),
+#      scripts/device-harness.sh unit; not with `all`; with macos-native,
+#      AgelloTests/… runs the same tests in AgelloMacTests),
+#      OUT (default: build/device-harness, build/mac-harness with PLATFORM=mac,
+#      build/macos-harness with PLATFORM=macos-native),
 #      AGELLO_TELEMETRY (engine telemetry level in our LiteRT-LM builds, default 2),
 #      AGELLO_SIMULATE_APPLE_GPU (our builds: another Apple GPU's kernel paths, e.g. "Apple A17 Pro"),
 #      XCBEAUTIFY (path to xcbeautify, or "off" for raw output; default:
@@ -66,8 +71,25 @@ case "$PLATFORM" in
     DEVICE_ID="$(system_profiler SPHardwareDataType | sed -n 's/.*Provisioning UDID: *//p')"
     OUT="${OUT:-$ROOT/build/mac-harness}"
     ;;
-  *) echo "Unknown PLATFORM: $PLATFORM (iphone or mac)" >&2; exit 2 ;;
+  macos-native)
+    if [ "$SUITE" != unit ]; then
+      echo "PLATFORM=macos-native runs unit only so far (AgelloMacTests); the device suites come with M7." >&2
+      exit 2
+    fi
+    OUT="${OUT:-$ROOT/build/macos-harness}"
+    ;;
+  *) echo "Unknown PLATFORM: $PLATFORM (iphone, mac or macos-native)" >&2; exit 2 ;;
 esac
+# Agello for Mac has its own scheme, app and test bundles; the iPhone app's elsewhere.
+if [ "$PLATFORM" = macos-native ]; then
+  SCHEME=AgelloMac
+  DESTINATION="platform=macOS,arch=arm64"
+  UNIT_TESTS=AgelloMacTests
+else
+  SCHEME=Agello
+  DESTINATION="id=$DEVICE_ID"
+  UNIT_TESTS=AgelloTests
+fi
 
 # One run at a time on this machine, from any checkout or worktree; the
 # Claude Code hooks read the lock (scripts/lib/harness-lock.sh).
@@ -100,6 +122,7 @@ write_lock_info() {
 caffeinate -dims -w $$ &
 
 BUNDLE_ID="com.patricedery.agello"
+[ "$PLATFORM" = macos-native ] && BUNDLE_ID="com.patricedery.agello.mac"
 mkdir -p "$OUT"
 write_lock_info "$SUITE"
 # Lets the in-app report survive crash relaunches within this run only.
@@ -132,8 +155,8 @@ format_output() {
 
 xcodebuild_test() {
   xcodebuild test \
-    -project "$ROOT/Agello.xcodeproj" -scheme Agello -configuration Debug \
-    -destination "id=$DEVICE_ID" -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
+    -project "$ROOT/Agello.xcodeproj" -scheme "$SCHEME" -configuration Debug \
+    -destination "$DESTINATION" -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
     -resultBundlePath "$result" "$@"
 }
 
@@ -164,7 +187,7 @@ run_suite() {
 }
 
 pull_report() {
-  if [ "$PLATFORM" = mac ]; then
+  if [ "$PLATFORM" != iphone ]; then
     if [ -n "${REPORT_PATH:-}" ] && cp "$REPORT_PATH" "$OUT/harness-report.json" 2>/dev/null; then
       echo "Report: $OUT/harness-report.json"
     else
@@ -186,6 +209,10 @@ filters() {
     return 0
   fi
   for test in $(echo "$ONLY" | tr ',' ' '); do
+    # The same test IDs on both: AgelloTests/… names the Mac's copy in AgelloMacTests.
+    if [ "$PLATFORM" = macos-native ]; then
+      case "$test" in AgelloTests | AgelloTests/*) test="AgelloMacTests${test#AgelloTests}" ;; esac
+    fi
     in_suite=no
     for scope in "$@"; do
       case "$test" in "$scope" | "$scope"/*) in_suite=yes ;; esac
@@ -201,7 +228,7 @@ filters() {
 status=0
 scopes=""
 case "$SUITE" in
-  unit) scopes="AgelloTests" ;;
+  unit) scopes="$UNIT_TESTS" ;;
   inference) scopes="AgelloDeviceTests/InferenceScenarioTests" ;;
   files) scopes="AgelloDeviceTests/KnowledgeScenarioTests" ;;
   web) scopes="AgelloDeviceTests/WebScenarioTests" ;;

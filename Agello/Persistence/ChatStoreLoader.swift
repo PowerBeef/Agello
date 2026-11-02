@@ -32,7 +32,7 @@ enum ChatStoreLoader {
   static func open(url: URL? = nil) -> Opened {
     let configuration =
       url.map { ModelConfiguration(schema: ChatStore.schema, url: $0) }
-      ?? ModelConfiguration(schema: ChatStore.schema)
+      ?? ModelConfiguration(schema: ChatStore.schema, groupContainer: Platform.chatStoreGroupContainer)
     // Before the first unlock the store's file can't be read (a background launch): opening it
     // would fail and look like damage.
     if !isReadable(configuration.url) {

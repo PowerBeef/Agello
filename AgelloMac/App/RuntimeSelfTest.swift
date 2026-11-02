@@ -12,9 +12,8 @@ import LiteRTLM
 /// container); clone them there from a local copy with `cp -c`.
 enum RuntimeSelfTest {
   static let flag = "--runtime-self-test"
-  /// `ModelCatalog`'s file names (the shared app isn't in this target yet).
-  static let chatModelFile = "gemma-4-E4B-it-fp16-rope.litertlm"
-  static let embeddingModelFile = "embeddinggemma-2-text-270m.litertlm"
+  static let chatModelFile = ModelCatalog.e4b.fileName
+  static let embeddingModelFile = ModelCatalog.embeddingGemma.fileName
 
   static func run(arguments: [String]) async -> Int32 {
     var report: [String: Any] = ["runtimeBuild": runtimeBuildInfo() ?? [:]]

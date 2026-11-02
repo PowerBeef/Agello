@@ -24,6 +24,7 @@ final class ModelStore: NSObject {
   let activeModelID: ModelID = .e4b
 
   var activeSpec: ModelSpec { ModelCatalog.e4b }
+  var activeSpecDownloaded: Bool { isDownloaded(activeSpec) }
 
   @ObservationIgnored
   private var session: URLSession { BackgroundDownloads.session }
