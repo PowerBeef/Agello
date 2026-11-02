@@ -178,6 +178,15 @@ The phone is away, so these are moves and seams that keep iOS defaults. Each one
 - **Downloads:** Mac wording for the expensive-network consent, and a check that a download resumes after quitting.
 - **Docs:** the Mac rules go into `agello-inference-rules`.
 - **Verify:** `PLATFORM=macos-native` `inference`, `files`, `web`, `thinking`, `probes` and `calibrate`, compared with the M6 numbers; `memory_pressure -S -l critical` during a reply and while idle; a reply with the window hidden for 5 minutes.
+- **M3 done on 2026-11-02, but for the speed checks.** Both apps share the policy; the Mac adds its figures:
+  - **Memory classes:** the existing ceilings with the Mac's limit, Metal's working set (12.7 GB on this M6 with 16 GB: 32K; about 5.5 GB on 8 GB Macs: 16K; chat 8K). Available memory is `DeviceProfile.macAvailableBytes`: the system's free, inactive, speculative and purgeable pages within the working set less the footprint, never 0 (which reads as "not reported"). The 400 MB stop and `keepsConversationAcrossHelpers` read it. Unit-tested.
+  - **Memory pressure:** `MemoryPolicy.action(level:isBusy:)` drives `AppState.relieveMemoryPressure(level:)`. A warning does what iOS did; critical (the Mac's `DispatchSource`) also unloads E4B when no reply, voice mode, benchmark or dictation uses it. Probe 22 checks it on the real engine instead of `memory_pressure -S`, which would signal every process on the Mac: loaded during a reply, unloaded once idle, the next message reloaded and answered in 1.2 s.
+  - **App Nap and sleep:** `WorkActivity` is the Mac app's (`AgelloMac/System/`, not `Agello/System/`): it observes `AppState` (busy, loading, dictation, indexing) and holds a user-initiated activity, so `AppState` and the iPhone app gain nothing. Helpers aren't covered (no observable state, a second or two each). The Mac's `BackgroundWork` keeps idle sleep off through a long summary.
+  - **Keychain:** the search API keys use `kSecUseDataProtectionKeychain` on both (no effect on iOS).
+  - **Downloads:** the metered-network prompt says "a metered connection" and "Wait for Another Network" on the Mac (`Platform`).
+  - **`AgelloMacDeviceTests`** (moved up from M7): the device suites run natively, `PLATFORM=macos-native` `inference`, `files`, `web`, `thinking` and `probes`, with `ONLY` mapped and the models cloned in.
+  - **Checked** (2026-11-02, this Mac busy with other jobs, so correctness only): native `unit` 315/315, `inference` 23/23, `files` 4/4, `web` 3/3, `thinking` 3/3 (it fails with the iPhone app on this Mac on Google's runtime), `probes` 17 passed and 4 skipped (lab models and variables not set); `PLATFORM=mac unit` 315 passed, 1 skipped.
+  - **Still to do:** `calibrate` and probe 21 (five minutes of replies with the app hidden, against the app shown) on a quiet Mac; a download resuming after a quit (needs the window); the `RuntimeGuard` described above isn't written yet.
 
 ## M4: Mac shell and UI (one screen per commit, identifiers kept)
 

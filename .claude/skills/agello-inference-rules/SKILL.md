@@ -185,6 +185,31 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   CPU for good (`GPUGate.closedError`).
 - Extensions (widgets, share sheet) can't load the model. They hand off to the
   app.
+- Memory warnings go through `MemoryPolicy.action(level:isBusy:)` and
+  `AppState.relieveMemoryPressure(level:)`: a warning (all iOS sends) stops a
+  reply only below the 400 MB line and releases EmbeddingGemma; critical
+  pressure (the Mac's) also unloads E4B, only when nothing uses it (no reply,
+  voice mode, benchmark or dictation, checked again inside `serialized`). The
+  next message reloads it from the engine cache. Probe 22 checks it on the real
+  engine.
+
+## Agello for Mac
+
+- The app limit is Metal's working set (`MemoryProbe.appMemoryLimitBytes`):
+  about 5.5 GB on 8 GB Macs (16K maximum context), 11 GB and up from 16 GB
+  (32K); chat stays at 8K. Available memory is
+  `DeviceProfile.macAvailableBytes`: the system's free, inactive, speculative
+  and purgeable pages, within that limit less the footprint. The 400 MB stop
+  and `keepsConversationAcrossHelpers` read it as they read iOS's figure.
+- No background policy: the Mac never calls `enterBackground`, so replies
+  don't stop and `GPUGate` stays open when the window is hidden or closed.
+  `WorkActivity` (the Mac app's) holds a user-initiated activity while
+  `AppState` is busy, loading, taking dictation or indexing, against App Nap;
+  the Mac's `BackgroundWork` keeps idle sleep off through a long summary.
+  Probe 21 replies for five minutes with the app hidden.
+- Agello for Mac supports only our runtime (the committed package): its cache and helper
+  policies assume a runtime that keeps sessions. The `RuntimeGuard` MAC.md describes isn't
+  written yet.
 
 ## Verify
 

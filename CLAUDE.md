@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Ground rules
 
 - Test on the physical iPhone, or on this Mac running the iPhone app (`PLATFORM=mac`, "Designed for iPad/iPhone", same Metal path). Never build, test, or take screenshots in the simulator: our runtime has no simulator build, and the failures that matter only show on hardware. `.claude/settings.json` denies the desktop app's simulator tools.
+- iOS and macOS move together: one engine (our LiteRT-LM runtime) and one shared code base in `Agello/`, with platform tweaks only where a platform needs them, one type per seam in `AgelloiOS/Platform/` and `AgelloMac/Platform/` (shared code has no `#if` outside `Support/Theme/PlatformModifiers.swift`). A shared change is verified in both apps with the same suites: on the iPhone (or `PLATFORM=mac`) and with `PLATFORM=macos-native`. A fix or feature lands for both, or says in its commit why it's one platform's.
 - The Mac is the development bed while the phone is away. Its speed and memory aren't the iPhone's, and every change that ships still needs an iPhone run.
 - Run tests with `scripts/device-harness.sh` (below), one run at a time. The iPhone must be connected and unlocked for the whole run.
 - Don't edit files in the target folders (`Agello*/`) while a harness run is building: stage changes elsewhere and apply them after the run. A hook denies Edit and Write there during the build; edits through Bash aren't checked, and the rule still holds for them.
@@ -33,7 +34,7 @@ Once per machine, `cp .mobilebuildmcp/config.example.yaml .mobilebuildmcp/config
 ```sh
 scripts/device-harness.sh unit      # AgelloTests, ~3 min, scripted engine
 PLATFORM=mac scripts/device-harness.sh inference   # on this Mac; not ui, screenshots or memory
-PLATFORM=macos-native scripts/device-harness.sh unit   # Agello for Mac's own app and AgelloMacTests
+PLATFORM=macos-native scripts/device-harness.sh unit   # Agello for Mac's own app; inference, files, web… too, not ui/memory
 ONLY=AgelloTests/AppStateTests scripts/device-harness.sh unit
 ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-harness.sh inference
 swiftlint                           # repo root; keep 0 errors (size warnings on the big types are expected)
