@@ -4,8 +4,8 @@ import XCTest
 
 final class DeviceProfileTests: XCTestCase {
   func testDefaultMaxTokens() {
-    // Calibrated: 8K for everyday chat on all supported (8 GB+) devices.
-    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 8_000_000_000), 8192)
+    // 16K on every supported (8 GB+) device: no longer a setting.
+    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 8_000_000_000), 16_384)
     XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 6_000_000_000), 4096)
   }
 
@@ -48,13 +48,13 @@ final class DeviceProfileTests: XCTestCase {
   }
 
   /// Agello for Mac's classes (docs/MAC.md, M3): the limit is Metal's working set, about 5.5 GB
-  /// on an 8 GB Mac and 11 GB or more on 16 GB (12.7 GB on the M6); chat stays at 8K on both.
+  /// on an 8 GB Mac and 11 GB or more on 16 GB (12.7 GB on the M6); chat is 16K on both.
   func testMacMemoryClasses() {
     XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 5_500_000_000), 16_384)
     XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 11_000_000_000), 32_000)
     XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 12_713_115_648), 32_000)
-    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 8_589_934_592), 8192)
-    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 17_179_869_184), 8192)
+    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 8_589_934_592), 16_384)
+    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 17_179_869_184), 16_384)
   }
 
   /// The Mac's available memory: the system's, within the working set less the footprint.

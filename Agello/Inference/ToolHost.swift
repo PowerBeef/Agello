@@ -58,11 +58,14 @@ enum ToolBudget {
   static let answerTokens = 256
 
   /// Split `room` (tokens) for one reply. Tool rounds run inside LiteRT-LM, so whenever any tool
-  /// is registered (including `web_search` alone) the room is split: an eighth per tool result,
-  /// at most two calls, and the three generation rounds share the rest (a quarter each without
-  /// Think). With Think the first round grows to its reasoning budget plus an answer, up to half
-  /// the room, and the later rounds share what's left. Without tools the reply gets the whole
-  /// room. `maxOutputTokens` caps every round; the reasoning budget always leaves an answer room.
+  /// is registered (including `web_search` alone) the room is split: an eighth per tool result
+  /// (at most two calls), and the first round, where nearly every reply is answered, gets half
+  /// the room for its answer plus Think's reasoning budget on top. The two later rounds share
+  /// what's left, at least a sixteenth each, or their reasoning budget plus an answer when it
+  /// fits (they reason with the conversation's budget). Until 2026-11-02 the first round got a
+  /// quarter with the reasoning inside it, which cut long answers short (probe 23). Without tools
+  /// the reply gets the whole room. `maxOutputTokens` caps every round; the reasoning budget
+  /// always leaves an answer room.
   static func plan(
     room: Int, toolsOffered: Bool, thinkingBudget: Int? = nil, maxOutputTokens: Int? = nil
   ) -> Plan {
@@ -74,7 +77,8 @@ enum ToolBudget {
         outputCap: cap, followUpCap: cap, thinkingBudget: thinkingBudget.map { reasoning($0, cap: cap) },
         limits: Limits(maxResultTokens: resultTokens, maxCalls: 0))
     }
-    let first = min(room / 2, max(room / 4, thinkingBudget.map { $0 + answerTokens } ?? 0))
+    let laterRound = min(resultTokens, max(room / 16, thinkingBudget.map { $0 + answerTokens } ?? 0))
+    let first = min(room - 2 * resultTokens - 2 * laterRound, room / 2 + (thinkingBudget ?? 0))
     let followUp = (room - first - 2 * resultTokens) / 2
     let cap = min(first, limit)
     return Plan(

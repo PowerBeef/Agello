@@ -51,7 +51,8 @@ Overflowing LiteRT-LM's KV cache corrupts its native heap and crashes the app, s
 - **Fit or explain.** If the message plus a reply reserve doesn't fit, older turns are trimmed (the latest reply is truncated rather than dropped) and the conversation is reseeded. A message that can never fit is rejected with an explanation instead of crashing.
 - **Cap the reply.** The reply is capped to the room that's left. The preamble estimate includes the whole system prompt, personalization and project instructions included.
 - **Tool budgets.** LiteRT-LM runs tool calls by itself while streaming, so each generation round gets a quarter of the remaining room, each tool result an eighth, with at most two calls. A streaming guard ends a reply cleanly before output plus tool results could overflow.
-- **Context sizes.** Chat uses an 8K cache: a bigger one slows every reply (43 → 27 tok/s from 4K to 32K with Google's v0.18.0 binary). Settings can raise it to 16K, or 32K when the app may use at least 6.5 GB.
+- **Context size.** Chat uses a 16K cache on every device, with no setting to choose. On Google's v0.18.0 binary a bigger cache slowed every reply (43 → 27 tok/s from 4K to 32K), so chat used 8K; on our runtime decode barely changes (39 / 42 / 42 tok/s at 8K / 16K / 32K on the iPhone 17 Pro), and 16K peaks at 1.9 GB, which fits 8 GB iPhones. 32K (3.5 GB) doesn't, so it stays out.
+- **Room for long answers.** With the on-device tools offered, a reply's room is split between generation rounds and tool results, and history trimming keeps a reply reserve free. Until 2026-11-02 the answering round got a quarter of the room with Think's reasoning inside it, and the reserve was 512 tokens: long answers with Think stopped at about 1,960 tokens in a new 8K chat and earlier as the chat grew (probe 23). Now that round gets half the room with the reasoning on top, and the reserve is a quarter of the window plus the reasoning budget.
 
 ## One engine, one conversation
 

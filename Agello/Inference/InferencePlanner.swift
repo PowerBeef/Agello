@@ -112,9 +112,11 @@ enum ContextBudget {
     history.reduce(0) { $0 + estimateTokens($1.text) }
   }
 
-  /// Room kept free for the reply (thinking tokens count toward it).
+  /// Room kept free for the reply when history is trimmed: a quarter of the window for the
+  /// answer plus the reasoning budget, at most a third. A long chat keeps less history, and every
+  /// reply keeps room for a long answer (512 tokens until 2026-11-02 cut them short, probe 23).
   static func replyReserve(maxNumTokens: Int, thinkingBudget: Int?) -> Int {
-    min(maxNumTokens / 3, 512 + (thinkingBudget ?? 0))
+    min(maxNumTokens / 3, maxNumTokens / 4 + (thinkingBudget ?? 0))
   }
 
   /// Whether `used` cached tokens + `input` + a reply reserve fit the window.

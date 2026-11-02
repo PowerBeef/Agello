@@ -36,7 +36,7 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | **Models** | Download, pause, resume, or delete Gemma 4 E4B and EmbeddingGemma |
 | **On-device tools** | Turn the tools (date and time, calculator) on or off |
 | **Advanced → Performance** | GPU or CPU backend · speculative decoding (MTP) · show performance details under each reply (off by default) |
-| **Advanced → Reasoning & Memory** | Thinking on or off, and its token budget · automatic or manual KV-cache size. Reasoning leaves the model's memory once the reply is done, so it never uses up a chat's context. |
+| **Advanced → Reasoning** | Thinking on or off, and its token budget. Reasoning leaves the model's memory once the reply is done, so it never uses up a chat's context. |
 | **Advanced → Sampling** | Precise (temperature 0.2) · Balanced (0.7) · Creative (1.0) |
 | **Advanced → Voice & Vision** | Image and audio input · image detail (140 or 280 visual tokens; Detailed also uses 280 with the current model file) |
 | **Advanced → System prompt** | The base instructions for every conversation |
@@ -70,8 +70,8 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | *"Failed to create a bundle instance … AgelloDeviceTests.xctest"* | The iPhone has an install from before that target existed. Run `xcrun devicectl device uninstall app --device <udid> com.patricedery.agello` and retry. This also removes downloaded models. |
 | UI tests fail with *"Timed out while enabling automation mode"* | Unlock the iPhone and keep it unlocked during the run. |
 | The download stopped | Tap **Resume** in **Settings → Models**. Downloads continue in the background, but force-quitting the app cancels them. |
-| *"Older messages were dropped from the model's memory"* | Expected in long chats. Raise the KV-cache size under **Settings → Advanced → Reasoning & Memory**, or start a new chat. |
-| *"This message is too long for the model's memory"* | The message alone doesn't fit the context window. Raise the KV-cache size, or attach the text as a file instead. |
+| *"Older messages were dropped from the model's memory"* | Expected in long chats: the oldest turns make room for new ones. Start a new chat to begin fresh. |
+| *"This message is too long for the model's memory"* | The message alone doesn't fit the model's memory (about 10,000 tokens, roughly 7,500 words). Attach the text as a file instead. |
 | *"Web search failed … Answered without it"* | Offline, or the provider refused (rate limit). Try again, or choose another provider in **Settings → Web search**. |
 | UI tests stall on a system alert | XCTest can't answer system permission prompts on device; the tests use `--uitest-fake-mic` and the scripted engine where needed. |
 

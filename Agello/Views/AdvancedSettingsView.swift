@@ -70,25 +70,11 @@ struct AdvancedSettingsView: View {
         .monospacedDigit()
         .themedRow()
       }
-      Toggle("Automatic context", isOn: autoContextBinding)
-        .themedRow()
-      if appState.options.maxNumTokensOverride != nil {
-        Stepper(
-          "KV cache: \(contextBinding.wrappedValue) tokens",
-          value: contextBinding,
-          in: 256...DeviceProfile.current.maxContextTokens(model: appState.store.activeModelID),
-          step: 1024
-        )
-        .monospacedDigit()
-        .themedRow()
-      }
     } header: {
-      Text("Reasoning & Memory").eyebrowStyle()
+      Text("Reasoning").eyebrowStyle()
     } footer: {
       Text(
-        "Reasoning streams into a card above each reply, then leaves the model's memory, so it doesn't use up the context. "
-          + "Automatic context uses \(DeviceProfile.current.defaultMaxTokens(model: appState.store.activeModelID)) tokens; "
-          + "a bigger cache fits longer messages but slows every reply."
+        "Reasoning streams into a card above each reply, then leaves the model's memory, so it doesn't use up the context."
       )
       .foregroundStyle(Theme.Text.tertiary)
     }
@@ -266,34 +252,12 @@ struct AdvancedSettingsView: View {
 
   // MARK: - Bindings
 
-  private var autoContextBinding: Binding<Bool> {
-    Binding(
-      get: { appState.options.maxNumTokensOverride == nil },
-      set: { auto in
-        appState.options.maxNumTokensOverride = auto
-          ? nil
-          : DeviceProfile.current.defaultMaxTokens(model: appState.store.activeModelID)
-      }
-    )
-  }
-
   /// Only the levels the model accepts; a saved one it can't use (Detailed on E4B) shows as the
   /// level the engine uses instead.
   private var visualDetailBinding: Binding<VisualDetail> {
     Binding(
       get: { appState.options.visualDetail.clamped(limit: appState.visionTokenLimit) },
       set: { appState.options.visualDetail = $0 }
-    )
-  }
-
-  private var contextBinding: Binding<Int> {
-    Binding(
-      get: {
-        min(
-          appState.options.maxNumTokensOverride ?? 2048,
-          DeviceProfile.current.maxContextTokens(model: appState.store.activeModelID))
-      },
-      set: { appState.options.maxNumTokensOverride = $0 }
     )
   }
 

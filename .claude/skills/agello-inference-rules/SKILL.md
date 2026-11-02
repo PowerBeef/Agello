@@ -58,11 +58,15 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   `ContextBudget.allocatedPositions` (a 32K request gets 32,000, both
   runtimes). The 64-token margin is what keeps an MTP verify round inside.
 - With tools offered, the room is split (`ToolBudget.plan`): an eighth per
-  tool result (budgeted in estimated tokens), at most two calls, and the
-  three rounds share the rest, a quarter each. With Think the first round
-  grows to the reasoning budget plus 256 answer tokens (up to half the room)
-  and each reply sends its own reasoning budget that leaves the answer room
-  (`ToolBudget.reasoning`). A streaming guard (only with tools) ends the reply
+  tool result (budgeted in estimated tokens), at most two calls; the first
+  round, where nearly every reply is answered, gets half the room plus Think's
+  reasoning budget on top; the two later rounds share what's left, at least a
+  sixteenth each, or their reasoning budget plus 256 answer tokens when that
+  fits (tool rounds reason with the conversation's budget: the wrapper sends
+  them no thinking config). Each reply sends its own reasoning budget that
+  leaves the answer room (`ToolBudget.reasoning`). Until 2026-11-02 the first
+  round got a quarter with the reasoning inside it: probe 23 measured every
+  long answer with Think cut at about 1,960 tokens in an 8K chat. A streaming guard (only with tools) ends the reply
   (`replyTruncated`) before output plus tool results exceed the room; without
   tools the runtime's cap is exact. Don't loosen these limits.
 - Counts are exact (probe 17): `Conversation.renderMessageIntoString`
@@ -92,13 +96,17 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   Measured on the iPhone (two Think turns): 399 cached tokens with the
   filter, 536 with it explicitly off; `ThinkingScenarioTests/test02`
   guards it with `cachedTokenCount()`.
-- Chat uses an 8K cache. Settings can raise it to 16K, or 32K when the app
-  may use at least 6.5 GB; nothing raises it automatically. A bigger cache
-  slows every reply, so don't raise the default.
-- A message plus the 512-token reply reserve (more with Think) and the margin
-  must fit: about 7K tokens of English in 8K; digits cost a token each. Tests
-  with longer prompts set `maxNumTokensOverride` (see
-  `test15_LongContextDigitFidelity`).
+- Chat uses a 16K cache on every device, and it isn't a setting (since
+  2026-11-02; a saved custom window is dropped at launch). On our runtime
+  decode hardly depends on the window (iPhone 17 Pro: 39 / 42 / 42 tok/s at
+  8K / 16K / 32K); 16K peaks at 1.9 GB, within 8 GB iPhones' worst case, and
+  32K at 3.5 GB, which isn't. Don't raise it without the memory suite.
+- When history is trimmed, the reply reserve stays free: a quarter of the
+  window plus the reasoning budget, at most a third (4,096 or 5,120 tokens at
+  16K; 512 plus reasoning before 2026-11-02). A message fits when it leaves
+  that reserve after the preamble: about 10K tokens of English at 16K; digits
+  cost a token each. Tests with longer prompts set
+  `maxNumTokensOverride` in memory (see `test15_LongContextDigitFidelity`).
 
 ## Engine lifecycle
 

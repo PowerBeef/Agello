@@ -35,11 +35,27 @@ final class ToolHostTests: XCTestCase {
 
   func testPlanSplitsTheRoomWhenAnyToolIsOffered() {
     let plan = ToolBudget.plan(room: 4_000, toolsOffered: true)
-    XCTAssertEqual(plan.outputCap, 1_000, "A quarter of the room per generation")
+    XCTAssertEqual(plan.outputCap, 2_000, "Half the room for the round that answers")
+    XCTAssertEqual(plan.followUpCap, 500)
     XCTAssertEqual(plan.limits.maxCalls, 2)
     XCTAssertEqual(plan.limits.maxResultTokens, 500)
     // Two tool results plus three generations fit the room.
-    XCTAssertLessThanOrEqual(3 * plan.outputCap + 2 * plan.limits.maxResultTokens, 4_000)
+    XCTAssertLessThanOrEqual(plan.outputCap + 2 * plan.followUpCap + 2 * plan.limits.maxResultTokens, 4_000)
+  }
+
+  /// Probe 23: with tools offered, a long answer stopped at a quarter of the room, reasoning
+  /// included (about 1,960 tokens in a new 8K chat). Now the answer keeps half the room, with the
+  /// reasoning budget on top, and at least a quarter deep in a chat.
+  func testLongAnswersKeepHalfTheRoomWithThink() {
+    // A new 16K chat (about 15,800 tokens free) and one trimmed down to its reply reserve.
+    for (room, share) in [(15_800, 2), (5_120, 4)] {
+      let plan = ToolBudget.plan(room: room, toolsOffered: true, thinkingBudget: 1_024)
+      let reasoning = plan.thinkingBudget ?? 0
+      XCTAssertEqual(reasoning, 1_024)
+      XCTAssertGreaterThanOrEqual(plan.outputCap - reasoning, room / share, "room \(room)")
+      // A tool round still has its reasoning budget plus an answer when the room allows.
+      XCTAssertGreaterThanOrEqual(plan.followUpCap, min(room / 8, 1_024 + ToolBudget.answerTokens))
+    }
   }
 
   /// Think's reasoning can't use up a round: the first round grows to the reasoning budget plus
@@ -54,7 +70,7 @@ final class ToolHostTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(
           plan.outputCap - (reasoning ?? 0), min(ToolBudget.answerTokens, plan.outputCap / 2),
           "room \(room), thinking \(thinking)")
-        XCTAssertLessThanOrEqual(plan.outputCap, room / 2)
+        XCTAssertLessThanOrEqual(plan.outputCap, room / 2 + thinking)
         XCTAssertLessThanOrEqual(
           plan.outputCap + 2 * plan.followUpCap + 2 * plan.limits.maxResultTokens, room)
       }
@@ -63,11 +79,11 @@ final class ToolHostTests: XCTestCase {
     let roomy = ToolBudget.plan(room: 7_000, toolsOffered: true, thinkingBudget: 1_024)
     XCTAssertEqual(roomy.thinkingBudget, 1_024)
     XCTAssertGreaterThanOrEqual(roomy.outputCap, 1_024 + ToolBudget.answerTokens)
-    // Without Think the split is unchanged.
+    // Without Think the first round gets half the room.
     let plain = ToolBudget.plan(room: 4_000, toolsOffered: true)
     XCTAssertNil(plain.thinkingBudget)
-    XCTAssertEqual(plain.outputCap, 1_000)
-    XCTAssertEqual(plain.followUpCap, 1_000)
+    XCTAssertEqual(plain.outputCap, 2_000)
+    XCTAssertEqual(plain.followUpCap, 500)
   }
 
   /// A reply cap set in options applies to every round, and the reasoning fits inside it.

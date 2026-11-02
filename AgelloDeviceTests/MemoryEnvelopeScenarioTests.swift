@@ -76,11 +76,15 @@ final class MemoryEnvelopeScenarioTests: DeviceTestCase {
     }
     step("ballast")
 
-    appState.options.maxNumTokensOverride = 8_192
+    // The app's own window (16K on every device since 2026-11-02; 8K before, with 16K only for
+    // the long prompt), so every step below runs as users' replies do.
+    appState.options.maxNumTokensOverride = nil
     await appState.applyCurrentOptions()
     await appState.ensureEngineLoaded()
     let loaded = appState.resolved != nil && appState.engineState == .ready
-    step("load 8K", ["loaded": loaded, "loadLog": await harness.liveEngine?.loadLog ?? []])
+    step(
+      "load \((appState.resolved?.maxNumTokens ?? 0) / 1024)K",
+      ["loaded": loaded, "loadLog": await harness.liveEngine?.loadLog ?? []])
     guard loaded else {
       XCTFail("\(spec.displayName) failed to load under \(limitGB) GB: \(appState.engineState)")
       return
@@ -104,18 +108,16 @@ final class MemoryEnvelopeScenarioTests: DeviceTestCase {
       CalibrationScenarioTests.filler(bytes: 8_192) + "\n\nSummarize the text above in one sentence.",
       in: harness.newThread())
     step(
-      "long 8K",
+      "long 2K prompt",
       ["ok": Self.ok(long), "inputTokens": long.reply?.stats?.inputTokens ?? -1,
        "ttftSeconds": long.reply?.stats?.timeToFirstToken ?? -1])
 
-    appState.options.maxNumTokensOverride = 16_384
-    await appState.applyCurrentOptions()
-    let reloaded = appState.resolved?.maxNumTokens == 16_384
+    let reloaded = appState.resolved?.maxNumTokens == DeviceProfile.standardContextTokens
     let longer = await harness.ask(
       CalibrationScenarioTests.filler(bytes: 16_384) + "\n\nSummarize the text above in one sentence.",
       in: harness.newThread())
     step(
-      "long 16K",
+      "long 4K prompt",
       ["loaded": reloaded, "ok": Self.ok(longer),
        "inputTokens": longer.reply?.stats?.inputTokens ?? -1,
        "ttftSeconds": longer.reply?.stats?.timeToFirstToken ?? -1])

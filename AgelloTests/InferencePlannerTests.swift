@@ -10,7 +10,7 @@ final class InferencePlannerTests: XCTestCase {
     let resolved = InferencePlanner.resolve(
       options: InferenceOptions(), model: .e4b, memoryBytes: roomy)
     XCTAssertTrue(resolved.useGPU)
-    XCTAssertEqual(resolved.maxNumTokens, 8192)
+    XCTAssertEqual(resolved.maxNumTokens, 16_384)
     XCTAssertNil(resolved.thinkingBudget)
     XCTAssertEqual(resolved.visualTokenBudget, 280)
     XCTAssertTrue(resolved.enableSpeculativeDecoding)
@@ -26,7 +26,7 @@ final class InferencePlannerTests: XCTestCase {
 
     let e4b = InferencePlanner.resolve(
       options: InferenceOptions(), model: .e4b, memoryBytes: roomy)
-    XCTAssertEqual(e4b.maxNumTokens, 8192)
+    XCTAssertEqual(e4b.maxNumTokens, 16_384)
   }
 
   func testOverrideIsClamped() {

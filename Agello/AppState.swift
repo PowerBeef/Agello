@@ -141,10 +141,9 @@ final class AppState {
     if let data = UserDefaults.standard.data(forKey: "inferenceOptions"),
       var decoded = try? JSONDecoder().decode(InferenceOptions.self, from: data)
     {
-      // Saved before 32K meant the 32,000 positions LiteRT-LM allocates.
-      if let override = decoded.maxNumTokensOverride, override > InferencePlanner.maxTokens {
-        decoded.maxNumTokensOverride = InferencePlanner.maxTokens
-      }
+      // The context is no longer a setting (2026-11-02): a saved custom window goes back to the
+      // standard one. Tests and probes still set the override in memory.
+      decoded.maxNumTokensOverride = nil
       self.options = decoded
     }
     self.enableTools = UserDefaults.standard.object(forKey: "enableTools") as? Bool ?? true

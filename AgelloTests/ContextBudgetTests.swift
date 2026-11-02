@@ -82,11 +82,16 @@ final class ContextBudgetTests: XCTestCase {
 
   func testFitsLeavesRoomForReplyAndMargin() {
     XCTAssertTrue(ContextBudget.fits(used: 100, input: 50, maxNumTokens: 4096, thinkingBudget: nil))
-    // 1024 window: reserve is 341 + 64 margin.
-    XCTAssertFalse(ContextBudget.fits(used: 600, input: 50, maxNumTokens: 1024, thinkingBudget: nil))
+    // 1024 window: reserve is a quarter (256) + 64 margin.
+    XCTAssertTrue(ContextBudget.fits(used: 600, input: 50, maxNumTokens: 1024, thinkingBudget: nil))
+    XCTAssertFalse(ContextBudget.fits(used: 700, input: 50, maxNumTokens: 1024, thinkingBudget: nil))
   }
 
+  /// A quarter of the window stays free for the answer when history is trimmed, plus the
+  /// reasoning budget, at most a third (probe 23: 512 tokens cut long answers short).
   func testThinkingEnlargesReserveButIsCappedByWindow() {
+    XCTAssertEqual(ContextBudget.replyReserve(maxNumTokens: 16_384, thinkingBudget: nil), 4_096)
+    XCTAssertEqual(ContextBudget.replyReserve(maxNumTokens: 16_384, thinkingBudget: 1024), 5_120)
     let plain = ContextBudget.replyReserve(maxNumTokens: 8192, thinkingBudget: nil)
     let thinking = ContextBudget.replyReserve(maxNumTokens: 8192, thinkingBudget: 1024)
     XCTAssertGreaterThan(thinking, plain)

@@ -69,13 +69,14 @@ struct DeviceProfile: Sendable, Equatable {
     return availableBytes >= peak + lowMemoryStopBytes
   }
 
-  /// Everyday chat context. Calibrated on iPhone 17 Pro with Google's v0.18.0
-  /// binary: a larger KV cache slows *every* reply (E4B decode 43 → 38 → 34 →
-  /// 27 tok/s at 4K → 8K → 16K → 32K), so chat stays at 8K and long inputs use ``maxContextTokens``.
-  static let standardContextTokens = 8_192
+  /// The chat context, the same on every device and no longer a setting (2026-11-02). On our
+  /// runtime decode hardly depends on the window (iPhone 17 Pro, cooled: 39 / 42 / 42 tok/s at
+  /// 8K / 16K / 32K; on Google's v0.18.0 it fell 39 → 34 → 27), and 16K peaks at 1.9 GB, within
+  /// the 8 GB iPhones' worst case (the memory suite at 3.5 GB usable). 32K would peak at 3.5 GB.
+  static let standardContextTokens = 16_384
 
-  /// Default KV-cache size (`maxNumTokens`). Supported devices (iPhone 15 Pro
-  /// and later) all have 8 GB+; smaller values only apply to the simulator.
+  /// The KV-cache size (`maxNumTokens`). Supported devices (iPhone 15 Pro and later, Macs with
+  /// 8 GB) all have 8 GB+; smaller values only apply to the simulator.
   static func defaultMaxTokens(model: ModelID, memoryBytes: UInt64) -> Int {
     memoryBytes >= 7_000_000_000 ? standardContextTokens : 4_096
   }
