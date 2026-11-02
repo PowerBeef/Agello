@@ -4,9 +4,16 @@ import Metal
 /// What the Mac lets the app allocate (``MemoryProbe``'s per-platform half). No jetsam limit
 /// here: the model lives in GPU memory, which Metal bounds by its working set.
 extension MemoryProbe {
+  /// What the app can still use (``DeviceProfile/macAvailableBytes(systemAvailable:footprint:appLimit:)``):
+  /// the system's available memory, within Metal's working set less the footprint.
+  static func availableBytes() -> UInt64 {
+    DeviceProfile.macAvailableBytes(
+      systemAvailable: systemAvailableBytes(), footprint: footprintBytes(), appLimit: appMemoryLimitBytes())
+  }
+
   /// Memory the system could hand out without swapping: free, inactive, speculative and
   /// purgeable pages.
-  static func availableBytes() -> UInt64 {
+  private static func systemAvailableBytes() -> UInt64 {
     var stats = vm_statistics64()
     var count = mach_msg_type_number_t(
       MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)

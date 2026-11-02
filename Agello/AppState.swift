@@ -2,23 +2,6 @@ import Foundation
 import LiteRTLM
 import SwiftData
 
-/// Result of an on-demand benchmark run (1024 prefill / 256 decode tokens,
-/// matching Google's published methodology).
-struct BenchmarkReport: Codable, Sendable, Equatable {
-  var modelID: ModelID
-  var backend: String
-  var prefillTokensPerSecond: Double
-  var decodeTokensPerSecond: Double
-  var timeToFirstToken: Double
-  var date: Date
-
-  var summaryLine: String {
-    String(
-      format: "%.0f prefill · %.0f decode tok/s · TTFT %.1fs",
-      prefillTokensPerSecond, decodeTokensPerSecond, timeToFirstToken)
-  }
-}
-
 /// Main-actor UI state: engine lifecycle, generation pipeline, options.
 @Observable
 @MainActor
@@ -192,12 +175,29 @@ final class AppState {
     self.store.onModelReady = { [weak self] model in
       if model == ModelCatalog.embeddingGemma.id { self?.knowledge.indexPending() }
     }
-    memoryPressure = MemoryPressureMonitor { [weak self] in
+    memoryPressure = MemoryPressureMonitor { [weak self] level in
       guard let self else { return }
-      Log.lifecycle.warning("memory warning (\(MemoryProbe.summary, privacy: .public))")
-      Task { @MainActor in
-        self.stopIfMemoryIsExhausted()
-        await self.knowledge.releaseMemory()
+      Log.lifecycle.warning(
+        "memory \(level.rawValue, privacy: .public) (\(MemoryProbe.summary, privacy: .public))")
+      Task { @MainActor in await self.relieveMemoryPressure(level: level) }
+    }
+  }
+
+  /// The system says memory is low: give back what ``MemoryPolicy`` says for that level. Voice
+  /// mode and a benchmark count as busy, so E4B stays loaded for them.
+  func relieveMemoryPressure(level: MemoryPressureLevel) async {
+    let relief = MemoryPolicy.action(
+      level: level, isBusy: isBusy || voiceModeActive || isBenchmarking || isTranscribing)
+    if relief.contains(.stopReplyIfExhausted) { stopIfMemoryIsExhausted() }
+    if relief.contains(.releaseEmbedder) { await knowledge.releaseMemory() }
+    if relief.contains(.unloadChatModel) {
+      await serialized {
+        // Something may have started while this waited its turn.
+        guard await self.engine.isLoaded, !self.isBusy, !self.voiceModeActive, !self.isBenchmarking,
+          !self.isTranscribing
+        else { return }
+        Log.lifecycle.warning("critical memory pressure: unloading the chat model while idle")
+        await self.unloadEngine()
       }
     }
   }

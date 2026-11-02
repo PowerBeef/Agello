@@ -47,6 +47,57 @@ final class DeviceProfileTests: XCTestCase {
     XCTAssertFalse(keeps(false, 8_192, 8_000_000_000))
   }
 
+  /// Agello for Mac's classes (docs/MAC.md, M3): the limit is Metal's working set, about 5.5 GB
+  /// on an 8 GB Mac and 11 GB or more on 16 GB (12.7 GB on the M6); chat stays at 8K on both.
+  func testMacMemoryClasses() {
+    XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 5_500_000_000), 16_384)
+    XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 11_000_000_000), 32_000)
+    XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 12_713_115_648), 32_000)
+    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 8_589_934_592), 8192)
+    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 17_179_869_184), 8192)
+  }
+
+  /// The Mac's available memory: the system's, within the working set less the footprint.
+  func testMacAvailableMemory() {
+    let gb: UInt64 = 1_000_000_000
+    // Plenty free, but the app is near its working set: the headroom counts.
+    XCTAssertEqual(
+      DeviceProfile.macAvailableBytes(systemAvailable: 6 * gb, footprint: 10 * gb, appLimit: 11 * gb), gb)
+    // A busy Mac: the system's free memory counts.
+    XCTAssertEqual(
+      DeviceProfile.macAvailableBytes(systemAvailable: 2 * gb, footprint: 2 * gb, appLimit: 11 * gb), 2 * gb)
+    // Over the working set reads as nearly nothing (stop), never as "not reported".
+    let over = DeviceProfile.macAvailableBytes(systemAvailable: 3 * gb, footprint: 12 * gb, appLimit: 11 * gb)
+    XCTAssertEqual(over, 1)
+    XCTAssertTrue(DeviceProfile.shouldStopForMemory(availableBytes: over))
+    // The system's figure missing: the headroom alone; no limit either: not reported.
+    XCTAssertEqual(DeviceProfile.macAvailableBytes(systemAvailable: 0, footprint: gb, appLimit: 5 * gb), 4 * gb)
+    XCTAssertEqual(DeviceProfile.macAvailableBytes(systemAvailable: 0, footprint: gb, appLimit: nil), 0)
+    // A helper beside a 32K chat needs its KV cache (0.92 GB) above the stop.
+    XCTAssertTrue(
+      DeviceProfile.keepsConversationAcrossHelpers(
+        runtimeKeepsSessions: true, maxNumTokens: 32_000,
+        availableBytes: DeviceProfile.macAvailableBytes(
+          systemAvailable: 2 * gb, footprint: 2 * gb, appLimit: 11 * gb)))
+    XCTAssertFalse(
+      DeviceProfile.keepsConversationAcrossHelpers(
+        runtimeKeepsSessions: true, maxNumTokens: 32_000,
+        availableBytes: DeviceProfile.macAvailableBytes(
+          systemAvailable: 1 * gb, footprint: 2 * gb, appLimit: 11 * gb)))
+  }
+
+  /// A warning stops a reply only near exhaustion and releases the embedder, as on iPhone;
+  /// critical pressure (the Mac's) also unloads E4B when nothing uses it.
+  func testMemoryPolicy() {
+    let warning = MemoryPolicy.action(level: .warning, isBusy: false)
+    XCTAssertEqual(warning, [.stopReplyIfExhausted, .releaseEmbedder])
+    XCTAssertEqual(MemoryPolicy.action(level: .warning, isBusy: true), warning)
+    XCTAssertEqual(
+      MemoryPolicy.action(level: .critical, isBusy: false),
+      [.stopReplyIfExhausted, .releaseEmbedder, .unloadChatModel])
+    XCTAssertEqual(MemoryPolicy.action(level: .critical, isBusy: true), warning)
+  }
+
   func testCurrentDeviceReadsMemory() {
     XCTAssertGreaterThan(DeviceProfile.current.physicalMemoryBytes, 0)
     XCTAssertGreaterThan(DeviceProfile.current.memoryGB, 0)

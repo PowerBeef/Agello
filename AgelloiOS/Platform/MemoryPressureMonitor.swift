@@ -4,12 +4,13 @@ import UIKit
 final class MemoryPressureMonitor {
   private let observer: NSObjectProtocol
 
-  /// Calls `onWarning` on the main actor at each warning while the monitor lives.
-  init(onWarning: @escaping @MainActor () -> Void) {
+  /// Calls `onPressure` on the main actor at each warning while the monitor lives. iOS has no
+  /// stronger level to report.
+  init(onPressure: @escaping @MainActor (MemoryPressureLevel) -> Void) {
     observer = NotificationCenter.default.addObserver(
       forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main
     ) { _ in
-      MainActor.assumeIsolated { onWarning() }
+      MainActor.assumeIsolated { onPressure(.warning) }
     }
   }
 
