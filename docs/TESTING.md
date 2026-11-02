@@ -46,6 +46,21 @@ PLATFORM=mac scripts/device-harness.sh inference
 
 The first run registers the Mac for development with the signing team. Results land in `build/mac-harness/`; app logs come from `log stream --predicate 'subsystem == "com.patricedery.agello"'` and crash reports from `~/Library/Logs/DiagnosticReports/`.
 
+### Looking at the iPhone
+
+With iPhone Mirroring on this Mac, the phone's screen is a window: you can look at the app and tap through it without picking up the phone, and so can Claude's computer use. The session pauses after a few minutes idle (click **Connect** to resume), and a test run takes over the phone: the mirror waits until the phone is locked again. Look before or after a run, not during.
+
+### Tuning the model's behavior
+
+Prompt and schema changes are judged against a table, not a single try. A device test runs the cases with their expected outcome, records each raw output (and any error, so one failure doesn't hide the rest) and fails on the wrong ones; `WebScenarioTests/test04_SearchDecisions` does this for Search's decision to search. Run alone on a Mac, a round takes about a minute:
+
+```sh
+PLATFORM=macos-native ONLY=AgelloDeviceTests/WebScenarioTests/test04_SearchDecisions scripts/device-harness.sh web
+jq '.scenarios.web04_searchDecisions' build/macos-harness/harness-report.json
+```
+
+Then probe 24, the quality bench, judges the answers themselves, and the change runs on the iPhone and in Agello for Mac with the same suites.
+
 ## Results
 
 Everything lands in `build/device-harness/`: a result bundle and the raw `xcodebuild` log for each suite (`<suite>.log`), per-scenario JSON metrics and UI screenshots under `attachments/`, and `harness-report.json`, an in-app report pulled from the device that survives crash relaunches within a run. Console output goes through Homebrew's [xcbeautify](https://github.com/cpisciotta/xcbeautify) when it's installed (`XCBEAUTIFY=off` for raw output). The exit code is `xcodebuild`'s (65 means test failures).

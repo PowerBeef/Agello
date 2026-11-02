@@ -16,6 +16,9 @@ MobileBuildMCP is configured with the `device` workflow only.
    the whole run. A lock makes Xcode stall ("device is locked") and makes UI
    tests fail with "Timed out while enabling automation mode". For long
    suites, ask the user to set Auto-Lock to Never.
+   `xcrun devicectl device info lockState --device <udid>` says
+   `passcodeRequired: false` when it's unlocked. Never lock the phone or end
+   iPhone Mirroring yourself unless the user asks at the time.
 2. For `ui` and `screenshots`: Settings → Developer → Enable UI Automation is
    on (it asks for the passcode once). Otherwise XCUITest waits 60 s for a
    passcode prompt on the phone and fails with "Timed out while enabling
@@ -138,6 +141,51 @@ scripts/device-run.sh crashes pull            # copy them to build/device-run/cr
   expects it.
 - Axiom's `xclog` console capture is simulator-only, and `log collect` needs
   root for a physical device: use `logs` instead.
+
+## Looking at the iPhone (iPhone Mirroring)
+
+When the user mirrors the phone to this Mac ("Recopie de l'iPhone",
+`com.apple.ScreenContinuity`), computer use can see and tap the real app
+with the background `app_*` tools (`app_screenshot`, `app_click`,
+`app_type`), and the user keeps the Mac. Access was granted on 2026-11-02;
+`request_access` for that app if a new session needs it.
+
+- It authenticates automatically (its Settings: "Authentifier
+  automatiquement").
+- After a few minutes idle the session pauses: Apple's design, with no setting
+  for it. `app_click` its "Connexion" button to resume.
+- A harness run takes over the phone, and the mirror shows "iPhone en cours
+  d'utilisation" until the phone is locked. That lock is the user's call: look
+  before or after runs, never during, and don't lock the phone to get the
+  mirror back.
+- The app on the phone is the last iPhone run's build (Debug, the test host).
+  It shares the user's chats and settings, so start a new chat for a check.
+
+## Tuning a prompt or a model decision
+
+Judge a prompt or schema change against a table of cases, not one try:
+
+1. A device test runs each case with its expected outcome, records the raw
+   output and the error per case (catch them: one bad case mustn't hide the
+   rest), and fails on the wrong ones. Model: `WebScenarioTests/test04_SearchDecisions`.
+2. Run it alone on Agello for Mac, about a minute a round:
+   `PLATFORM=macos-native ONLY=AgelloDeviceTests/<Class>/<test> scripts/device-harness.sh <suite>`,
+   and read `jq '.scenarios.<name>' build/macos-harness/harness-report.json`.
+   Check `recordedAt`: a test that throws before `harness.record` leaves the
+   last run's record in place.
+3. Iterate until the table is right, then probe 24 for the answers' quality,
+   then the suites on the iPhone and `macos-native`.
+
+Lessons from the first round (Search when needed, 2026-11-02):
+- E4B answers a yes/no "does this need X?" by what it thinks it can do alone;
+  asked to name the message's kind from a short list, it gets the decision
+  right, and the code decides from the kind.
+- What the output must hold, the grammar should enforce: with queries
+  optional, a "question" came back with none (`anyOf` now requires 1–3 for
+  questions and requests, none for the rest).
+- Put follow-ups with their conversation in the table: they fail
+  differently from first messages.
+- JSON enum values must be one word on our runtime (`agello-inference-rules`).
 
 ## The test host
 

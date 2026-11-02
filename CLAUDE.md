@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - iOS and macOS move together: one engine (our LiteRT-LM runtime) and one shared code base in `Agello/`, with platform tweaks only where a platform needs them, one type per seam in `AgelloiOS/Platform/` and `AgelloMac/Platform/` (shared code has no `#if` outside `Support/Theme/PlatformModifiers.swift`). A shared change is verified in both apps with the same suites: on the iPhone (or `PLATFORM=mac`) and with `PLATFORM=macos-native`. A fix or feature lands for both, or says in its commit why it's one platform's.
 - The Mac is the development bed while the phone is away. Its speed and memory aren't the iPhone's, and every change that ships still needs an iPhone run.
 - Run tests with `scripts/device-harness.sh` (below), one run at a time. The iPhone must be connected and unlocked for the whole run.
+- Never lock the iPhone or end iPhone Mirroring unless the user asks at the time: mirroring keeps the phone's own screen dark, so there's no burn-in to avoid.
 - Don't edit files in the target folders (`Agello*/`) while a harness run is building: stage changes elsewhere and apply them after the run. A hook denies Edit and Write there during the build; edits through Bash aren't checked, and the rule still holds for them.
 - Start each session with the "Current status" section of `docs/ROADMAP.md` (the session-start hook prints it), and update it whenever the status changes (a run finishes, a phase starts, a thread moves).
 - Commit after each verified chunk, directly on `main` (a worktree session's branch is merged into `main`, below). Push only when asked.
@@ -69,7 +70,18 @@ The project is worked on in the Claude Code desktop app on this Mac. `.claude/se
 - **The lock.** The script holds `build/.harness.lock` in the main checkout and exits with 3 while another run holds it, from any session or worktree; the edit hook reads it. A lock whose process has gone is replaced. Never delete a live one.
 - **Parallel sessions** share the iPhone and this Mac: one harness run at a time, and Mac speed numbers measured while another session builds are suspect.
 - **Worktrees.** A parallel session can run in a worktree (`.claude/worktrees/`, git-ignored). New worktrees branch from the local `HEAD` (`worktree.baseRef` is `"head"`), so unpushed commits come along, and `.worktreeinclude` copies `.mobilebuildmcp/config.yaml` in. The session commits to its own `claude/…` branch. Once it's verified, rebase it onto `main` if `main` has moved, merge it from a session in the main checkout (`git merge --ff-only refs/heads/<branch>`), and don't push the branch. Each worktree builds into its own DerivedData (about 1 GB) and `build/`, so remove it once merged (Settings → This computer → Storage lists them). The sibling checkouts (`../LiteRT-LM`, `../agello-arms/`) don't resolve from inside a worktree: fork work runs from the main checkout, or in a session opened on the fork.
+- **Looking at the iPhone.** The user may mirror the phone to this Mac (iPhone Mirroring, "Recopie de l'iPhone", `com.apple.ScreenContinuity`), and computer use has access to it: look and tap with the background `app_*` tools, and the user keeps the Mac. It authenticates automatically. After a few minutes idle the session pauses (Apple's design, no setting): click its "Connexion" button to resume. A harness run takes over the phone, and the mirror shows "iPhone en cours d'utilisation" until the phone is locked, which is the user's call: look before or after runs, not during.
 - **Looking at the app without the phone.** After a `PLATFORM=mac` run has installed it, `open -b com.patricedery.agello --args --mock-engine` opens the iPhone app on this Mac (drop `--mock-engine` for the real model), and computer use can look at it and tap through it once the user grants access to Agello. It's the build of that last run. Quit it with `osascript -e 'tell application id "com.patricedery.agello" to quit'` before the next run.
+
+## The fix loop
+
+How a behavior the user reports gets fixed (Search when needed, 2026-11-02):
+
+1. **Reproduce** from the user's report (a screenshot, or the mirrored iPhone) and find the cause in the shared code.
+2. **Tune against a table.** When the fix is the model's behavior (a prompt, a schema, a decision), write a device test that runs a table of cases with their expected outcome and records each raw output and error, so one bad case doesn't hide the rest (`WebScenarioTests/test04_SearchDecisions`). Run it alone on Agello for Mac, about a minute a round: `PLATFORM=macos-native ONLY=AgelloDeviceTests/<Class>/<test> scripts/device-harness.sh <suite>`, then `jq '.scenarios.<name>' build/macos-harness/harness-report.json`. Iterate until the table is right.
+3. **Judge quality** where answers matter: probe 24, the quality bench (`agello-device-testing`), with `BENCH_REPEAT=3` for anything that searches live.
+4. **Verify on both apps** with the same suites: the iPhone (or `PLATFORM=mac`) and `PLATFORM=macos-native`.
+5. **Look** through iPhone Mirroring once the runs are done, then update the docs and the roadmap and commit.
 
 ## Architecture
 
