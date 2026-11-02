@@ -139,7 +139,7 @@ The phone is away, so these are moves and seams that keep iOS defaults. Each one
   - `ThemeMetrics.swift` holds `Theme.Size`, the only metrics there are (no `Theme.Layout` or font roles exist yet). `Platform` has `copy`, `reduceMotion`, `deviceName` and `osName`; `isDesktop` comes with its first caller.
   - The shims add `largeTitleDisplay()` (Settings). 15 strings use `Platform.deviceName`; onboarding's "stay on your phone" now reads "on your iPhone".
   - Also fixed on the way: a race in `StreamRegistryTests/testToolRoundsStopAtTheLimit`, and sideways PDF pages now reach OCR at the full 2,200 px.
-  - **Queued for the iPhone:** the default suites with `ui` (voice mode's audio session and interruptions, the camera preview and its rotation, the composer, the camera and scanner covers, the rename and delete dialogs), then `screenshots` against the last tour.
+  - **iPhone, 2026-11-02:** the default suites with `ui`, `thinking`, `probes`, `screenshots`, `calibrate` and `memory` pass at `1929ab7` (M1–M3). The tour matches October's except Settings' rows, about 4 points narrower on each side, which no change of ours explains (iOS 27.2's list margins, most likely). Voice mode with AirPods and a call, and the camera in landscape, stay manual checks.
 
 ## M2: AgelloMac compiles and runs the shared app
 
