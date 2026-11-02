@@ -118,7 +118,12 @@ final class ProbeScenarioTests: DeviceTestCase {
   /// the nearest passage is the right one.
   func test03_EmbeddingGemma() async throws {
     await appState.engine.unload()
-    let url = try await Self.embeddingModel()
+    _ = try await harness.ensureDownloaded(ModelCatalog.embeddingGemma)
+    let url = try XCTUnwrap(appState.store.localURL(for: ModelCatalog.embeddingGemma))
+    // Until 2026-11-01 this probe downloaded a copy of its own into Caches (157 MB).
+    if let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+      try? FileManager.default.removeItem(at: caches.appendingPathComponent(url.lastPathComponent))
+    }
     let loadStarted = Date()
     let engine = EmbeddingEngine(
       config: EmbeddingEngineConfig(
@@ -166,21 +171,6 @@ final class ProbeScenarioTests: DeviceTestCase {
       ], in: self)
     XCTAssertEqual(query.count, 256)
     XCTAssertEqual(best, 0, "Wrong nearest passage: \(scores)")
-  }
-
-  static func embeddingModel() async throws -> URL {
-    let dir = try FileManager.default.url(
-      for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-    let destination = dir.appendingPathComponent("embeddinggemma-2-text-270m.litertlm")
-    if FileManager.default.fileExists(atPath: destination.path) { return destination }
-    let source = URL(
-      string:
-        "https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/main/embeddinggemma-2-text-270m.litertlm"
-    )!
-    let (temporary, response) = try await URLSession.shared.download(from: source)
-    try ModelStore.validateResponse(response)
-    try FileManager.default.moveItem(at: temporary, to: destination)
-    return destination
   }
 
   /// Numbers in replies came out duplicated once ("March 202026",
