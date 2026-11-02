@@ -117,9 +117,12 @@ final class StreamRegistryTests: XCTestCase {
 
   func testToolRoundsStopAtTheLimit() async {
     let harness = StreamTestHarness(maxToolRounds: 1)
+    let firstID = harness.currentID
     harness.deliver(toolCall)
     harness.deliver(StreamChunk(isFinal: true))
-    await waitUntil { harness.toolRoundsStarted == 1 }
+    // The round is counted before its send registers: wait for both, or the next chunk can
+    // reach the retired send.
+    await waitUntil { harness.toolRoundsStarted == 1 && harness.currentID != firstID }
     harness.deliver(toolCall)
     harness.deliver(StreamChunk(isFinal: true))
     let outcome = await drain(harness.stream)
