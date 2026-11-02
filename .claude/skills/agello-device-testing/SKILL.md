@@ -275,6 +275,13 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
   download again).
 - XCTest can't answer system permission prompts on device, so UI tests use
   launch arguments instead.
+- `PLATFORM=mac` fails with "Test crashed with signal kill before
+  establishing connection", and macOS says "Agello est endommagé" (damaged):
+  the iPhone app's build in DerivedData (`Build/Products/Debug-iphoneos/
+  Agello.app`) has a broken signature (`codesign --verify` says a sealed
+  resource is missing or invalid), left by a stopped run or an unsigned
+  compile check writing into the same folder. Cancel the dialog, delete that
+  `Agello.app`, and run again.
 
 - `ThinkingScenarioTests/test02_ReasoningStaysOutOfCache` fails on the Mac
   only (Google's v0.18.0: the cache grows 139 tokens over the second Think
