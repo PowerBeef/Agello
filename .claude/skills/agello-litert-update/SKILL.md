@@ -107,7 +107,14 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   composite (`mlboydaisuke/gemma-4-E4B-it-litert-lm-rope-composite`, 8.21 GB,
   int8). On his M4 Max: composites 118/118 (the 32k file 12/12 on `xl`
   t12000–t30000), the control 37/118, and flag vs no flag within 1 % in speed.
-  Our runs on them are next (draft: `build/drafts/issue-3913-new-exports.md`).
+  Our runs (2026-11-02/03, probe 20 on the iPhone with our runtime, agello-bench
+  on both M6 arms) agree: the control 37/118 everywhere and as fast as the
+  composite; the 32k file 130/130 on the M6 but 2.2–3.7× slower to decode and
+  killed by jetsam on the iPhone past ~500-token prompts (its footprint jumps
+  to 5.6 GB); the E4B composite 118/118 everywhere, fitting the iPhone in the
+  foreground (6.65 GB) but decoding 2.5–2.6× slower than our patched E4B.
+  Posted 2026-11-03:
+  https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6596803301
 - 2026-10-31: elbrinner (iPhone 15 Pro, E2B, v0.17.1, a RAG bench): fp32 fixes
   two long cases; a ~250-token case differs between Metal (fp16 and fp32) and
   CPU. Drafted reply (`build/drafts/issue-3913-elbrinner.md`): ask whether the
