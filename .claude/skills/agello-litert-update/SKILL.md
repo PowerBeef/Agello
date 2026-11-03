@@ -120,7 +120,8 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   CPU. Drafted reply (`build/drafts/issue-3913-elbrinner.md`): ask whether the
   long prompts pass 2,048, point to the composite and `patch_rope.py`, and
   suggest greedy runs to rule out the samplers (Google's Metal sampler vs the
-  CPU top-p one; seed 0 for every conversation on v0.18.0).
+  CPU top-p one; seed 0 for every conversation on v0.18.0). Posted 2026-11-03:
+  https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6596859591
 - LiteRT-LM #4001 reports the same failure on Android (Adreno 840 with E4B,
   Adreno 740 with E2B), FLOAT32 the only workaround. Don't present our patched
   file as its fix without A/B runs on that repro (asked there on 2026-10-17).
