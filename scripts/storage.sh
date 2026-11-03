@@ -89,7 +89,17 @@ for f in "$MODELS"/*; do
   name="$(basename "$f")"
   case "$name" in
     *.litertlm) models=$((models + $(kb "$f"))) ;;
-    lab) row keep "$(kb "$f")" "~/Models/agello/lab: #3913 lab models, kept for the next exports (their clones in the iPhone app's Documents/lab go with them)" ;;
+    lab)
+      # agello-bench's runs without --cache leave engine caches beside the lab models.
+      lab=0
+      for g in "$f"/*; do
+        case "$(basename "$g")" in
+          *_cache.bin | *.xnnpack_cache)
+            row scratch "$(kb "$g")" "~/Models/agello/lab/$(basename "$g"): an engine cache written beside a lab model" "$g" ;;
+          *) lab=$((lab + $(kb "$g"))) ;;
+        esac
+      done
+      row keep "$lab" "~/Models/agello/lab: #3913 lab models, kept for the next exports (their clones in the iPhone app's Documents/lab go with them)" ;;
     cache) row keep "$(kb "$f")" "~/Models/agello/cache: agello-bench's GPU cache (--cache)" ;;
     revisions.txt) ;;
     *_cache.bin | *.xnnpack_cache | *cache*)
@@ -172,7 +182,8 @@ row keep "$(kb "$HOME/.cache/bazel-repo")" "~/.cache/bazel-repo: Bazel's downloa
 
 # The shared Hugging Face cache holds other projects' models and isn't counted. A repo of ours
 # there means an `hf download` without --local-dir: a second copy of a model.
-for d in "$HOME"/.cache/huggingface/hub/models--{PowerBeef02,litert-community,mlboydaisuke}--*; do
+hub="$HOME/.cache/huggingface/hub"
+for d in "$hub"/models--PowerBeef02--* "$hub"/models--litert-community--* "$hub"/models--mlboydaisuke--*; do
   [ -d "$d" ] || continue
   repo="$(basename "$d" | sed 's/^models--//; s/--/\//')"
   row review "$(kb "$d")" "~/.cache/huggingface: $repo, a project model in the shared HF cache (download with --local-dir; remove with hf cache rm $repo)"
