@@ -249,7 +249,7 @@ PLATFORM=macos-native ONLY=AgelloTests/ShellModelTests scripts/device-harness.sh
 PLATFORM=macos-native scripts/device-harness.sh inference
 ```
 
-- Probe 24 (`test24_QualityBench`) is the quality bench: eight realistic
+- Probe 24 (`test24_QualityBench`) is the quality bench: nine realistic
   requests (web apps, Swift and Python code, facts, an explanation, an email,
   a trip plan, with and without Search) through the whole app, each reply
   attached in full as `quality-<id>.md`, generated web apps tried in a web

@@ -45,7 +45,72 @@ extension ProbeScenarioTests {
       id: "trip-search",
       prompt: "Plan a 3-day winter trip to Montreal with mostly indoor activities and a budget table.",
       search: true),
+    BenchCase(id: "ttl-cache", prompt: threePartCodingPrompt, code: true),
   ]
+
+  /// A three-part coding evaluation the maintainer ran on the iPhone (2026-11-09): a long prompt
+  /// (about 3.8K tokens with the preamble) whose reply holds three code blocks and runs to about
+  /// 4K tokens with Think. Judged whole when all three parts are there and the code runs.
+  static let threePartCodingPrompt = #"""
+    You are being evaluated on coding ability. Complete all three parts. Use Python 3.10+ and the standard library only (pytest is allowed for Part 3). Put each part's code in its own complete code block that runs as-is.
+
+    ## Part 1 — Implement a TTL + LRU cache
+
+    Write a class `TTLCache` with this interface:
+
+    - `TTLCache(capacity: int, clock: Callable[[], float] = time.monotonic)`
+      - Raise `ValueError` if capacity < 1.
+      - All time checks must use `clock()` so tests can inject a fake clock.
+    - `set(key, value, ttl: float | None = None) -> None`
+      - `ttl` is the number of seconds until expiry. `None` means the entry never expires. Raise `ValueError` if ttl is not None and ttl <= 0.
+      - Setting an existing key replaces its value and ttl and marks it most recently used.
+      - When a new key is inserted into a full cache, first remove all expired entries. If the cache is still full, evict the least recently used entry.
+    - `get(key, default=None)`
+      - Return the value if the key exists and has not expired, and mark it most recently used. Otherwise return `default`.
+      - An entry is expired when `clock() >= its expiry time`. Remove an expired entry when you encounter it.
+    - `delete(key) -> bool`: return True only if a live (non-expired) entry was removed.
+    - `__len__()`: return the number of non-expired entries.
+    - `__contains__(key)`: return True if the key is live. It must NOT change recency.
+
+    `get`, `delete` and `__contains__` must be O(1) average. `set` must be O(1) average when no eviction is needed. In one or two sentences, state the time complexity of your eviction path and of `__len__`.
+
+    ## Part 2 — Find and fix the bugs
+
+    The function below should meet this spec:
+    - Input: a list of `(start, end)` tuples of numbers.
+    - Output: a new list of merged tuples, sorted by start.
+    - Intervals that overlap must be merged. Intervals that only touch, like `(1, 3)` and `(3, 5)`, must also be merged.
+    - The input list must not be modified.
+    - Empty input returns `[]`.
+    - Raise `ValueError` if any interval has start > end.
+
+    ```python
+    def merge_intervals(intervals):
+        intervals.sort()
+        merged = [intervals[0]]
+        for start, end in intervals[1:]:
+            last_start, last_end = merged[-1]
+            if start < last_end:
+                merged[-1] = (last_start, end)
+            else:
+                merged.append((start, end))
+        return merged
+    ```
+
+    List every bug you find, one line each, with an input that triggers it. Then give the corrected function.
+
+    ## Part 3 — Tests
+
+    Write a pytest file for your Part 1 `TTLCache`, and assume Part 1 is saved as `ttl_cache.py`. Use a fake clock, not `time.sleep`. Cover at least these cases:
+    - LRU eviction order
+    - TTL expiry exactly at the boundary
+    - expired entries being evicted before LRU ones
+    - overwriting a key
+    - `__contains__` not affecting recency
+    - invalid arguments
+
+    Keep explanations brief. The code is what will be judged.
+    """#
 
   /// Probe 24: the quality bench. Realistic requests through the whole app (Search, Think, the
   /// on-device tools as users have them), each reply recorded in full (attachments

@@ -32,9 +32,11 @@ final class DeviceHarness {
 
   let container: ModelContainer
   let appState: AppState
-  /// Options every scenario starts from; scenarios that change options
-  /// restore this in tearDown.
-  let baselineOptions = InferenceOptions()
+  /// Options every scenario starts from, as a fresh install has them on this device (Think's
+  /// budget follows the window: with the struct's 1,024 the quality bench cut its reasoning where
+  /// the app no longer does, 2026-11-10); scenarios that change options restore this in tearDown.
+  let baselineOptions = InferenceOptions.launch(
+    saved: nil, memoryBytes: ProcessInfo.processInfo.physicalMemory, budgetMigrated: true)
   /// Web search as a fresh install has it (allowed, not automatic): the
   /// phone's own saved settings must not decide whether scenarios search.
   let baselineWeb = WebSearchSettings()
