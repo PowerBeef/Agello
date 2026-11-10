@@ -96,18 +96,30 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   Measured on the iPhone (two Think turns): 399 cached tokens with the
   filter, 536 with it explicitly off; `ThinkingScenarioTests/test02`
   guards it with `cachedTokenCount()`.
-- Chat uses a 16K cache when memory allows, and it isn't a setting (since
-  2026-11-02; a saved custom window is dropped at launch). On our runtime
+- Chat's cache isn't a setting (since 2026-11-02; a saved custom window is
+  dropped at launch): 32K (32,000 allocated, the model file's most) on
+  devices with 11 GB or more of physical memory (12 GB iPhones, 16 GB Macs;
+  the maintainer's choice, 2026-11-09), 16K on 8 GB devices. On our runtime
   decode hardly depends on the window (iPhone 17 Pro: 39 / 42 / 42 tok/s at
   8K / 16K / 32K); 16K peaks at 1.9 GB and 32K at 3.5 GB. Each load measures
   the room left (`MemoryProbe.roomBytes`: the jetsam limit or Metal's working
-  set, less the footprint) after the old engine is gone, and takes 8K below
-  3.5 GB (`DeviceProfile.contextTokens`): at 3.38 GB a 16K load, an image and
-  a 2K-token prompt were killed (memory suite at 3.5 GB usable). The engine
-  keeps that window for later plans (`loadedContextTokens`), so a settings
-  change doesn't reload to try 16K again. Budgets read the engine's
-  `resolved.maxNumTokens`, never the default. Don't raise it without the
-  memory suite.
+  set, less the footprint) after the old engine is gone, and steps down
+  (`DeviceProfile.contextTokens`): 16K below 5.1 GB (an estimate: 3.5 GB
+  plus 32K's extra 1.6 GB; the memory suite's 6.0 GB envelope passed with
+  1.3 GB to spare on 2026-11-10, nothing lower is measured), 8K below
+  3.5 GB (at 3.38 GB a 16K load, an image and a 2K-token prompt were killed,
+  memory suite at 3.5 GB usable). Physical memory decides, not the reported
+  limit, which has read 6.44 GB on the iPhone 17 Pro before rising to
+  8.59 GB. The engine keeps that window for later plans
+  (`loadedContextTokens`), so a settings change doesn't reload to try a
+  larger one. Budgets read the engine's `resolved.maxNumTokens`, never the
+  default. Don't raise it without the memory suite.
+- Think's reasoning budget is a setting (Advanced, 128–4,096) whose default
+  follows the device: 4,096 where the window is 32K, 1,024 elsewhere
+  (`DeviceProfile.defaultThinkingBudget`, 2026-11-09: 1,024 cut a coding
+  plan mid-word on the iPhone 17 Pro). `InferenceOptions.launch` moves a
+  budget saved at the old 1,024 once (`thinkingBudgetFollowsWindow` in
+  UserDefaults); a budget chosen afterwards stays.
 - When history is trimmed, the reply reserve stays free: a quarter of the
   window plus the reasoning budget, at most a third (4,096 or 5,120 tokens at
   16K; 512 plus reasoning before 2026-11-02). A message fits when it leaves

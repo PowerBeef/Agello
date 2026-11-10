@@ -138,14 +138,14 @@ final class AppState {
     self.engine =
       useMockEngine ? MockChatEngine() : LiteRTChatEngine()
     self.knowledge = KnowledgeBase(store: self.store, useHashingEmbedder: useMockEngine)
-    if let data = UserDefaults.standard.data(forKey: "inferenceOptions"),
-      var decoded = try? JSONDecoder().decode(InferenceOptions.self, from: data)
-    {
-      // The context is no longer a setting (2026-11-02): a saved custom window goes back to the
-      // standard one. Tests and probes still set the override in memory.
-      decoded.maxNumTokensOverride = nil
-      self.options = decoded
-    }
+    let saved = UserDefaults.standard.data(forKey: "inferenceOptions")
+      .flatMap { try? JSONDecoder().decode(InferenceOptions.self, from: $0) }
+    let launched = InferenceOptions.launch(
+      saved: saved, memoryBytes: ProcessInfo.processInfo.physicalMemory,
+      budgetMigrated: UserDefaults.standard.bool(forKey: "thinkingBudgetFollowsWindow"))
+    self.options = launched
+    if launched != saved { UserDefaults.standard.set(try? JSONEncoder().encode(launched), forKey: "inferenceOptions") }
+    UserDefaults.standard.set(true, forKey: "thinkingBudgetFollowsWindow")
     self.enableTools = UserDefaults.standard.object(forKey: "enableTools") as? Bool ?? true
     self.memoryEnabled = UserDefaults.standard.bool(forKey: "memoryEnabled")
     if let data = UserDefaults.standard.data(forKey: "webSearch"),

@@ -168,6 +168,25 @@ with the background `app_*` tools (`app_screenshot`, `app_click`,
   closed, and split long probes into one arm per run.
 - The app on the phone is the last iPhone run's build (Debug, the test host).
   It shares the user's chats and settings, so start a new chat for a check.
+- What drives what (checked 2026-11-10 on every screen: chat, drawer, the "…"
+  and attach menus, Settings and Advanced):
+  - **Background `app_*` tools:** looking and tapping only (`app_screenshot`,
+    `app_click`). Scrolling, dragging and keys don't reach the phone.
+  - **Full-screen control** (`request_full_control`, then `computer_batch`;
+    it takes the user's screen, so use it in short bursts and
+    `release_full_control` after):
+    - Scroll with `scroll` over the phone: about 100 ticks for three lines, so
+      send four to six `scroll_amount: 100` actions per screen.
+    - Type with `type` after a click in the field.
+    - Long-press with `mouse_move` to the spot, `left_mouse_down`, a 1.2 s
+      `wait`, `left_mouse_up`. Without the `mouse_move` the press lands where
+      the pointer last was.
+    - A click-drag isn't a touch drag: iPhone Mirroring maps swipes to scrolls.
+  - **Not reachable:** the microphone ("Le micro de l'iPhone n'est pas
+    disponible à partir du Mac"), so Voice mode, dictation and voice messages
+    need the user or the `ui` suite's `--uitest-fake-mic`.
+- With the phone unlocked and in use, the mirror can't connect, but
+  `scripts/device-run.sh screenshot <name>` still captures its screen.
 
 ## Tuning a prompt or a model decision
 

@@ -4,9 +4,40 @@ import XCTest
 
 final class DeviceProfileTests: XCTestCase {
   func testDefaultMaxTokens() {
-    // 16K on every supported (8 GB+) device: no longer a setting.
+    // No longer a setting: 32K with 12 GB (iPhone 17 Pro, 16 GB Macs), 16K on 8 GB devices.
+    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 12_291_719_168), 32_768)
     XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 8_000_000_000), 16_384)
     XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 6_000_000_000), 4096)
+  }
+
+  /// Think's default follows the window (2026-11-09); a budget saved at the old default moves once.
+  func testThinkBudgetFollowsTheWindow() {
+    let large: UInt64 = 12_291_719_168
+    XCTAssertEqual(DeviceProfile.defaultThinkingBudget(memoryBytes: large), 4_096)
+    XCTAssertEqual(DeviceProfile.defaultThinkingBudget(memoryBytes: 8_000_000_000), 1_024)
+    XCTAssertEqual(InferenceOptions.launch(saved: nil, memoryBytes: large, budgetMigrated: true).thinkingBudget, 4_096)
+    var saved = InferenceOptions()
+    saved.thinkingBudget = 1_024
+    saved.maxNumTokensOverride = 32_768
+    let moved = InferenceOptions.launch(saved: saved, memoryBytes: large, budgetMigrated: false)
+    XCTAssertEqual(moved.thinkingBudget, 4_096)
+    XCTAssertNil(moved.maxNumTokensOverride)
+    // Chosen after the move, or by hand: kept.
+    XCTAssertEqual(InferenceOptions.launch(saved: saved, memoryBytes: large, budgetMigrated: true).thinkingBudget, 1_024)
+    saved.thinkingBudget = 2_048
+    XCTAssertEqual(InferenceOptions.launch(saved: saved, memoryBytes: large, budgetMigrated: false).thinkingBudget, 2_048)
+    saved.thinkingBudget = 1_024
+    XCTAssertEqual(InferenceOptions.launch(saved: saved, memoryBytes: 8_000_000_000, budgetMigrated: false).thinkingBudget, 1_024)
+  }
+
+  /// 32K by default where the device has 12 GB (2026-11-09), stepping down to 16K below 5.1 GB
+  /// left at load and to 8K below 3.5 GB.
+  func testLargeContextStepsDownWithTheRoomAtLoad() {
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: 8_000_000_000), 32_768)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: 5_100_000_000), 32_768)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: 5_000_000_000), 16_384)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: 3_380_000_000), 8_192)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: nil), 32_768)
   }
 
   /// 16K when memory allows (2026-11-02): the memory suite's 3.5 GB envelope left 3.38 GB at load
@@ -62,13 +93,14 @@ final class DeviceProfileTests: XCTestCase {
   }
 
   /// Agello for Mac's classes (docs/MAC.md, M3): the limit is Metal's working set, about 5.5 GB
-  /// on an 8 GB Mac and 11 GB or more on 16 GB (12.7 GB on the M6); chat is 16K on both.
+  /// on an 8 GB Mac and 11 GB or more on 16 GB (12.7 GB on the M6); chat is 16K on 8 GB and 32K
+  /// on 16 GB.
   func testMacMemoryClasses() {
     XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 5_500_000_000), 16_384)
     XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 11_000_000_000), 32_000)
     XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 12_713_115_648), 32_000)
     XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 8_589_934_592), 16_384)
-    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 17_179_869_184), 16_384)
+    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 17_179_869_184), 32_768)
   }
 
   /// The Mac's available memory: the system's, within the working set less the footprint.

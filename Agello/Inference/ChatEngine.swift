@@ -82,8 +82,9 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// The plan the current engine was built for, before backend/modality
   /// fallbacks (engine-level settings are compared against this).
   private var builtPlan: ResolvedInference?
-  /// The window the last load chose from the memory left (16K, or 8K when short). Later plans
-  /// keep it, so a settings change doesn't reload the engine to try 16K again.
+  /// The window the last load chose from the memory left (32K on 12 GB devices or 16K, stepping
+  /// down when short). Later plans keep it, so a settings change doesn't reload the engine to try
+  /// a larger window again.
   private var loadedContextTokens: Int?
   private var toolsEnabled = true
   private var generating = false
@@ -195,7 +196,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
 
     unloadAndRecord()
-    // 16K when memory allows: measured after the old engine is gone.
+    // 32K or 16K as memory allows: measured after the old engine is gone.
     let room = MemoryProbe.roomBytes()
     let contextTokens = DeviceProfile.contextTokens(
       standard: DeviceProfile.defaultMaxTokens(model: spec.id, memoryBytes: memoryBytes), roomBytes: room)

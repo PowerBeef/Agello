@@ -41,7 +41,7 @@ final class DeviceHarness {
 
   private static let defaultsKeys = [
     "inferenceOptions", "enableTools", "selectedThreadID", "benchmarkReport", "memoryEnabled",
-    "personalization", "webSearch",
+    "personalization", "webSearch", "thinkingBudgetFollowsWindow",
   ]
   private var savedDefaults: [String: Any] = [:]
   private var report: [String: Any] = [:]

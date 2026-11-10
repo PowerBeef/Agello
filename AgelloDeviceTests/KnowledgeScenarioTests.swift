@@ -127,6 +127,10 @@ final class KnowledgeScenarioTests: DeviceTestCase {
 
   func test02_SummarizeLongPDFThenCitedFollowUp() async throws {
     try await requireLoadedModel()
+    // The window of 8 GB devices, where this 40-page report doesn't fit whole and is summarized
+    // by section. On 32K devices it fits (test02b).
+    appState.options.maxNumTokensOverride = 16_384
+    await appState.applyCurrentOptions()
     _ = try await freshEmbedding()
     let thread = harness.newThread()
     let document = try XCTUnwrap(appState.knowledge.add(Self.report(), threadID: thread.id))
@@ -166,6 +170,32 @@ final class KnowledgeScenarioTests: DeviceTestCase {
         "againSeconds": again.seconds,
         "footprintGB": Double(MemoryProbe.footprintBytes()) / 1e9,
       ], in: self)
+  }
+
+  /// At the device's own window. On 32K devices (2026-11-09) the 40-page report fits whole: the
+  /// reply answers from the file itself, with no section summaries to wait for.
+  func test02b_LongPDFAtTheDeviceWindow() async throws {
+    try await requireLoadedModel()
+    _ = try await freshEmbedding()
+    let thread = harness.newThread()
+    let document = try XCTUnwrap(appState.knowledge.add(Self.report(), threadID: thread.id))
+    let answer = await harness.ask(
+      "What was the harbour renovation budget, and when was it approved?", in: thread)
+    let sources = answer.reply?.parts.sources.map(\.title) ?? []
+    harness.record(
+      "knowledge02b_deviceWindow",
+      [
+        "window": appState.resolved?.maxNumTokens ?? 0, "seconds": answer.seconds,
+        "reply": answer.text, "sources": sources,
+        "cachedSummaryChars": document.summary?.count ?? 0,
+        "stats": DeviceHarness.stats(answer.reply?.stats),
+      ], in: self)
+    XCTAssertTrue(answer.accepted, appState.generationError ?? "")
+    XCTAssertFalse(answer.text.hasPrefix(ChatTurn.errorPrefix), answer.text)
+    XCTAssertTrue(answer.text.contains("4.2"), answer.text)
+    XCTAssertTrue(answer.text.contains("2026"), answer.text)
+    XCTAssertFalse(answer.text.contains("202026"), answer.text)
+    XCTAssertFalse(sources.isEmpty, "No sources for the file")
   }
 
   /// Search by meaning across chats: each paraphrased query (sharing no

@@ -165,7 +165,7 @@ The phone is away, so these are moves and seams that keep iOS defaults. Each one
 ## M3: platform policy on the Mac
 
 - **Memory classes** (pure, in `DeviceProfile`, tested). The app limit is the Metal working set: about 5.5 GB on 8 GB Macs, about 11 GB on 16 GB.
-  - Maximum context: 16K on 8 GB Macs, 32K at 16 GB and up. Chat: 8K then; 16K when memory allows since 2026-11-02, as on the iPhone.
+  - Maximum context: 16K on 8 GB Macs, 32K at 16 GB and up. Chat: 8K then; 16K when memory allows since 2026-11-02, and 32K on 16 GB Macs since 2026-11-09, as on the iPhone.
   - The 400 MB stop applies to the Mac's estimate of available memory.
   - `keepsConversationAcrossHelpers` is driven by that same estimate.
 - **Memory pressure.** A pure `MemoryPolicy.action(level:isBusy:)` drives `AppState.relieveMemoryPressure(level:)`.

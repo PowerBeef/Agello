@@ -71,9 +71,36 @@ struct DeviceProfile: Sendable, Equatable {
 
   /// The chat context, no longer a setting (2026-11-02). On our runtime decode hardly depends on
   /// the window (iPhone 17 Pro, cooled: 39 / 42 / 42 tok/s at 8K / 16K / 32K; on Google's v0.18.0
-  /// it fell 39 → 34 → 27), and 16K peaks at 1.9 GB. 32K would peak at 3.5 GB. A load short of
-  /// memory takes ``reducedContextTokens`` instead (``contextTokens(standard:roomBytes:)``).
+  /// it fell 39 → 34 → 27), and 16K peaks at 1.9 GB. Devices with
+  /// ``memoryForLargeContextBytes`` take ``largeContextTokens``; a load short of memory steps
+  /// down (``contextTokens(standard:roomBytes:)``).
   static let standardContextTokens = 16_384
+
+  /// The window of devices with ``memoryForLargeContextBytes`` (the maintainer's choice,
+  /// 2026-11-09): 32,768 requested, 32,000 allocated, the most the model file holds
+  /// (``ContextBudget/allocatedPositions(requested:)``). It peaks at about 3.5 GB, 1.6 GB more
+  /// than 16K.
+  static let largeContextTokens = 32_768
+
+  /// Physical memory that takes ``largeContextTokens``: the 12 GB iPhones (iPhone 17 Pro) and
+  /// Macs with 16 GB. 8 GB devices keep ``standardContextTokens``.
+  static let memoryForLargeContextBytes: UInt64 = 11_000_000_000
+
+  /// Think's default reasoning budget: ``largeContextThinkingBudget`` on devices that take
+  /// ``largeContextTokens`` (the maintainer's choice, 2026-11-09: 1,024 tokens cut a coding plan
+  /// mid-word there), ``standardThinkingBudget`` elsewhere. It stays a setting.
+  static func defaultThinkingBudget(memoryBytes: UInt64) -> Int {
+    memoryBytes >= memoryForLargeContextBytes ? largeContextThinkingBudget : standardThinkingBudget
+  }
+
+  static let standardThinkingBudget = 1_024
+  static let largeContextThinkingBudget = 4_096
+
+  /// Room the app needs left as it loads to take ``largeContextTokens``:
+  /// ``roomForStandardContextBytes`` plus the 1.6 GB more a 32K engine peaks at. The memory
+  /// suite's 6.0 GB envelope (5.98 GB left at load) passed every step with 1.3 GB to spare
+  /// (iPhone 17 Pro, 2026-11-10); nothing between 5.1 and 6.0 GB is measured.
+  static let roomForLargeContextBytes: UInt64 = 5_100_000_000
 
   /// The window of a load with less than ``roomForStandardContextBytes`` left.
   static let reducedContextTokens = 8_192
@@ -85,17 +112,21 @@ struct DeviceProfile: Sendable, Equatable {
   /// passed, and at 8K every step passed at 3.5 GB (2026-11-02).
   static let roomForStandardContextBytes: UInt64 = 3_500_000_000
 
-  /// The window a load takes: `standard`, or ``reducedContextTokens`` when the app has less than
-  /// ``roomForStandardContextBytes`` left (`roomBytes`, nil where no limit is reported).
+  /// The window a load takes: `standard`, stepping down to ``standardContextTokens`` when the app
+  /// has less than ``roomForLargeContextBytes`` left and to ``reducedContextTokens`` below
+  /// ``roomForStandardContextBytes`` (`roomBytes`, nil where no limit is reported).
   static func contextTokens(standard: Int, roomBytes: UInt64?) -> Int {
-    guard let roomBytes, roomBytes < roomForStandardContextBytes else { return standard }
-    return min(standard, reducedContextTokens)
+    guard let roomBytes else { return standard }
+    if roomBytes < roomForStandardContextBytes { return min(standard, reducedContextTokens) }
+    if roomBytes < roomForLargeContextBytes { return min(standard, standardContextTokens) }
+    return standard
   }
 
   /// The KV-cache size (`maxNumTokens`). Supported devices (iPhone 15 Pro and later, Macs with
   /// 8 GB) all have 8 GB+; smaller values only apply to the simulator.
   static func defaultMaxTokens(model: ModelID, memoryBytes: UInt64) -> Int {
-    memoryBytes >= 7_000_000_000 ? standardContextTokens : 4_096
+    if memoryBytes >= memoryForLargeContextBytes { return largeContextTokens }
+    return memoryBytes >= 7_000_000_000 ? standardContextTokens : 4_096
   }
 
   /// Largest context worth loading for long inputs (files, web passages).

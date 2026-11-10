@@ -39,6 +39,8 @@ final class MemoryEnvelopeScenarioTests: DeviceTestCase {
     try await super.tearDown()
   }
 
+  /// Room for the 32K window (5.1 GB left at load, 2026-11-09): 12 GB iPhones only.
+  func test00_E4B_at6_0GB() async throws { try await run(.e4b, limitGB: 6.0) }
   func test01_E4B_at5_0GB() async throws { try await run(.e4b, limitGB: 5.0) }
   func test02_E4B_at4_0GB() async throws { try await run(.e4b, limitGB: 4.0) }
   func test03_E4B_at3_5GB() async throws { try await run(.e4b, limitGB: 3.5) }
@@ -76,15 +78,15 @@ final class MemoryEnvelopeScenarioTests: DeviceTestCase {
     }
     step("ballast")
 
-    // The app's own window, so every step below runs as users' replies do: 16K when memory
-    // allows at load, 8K below 3.5 GB left (2026-11-02; 8K before, with 16K only for the long
-    // prompt).
+    // The app's own window, so every step below runs as users' replies do: 32K on 12 GB devices
+    // with 5.1 GB left at load, 16K with 3.5 GB, 8K below (2026-11-09; 16K or 8K since
+    // 2026-11-02).
     appState.options.maxNumTokensOverride = nil
     await appState.applyCurrentOptions()
     await appState.ensureEngineLoaded()
     let loaded = appState.resolved != nil && appState.engineState == .ready
     step(
-      "load \((appState.resolved?.maxNumTokens ?? 0) / 1024)K",
+      "load \((appState.resolved?.maxNumTokens ?? 0) / 1000)K",
       ["loaded": loaded, "loadLog": await harness.liveEngine?.loadLog ?? []])
     guard loaded else {
       XCTFail("\(spec.displayName) failed to load under \(limitGB) GB: \(appState.engineState)")

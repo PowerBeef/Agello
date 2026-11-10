@@ -36,7 +36,7 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | **Models** | Download, pause, resume, or delete Gemma 4 E4B and EmbeddingGemma |
 | **On-device tools** | Turn the tools (date and time, calculator) on or off |
 | **Advanced → Performance** | GPU or CPU backend · speculative decoding (MTP) · show performance details under each reply (off by default) |
-| **Advanced → Reasoning** | Thinking on or off, and its token budget. Reasoning leaves the model's memory once the reply is done, so it never uses up a chat's context. |
+| **Advanced → Reasoning** | Thinking on or off, and its token budget (4,096 tokens by default where the context is 32K, 1,024 elsewhere). Reasoning leaves the model's memory once the reply is done, so it never uses up a chat's context. |
 | **Advanced → Sampling** | Precise (temperature 0.2) · Balanced (0.7) · Creative (1.0) |
 | **Advanced → Voice & Vision** | Image and audio input · image detail (140 or 280 visual tokens; Detailed also uses 280 with the current model file) |
 | **Advanced → System prompt** | The base instructions for every conversation |
@@ -55,7 +55,7 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 
 | Model | Size | Role | License |
 | --- | --- | --- | --- |
-| **Gemma 4 E4B** | 3.7 GB | Chat: text, vision, audio, reasoning, and tool calling in one file. Context: 16K tokens, or 8K when the device is short of memory as the model loads | Apache 2.0 |
+| **Gemma 4 E4B** | 3.7 GB | Chat: text, vision, audio, reasoning, and tool calling in one file. Context: 32K tokens on devices with 12 GB of memory or more (16K on 8 GB devices), less when the device is short of memory as the model loads | Apache 2.0 |
 | **EmbeddingGemma 2** (text, 270M) | 165 MB | Turns passages and chats into 256-dimension vectors for retrieval and search by meaning. Downloads automatically after the chat model; keyword search fills in until then | Apache 2.0 |
 
 - **Source.** Downloaded at runtime from Hugging Face, without an account. EmbeddingGemma is the [`litert-community`](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm) build. The chat model is [`litert-community`'s Gemma 4 E4B build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) with one fix: its rotary positions stay exact with 16-bit GPU activations, with the same weights ([`PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope); see [the engineering notes](ENGINEERING.md#long-context-digits-on-the-gpu-litert-lm-3913)). The download is pinned to a commit.

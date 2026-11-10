@@ -128,6 +128,21 @@ struct InferenceOptions: Codable, Sendable, Equatable {
     case systemPrompt, enableVision, enableAudio, visualDetail, enableSpeculativeDecoding
     case maxOutputTokens
   }
+
+  /// The options a launch starts from: the saved ones (nil on a first launch) or the defaults.
+  /// - The context is no longer a setting (2026-11-02): a saved custom window goes back to the
+  ///   device's. Tests and probes still set the override in memory.
+  /// - Think's budget defaults to the device's (``DeviceProfile/defaultThinkingBudget(memoryBytes:)``).
+  ///   A budget saved at the old 1,024 default moves to it once (`budgetMigrated` false); one
+  ///   chosen afterwards stays.
+  static func launch(saved: InferenceOptions?, memoryBytes: UInt64, budgetMigrated: Bool) -> InferenceOptions {
+    var options = saved ?? InferenceOptions()
+    options.maxNumTokensOverride = nil
+    if saved == nil || (!budgetMigrated && options.thinkingBudget == DeviceProfile.standardThinkingBudget) {
+      options.thinkingBudget = DeviceProfile.defaultThinkingBudget(memoryBytes: memoryBytes)
+    }
+    return options
+  }
 }
 
 // MARK: - Streaming types
