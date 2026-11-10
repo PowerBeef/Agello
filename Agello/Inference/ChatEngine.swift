@@ -670,6 +670,12 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     try await endHelper(keep: keep, engine: engine, resolved: resolved, options: options)
     Log.engine.info(
       "helper texts: \(outputs.count)/\(prompts.count) in \(Date().timeIntervalSince(started), format: .fixed(precision: 1))s, kept \(keep)")
+    ReplyTrace.mark(
+      "helper texts",
+      [
+        "helperSeconds": .double(Date().timeIntervalSince(started)), "count": .int(outputs.count),
+        "output": .string(String((outputs.first ?? "").prefix(200))), "kept": .bool(keep),
+      ])
     return outputs
   }
 
@@ -793,6 +799,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 
     let started = Date()
     var firstChunkAt: Date?
+    var streamedChunks = 0
     // Our runtime's totals before the reply; its stats are the difference (RuntimeTelemetry).
     let telemetryBefore = RuntimeTelemetry.inUse ? RuntimeTelemetry.totals() : nil
     // Instruments (Points of Interest): the reply as an interval, its first token as an event.
@@ -869,6 +876,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
           Self.signposter.emitEvent("First token", id: signpostID)
           ReplyTrace.markOnce("first token")
         }
+        streamedChunks += 1
+        if streamedChunks.isMultiple(of: 100) { ReplyTrace.progress(chunks: streamedChunks) }
         let thought = chunk.channels["thought"]
         if guardsToolRounds {
           for piece in [chunk.toString, thought ?? ""] {

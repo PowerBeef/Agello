@@ -77,6 +77,9 @@ final class BenchUITests: XCTestCase {
       attachScreenshot("bench-\(bench.id)-top")
       row["topReached"] = app.descendants(matching: .any).matching(identifier: "message.user").firstMatch.isHittable
     }
+    // The title and memory helpers start once the chat has been idle for a few seconds: leave
+    // them the time, so the last reply's trace holds them.
+    Thread.sleep(forTimeInterval: 8)
     app.terminate()
     return row
   }

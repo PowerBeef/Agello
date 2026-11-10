@@ -104,6 +104,7 @@ struct MessageBubbleView: View {
       }
       if !turn.thought.isEmpty {
         thoughtCard
+          .onAppear { ReplyTrace.onScreen(turn.id, "reasoning") }
       }
       if !turn.text.isEmpty {
         VStack(alignment: .leading, spacing: Theme.Spacing.tight) {

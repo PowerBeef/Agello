@@ -1147,6 +1147,8 @@ final class AppState {
     var accumulator = StreamAccumulator()
     var lastFlush = ContinuousClock.now
     func flush(final: Bool = false) {
+      let flushStarted = ContinuousClock.now
+      defer { ReplyTrace.measure("chat write", since: flushStarted) }
       if let voiceTurn {
         // "⟦what the user said⟧ answer": the transcript becomes the user's
         // message; the answer is shown and spoken.

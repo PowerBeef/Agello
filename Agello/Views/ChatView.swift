@@ -151,8 +151,17 @@ struct ChatView: View {
     .onAppear {
       // The bench driver (docs/HARNESS.md): a long prompt arrives as the composer's draft, and
       // the driver taps the real send button. Typing 3K characters through XCUITest is slow.
-      if thread == nil, draft.isEmpty, let prompt = ProcessInfo.processInfo.environment["AGELLO_BENCH_DRAFT"] {
+      let environment = ProcessInfo.processInfo.environment
+      if thread == nil, draft.isEmpty, let prompt = environment["AGELLO_BENCH_DRAFT"] {
         draft = prompt
+        // Without a driver (`scripts/bench-direct.sh`): the app sends the draft itself once the
+        // model is ready, so a reply can be traced with no UI automation attached.
+        if environment["AGELLO_BENCH_AUTOSEND"] == "1" {
+          Task { @MainActor in
+            for _ in 0..<600 where appState.engineState != .ready { try? await Task.sleep(for: .milliseconds(500)) }
+            send()
+          }
+        }
       }
       // UI tests: the system file picker can't be driven, so attach a sample.
       let arguments = ProcessInfo.processInfo.arguments

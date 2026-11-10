@@ -43,7 +43,7 @@ enum MarkdownCache {
   static func document(for text: String) -> MarkdownDocument {
     let key = text as NSString
     if let hit = cache.object(forKey: key) { return hit.document }
-    let document = MarkdownDocument(parsing: text)
+    let document = ReplyTrace.timed("markdown parse") { MarkdownDocument(parsing: text) }
     cache.setObject(Box(document), forKey: key)
     return document
   }
@@ -58,9 +58,10 @@ enum MarkdownCache {
     if prefix == streamed.text { return streamed.blocks }
     let blocks: [MarkdownDocument.Block]
     if !streamed.text.isEmpty, prefix.hasPrefix(streamed.text) {
-      blocks = streamed.blocks + MarkdownDocument(parsing: String(prefix.dropFirst(streamed.text.count))).blocks
+      let added = String(prefix.dropFirst(streamed.text.count))
+      blocks = streamed.blocks + ReplyTrace.timed("markdown parse") { MarkdownDocument(parsing: added).blocks }
     } else {
-      blocks = MarkdownDocument(parsing: prefix).blocks
+      blocks = ReplyTrace.timed("markdown parse") { MarkdownDocument(parsing: prefix).blocks }
     }
     streamed = (prefix, blocks)
     return blocks

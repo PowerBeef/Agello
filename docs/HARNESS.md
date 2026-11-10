@@ -1,6 +1,6 @@
 # The autonomous harness
 
-A plan, approved by the maintainer on 2026-11-10. H1 and H2 are done (below); nothing later is built.
+A plan, approved by the maintainer on 2026-11-10. H1, H2 and H3 are done (below); H4 to H6 aren't built.
 
 The goal: one command runs Agello on the iPhone as a user would, through its real screens, and
 comes back with one report per reply that joins what was on screen, what the app did, and what the
@@ -170,6 +170,42 @@ requests, the three-part coding prompt, a Search follow-up and a file with a fol
 - **Heat is part of H1's open question.** The phone's thermal state went from nominal to fair at
   the third case and decode fell from about 42 to 35 tok/s over the run; two short cases alone
   had decoded at 46 to 56.
+
+### H3, done on 2026-11-10
+
+A reply's trace now says which layer its time went to.
+
+- **A timeline, once a second:** footprint, available memory, the phone's thermal state, and
+  how many chunks the engine has streamed (the decode rate over the reply).
+- **The view layer:** writes of the reply into the chat (count, total, longest), markdown parses,
+  and late frames (a display link counts gaps of 50 ms or more), with separate first-on-screen
+  marks for the reasoning card and the answer.
+- **After the reply:** the title and memory helpers, added to the reply's file with how long
+  each took. The driver waits 8 s before closing a case so they run.
+- **Signposts:** every step is also an event in Instruments (Points of Interest).
+- **No driver:** `scripts/bench-direct.sh CASE` launches the installed app with the case's prompt
+  and lets it send by itself (`AGELLO_BENCH_AUTOSEND`), traced the same way.
+
+What it showed on the three-part coding prompt (4,517 tokens, iPhone 17 Pro, thermal state fair
+in both runs):
+
+| | With the driver | No driver |
+| --- | --- | --- |
+| Decode | 39.8 tok/s | 43.3 tok/s |
+| Reply time | 118.7 s | 108.8 s |
+| Frames late by 50 ms or more | 31, 2.3 s in all | 1 |
+
+- **The driver costs about 8 % of decode speed** and nearly all the late frames: XCUITest's
+  accessibility session. Speeds for a claim come from `bench-direct.sh`; the bench's are for
+  comparing runs of the bench.
+- **Heat is the rest** of the gap to a hand run on a cool phone (49 tok/s): the phone reaches
+  "fair" within three cases. Let it cool before a speed run, and read the thermal state in the
+  timeline.
+- **The app's layers cost almost nothing:** 777 writes took 0.14 s in all and markdown parsing
+  a few milliseconds, 0.1 % of the reply's time.
+- **Decoding slows inside a long reply:** about 20 % in the last third, with or without the
+  driver. An engine question, not the harness's.
+- Not done: scroll jumps (the `ui` suite's `testStreamingNeverJumps` still guards them).
 
 ## Decisions for the maintainer
 

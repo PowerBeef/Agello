@@ -102,6 +102,14 @@ pressed, Swift type-checked, Python compiled or run against `scripts/bench/<id>/
 A full run is 13 turns and about 20 minutes; the phone warms up, so compare speeds case by case.
 
 - `BENCH_ONLY=id,id` runs some cases; `BENCH_TRACE=off` runs without tracing (screen timings only).
+- `scripts/bench-direct.sh CASE` sends one case with no driver attached (the installed Release
+  build launches with the prompt and sends it itself). Use it for speed: XCUITest's
+  accessibility session costs about 8 % of decode speed and causes late frames (2026-11-10).
+- The phone reaches thermal state "fair" within three cases and decodes up to a fifth slower:
+  the report's "Engine over time" line shows the state and the decode rate by thirds. Let the
+  phone cool before a run whose speeds matter.
+- Each case's report says where the time went: before the first token, reasoning, answer; the
+  main thread's work (chat writes, markdown parses); late frames; the helpers after the reply.
 - It leaves the Release build on the phone, and keeps the user's chats: each case starts a new
   chat. It does change Think, Search and Think's budget, through the app's own controls.
 - Use it, not the quality probe, to answer "what does the app do with this prompt": device tests

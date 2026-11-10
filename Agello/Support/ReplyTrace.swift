@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import Synchronization
 
 /// One reply's path through the app, for the autonomous harness (docs/HARNESS.md): the settings
@@ -38,7 +39,25 @@ enum ReplyTrace {
     var values: [String: Value]
   }
 
+  /// How often, how long in all and how long at most something ran (a write to the chat, a
+  /// markdown parse).
+  private struct Work: Sendable {
+    var count = 0
+    var total = 0.0
+    var longest = 0.0
+  }
+
+  /// The app's state at one moment of the reply.
+  private struct Sample: Sendable {
+    var seconds: Double
+    var footprintBytes: UInt64
+    var availableBytes: UInt64
+    var thermalState: Int
+    var chunks: Int
+  }
+
   private struct Running: Sendable {
+    var generation = UUID()
     var started = ContinuousClock.now
     var startedAt = Date.now
     var prompt = ""
@@ -47,11 +66,25 @@ enum ReplyTrace {
     var replyID: String?
     var once: Set<String> = []
     var telemetryBefore: String?
+    var work: [String: Work] = [:]
+    var samples: [Sample] = []
+    var chunks = 0
+  }
+
+  /// The last trace written: helper tasks that follow a reply (its title, memories) are added
+  /// to its file.
+  private struct Finished: Sendable {
+    var url: URL
+    var ended = ContinuousClock.now
   }
 
   private static let running = Mutex<Running?>(nil)
+  private static let finished = Mutex<Finished?>(nil)
+  /// The same steps as events in Instruments (Points of Interest).
+  private static let signposter = OSSignposter(subsystem: "com.patricedery.agello", category: .pointsOfInterest)
 
   /// A send starts: an unfinished trace (a send that was refused) is dropped.
+  @MainActor
   static func begin(
     prompt: String, options: InferenceOptions, resolved: ResolvedInference?, search: Bool, tools: Bool
   ) {
@@ -71,20 +104,87 @@ enum ReplyTrace {
       "thermalState": .int(ProcessInfo.processInfo.thermalState.rawValue),
     ]
     trace.telemetryBefore = RuntimeTelemetry.snapshotJSON()
+    let generation = trace.generation
     running.withLock { $0 = trace }
     mark("send")
+    FrameMonitor.start()
+    // The timeline: memory, heat and how far decoding is, once a second until the reply ends.
+    Task.detached(priority: .utility) {
+      while sample(generation) { try? await Task.sleep(for: .seconds(1)) }
+    }
+  }
+
+  private static func sample(_ generation: UUID) -> Bool {
+    let footprint = MemoryProbe.footprintBytes()
+    let available = MemoryProbe.availableBytes()
+    let thermal = ProcessInfo.processInfo.thermalState.rawValue
+    return running.withLock { trace in
+      guard trace?.generation == generation else { return false }
+      let seconds = (ContinuousClock.now - trace!.started).seconds
+      trace!.samples.append(
+        Sample(
+          seconds: seconds, footprintBytes: footprint, availableBytes: available, thermalState: thermal,
+          chunks: trace!.chunks))
+      return true
+    }
+  }
+
+  /// The engine has streamed `chunks` pieces of the reply so far (it says so every few hundred).
+  static func progress(chunks: Int) {
+    guard isEnabled else { return }
+    running.withLock { $0?.chunks = chunks }
+  }
+
+  /// Work of one kind since `started`: counted, summed, and the longest kept.
+  static func measure(_ kind: String, since started: ContinuousClock.Instant) {
+    guard isEnabled else { return }
+    let seconds = (ContinuousClock.now - started).seconds
+    running.withLock { trace in
+      guard trace != nil else { return }
+      var work = trace!.work[kind] ?? Work()
+      work.count += 1
+      work.total += seconds
+      work.longest = max(work.longest, seconds)
+      trace!.work[kind] = work
+    }
+  }
+
+  /// Runs `body`, measured as `kind` while a reply is traced.
+  static func timed<Result>(_ kind: String, _ body: () -> Result) -> Result {
+    guard isEnabled else { return body() }
+    let started = ContinuousClock.now
+    defer { measure(kind, since: started) }
+    return body()
   }
 
   /// A step of the reply in progress, with the time since the send and the app's memory.
   static func mark(_ name: String, _ values: [String: Value] = [:]) {
     guard isEnabled else { return }
+    signposter.emitEvent("Reply step", "\(name, privacy: .public)")
     let footprint = MemoryProbe.footprintBytes()
     let available = MemoryProbe.availableBytes()
-    running.withLock { trace in
-      guard trace != nil else { return }
+    let recorded = running.withLock { trace -> Bool in
+      guard trace != nil else { return false }
       let seconds = (ContinuousClock.now - trace!.started).seconds
       trace!.events.append(
         Event(name: name, seconds: seconds, footprintBytes: footprint, availableBytes: available, values: values))
+      return true
+    }
+    if !recorded { markAfter(name, values) }
+  }
+
+  /// A step after the reply ended (a title or memory helper, within two minutes): added to the
+  /// reply's file under "after".
+  private static func markAfter(_ name: String, _ values: [String: Value]) {
+    guard let last = finished.withLock({ $0 }), ContinuousClock.now - last.ended < .seconds(120),
+      let data = try? Data(contentsOf: last.url),
+      var report = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    else { return }
+    var entry: [String: Any] = ["name": name, "secondsAfter": (ContinuousClock.now - last.ended).seconds]
+    for (key, value) in values { entry[key] = value.json }
+    report["after"] = (report["after"] as? [[String: Any]] ?? []) + [entry]
+    if let updated = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
+      try? updated.write(to: last.url, options: .atomic)
     }
   }
 
@@ -102,10 +202,11 @@ enum ReplyTrace {
     mark("reply", ["sources": .int(sources)])
   }
 
-  /// A message bubble with text came on screen: the first one of the reply in progress counts.
-  static func onScreen(_ id: UUID) {
+  /// Part of a message bubble came on screen (its reasoning card, its answer): the first of each
+  /// for the reply in progress counts.
+  static func onScreen(_ id: UUID, _ part: String = "text") {
     guard isEnabled, running.withLock({ $0?.replyID == id.uuidString }) else { return }
-    markOnce("first text on screen")
+    markOnce("first \(part) on screen")
   }
 
   /// The reply is over, however it ended (nil when it was removed, stopped before any text):
@@ -116,11 +217,12 @@ enum ReplyTrace {
     end(
       text: reply?.text ?? "", thought: reply?.thought ?? "", stats: reply?.stats,
       sources: reply?.parts.sources.map { "\($0.index) \($0.title) \($0.url ?? "")" } ?? [],
-      error: error, notice: notice)
+      frames: FrameMonitor.stop(), error: error, notice: notice)
   }
 
   static func end(
-    text: String, thought: String, stats: GenerationStats?, sources: [String] = [], error: String?, notice: String?
+    text: String, thought: String, stats: GenerationStats?, sources: [String] = [], frames: [String: Double] = [:],
+    error: String?, notice: String?
   ) {
     guard isEnabled, let trace = running.withLock({ trace in
       defer { trace = nil }
@@ -144,6 +246,15 @@ enum ReplyTrace {
       "seconds": ended,
       "ended": endReason(stats: stats, error: error).rawValue,
       "text": text, "thought": thought, "sources": sources,
+      "work": trace.work.mapValues { ["count": Double($0.count), "totalSeconds": $0.total, "longestSeconds": $0.longest] },
+      "frames": frames,
+      "timeline": trace.samples.map { sample -> [String: Any] in
+        [
+          "seconds": sample.seconds, "footprintGB": Double(sample.footprintBytes) / 1e9,
+          "availableGB": Double(sample.availableBytes) / 1e9, "thermalState": sample.thermalState,
+          "chunks": sample.chunks,
+        ]
+      },
       "error": error ?? "", "notice": notice ?? "",
     ]
     if let stats, let data = try? JSONEncoder().encode(stats),
@@ -200,7 +311,9 @@ enum ReplyTrace {
       let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
     else { return }
     let stamp = ISO8601DateFormatter().string(from: date).replacingOccurrences(of: ":", with: "-")
-    try? data.write(to: folder.appendingPathComponent("\(stamp)-\(name).json"), options: .atomic)
+    let url = folder.appendingPathComponent("\(stamp)-\(name).json")
+    try? data.write(to: url, options: .atomic)
+    finished.withLock { $0 = Finished(url: url) }
     // The newest ``kept`` stay (names start with their time).
     let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
     for old in names.dropLast(kept) { try? FileManager.default.removeItem(at: folder.appendingPathComponent(old)) }

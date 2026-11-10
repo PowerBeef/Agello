@@ -258,6 +258,56 @@ def failed_checks(verdict):
     return failed
 
 
+def decode_rate(samples):
+    """Chunks a second over a stretch of the timeline."""
+    if len(samples) < 2 or samples[-1]["seconds"] <= samples[0]["seconds"]:
+        return 0.0
+    return (samples[-1]["chunks"] - samples[0]["chunks"]) / (samples[-1]["seconds"] - samples[0]["seconds"])
+
+
+def layers(case):
+    """Where a reply's time went and what each layer did (H3): which one to look at when it's slow."""
+    lines = []
+    events = {event["name"]: event["seconds"] for event in reversed(case["events"])}
+    total = case["seconds"] or 0
+    first_token = events.get("first token")
+    first_text = events.get("first text on screen")
+    if first_token is not None:
+        parts = [f"before the first token {first_token:.1f} s"]
+        if first_text is not None and first_text - first_token > 1:
+            parts.append(f"reasoning {first_text - first_token:.1f} s")
+        if first_text is not None:
+            parts.append(f"answer {max(0, total - first_text):.1f} s")
+        lines.append("- **Time:** " + ", ".join(parts))
+    writing = [sample for sample in case["timeline"] if sample["chunks"] > 0]
+    if len(writing) >= 9:
+        third = len(writing) // 3
+        thermal = sorted({sample["thermalState"] for sample in case["timeline"]})
+        footprints = [sample["footprintGB"] for sample in case["timeline"]]
+        lines.append(
+            f"- **Engine over time:** {decode_rate(writing[:third]):.1f} chunks/s in the first third, "
+            f"{decode_rate(writing[third:2 * third]):.1f} in the second, {decode_rate(writing[2 * third:]):.1f} in the last; "
+            f"thermal state {' to '.join(str(state) for state in thermal)}; footprint {min(footprints):.2f} to {max(footprints):.2f} GB")
+    work = case["work"]
+    if work:
+        described = []
+        for kind in ("chat write", "markdown parse"):
+            if kind in work:
+                entry = work[kind]
+                described.append(f"{int(entry['count'])} {kind}s, {entry['totalSeconds']:.2f} s in all, longest {entry['longestSeconds'] * 1000:.0f} ms")
+        main = sum(entry["totalSeconds"] for entry in work.values())
+        lines.append(f"- **Main thread:** {'; '.join(described)} ({100 * main / total if total else 0:.1f} % of the reply's time)")
+    frames = case["frames"]
+    if frames:
+        lines.append(
+            f"- **Frames:** {int(frames.get('hitches', 0))} late by 50 ms or more of {int(frames.get('frames', 0))}, "
+            f"{frames.get('hitchSeconds', 0):.2f} s late in all, longest gap {frames.get('longestGapSeconds', 0) * 1000:.0f} ms")
+    for step in case["after"]:
+        output = " ".join(str(step.get("output", "")).split())[:80]
+        lines.append(f"- **After the reply:** {step['name']} at +{step['secondsAfter']:.1f} s, took {step.get('helperSeconds', 0):.1f} s: {output}")
+    return lines
+
+
 cases, problems = [], []
 for row in surface["rows"]:
     for turn in row.get("turns", []):
@@ -284,6 +334,8 @@ for row in surface["rows"]:
             "citations": len(re.findall(r"\[\d+\]", reply)),
             "searchPlan": helpers[0].get("output", "") if helpers and row.get("search") else "",
             "engine": engine_summary(trace.get("engineTelemetry", {})),
+            "timeline": trace.get("timeline", []), "work": trace.get("work", {}), "frames": trace.get("frames", {}),
+            "after": trace.get("after", []),
             # The screen shows the reply: the end of what VoiceOver reads is the end of the trace's text.
             "screenAgrees": bool(screen) and spoken(screen)[-60:] == spoken(reply)[-60:],
         })
@@ -335,6 +387,7 @@ for case in cases:
         f"done after {surface_row.get('secondsToDone', 0):.1f} s; {surface_row.get('screenCharacters', 0)} characters read back, "
         f"{'matching' if case['screenAgrees'] else 'NOT matching'} the trace",
     ]
+    lines += layers(case)
     if case["search"]:
         lines.append(f"- **Search:** plan {' '.join(case['searchPlan'].split()) or 'none recorded'}; {len(case['sources'])} sources, {case['citations']} citations")
     lines += ["", "| Step | Seconds | Footprint | Available | Details |", "| --- | --- | --- | --- | --- |"]
