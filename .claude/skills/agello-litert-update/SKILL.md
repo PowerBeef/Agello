@@ -30,10 +30,11 @@ project (its own CLAUDE.md and skills don't load):
 
 Branch policy (decided 2026-10-15): each fork (this one, `PowerBeef/LiteRT`,
 `PowerBeef/ml-drift`) keeps `main`, an upstream mirror, plus our branches; the
-branches Google's repos had when the forks were made don't belong there. Once
-the iPhone validates our build and the app ships it, `agello` and
-`agello-next` merge into one `agello` (tag the old `agello` tip first: the
-app's vendored commit must stay reachable).
+branches Google's repos had when the forks were made don't belong there.
+`agello` and `agello-next` are due to merge into one `agello`: the iPhone
+validated our build on 2026-11-02 and the app has shipped it since 2026-10-28.
+Still to do, on the user's go (tag the old `agello` tip first: the commit of
+Google's-binary wrapper must stay reachable).
 
 Set it up on a new machine. The partial clone keeps full history but fetches
 file contents on demand, and LFS stays skipped: upstream's LFS holds GBs of
@@ -99,8 +100,9 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   composite file was 2-3x slower, but its int8 recipe differs too, so we asked
   for the same export without the flag. Posted:
   https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6385900547
-  The lab files are in `~/Models/agello/lab` and the phone's Documents/lab, kept
-  as controls for the E4B export.
+  The lab files were deleted from `~/Models/agello/lab` on 2026-11-03, once
+  the round below was posted (the phone's Documents/lab may still hold
+  `e4b-ropecomposite.litertlm`: remove it with probe 13, under "Lab models").
 - 2026-10-25: john-rocky posted the E2B export without the flag (the control,
   `gemma-4-E2B-it-no-ropecomposite.litertlm`), E2B composite with a 32,768
   cache (`…-ropecomposite-32k.litertlm`), both in the E2B repo, and the E4B
@@ -117,16 +119,17 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6596803301
 - 2026-10-31: elbrinner (iPhone 15 Pro, E2B, v0.17.1, a RAG bench): fp32 fixes
   two long cases; a ~250-token case differs between Metal (fp16 and fp32) and
-  CPU. Drafted reply (`build/drafts/issue-3913-elbrinner.md`): ask whether the
-  long prompts pass 2,048, point to the composite and `patch_rope.py`, and
-  suggest greedy runs to rule out the samplers (Google's Metal sampler vs the
-  CPU top-p one; seed 0 for every conversation on v0.18.0). Posted 2026-11-03:
+  CPU. Our reply asks whether the long prompts pass 2,048, points to the
+  composite and `patch_rope.py`, and suggests greedy runs to rule out the
+  samplers (Google's Metal sampler vs the CPU top-p one; seed 0 for every
+  conversation on v0.18.0). Posted 2026-11-03:
   https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6596859591
 - LiteRT-LM #4001 reports the same failure on Android (Adreno 840 with E4B,
   Adreno 740 with E2B), FLOAT32 the only workaround. Don't present our patched
   file as its fix without A/B runs on that repro (asked there on 2026-10-17).
-- As of 2026-10-24 the issue is open, unassigned and awaiting a Google
-  developer; Google's only reply is from 2026-10-12. Check for replies with
+- As of 2026-11-10 the issue is open and assigned to a Google developer
+  (hheydary); the last comments are ours of 2026-11-03, and the round on
+  john-rocky's exports is finished. Check for replies with
   `gh api repos/google-ai-edge/LiteRT-LM/issues/3913/comments`, and for new
   exports with `hf_fs ls hf://models/mlboydaisuke` (or `hf models list --author
   mlboydaisuke`): the 2026-10-25 files went unseen for a week. Comments go out
@@ -183,43 +186,22 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
 
 ### Using patches in Agello
 
-- **Swift wrapper patches** (`swift/`) are commits on the fork's `agello`
-  branch; the app vendors that branch pinned to a commit
-  (`REF=<commit> ./Vendor/refresh-litert-lm.sh`, `PowerBeef/agello-litert-lm` by
-  default). Current patches (as of 2026-10-16, commit `17056fc1`, pushed):
-  1. `Conversation.handleToolCalls`: a failed tool call (an invented tool
-     name, arguments that don't decode, a tool that throws) is answered with
-     an `error` tool response instead of throwing `toolExecutionError`, which
-     ended the reply. Probe 15 (`test15_FailingToolCallKeepsTheReply`)
-     checks it. Worth offering upstream as an issue, with the user's go-ahead.
-  2. `StreamContext` holds its conversation weakly. Held strongly, the final
-     stream callback could release the last reference: `deinit` then deleted
-     the native conversation on LiteRT-LM's callback thread, which waited for
-     the task running that callback until the 10-minute timeout (probe 9 waited
-     600 s; a thread sample shows the chain). Releasing on another queue isn't
-     enough: the deletion then overlaps the next conversation, which also
-     stalled v0.18.0. Probe 9 asserts every step under 60 s. Also an upstream
-     issue candidate.
-  3. Streams by ID (`swift/ConversationStream.swift`): a lock-protected table
-     maps an integer passed as `userData` to the stream's state; every
-     terminal event finishes the stream once and retires its ID, and late
-     events are dropped. A rejected tool call reports up to three final
-     errors for one send, and the old `Unmanaged` release freed the context
-     on the first (use-after-free). `StreamRegistryTests` (AgelloTests) drive
-     it through `@_spi(Testing) StreamTestHarness`.
-  4. Cancellation and bounds: abandoning the stream cancels the native work;
-     a Stop between tool rounds starts no new round; `maxToolRounds` (25 when
-     nil) and `followUpMaxOutputTokens` cap tool rounds.
-  5. New API: `Engine.tokenize`/`countTokens` (the exported tokenizer) and
-     `EmbeddingOptions.inputOverflowStrategy` (`.truncate` keeps a long
-     passage from failing its batch).
-  Each patched file carries a modification notice (Apache 2.0, section 4),
-  and `NOTICE` lists the change.
-- **C++ runtime patches** reach the app only through a rebuilt
-  `CLiteRTLM.xcframework` (upstream builds it with Bazel). `Package.swift`
-  points at Google's checksummed release binary, so using a patched runtime
-  means building and hosting our own. That's a bigger commitment: decide with
-  the user first.
+- **Swift wrapper patches** (`swift/`) are commits on the fork's `agello-next`
+  branch, and the app vendors that branch at the release's commit
+  (`Vendor/use-release-litert.sh`, below). `Vendor/README.md`, "Swift patches",
+  lists the four of them with the probe or test that checks each: keep the list
+  there. The `agello` branch carries the same patches on Google's v0.18.0.
+  - Two are worth offering upstream as issues, with the user's go-ahead: the
+    failed tool call answered with an `error` response instead of ending the
+    reply, and the stream holding its conversation weakly (held strongly, the
+    final callback deleted the conversation on LiteRT-LM's callback thread and
+    stalled the engine for 10 minutes; releasing on another queue isn't enough).
+  - Each patched file carries a modification notice (Apache 2.0, section 4),
+    and `NOTICE` lists the change.
+- **C++ runtime patches** reach the app through a rebuilt
+  `CLiteRTLM.xcframework`: the source build below, released on the fork and
+  vendored here ("Shipping it"). `Vendor/README.md`, "The runtime", lists what
+  ours carries.
 
 ### The source build (`agello-next`)
 
@@ -264,9 +246,9 @@ nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
   (its header says how to switch back). It *copies* the framework: rerun it
   after every rebuild, and check the build id in the harness report's device
   record (`runtimeBuild`) before trusting a run. Never commit `Vendor/LiteRT-LM`
-  while it points at the local build. Then run the `PLATFORM=mac` suites;
-  the app ships our release (`agello-next-20261024` since 2026-10-28; the
-  user switched once the Mac suites passed, before its iPhone run).
+  while it points at the local build. Then verify on the iPhone
+  (`agello-device-testing`); a `PLATFORM=mac` run only after asking the user,
+  who often keeps the Mac busy.
 - **Shipping it:** `agello/release-xcframework.sh <tag>` on the fork (a dry run
   without `--publish`; publishing needs the user's OK). `--publish` rebuilds
   first: to publish the dry run's files you tested, run the script's
@@ -290,33 +272,42 @@ nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
 
 ## 1. Check upstream
 
-- Latest release: `gh release view --repo google-ai-edge/LiteRT-LM`. The
-  current version is in `Vendor/README.md`.
+- Latest release: `gh release view --repo google-ai-edge/LiteRT-LM`. What the
+  app runs is in `Vendor/README.md`: our build of `agello-next`, which follows
+  upstream's source (base tag `agello-base-20261013`, a 0.19.0 nightly), not
+  Google's release binaries.
 - Read the release notes, and check issues the app works around, especially
   #3913 (GPU float16 digit duplication).
 - Note any Swift API changes in `swift/` (Engine, Conversation, Config,
   ResponseFormat, Tool, EmbeddingEngine, ExperimentalFlags). In the fork:
-  `git fetch upstream --tags && git diff v0.18.0 vX.Y.Z -- swift/`.
-- After updating, rebase the fork's `agello` branch onto the new tag
-  (`git rebase --onto vX.Y.Z v0.18.0 agello`), resolve the patches, push it,
-  and vendor the new commit.
+  `git fetch upstream --tags && git diff agello-base-20261013 <new base> -- swift/`.
+- Taking a new upstream version means rebasing `agello-next` onto the new
+  base, rebuilding and releasing ("The source build", above), then re-verifying
+  the fork's reference (`reference/maintenance.md`, "After a re-pin or
+  rebase"). It's days of work across three forks: decide with the user first.
 
-## 2. Refresh
+## 2. Vendor the release
 
 ```sh
-REF=<agello commit> ./Vendor/refresh-litert-lm.sh
+REF=<agello-next commit> TAG=<release tag> ./Vendor/use-release-litert.sh
 ```
 
-Never vendor Google's tag directly (`REPO=google-ai-edge/LiteRT-LM REF=…`):
-it drops the patches. Then update the version and commit in `Vendor/README.md`, the README badge and the
-"Vendored LiteRT-LM" section, the code map in `docs/ARCHITECTURE.md`, and
-`NOTICE` if the license or copyright changed.
+Then update the release and build id in `Vendor/README.md`, the README's
+"Vendored LiteRT-LM" section, the code map in `docs/ARCHITECTURE.md`,
+`docs/LITERT-LM.md`, and `NOTICE` (from the release's `THIRD_PARTY_NOTICES.md`,
+copied to `Agello/Resources/NOTICE.txt`).
+
+- Never vendor Google's tag directly (`REPO=google-ai-edge/LiteRT-LM REF=…`):
+  it drops the patches.
+- `REF=<agello commit> ./Vendor/refresh-litert-lm.sh` alone goes back to
+  Google's v0.18.0 binary with the Swift patches. That undoes our runtime
+  fixes: only on the user's decision.
 
 ## 3. Build and fix
 
-Build for the iPhone. Fix API changes only inside `LiteRTChatEngine`
-(`Agello/Inference/ChatEngine.swift`) and `LiteRTEmbedder`
-(`Agello/Knowledge/Embedding.swift`), the only files that import LiteRTLM.
+Build for the iPhone. Fix API changes only in the files that import LiteRTLM
+(CLAUDE.md, "Engine boundary": `Inference/ChatEngine.swift`,
+`Inference/Tools.swift`, `Knowledge/Embedding.swift` and AppState's benchmark).
 Keep every rule in the `agello-inference-rules` skill.
 
 ## 4. Re-check the privacy manifest
@@ -346,7 +337,7 @@ Run these in order (see `agello-device-testing`):
    conversation, JSON, embeddings).
 2. `inference`, then `files`.
 3. `calibrate` when performance or memory may have changed. Compare with the
-   README's Performance table.
+   roadmap's dated runs, and record the new ones there.
 4. If the release mentions #3913, follow "When Google fixes #3913" above.
 
-Commit the refresh and the fixes separately.
+Commit the vendored release and the fixes separately.

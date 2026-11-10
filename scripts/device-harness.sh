@@ -43,7 +43,8 @@
 #      scripts/device-harness.sh unit; not with `all`),
 #      OUT (default: build/device-harness, build/mac-harness with PLATFORM=mac),
 #      AGELLO_TELEMETRY (engine telemetry level in our LiteRT-LM builds, default 2),
-#      AGELLO_SIMULATE_APPLE_GPU (our builds: another Apple GPU's kernel paths, e.g. "Apple A17 Pro"),
+#      AGELLO_SIMULATE_APPLE_GPU (our builds: another Apple GPU's kernel paths, e.g. "Apple A17 Pro";
+#      a runtime debugging aid: no supported iPhone has that GPU),
 #      XCBEAUTIFY (path to xcbeautify, or "off" for raw output; default:
 #      Homebrew's, looked up directly so other xcbeautify copies in PATH are ignored).
 # Outputs: $OUT/<suite>.xcresult, $OUT/<suite>.log (raw xcodebuild output),

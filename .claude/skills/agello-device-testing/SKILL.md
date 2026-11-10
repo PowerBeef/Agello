@@ -14,16 +14,20 @@ MobileBuildMCP is configured with the `device` workflow only.
 
 1. The iPhone is connected, paired, and **unlocked**, and stays unlocked for
    the whole run. A lock makes Xcode stall ("device is locked") and makes UI
-   tests fail with "Timed out while enabling automation mode". For long
-   suites, ask the user to set Auto-Lock to Never.
-   `xcrun devicectl device info lockState --device <udid>` says
-   `passcodeRequired: false` when it's unlocked. Never lock the phone or end
-   iPhone Mirroring yourself unless the user asks at the time.
-   The script checks this itself before an iPhone run (the preflight: phone
-   reachable and unlocked, iPhone Mirroring closed, 10 GB free on this Mac) and
-   exits with 4 and the one thing to fix. On exit 4, ask the user to unlock
-   the phone or close Mirroring; don't do it for them, and don't skip the
-   check (`PREFLIGHT=off`) to get past it.
+   tests fail with "Timed out while enabling automation mode".
+   - The script checks the start itself (the preflight: phone reachable and
+     unlocked, iPhone Mirroring closed, 10 GB free on this Mac) and exits with
+     4 and the one thing to fix. On exit 4, ask the user to unlock the phone
+     or close Mirroring. Never lock the phone or end iPhone Mirroring yourself
+     unless the user asks at the time, and don't skip the check
+     (`PREFLIGHT=off`) to get past it.
+   - During the run: the device suites keep the screen awake themselves
+     (`isIdleTimerDisabled` in `DeviceHarness`). `unit`, `ui`, `screenshots`
+     and `bench` don't set it: for those, ask the user to set Auto-Lock to
+     Never if the phone locks mid-run.
+   - Opening iPhone Mirroring during a run locks the phone and stops the
+     suite ("Unlock iPhone … to Continue"; 2026-11-02, probe 20 after 45
+     cases): ask the user to leave it closed until the run ends.
 2. For `ui` and `screenshots`: Settings → Developer → Enable UI Automation is
    on (it asks for the passcode once). Otherwise XCUITest waits 60 s for a
    passcode prompt on the phone and fails with "Timed out while enabling
@@ -124,7 +128,7 @@ A full run is 13 turns and about 20 minutes; the phone warms up, so compare spee
   main thread's work (chat writes, markdown parses); late frames; the helpers after the reply.
 - It leaves the Release build on the phone, and keeps the user's chats: each case starts a new
   chat. It does change Think, Search and Think's budget, through the app's own controls.
-- Use it, not the quality probe, to answer "what does the app do with this prompt": device tests
+- Use it, not a device test, to answer "what does the app do with this prompt": device tests
   run `AppState` with the harness's options, which once differed from the phone's.
 - A device-test run that is killed leaves its options in the app's settings until the next
   device-test run restores them (`harnessSettingsSnapshot`). Don't kill one mid-test if a wait
@@ -136,15 +140,18 @@ A full run is 13 turns and about 20 minutes; the phone warms up, so compare spee
 ("Designed for iPad/iPhone") through the same Metal path and the iOS slice of
 `CLiteRTLM`. It's the development bed while the iPhone is away. Its speed and
 memory aren't the iPhone's, and a change still needs an iPhone run before it
-ships.
+ships. **Ask the user before a Mac run:** they often keep the Mac busy, and
+the iPhone comes first. Not rechecked since the app declared
+`iphone-performance-gaming-tier` (2026-11-10): the next Mac run will show
+whether it still installs.
 
 ```sh
 PLATFORM=mac scripts/device-harness.sh unit
 PLATFORM=mac ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-harness.sh inference
 ```
 
-- `ui`, `screenshots` and `memory` stay iPhone-only: the script refuses them,
-  and `all` skips `ui`. The Mac has no jetsam limit to simulate.
+- `ui`, `screenshots`, `memory` and `bench` stay iPhone-only: the script
+  refuses them, and `all` skips `ui`. The Mac has no jetsam limit to simulate.
 - The destination is the Mac's provisioning UDID (`system_profiler
   SPHardwareDataType`). The first run registers the Mac for development.
 - Results land in `build/mac-harness/`. Device suites print
@@ -186,49 +193,29 @@ scripts/device-run.sh crashes pull            # copy them to build/device-run/cr
 - Axiom's `xclog` console capture is simulator-only, and `log collect` needs
   root for a physical device: use `logs` instead.
 
-## Looking at the iPhone (iPhone Mirroring)
+## Looking at the iPhone
 
-When the user mirrors the phone to this Mac ("Recopie de l'iPhone",
-`com.apple.ScreenContinuity`), computer use can see and tap the real app
-with the background `app_*` tools (`app_screenshot`, `app_click`,
-`app_type`), and the user keeps the Mac. Access was granted on 2026-11-02;
-`request_access` for that app if a new session needs it.
+The bench is how the app is driven and checked on the phone (above): a check
+worth repeating becomes a bench case or a UI test, not a session of taps. To
+see the screen once, `scripts/device-run.sh screenshot <name>` captures an
+unlocked phone.
 
-- It authenticates automatically (its Settings: "Authentifier
-  automatiquement").
-- After a few minutes idle the session pauses: Apple's design, with no setting
-  for it. `app_click` its "Connexion" button to resume.
-- A harness run takes over the phone, and the mirror shows "iPhone en cours
-  d'utilisation" until the phone is locked. That lock is the user's call: look
-  before or after runs, never during, and don't lock the phone to get the
-  mirror back.
-- Opening the mirror locks the phone, which stops a running suite: the app
-  goes to the background and Xcode waits with "Unlock iPhone … to Continue",
-  then relaunches and runs nothing (2026-11-02, probe 20 after 45 cases). The
-  tests keep the screen awake themselves (`isIdleTimerDisabled`), so Auto-Lock
-  isn't the danger. Before a long iPhone run, ask the user to leave the mirror
-  closed, and split long probes into one arm per run.
-- The app on the phone is the last iPhone run's build (Debug, the test host).
-  It shares the user's chats and settings, so start a new chat for a check.
-- What drives what (checked 2026-11-10 on every screen: chat, drawer, the "…"
-  and attach menus, Settings and Advanced):
-  - **Background `app_*` tools:** looking and tapping only (`app_screenshot`,
-    `app_click`). Scrolling, dragging and keys don't reach the phone.
-  - **Full-screen control** (`request_full_control`, then `computer_batch`;
-    it takes the user's screen, so use it in short bursts and
-    `release_full_control` after):
-    - Scroll with `scroll` over the phone: about 100 ticks for three lines, so
-      send four to six `scroll_amount: 100` actions per screen.
-    - Type with `type` after a click in the field.
-    - Long-press with `mouse_move` to the spot, `left_mouse_down`, a 1.2 s
-      `wait`, `left_mouse_up`. Without the `mouse_move` the press lands where
-      the pointer last was.
-    - A click-drag isn't a touch drag: iPhone Mirroring maps swipes to scrolls.
-  - **Not reachable:** the microphone ("Le micro de l'iPhone n'est pas
-    disponible à partir du Mac"), so Voice mode, dictation and voice messages
-    need the user or the `ui` suite's `--uitest-fake-mic`.
-- With the phone unlocked and in use, the mirror can't connect, but
-  `scripts/device-run.sh screenshot <name>` still captures its screen.
+iPhone Mirroring ("Recopie de l'iPhone", `com.apple.ScreenContinuity`) is the
+user's own tool, for looking only (dropped as a testing tool on 2026-11-10):
+
+- It and the harness exclude each other. Opening it locks the phone; the
+  preflight refuses a run while it's open; a run takes over the phone, and
+  the mirror then shows "iPhone en cours d'utilisation" until the phone is
+  locked. Opening it, closing it and locking the phone are the user's calls.
+- When the user has it open and asks for a look, computer use reaches it
+  with the background `app_*` tools (`app_screenshot`, `app_click`; access
+  granted 2026-11-02). They look and tap only: scrolling, typing and long
+  presses need full-screen control (`mouse_move` before a long press, about
+  100 scroll ticks for three lines), and the microphone isn't reachable. After
+  a few minutes idle it pauses: its "Connexion" button resumes.
+- The app on the phone is the last run's build: Release after `bench`, Debug
+  (the test host) after the other suites. It holds the user's chats and
+  settings, so start a new chat for a check.
 
 ## Tuning a prompt or a model decision
 
@@ -259,14 +246,11 @@ Lessons from the first round (Search when needed, 2026-11-02):
   made-up reply as history and failed with the reply the app had actually given (2026-11-10).
   Look at what the helper reads after truncation: a cited reply cut to 400 bytes ended on the
   runner-up's name, and the plan followed that name.
-- The table can be tuned on the iPhone when the Mac is busy: about three minutes a round
-  (`ONLY=AgelloDeviceTests/<Class>/<test> scripts/device-harness.sh <suite>`), with the report in
-  `build/device-harness/harness-report.json`.
 
 ## The test host
 
 Unit and device tests run inside the app, which shows only a black screen
-while it hosts them (`AgelloApp.hostsTests`, from `XCTestConfigurationFilePath`):
+while it hosts them (`AppBootstrap.hostsTests`, from `XCTestConfigurationFilePath`):
 the tests build their own `AppState`, and the app's own UI used to warm up a
 second E4B engine next to theirs. Device memory figures recorded before
 2026-10-15 (afternoon) include that engine, about 1.2 GB once it had loaded.
@@ -285,7 +269,9 @@ Everything lands in `build/device-harness/` (`build/mac-harness/` on the Mac):
 | `attachments/<suite>/` | Per-scenario JSON metrics (device suites) and screenshots (UI tests) |
 | `harness-report.json` | In-app report pulled from the device: every recorded scenario of the last run, and the device (hardware, `isiOSAppOnMac`, GPU family, Metal working set) |
 
-The script's exit code is `xcodebuild`'s (65 = test failures). It ends with
+Exit codes: `xcodebuild`'s (65 = test failures), 2 for a usage error, 3 while
+another run holds the lock, 4 when the preflight refuses, and for `bench` 1
+when the report finds a problem. The script ends with
 `scripts/storage.sh brief`: the project's disk use against its budget, and any
 scratch the run left. An `OUT=build/<name>` run is scratch once its numbers are
 recorded (in the roadmap, a doc or a commit message); then run
@@ -326,9 +312,10 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
 - **Order.** `testNN_Name` methods run in name order. Insert with letter
   suffixes (`test06b_…`), and keep `test90_Benchmark` last.
 - **Long prompts.** The engine counts a message's tokens exactly (probe 17),
-  and a send must leave room for a reply (a quarter of the window, plus the
-  thinking budget with Think): about 10K tokens fit chat's 16K window. Digits
-  cost a token each. Longer prompts need
+  and a send must leave room for a reply (`agello-inference-rules`, "Context
+  window", has the reserve): about 21K tokens fit chat's 32K window, about 10K
+  at 16K. Digits cost a token each. Longer prompts, or a test that needs one
+  window whatever the phone's memory, need
   `appState.options.maxNumTokensOverride` plus
   `await appState.applyCurrentOptions()`; `tearDown` restores the options.
 - **Opt-in suites.** Opt-in classes throw `XCTSkip` in `setUp` unless their
@@ -367,24 +354,27 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
   compile check writing into the same folder. Cancel the dialog, delete that
   `Agello.app`, and run again.
 
-- `ThinkingScenarioTests/test02_ReasoningStaysOutOfCache` fails on the Mac
-  only (Google's v0.18.0: the cache grows 139 tokens over the second Think
-  turn, as if the reasoning stayed). On the iPhone it passes (2026-10-16,
-  512-block model file: growth 16 against a floor of 43). Treat a Mac
-  failure as known; an iPhone failure is a regression.
+- `ThinkingScenarioTests/test02_ReasoningStaysOutOfCache` failed on the Mac
+  only with Google's v0.18.0 (2026-10-16: the cache grew 139 tokens over the
+  second Think turn). Not rechecked on the Mac with our runtime, which drops
+  the reasoning right after the reply; on the iPhone it passes, and a failure
+  there is a regression.
 
 ## Launch arguments and environment
 
 | Name | Effect |
 | --- | --- |
 | `--mock-engine` (or env `AGELLO_MOCK_ENGINE`) | Scripted engine: the whole UI without a model |
-| `--uitest-reset` | Fresh chats and default settings for a UI test; projects, memories and web-search settings persist |
+| `--uitest-reset` | Wipes chats, projects, files, memories and all settings before a UI test (models are kept) |
 | `--uitest-fake-mic` | Fake microphone input (no permission prompt) |
 | `--uitest-sample-file`, `--uitest-sample-report` | Attach sample documents generated in code (`ChatView`) |
-| `TEST_RUNNER_HARNESS_THINKING`, `_MEMORY`, `_CALIBRATE`, `_PROBES` | Enable the opt-in device suites (the script sets them) |
+| `--trace` | The app writes a trace of each reply to `Documents/traces/` (`ReplyTrace`); the bench passes it |
+| `AGELLO_BENCH_DRAFT`, `AGELLO_BENCH_AUTOSEND=1` (env) | Open on a new chat with this draft; with autosend, send it once the model is ready (the bench and `bench-direct.sh`) |
+| `AGELLO_SIMULATE_MEMORY_GB` (env) | Stands in for the phone's memory at the hardware-floor check (`DeviceFloorUITests`) |
+| `TEST_RUNNER_HARNESS_THINKING`, `_MEMORY`, `_CALIBRATE`, `_PROBES`, `_SCREENSHOTS`, `_BENCH` | Enable the opt-in suites (the script sets them) |
 | `AGELLO_TELEMETRY=<0-4>` (to the script) | Engine telemetry level on our LiteRT-LM build, passed as `TEST_RUNNER_AGELLO_TELEMETRY` (default 2: span timings; 4 times each GPU kernel and slows the run) |
 | `TEST_RUNNER_AGELLO_VERIFY_DIRECT_COPIES=1` | Our build checks every direct Metal host copy against ML Drift's own conversion; a difference is an error anomaly in the scenario's telemetry |
-| `AGELLO_SIMULATE_APPLE_GPU="Apple A17 Pro"` (to the script) | Our build picks another Apple GPU's kernels (here the Apple9 paths of an iPhone 15/16 Pro), with caches of their own: the way to check devices we don't have. Code paths only: speed, thermals and memory stay this device's; telemetry's `gpu` fact names the family used. Run memory envelopes one per launch (`ONLY=…/test03_…`): in sequence each test inherits 0.8–1.4 GB from the last |
+| `AGELLO_SIMULATE_APPLE_GPU="Apple A17 Pro"` (to the script) | Our build picks another Apple GPU's kernels (here the Apple9 paths), with caches of their own. A runtime debugging aid: no supported iPhone has that GPU. Code paths only: speed, thermals and memory stay this device's; telemetry's `gpu` fact names the family used. Run memory envelopes one per launch (`ONLY=…/test03_…`): in sequence each test inherits 0.8–1.4 GB from the last |
 
 ## After a change
 

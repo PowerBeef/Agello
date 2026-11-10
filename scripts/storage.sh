@@ -54,7 +54,8 @@ for d in "$MAIN"/build/*; do
   size="$(kb "$d")"
   case "$name" in
     device-harness | mac-harness) row keep "$size" "build/$name: the latest harness results" ;;
-    device-harness-* | mac-harness-* | macos-harness*)
+    bench-venv) row keep "$size" "build/bench-venv: pytest for the bench's checks (bench-report.py rebuilds it when missing)" ;;
+    device-harness-* | mac-harness-*)
       row scratch "$size" "build/$name: one-off harness results (once their numbers are recorded)" "$d" ;;
     *) other=$((other + ${size:-0})) ;;
   esac
@@ -99,7 +100,7 @@ for f in "$MODELS"/*; do
           *) lab=$((lab + $(kb "$g"))) ;;
         esac
       done
-      row keep "$lab" "~/Models/agello/lab: #3913 lab models, kept for the next exports (their clones in the iPhone app's Documents/lab go with them)" ;;
+      row keep "$lab" "~/Models/agello/lab: lab models and probe suites (the #3913 exports were deleted on 2026-11-03; a new round's files are scratch once its numbers are recorded)" ;;
     cache) row keep "$(kb "$f")" "~/Models/agello/cache: agello-bench's GPU cache (--cache)" ;;
     revisions.txt) ;;
     *_cache.bin | *.xnnpack_cache | *cache*)

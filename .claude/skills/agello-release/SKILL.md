@@ -45,10 +45,10 @@ uploading, submitting) needs the user's go-ahead first.
    litert-community's file, Apache 2.0, with a NOTICE). Keep that repo public,
    and keep the app's licenses screen crediting Google, litert-community and the
    modification.
-5. **Export compliance.** The Info.plist has no
-   `ITSAppUsesNonExemptEncryption`. The app only uses HTTPS through
-   URLSession, which normally qualifies as exempt. Confirm with the user, then
-   set it to `NO` to skip the question on every build.
+5. **Export compliance.** Done: `AgelloiOS/Info.plist` sets
+   `ITSAppUsesNonExemptEncryption` to false (the app only uses HTTPS through
+   URLSession, which qualifies as exempt). Revisit it if the app ever adds
+   its own cryptography.
 6. **App icon.** `Agello/Assets.xcassets/AppIcon.appiconset`: one 1024 image
    plus dark and tinted variants (added 2026-10-14). App Store Connect takes
    the 1024 marketing icon from the build.
@@ -62,8 +62,8 @@ uploading, submitting) needs the user's go-ahead first.
    can install the app and sees `UnsupportedDeviceView`. Say 12 GB in the
    store text. Requirements can be relaxed in an update, never tightened.
 9. **Screenshots** (`asc:asc-screenshot-resize`, then `asc screenshots upload`).
-   Take them from the device harness (`build/device-harness/attachments/`,
-   from the `ui` suite), never the simulator. `asc:asc-shots-pipeline` is
+   Take them with `scripts/device-harness.sh screenshots`
+   (`build/device-harness/attachments/screenshots/`), never the simulator. `asc:asc-shots-pipeline` is
    denied in `.claude/settings.json` for that reason.
 10. **Metadata** (`asc:asc-metadata-sync`, `asc:asc-whats-new-writer`). Privacy is the
    core pitch: on-device, no account, no cloud. Mention the 3.7 GB model

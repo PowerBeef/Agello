@@ -98,12 +98,14 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   guards it with `cachedTokenCount()`.
 - Chat's cache isn't a setting (since 2026-11-02; a saved custom window is
   dropped at launch): 32K (32,000 allocated, the model file's most) on
-  devices with 11 GB or more of physical memory (the 12 GB iPhones, the floor;
-  the maintainer's choice, 2026-11-09), 16K on 8 GB devices. On our runtime
+  the 12 GB iPhones (the floor, 11 GB or more of physical memory; the
+  maintainer's choice, 2026-11-09). `DeviceProfile.defaultMaxTokens`' smaller
+  values only serve the iPhone app run on a Mac with less. On our runtime
   decode hardly depends on the window (iPhone 17 Pro: 39 / 42 / 42 tok/s at
   8K / 16K / 32K); 16K peaks at 1.9 GB and 32K at 3.5 GB. Each load measures
-  the room left (`MemoryProbe.roomBytes`: the jetsam limit or Metal's working
-  set, less the footprint) after the old engine is gone, and steps down
+  the room left (`MemoryProbe.roomBytes`: the app's memory limit less its
+  footprint, nil where no limit is reported) after the old engine is gone, and
+  steps down
   (`DeviceProfile.contextTokens`): 16K below 5.1 GB (an estimate: 3.5 GB
   plus 32K's extra 1.6 GB; the memory suite's 6.0 GB envelope passed with
   1.3 GB to spare on 2026-11-10, nothing lower is measured), 8K below
@@ -117,15 +119,16 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
 - Think's reasoning budget is a setting (Advanced, 128–4,096) with a default of
   4,096 on every device (`DeviceProfile.defaultThinkingBudget`, the
   maintainer's choice on 2026-11-10; 1,024 cut a coding plan mid-word on the
-  iPhone 17 Pro). It's a ceiling: at 16K the reply reserve grows from 5,120 to
-  5,461 tokens, at 8K not at all. `InferenceOptions.launch` moves a budget
+  iPhone 17 Pro). It's a ceiling, and the reply reserve below counts it. `InferenceOptions.launch` moves a budget
   saved at the old 1,024 once (`thinkingBudgetIs4096` in UserDefaults); a
   budget chosen afterwards stays.
 - When history is trimmed, the reply reserve stays free: a quarter of the
-  window plus the reasoning budget, at most a third (4,096 or 5,120 tokens at
-  16K; 512 plus reasoning before 2026-11-02). A message fits when it leaves
-  that reserve after the preamble: about 10K tokens of English at 16K; digits
-  cost a token each. Tests with longer prompts set
+  window plus the reasoning budget, at most a third
+  (`ContextBudget.replyReserve`): 8,000 tokens at 32K and 10,666 with Think,
+  4,096 and 5,461 at 16K, 2,048 and 2,730 at 8K (512 plus reasoning before
+  2026-11-02). A message fits when it leaves that reserve after the preamble:
+  about 21K tokens of English at 32K, about 10K at 16K; digits cost a token
+  each. Tests with longer prompts set
   `maxNumTokensOverride` in memory (see `test15_LongContextDigitFidelity`).
 
 ## Engine lifecycle
@@ -217,13 +220,10 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   CPU for good (`GPUGate.closedError`).
 - Extensions (widgets, share sheet) can't load the model. They hand off to the
   app.
-- Memory warnings go through `MemoryPolicy.action(level:isBusy:)` and
-  `AppState.relieveMemoryPressure(level:)`: a warning (all iOS sends) stops a
-  reply only below the 400 MB line and releases EmbeddingGemma; critical
-  pressure (the Mac's) also unloads E4B, only when nothing uses it (no reply,
-  voice mode, benchmark or dictation, checked again inside `serialized`). The
-  next message reloads it from the engine cache. Probe 22 checks it on the real
-  engine.
+- Memory warnings go through `MemoryPolicy.action(level:)` and
+  `AppState.relieveMemoryPressure(level:)`: a warning stops a reply only below
+  the 400 MB line and releases EmbeddingGemma. E4B stays loaded
+  (`AppStateTests.testMemoryWarningKeepsTheEngineLoaded`).
 
 ## Verify
 

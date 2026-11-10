@@ -103,7 +103,7 @@ def engine_summary(telemetry):
 
 
 def pytest_python():
-    """A Python with pytest: this one, or a small environment under build/ (scratch)."""
+    """A Python with pytest: this one, or a small environment under build/, kept between runs."""
     probe = subprocess.run([sys.executable, "-c", "import pytest"], capture_output=True)
     if probe.returncode == 0:
         return sys.executable
