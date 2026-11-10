@@ -98,7 +98,7 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   guards it with `cachedTokenCount()`.
 - Chat's cache isn't a setting (since 2026-11-02; a saved custom window is
   dropped at launch): 32K (32,000 allocated, the model file's most) on
-  devices with 11 GB or more of physical memory (12 GB iPhones, 16 GB Macs;
+  devices with 11 GB or more of physical memory (the 12 GB iPhones, the floor;
   the maintainer's choice, 2026-11-09), 16K on 8 GB devices. On our runtime
   decode hardly depends on the window (iPhone 17 Pro: 39 / 42 / 42 tok/s at
   8K / 16K / 32K); 16K peaks at 1.9 GB and 32K at 3.5 GB. Each load measures
@@ -224,24 +224,6 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   voice mode, benchmark or dictation, checked again inside `serialized`). The
   next message reloads it from the engine cache. Probe 22 checks it on the real
   engine.
-
-## Agello for Mac
-
-- The app limit is Metal's working set (`MemoryProbe.appMemoryLimitBytes`):
-  about 5.5 GB on 8 GB Macs (16K maximum context), 11 GB and up from 16 GB
-  (32K); chat stays at 8K. Available memory is
-  `DeviceProfile.macAvailableBytes`: the system's free, inactive, speculative
-  and purgeable pages, within that limit less the footprint. The 400 MB stop
-  and `keepsConversationAcrossHelpers` read it as they read iOS's figure.
-- No background policy: the Mac never calls `enterBackground`, so replies
-  don't stop and `GPUGate` stays open when the window is hidden or closed.
-  `WorkActivity` (the Mac app's) holds a user-initiated activity while
-  `AppState` is busy, loading, taking dictation or indexing, against App Nap;
-  the Mac's `BackgroundWork` keeps idle sleep off through a long summary.
-  Probe 21 replies for five minutes with the app hidden.
-- Agello for Mac supports only our runtime (the committed package): its cache and helper
-  policies assume a runtime that keeps sessions. The `RuntimeGuard` MAC.md describes isn't
-  written yet.
 
 ## Verify
 

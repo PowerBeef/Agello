@@ -117,7 +117,7 @@ one readable summary, and each reply as Markdown. Checkers then judge the replie
 | **H3** | Deeper probes: first render and flush cadence, scroll jumps and hitches, a memory timeline, helper tasks (titles, memories), signposts. | A slow or jumpy reply shows which layer was slow. |
 | **H4** | Autonomy: preflight, one session, interruptions, resume, comparison with a baseline. | A full run needs nothing but an unlocked phone, and says what changed since the last. |
 | **H5** | Coverage: every screen and menu, the attach menu with sample files, Voice with the fake microphone, share and intent routes. | The driver has touched every control the app has. |
-| **H6** | Retire and document: mirroring kept for looking only, docs and skills updated, Agello for Mac's UI tests planned with M7. | The fix loop in `CLAUDE.md` names the harness, not the mirror. |
+| **H6** | Retire and document: mirroring kept for looking only, docs and skills updated. | The fix loop in `CLAUDE.md` names the harness, not the mirror. |
 
 H1 proves the design. If the three layers don't join cleanly there, the plan changes before the
 rest is built.
@@ -160,8 +160,7 @@ reply as Markdown.
    a user can share a trace of a bad reply, is a later choice.
 4. **Where results live.** Proposed: reports in `build/` (scratch, as today), the numbers that
    matter in the roadmap, and one small committed file of accepted baselines.
-5. **Order.** H1 is about two days. Agello for Mac's engine suites for 32K and the Search fix are
-   still to run, and wait for a free Mac either way.
+5. **Order.** H1 first, then H2 to H6 in order.
 
 ## Risks
 

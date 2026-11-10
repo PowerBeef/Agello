@@ -1,6 +1,6 @@
 import CoreGraphics
 
-/// Control sizes for a touch screen; the Mac has its own ladder (docs/MAC.md, M4).
+/// Control sizes for a touch screen.
 extension Theme {
   enum Size {
     /// Minimum tappable control (HIG).

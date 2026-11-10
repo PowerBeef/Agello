@@ -46,3 +46,4 @@ buildServer.json
 
 # A local LiteRT-LM build (Vendor/use-local-litert.sh)
 Vendor/LiteRT-LM/dist/
+__pycache__/

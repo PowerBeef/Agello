@@ -214,13 +214,13 @@ Judge a prompt or schema change against a table of cases, not one try:
 1. A device test runs each case with its expected outcome, records the raw
    output and the error per case (catch them: one bad case mustn't hide the
    rest), and fails on the wrong ones. Model: `WebScenarioTests/test04_SearchDecisions`.
-2. Run it alone on Agello for Mac, about a minute a round:
-   `PLATFORM=macos-native ONLY=AgelloDeviceTests/<Class>/<test> scripts/device-harness.sh <suite>`,
-   and read `jq '.scenarios.<name>' build/macos-harness/harness-report.json`.
+2. Run it alone on the iPhone, about three minutes a round:
+   `ONLY=AgelloDeviceTests/<Class>/<test> scripts/device-harness.sh <suite>`,
+   and read `jq '.scenarios.<name>' build/device-harness/harness-report.json`.
    Check `recordedAt`: a test that throws before `harness.record` leaves the
    last run's record in place.
-3. Iterate until the table is right, then probe 24 for the answers' quality,
-   then the suites on the iPhone and `macos-native`.
+3. Iterate until the table is right, then the bench for the answers' quality
+   (`scripts/device-harness.sh bench`), then the suites the change touches.
 
 Lessons from the first round (Search when needed, 2026-11-02):
 - E4B answers a yes/no "does this need X?" by what it thinks it can do alone;
@@ -249,46 +249,6 @@ second E4B engine next to theirs. Device memory figures recorded before
 2026-10-15 (afternoon) include that engine, about 1.2 GB once it had loaded.
 Probe 16 (`test16_MemoryAfterUnload`) checks that nothing stays after an
 unload. UI tests launch the app normally and see its UI.
-
-## Agello for Mac
-
-`PLATFORM=macos-native` runs Agello for Mac's own app (scheme `AgelloMac`,
-bundle `com.patricedery.agello.mac`) and its test bundles on this Mac:
-`AgelloMacTests` (the `AgelloTests/` files, minus `BackgroundWorkTests`) and
-`AgelloMacDeviceTests` (the `AgelloDeviceTests/` files, minus
-`MemoryEnvelopeScenarioTests`). Every suite but `memory`, `ui` and
-`screenshots` (M7) runs. Results land in `build/macos-harness/`. `ONLY` takes
-the same IDs as on iPhone: `AgelloTests/…` and `AgelloDeviceTests/…` run in
-the Mac bundles. The script clones E4B and EmbeddingGemma from
-`~/Models/agello/` into the container when they're missing.
-
-```sh
-PLATFORM=macos-native scripts/device-harness.sh unit
-PLATFORM=macos-native ONLY=AgelloTests/ShellModelTests scripts/device-harness.sh unit
-PLATFORM=macos-native scripts/device-harness.sh inference
-```
-
-- Probe 24 (`test24_QualityBench`) is the quality bench: nine realistic
-  requests (web apps, Swift and Python code, facts, an explanation, an email,
-  a trip plan, with and without Search) through the whole app, each reply
-  attached in full as `quality-<id>.md`, generated web apps tried in a web
-  view. Run it in Agello for Mac with its own `OUT` before and after a change
-  to prompts, Search or budgets, then `scripts/quality-codecheck.sh <OUT>`
-  type-checks the Swift and compiles the Python; read the replies side by
-  side. `TEST_RUNNER_BENCH_ONLY=id,id` runs some cases.
-- Probe 21 (`test21_RepliesWhileHidden`, macOS only) replies for five minutes
-  with the app hidden and compares decode speed with the app shown; probe 22
-  drives critical memory pressure on the real engine. Speed comparisons (probe
-  21, `calibrate`) need a quiet Mac: skip probe 21 with
-  `-skip-testing:AgelloMacDeviceTests/ProbeScenarioTests/test21_RepliesWhileHidden`
-  while other jobs run.
-
-- Its data lives in `~/Library/Containers/com.patricedery.agello.mac/Data/`:
-  the chat store (`Library/Application Support/default.store`, not the App
-  Group's) and the models (`Library/Application Support/Models/`, APFS clones
-  of `~/Models/agello/`).
-- Both apps are named Agello: filter logs by image path,
-  `log stream --predicate 'subsystem == "com.patricedery.agello" AND processImagePath CONTAINS "Products/Debug/Agello.app"'`.
 
 ## Reading results
 

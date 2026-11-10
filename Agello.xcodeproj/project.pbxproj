@@ -12,9 +12,6 @@
 		500000000000000000000006 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 500000000000000000000005 /* SwiftMath */; };
 		60000000000000000000000C /* AgelloWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 600000000000000000000001 /* AgelloWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		70000000000000000000000C /* AgelloShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 700000000000000000000001 /* AgelloShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		800000000000000000000008 /* LiteRTLM in Frameworks */ = {isa = PBXBuildFile; productRef = 80000000000000000000000C /* LiteRTLM */; };
-		80000000000000000000000D /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 80000000000000000000000F /* Markdown */; };
-		80000000000000000000000E /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 800000000000000000000010 /* SwiftMath */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -78,20 +75,6 @@
 			remoteGlobalIDString = 700000000000000000000002;
 			remoteInfo = AgelloShare;
 		};
-		A00000000000000000000007 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 100000000000000000000001 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 800000000000000000000002;
-			remoteInfo = AgelloMac;
-		};
-		B00000000000000000000007 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 100000000000000000000001 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 800000000000000000000002;
-			remoteInfo = AgelloMac;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
@@ -101,9 +84,6 @@
 		400000000000000000000011 /* AgelloUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgelloUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		600000000000000000000001 /* AgelloWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AgelloWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		700000000000000000000001 /* AgelloShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AgelloShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		800000000000000000000001 /* Agello.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Agello.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A00000000000000000000001 /* AgelloMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgelloMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		B00000000000000000000001 /* AgelloMacDeviceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgelloMacDeviceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -165,30 +145,6 @@
 			);
 			target = 400000000000000000000013 /* AgelloUITests */;
 		};
-		800000000000000000000007 /* Exceptions for "AgelloMac" folder in "AgelloMac" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-				AgelloMac.entitlements,
-			);
-			target = 800000000000000000000002 /* AgelloMac */;
-		};
-		A00000000000000000000008 /* Exceptions for "AgelloTests" folder in "AgelloMacTests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				.swiftlint.yml,
-				BackgroundWorkTests.swift,
-			);
-			target = A00000000000000000000002 /* AgelloMacTests */;
-		};
-		B00000000000000000000008 /* Exceptions for "AgelloDeviceTests" folder in "AgelloMacDeviceTests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				.swiftlint.yml,
-				MemoryEnvelopeScenarioTests.swift,
-			);
-			target = B00000000000000000000002 /* AgelloMacDeviceTests */;
-		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -205,7 +161,6 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				400000000000000000000044 /* Exceptions for "AgelloTests" folder in "AgelloTests" target */,
-				A00000000000000000000008 /* Exceptions for "AgelloTests" folder in "AgelloMacTests" target */,
 			);
 			path = AgelloTests;
 			sourceTree = "<group>";
@@ -214,7 +169,6 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				400000000000000000000045 /* Exceptions for "AgelloDeviceTests" folder in "AgelloDeviceTests" target */,
-				B00000000000000000000008 /* Exceptions for "AgelloDeviceTests" folder in "AgelloMacDeviceTests" target */,
 			);
 			path = AgelloDeviceTests;
 			sourceTree = "<group>";
@@ -241,14 +195,6 @@
 				700000000000000000000007 /* Exceptions for "AgelloShare" folder in "AgelloShare" target */,
 			);
 			path = AgelloShare;
-			sourceTree = "<group>";
-		};
-		800000000000000000000006 /* AgelloMac */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				800000000000000000000007 /* Exceptions for "AgelloMac" folder in "AgelloMac" target */,
-			);
-			path = AgelloMac;
 			sourceTree = "<group>";
 		};
 		900000000000000000000006 /* AgelloiOS */ = {
@@ -307,30 +253,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		800000000000000000000004 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				800000000000000000000008 /* LiteRTLM in Frameworks */,
-				80000000000000000000000D /* Markdown in Frameworks */,
-				80000000000000000000000E /* SwiftMath in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		A00000000000000000000004 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B00000000000000000000004 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -344,7 +266,6 @@
 				400000000000000000000012 /* AgelloUITests */,
 				600000000000000000000006 /* AgelloWidgets */,
 				700000000000000000000006 /* AgelloShare */,
-				800000000000000000000006 /* AgelloMac */,
 				100000000000000000000015 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -358,9 +279,6 @@
 				400000000000000000000011 /* AgelloUITests.xctest */,
 				600000000000000000000001 /* AgelloWidgets.appex */,
 				700000000000000000000001 /* AgelloShare.appex */,
-				800000000000000000000001 /* Agello.app */,
-				A00000000000000000000001 /* AgelloMacTests.xctest */,
-				B00000000000000000000001 /* AgelloMacDeviceTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -501,74 +419,6 @@
 			productReference = 700000000000000000000001 /* AgelloShare.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		800000000000000000000002 /* AgelloMac */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 800000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloMac" */;
-			buildPhases = (
-				800000000000000000000003 /* Sources */,
-				800000000000000000000004 /* Frameworks */,
-				800000000000000000000005 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = AgelloMac;
-			packageProductDependencies = (
-				80000000000000000000000C /* LiteRTLM */,
-				80000000000000000000000F /* Markdown */,
-				800000000000000000000010 /* SwiftMath */,
-			);
-			fileSystemSynchronizedGroups = (
-				400000000000000000000041 /* Agello */,
-				800000000000000000000006 /* AgelloMac */,
-			);
-			productName = AgelloMac;
-			productReference = 800000000000000000000001 /* Agello.app */;
-			productType = "com.apple.product-type.application";
-		};
-		A00000000000000000000002 /* AgelloMacTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = A00000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloMacTests" */;
-			buildPhases = (
-				A00000000000000000000003 /* Sources */,
-				A00000000000000000000004 /* Frameworks */,
-				A00000000000000000000005 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				A00000000000000000000006 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				400000000000000000000042 /* AgelloTests */,
-			);
-			name = AgelloMacTests;
-			productName = AgelloMacTests;
-			productReference = A00000000000000000000001 /* AgelloMacTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		B00000000000000000000002 /* AgelloMacDeviceTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = B00000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloMacDeviceTests" */;
-			buildPhases = (
-				B00000000000000000000003 /* Sources */,
-				B00000000000000000000004 /* Frameworks */,
-				B00000000000000000000005 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				B00000000000000000000006 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				400000000000000000000002 /* AgelloDeviceTests */,
-			);
-			name = AgelloMacDeviceTests;
-			productName = AgelloMacDeviceTests;
-			productReference = B00000000000000000000001 /* AgelloMacDeviceTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -590,14 +440,6 @@
 						CreatedOnToolsVersion = 27.0;
 						TestTargetID = 100000000000000000000002;
 					};
-					A00000000000000000000002 = {
-						CreatedOnToolsVersion = 27.0;
-						TestTargetID = 800000000000000000000002;
-					};
-					B00000000000000000000002 = {
-						CreatedOnToolsVersion = 27.0;
-						TestTargetID = 800000000000000000000002;
-					};
 					400000000000000000000013 = {
 						CreatedOnToolsVersion = 27.0;
 						TestTargetID = 100000000000000000000002;
@@ -606,9 +448,6 @@
 						CreatedOnToolsVersion = 27.0;
 					};
 					700000000000000000000002 = {
-						CreatedOnToolsVersion = 27.0;
-					};
-					800000000000000000000002 = {
 						CreatedOnToolsVersion = 27.0;
 					};
 				};
@@ -637,9 +476,6 @@
 				400000000000000000000013 /* AgelloUITests */,
 				600000000000000000000002 /* AgelloWidgets */,
 				700000000000000000000002 /* AgelloShare */,
-				800000000000000000000002 /* AgelloMac */,
-				A00000000000000000000002 /* AgelloMacTests */,
-				B00000000000000000000002 /* AgelloMacDeviceTests */,
 			);
 		};
 /* End PBXProject section */
@@ -681,27 +517,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		700000000000000000000005 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		800000000000000000000005 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		A00000000000000000000005 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B00000000000000000000005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -753,27 +568,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		800000000000000000000003 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		A00000000000000000000003 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		B00000000000000000000003 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -801,16 +595,6 @@
 			isa = PBXTargetDependency;
 			target = 700000000000000000000002 /* AgelloShare */;
 			targetProxy = 70000000000000000000000E /* PBXContainerItemProxy */;
-		};
-		A00000000000000000000006 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 800000000000000000000002 /* AgelloMac */;
-			targetProxy = A00000000000000000000007 /* PBXContainerItemProxy */;
-		};
-		B00000000000000000000006 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 800000000000000000000002 /* AgelloMac */;
-			targetProxy = B00000000000000000000007 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1185,166 +969,6 @@
 			};
 			name = Release;
 		};
-		80000000000000000000000A /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = AgelloMac/AgelloMac.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = FK2D8X36G2;
-				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = AgelloMac/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Agello;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos for the on-device model, and to show it what you see in voice mode.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone for voice messages, dictation and voice mode. The on-device model understands your voice; recordings stay on this Mac.";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.agello.mac;
-				PRODUCT_MODULE_NAME = Agello;
-				PRODUCT_NAME = Agello;
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Debug;
-		};
-		80000000000000000000000B /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = AgelloMac/AgelloMac.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = FK2D8X36G2;
-				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = AgelloMac/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Agello;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos for the on-device model, and to show it what you see in voice mode.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone for voice messages, dictation and voice mode. The on-device model understands your voice; recordings stay on this Mac.";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.agello.mac;
-				PRODUCT_MODULE_NAME = Agello;
-				PRODUCT_NAME = Agello;
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 6.0;
-			};
-			name = Release;
-		};
-		A0000000000000000000000A /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = FK2D8X36G2;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.patricedery.agello.mac.tests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agello.app/Contents/MacOS/Agello";
-			};
-			name = Debug;
-		};
-		A0000000000000000000000B /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = FK2D8X36G2;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.patricedery.agello.mac.tests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agello.app/Contents/MacOS/Agello";
-			};
-			name = Release;
-		};
-		B0000000000000000000000A /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = FK2D8X36G2;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.patricedery.agello.mac.devicetests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agello.app/Contents/MacOS/Agello";
-			};
-			name = Debug;
-		};
-		B0000000000000000000000B /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ARCHS = arm64;
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = FK2D8X36G2;
-				GENERATE_INFOPLIST_FILE = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.patricedery.agello.mac.devicetests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agello.app/Contents/MacOS/Agello";
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1411,33 +1035,6 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		800000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloMac" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				80000000000000000000000A /* Debug */,
-				80000000000000000000000B /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		A00000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloMacTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A0000000000000000000000A /* Debug */,
-				A0000000000000000000000B /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		B00000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloMacDeviceTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				B0000000000000000000000A /* Debug */,
-				B0000000000000000000000B /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -1478,21 +1075,6 @@
 			productName = Markdown;
 		};
 		500000000000000000000005 /* SwiftMath */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 500000000000000000000004 /* XCRemoteSwiftPackageReference "SwiftMath" */;
-			productName = SwiftMath;
-		};
-		80000000000000000000000C /* LiteRTLM */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 100000000000000000000005 /* XCLocalSwiftPackageReference "Vendor/LiteRT-LM" */;
-			productName = LiteRTLM;
-		};
-		80000000000000000000000F /* Markdown */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 500000000000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */;
-			productName = Markdown;
-		};
-		800000000000000000000010 /* SwiftMath */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 500000000000000000000004 /* XCRemoteSwiftPackageReference "SwiftMath" */;
 			productName = SwiftMath;

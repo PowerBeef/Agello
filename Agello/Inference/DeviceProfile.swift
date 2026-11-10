@@ -46,18 +46,6 @@ struct DeviceProfile: Sendable, Equatable {
     availableBytes > 0 && availableBytes < lowMemoryStopBytes
   }
 
-  /// The Mac's counterpart of iOS's available memory, which the stop above and
-  /// ``keepsConversationAcrossHelpers(runtimeKeepsSessions:maxNumTokens:availableBytes:)`` read:
-  /// what the system could hand out without swapping (`systemAvailable`, 0 when not reported),
-  /// within the app's limit (Metal's working set) less its footprint. Nothing left reads as 1,
-  /// since 0 means "not reported".
-  static func macAvailableBytes(systemAvailable: UInt64, footprint: UInt64, appLimit: UInt64?) -> UInt64 {
-    guard let appLimit else { return systemAvailable }
-    let headroom = appLimit > footprint ? appLimit - footprint : 0
-    let available = systemAvailable == 0 ? headroom : min(systemAvailable, headroom)
-    return max(available, 1)
-  }
-
   /// E4B's KV cache per token of context (24 INT8 caches): 0.47 GB at 16K.
   static let kvBytesPerToken: UInt64 = 28_672
 
@@ -134,8 +122,8 @@ struct DeviceProfile: Sendable, Equatable {
     return standard
   }
 
-  /// The KV-cache size (`maxNumTokens`). iPhones have 12 GB (the floor since 2026-11-10) and
-  /// Macs 8 GB or more; smaller values only apply to the simulator.
+  /// The KV-cache size (`maxNumTokens`). iPhones have 12 GB (the floor since 2026-11-10);
+  /// smaller values only apply to the iPhone app run on an 8 GB Mac, and to the simulator.
   static func defaultMaxTokens(model: ModelID, memoryBytes: UInt64) -> Int {
     if memoryBytes >= memoryForLargeContextBytes { return largeContextTokens }
     return memoryBytes >= 7_000_000_000 ? standardContextTokens : 4_096
@@ -143,9 +131,7 @@ struct DeviceProfile: Sendable, Equatable {
 
   /// Largest context worth loading for long inputs (files, web passages).
   /// Measured E4B peak at 32K with a third of it filled: 3.6 GB; 16K stays
-  /// within the ~3.5 GB worst case simulated for 8 GB iPhones. On a Mac the
-  /// limit is Metal's working set: about 5.5 GB with 8 GB of memory (16K), 11 GB
-  /// and up with 16 GB (32K).
+  /// within the ~3.5 GB worst case simulated under memory pressure.
   static func maxContextTokens(model: ModelID, appMemoryLimitBytes: UInt64?) -> Int {
     guard let limit = appMemoryLimitBytes else { return 16_384 }
     return limit >= 6_500_000_000 ? ContextBudget.maxAllocatedPositions : 16_384

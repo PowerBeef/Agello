@@ -44,30 +44,14 @@ final class AppStateTests: XCTestCase {
     }
   }
 
-  /// Critical memory pressure unloads E4B when idle; the next message loads it again.
-  func testCriticalMemoryPressureUnloadsAnIdleEngine() async {
+  /// A memory warning never unloads the chat model: the next message needs no reload.
+  func testMemoryWarningKeepsTheEngineLoaded() async {
     let thread = appState.newThread(in: context)
     await appState.send(text: "Hi", imageData: nil, audioFileURL: nil, in: thread)
     await appState.relieveMemoryPressure(level: .warning)
     XCTAssertEqual(appState.engineState, .ready)
-    await appState.relieveMemoryPressure(level: .critical)
-    XCTAssertEqual(appState.engineState, .idle)
     let isLoaded = await mock.isLoaded
-    XCTAssertFalse(isLoaded)
-    let accepted = await appState.send(text: "Again", imageData: nil, audioFileURL: nil, in: thread)
-    XCTAssertTrue(accepted)
-    XCTAssertEqual(appState.engineState, .ready)
-    XCTAssertEqual(thread.orderedTurns.count, 4)
-  }
-
-  /// Voice mode counts as busy: critical pressure leaves its engine loaded.
-  func testCriticalMemoryPressureKeepsTheEngineForVoiceMode() async {
-    let loaded = await appState.ensureEngineLoaded()
-    XCTAssertTrue(loaded)
-    appState.voiceModeActive = true
-    await appState.relieveMemoryPressure(level: .critical)
-    XCTAssertEqual(appState.engineState, .ready)
-    appState.voiceModeActive = false
+    XCTAssertTrue(isLoaded)
   }
 
   func testMockModeSendsWithoutDownloadedModel() async {

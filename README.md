@@ -278,7 +278,7 @@ The README art comes from the same tokens: `scripts/readme-art/render.sh` redraw
 | [Testing](docs/TESTING.md) | The suites, the device harness, and how to run them |
 | [LiteRT-LM](docs/LITERT-LM.md) | The LiteRT-LM the app ships, what it sets, and a map of the fork's verified runtime and model reference |
 | [Privacy policy](https://powerbeef.github.io/Agello/privacy) | What stays on the iPhone, and what the network is used for |
-| [Roadmap](docs/ROADMAP.md) | What has shipped, what's next, and the plan for [Agello for Mac](docs/MAC.md) |
+| [Roadmap](docs/ROADMAP.md) | What has shipped and what's next |
 
 ### Vendored LiteRT-LM
 
@@ -298,7 +298,7 @@ Work happens directly on `main`. Keep the unit tests and the on-device harness g
 ### Roadmap
 
 - **Shipped:** the chat, files, projects and memory, web search and dictation, voice mode with the camera, and system integration. Then a reliability pass: crash fixes in the runtime wrapper, exact token counting, retrieval for CJK and number-heavy files, sampling that matches Settings, VoiceOver and the accessibility audit, MetricKit diagnostics, and a privacy policy.
-- **Next:** the iPhone run of our own LiteRT-LM build, which the app now uses: in the cooled calibration an earlier version decoded 37–45 tok/s at a 32K window, against 20 for Google's binary the same night. Then **Agello for Mac**, a native Mac app that shares the iPhone app's code ([plan](docs/MAC.md)).
+- **Next:** the iPhone run of our own LiteRT-LM build, which the app now uses: in the cooled calibration an earlier version decoded 37–45 tok/s at a 32K window, against 20 for Google's binary the same night.
 
 → [The full roadmap](docs/ROADMAP.md)
 

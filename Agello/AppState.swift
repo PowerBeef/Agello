@@ -176,23 +176,11 @@ final class AppState {
     }
   }
 
-  /// The system says memory is low: give back what ``MemoryPolicy`` says for that level. Voice
-  /// mode and a benchmark count as busy, so E4B stays loaded for them.
+  /// The system says memory is low: give back what ``MemoryPolicy`` says for that level.
   func relieveMemoryPressure(level: MemoryPressureLevel) async {
-    let relief = MemoryPolicy.action(
-      level: level, isBusy: isBusy || voiceModeActive || isBenchmarking || isTranscribing)
+    let relief = MemoryPolicy.action(level: level)
     if relief.contains(.stopReplyIfExhausted) { stopIfMemoryIsExhausted() }
     if relief.contains(.releaseEmbedder) { await knowledge.releaseMemory() }
-    if relief.contains(.unloadChatModel) {
-      await serialized {
-        // Something may have started while this waited its turn.
-        guard await self.engine.isLoaded, !self.isBusy, !self.voiceModeActive, !self.isBenchmarking,
-          !self.isTranscribing
-        else { return }
-        Log.lifecycle.warning("critical memory pressure: unloading the chat model while idle")
-        await self.unloadEngine()
-      }
-    }
   }
 
   var isMock: Bool { engine is MockChatEngine }
@@ -697,9 +685,7 @@ final class AppState {
       voiceModeActive && audioFileURL != nil
       ? thread.turns.first { $0.id == reply.parentID && $0.isUser } : nil
     await consume(stream, into: reply, context: context, voiceTurn: voiceTurn)
-    ReplyTrace.end(
-      text: reply.isDeleted ? "" : reply.text, thought: reply.isDeleted ? "" : reply.thought, stats: reply.isDeleted ? nil : reply.stats,
-      error: generationError, notice: notice)
+    ReplyTrace.end(reply: reply.isDeleted ? nil : reply, error: generationError, notice: notice)
     // A sampling conversation (Regenerate) serves only this reply.
     if samples { conversationThreadID = nil }
     // Sources found by the automatic web_search tool during the reply.

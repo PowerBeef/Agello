@@ -50,9 +50,8 @@ enum MemoryProbe {
     return result == KERN_SUCCESS ? info : nil
   }
 
-  /// What the app may still allocate before its limit (jetsam's on the iPhone, Metal's working
-  /// set on the Mac), or nil where no limit is reported. Unlike ``availableBytes()`` on the Mac,
-  /// it leaves out what other apps hold, which the system can page out for a load.
+  /// What the app may still allocate before its limit (jetsam's), or nil where no limit is
+  /// reported.
   static func roomBytes() -> UInt64? {
     guard let limit = appMemoryLimitBytes() else { return nil }
     let footprint = footprintBytes()

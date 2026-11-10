@@ -1,7 +1,6 @@
 #!/bin/sh
-# On-device test harness for Agello: the physical iPhone, this Mac running
-# the iPhone app (PLATFORM=mac), or Agello for Mac itself (PLATFORM=macos-native).
-# Never the simulator.
+# On-device test harness for Agello: the physical iPhone, or this Mac running
+# the iPhone app (PLATFORM=mac). Never the simulator.
 #
 # Usage:
 #   scripts/device-harness.sh [unit|inference|files|web|ui|all|thinking|memory|calibrate|probes|screenshots] [extra xcodebuild args...]
@@ -32,16 +31,12 @@
 #
 # Env: PLATFORM (iphone, the default; mac: this Mac runs the iPhone app
 #      "Designed for iPad/iPhone" through its Metal path; ui, screenshots and
-#      memory stay iPhone-only, and `all` skips ui; macos-native: Agello for
-#      Mac's own app and tests, scheme AgelloMac, AgelloMacTests and
-#      AgelloMacDeviceTests: not ui and screenshots yet (M7) nor memory),
+#      memory and bench stay iPhone-only, and `all` skips ui),
 #      DEVICE_ID (iPhone only; default: deviceId from the git-ignored .mobilebuildmcp/config.yaml),
 #      ONLY (run part of a suite: comma- or space-separated test identifiers
 #      inside it, e.g. ONLY=AgelloTests/AppStateTests/testMockModeSendsWithoutDownloadedModel
-#      scripts/device-harness.sh unit; not with `all`; with macos-native,
-#      AgelloTests/… and AgelloDeviceTests/… run the same tests in the Mac bundles),
-#      OUT (default: build/device-harness, build/mac-harness with PLATFORM=mac,
-#      build/macos-harness with PLATFORM=macos-native),
+#      scripts/device-harness.sh unit; not with `all`),
+#      OUT (default: build/device-harness, build/mac-harness with PLATFORM=mac),
 #      AGELLO_TELEMETRY (engine telemetry level in our LiteRT-LM builds, default 2),
 #      AGELLO_SIMULATE_APPLE_GPU (our builds: another Apple GPU's kernel paths, e.g. "Apple A17 Pro"),
 #      XCBEAUTIFY (path to xcbeautify, or "off" for raw output; default:
@@ -75,29 +70,12 @@ case "$PLATFORM" in
     DEVICE_ID="$(system_profiler SPHardwareDataType | sed -n 's/.*Provisioning UDID: *//p')"
     OUT="${OUT:-$ROOT/build/mac-harness}"
     ;;
-  macos-native)
-    case "$SUITE" in
-      ui | screenshots | memory | bench)
-        echo "The $SUITE suite doesn't run with PLATFORM=macos-native (ui and screenshots come with M7)." >&2
-        exit 2
-        ;;
-    esac
-    OUT="${OUT:-$ROOT/build/macos-harness}"
-    ;;
-  *) echo "Unknown PLATFORM: $PLATFORM (iphone, mac or macos-native)" >&2; exit 2 ;;
+  *) echo "Unknown PLATFORM: $PLATFORM (iphone or mac)" >&2; exit 2 ;;
 esac
-# Agello for Mac has its own scheme, app and test bundles; the iPhone app's elsewhere.
-if [ "$PLATFORM" = macos-native ]; then
-  SCHEME=AgelloMac
-  DESTINATION="platform=macOS,arch=arm64"
-  UNIT_TESTS=AgelloMacTests
-  DEVICE_TESTS=AgelloMacDeviceTests
-else
-  SCHEME=Agello
-  DESTINATION="id=$DEVICE_ID"
-  UNIT_TESTS=AgelloTests
-  DEVICE_TESTS=AgelloDeviceTests
-fi
+SCHEME=Agello
+DESTINATION="id=$DEVICE_ID"
+UNIT_TESTS=AgelloTests
+DEVICE_TESTS=AgelloDeviceTests
 
 # One run at a time on this machine, from any checkout or worktree; the
 # Claude Code hooks read the lock (scripts/lib/harness-lock.sh).
@@ -130,17 +108,6 @@ write_lock_info() {
 caffeinate -dims -w $$ &
 
 BUNDLE_ID="com.patricedery.agello"
-if [ "$PLATFORM" = macos-native ]; then
-  BUNDLE_ID="com.patricedery.agello.mac"
-  # The models as APFS clones of ~/Models/agello (no space, no download): ModelCatalog's files.
-  models="$HOME/Library/Containers/$BUNDLE_ID/Data/Library/Application Support/Models"
-  mkdir -p "$models"
-  for file in gemma-4-E4B-it-fp16-rope.litertlm embeddinggemma-2-text-270m.litertlm; do
-    if [ ! -f "$models/$file" ] && [ -f "$HOME/Models/agello/$file" ]; then
-      cp -c "$HOME/Models/agello/$file" "$models/$file"
-    fi
-  done
-fi
 mkdir -p "$OUT"
 write_lock_info "$SUITE"
 # Lets the in-app report survive crash relaunches within this run only.
@@ -227,13 +194,6 @@ filters() {
     return 0
   fi
   for test in $(echo "$ONLY" | tr ',' ' '); do
-    # The same test IDs on both: AgelloTests/… names the Mac's copy in AgelloMacTests.
-    if [ "$PLATFORM" = macos-native ]; then
-      case "$test" in
-        AgelloTests | AgelloTests/*) test="AgelloMacTests${test#AgelloTests}" ;;
-        AgelloDeviceTests | AgelloDeviceTests/*) test="AgelloMacDeviceTests${test#AgelloDeviceTests}" ;;
-      esac
-    fi
     in_suite=no
     for scope in "$@"; do
       case "$test" in "$scope" | "$scope"/*) in_suite=yes ;; esac

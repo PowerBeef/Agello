@@ -1,7 +1,7 @@
 import SwiftData
 import SwiftUI
 
-/// What the app's shell does, whatever its layout (the iPhone's drawer, the Mac's sidebar): carry
+/// What the app's shell does, whatever its layout (the iPhone's drawer): carry
 /// out requests from outside the app, start and pick chats, and hold the settings, project,
 /// rename and delete state its sheets and dialogs show.
 @MainActor

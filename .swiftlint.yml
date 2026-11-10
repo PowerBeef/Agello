@@ -8,7 +8,6 @@ included:
   - AgelloiOS
   - AgelloWidgets
   - AgelloShare
-  - AgelloMac
   - AgelloTests
   - AgelloDeviceTests
   - AgelloUITests

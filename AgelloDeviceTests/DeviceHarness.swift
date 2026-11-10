@@ -2,9 +2,7 @@ import Metal
 import SwiftData
 import XCTest
 
-#if canImport(UIKit)
-  import UIKit
-#endif
+import UIKit
 
 @testable import Agello
 
@@ -70,11 +68,9 @@ final class DeviceHarness {
     appState.options = baselineOptions
     appState.enableTools = true
     appState.webSettings = baselineWeb
-    #if canImport(UIKit)
-      // Long downloads and generations must not be interrupted by auto-lock (the harness keeps a
-      // Mac awake with caffeinate).
-      UIApplication.shared.isIdleTimerDisabled = true
-    #endif
+    // Long downloads and generations must not be interrupted by auto-lock (the harness script
+    // keeps the Mac that drives the run awake with caffeinate).
+    UIApplication.shared.isIdleTimerDisabled = true
     let gpu = MTLCreateSystemDefaultDevice()
     report["device"] = [
       "model": Self.deviceModel,
@@ -114,21 +110,11 @@ final class DeviceHarness {
       .appendingPathComponent("harness-report.json")
   }
 
-  /// UIKit's device name on iPhone (and the iPhone app on a Mac); Agello for Mac has no UIDevice.
-  private static var deviceModel: String {
-    #if canImport(UIKit)
-      UIDevice.current.model
-    #else
-      "Mac"
-    #endif
-  }
+  /// UIKit's device name on iPhone (and for the iPhone app run on a Mac).
+  private static var deviceModel: String { UIDevice.current.model }
 
   private static var systemDescription: String {
-    #if canImport(UIKit)
-      "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
-    #else
-      "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"
-    #endif
+    "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
   }
 
   private static func sysctl(_ name: String) -> String {

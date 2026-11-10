@@ -88,7 +88,6 @@ Agello/
 ├── Views/              chat, drawer, composer, settings, projects, onboarding; Shell/: the shell's model and routing
 └── Support/            the design system (Theme/), image preparation, diagnostics
 AgelloiOS/             the iPhone app only: app entry, the drawer shell, camera and scanner, background work, Info.plist; Platform/, one file per seam
-AgelloMac/             Agello for Mac (docs/MAC.md): app entry, first shell, runtime self-test; Platform/, the Mac side of each seam
 AgelloWidgets/         Home/Lock Screen widgets and Control Center controls
 AgelloShare/           share extension: "Ask Agello"
 Vendor/LiteRT-LM/       LiteRT-LM Swift package (our runtime release, iPhone and Mac)

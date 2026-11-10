@@ -52,14 +52,14 @@ With iPhone Mirroring on this Mac, the phone's screen is a window: you can look 
 
 ### Tuning the model's behavior
 
-Prompt and schema changes are judged against a table, not a single try. A device test runs the cases with their expected outcome, records each raw output (and any error, so one failure doesn't hide the rest) and fails on the wrong ones; `WebScenarioTests/test04_SearchDecisions` does this for Search's decision to search. Run alone on a Mac, a round takes about a minute:
+Prompt and schema changes are judged against a table, not a single try. A device test runs the cases with their expected outcome, records each raw output (and any error, so one failure doesn't hide the rest) and fails on the wrong ones; `WebScenarioTests/test04_SearchDecisions` does this for Search's decision to search. Run alone on the iPhone, a round takes about three minutes:
 
 ```sh
-PLATFORM=macos-native ONLY=AgelloDeviceTests/WebScenarioTests/test04_SearchDecisions scripts/device-harness.sh web
-jq '.scenarios.web04_searchDecisions' build/macos-harness/harness-report.json
+ONLY=AgelloDeviceTests/WebScenarioTests/test04_SearchDecisions scripts/device-harness.sh web
+jq '.scenarios.web04_searchDecisions' build/device-harness/harness-report.json
 ```
 
-Then probe 24, the quality bench, judges the answers themselves, and the change runs on the iPhone and in Agello for Mac with the same suites.
+Then the bench judges the answers themselves through the app's own screens (`scripts/device-harness.sh bench`, [HARNESS.md](HARNESS.md)), and the change runs on the iPhone with the suites it touches.
 
 ## Results
 

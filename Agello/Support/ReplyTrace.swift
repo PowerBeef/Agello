@@ -108,8 +108,20 @@ enum ReplyTrace {
     markOnce("first text on screen")
   }
 
-  /// The reply is over, however it ended: writes the file.
-  static func end(text: String, thought: String, stats: GenerationStats?, error: String?, notice: String?) {
+  /// The reply is over, however it ended (nil when it was removed, stopped before any text):
+  /// writes the file. Reads the turn on the main actor, where it lives.
+  @MainActor
+  static func end(reply: ChatTurn?, error: String?, notice: String?) {
+    guard isEnabled else { return }
+    end(
+      text: reply?.text ?? "", thought: reply?.thought ?? "", stats: reply?.stats,
+      sources: reply?.parts.sources.map { "\($0.index) \($0.title) \($0.url ?? "")" } ?? [],
+      error: error, notice: notice)
+  }
+
+  static func end(
+    text: String, thought: String, stats: GenerationStats?, sources: [String] = [], error: String?, notice: String?
+  ) {
     guard isEnabled, let trace = running.withLock({ trace in
       defer { trace = nil }
       return trace
@@ -131,7 +143,7 @@ enum ReplyTrace {
       },
       "seconds": ended,
       "ended": endReason(stats: stats, error: error).rawValue,
-      "text": text, "thought": thought,
+      "text": text, "thought": thought, "sources": sources,
       "error": error ?? "", "notice": notice ?? "",
     ]
     if let stats, let data = try? JSONEncoder().encode(stats),

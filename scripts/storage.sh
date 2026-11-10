@@ -53,8 +53,8 @@ for d in "$MAIN"/build/*; do
   name="$(basename "$d")"
   size="$(kb "$d")"
   case "$name" in
-    device-harness | mac-harness | macos-harness) row keep "$size" "build/$name: the latest harness results" ;;
-    device-harness-* | mac-harness-* | macos-harness-*)
+    device-harness | mac-harness) row keep "$size" "build/$name: the latest harness results" ;;
+    device-harness-* | mac-harness-* | macos-harness*)
       row scratch "$size" "build/$name: one-off harness results (once their numbers are recorded)" "$d" ;;
     *) other=$((other + ${size:-0})) ;;
   esac
@@ -109,13 +109,12 @@ for f in "$MODELS"/*; do
 done
 row keep "$models" "~/Models/agello: the app's models"
 
-# App containers: the iPhone app on this Mac (a UUID folder) and Agello for Mac.
+# The app's container on this Mac: the iPhone app run here (a UUID folder).
 for meta in "$CONTAINERS"/*/.com.apple.containermanagerd.metadata.plist; do
   grep -q "com\.patricedery\.agello" "$meta" 2>/dev/null || continue
   id="$(/usr/libexec/PlistBuddy -c 'Print :MCMMetadataIdentifier' "$meta" 2>/dev/null)"
   case "$id" in
     com.patricedery.agello) app="the iPhone app on this Mac" ;;
-    com.patricedery.agello.mac) app="Agello for Mac" ;;
     *) continue ;;
   esac
   data="$(dirname "$meta")/Data"
