@@ -7,11 +7,17 @@ import Synchronization
 /// telemetry around it. Written as one JSON file per reply into Documents/traces, which the
 /// harness pulls from the phone.
 ///
-/// Off unless the app is launched with `--trace` (the bench driver does): nothing is kept and
-/// nothing is written otherwise, and nothing is ever sent anywhere. Steps are recorded per stage,
+/// Off unless the app is launched with `--trace` (the bench driver does) or a trace folder is
+/// given (`AGELLO_TRACE_DIR`, development tools on a Mac): nothing is kept and nothing is
+/// written otherwise, and nothing is ever sent anywhere. Steps are recorded per stage,
 /// never per token, so tracing doesn't move the speeds it reports.
 enum ReplyTrace {
-  static let isEnabled = ProcessInfo.processInfo.arguments.contains("--trace")
+  static let isEnabled = ProcessInfo.processInfo.arguments.contains("--trace") || externalDirectory != nil
+  /// A folder given from outside for the trace files, instead of Documents/traces.
+  static let externalDirectory: URL? = {
+    guard let path = ProcessInfo.processInfo.environment["AGELLO_TRACE_DIR"], !path.isEmpty else { return nil }
+    return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+  }()
   static let kept = 40
 
   /// A value an event carries.
@@ -299,9 +305,11 @@ enum ReplyTrace {
   }
 
   static func directory() throws -> URL {
-    let folder = try FileManager.default.url(
-      for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-    ).appendingPathComponent("traces", isDirectory: true)
+    let folder =
+      try externalDirectory
+      ?? FileManager.default.url(
+        for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+      ).appendingPathComponent("traces", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     return folder
   }
@@ -314,7 +322,9 @@ enum ReplyTrace {
     let url = folder.appendingPathComponent("\(stamp)-\(name).json")
     try? data.write(to: url, options: .atomic)
     finished.withLock { $0 = Finished(url: url) }
-    // The newest ``kept`` stay (names start with their time).
+    // The newest ``kept`` stay (names start with their time). A folder given from outside is
+    // its owner's to prune.
+    guard externalDirectory == nil else { return }
     let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
     for old in names.dropLast(kept) { try? FileManager.default.removeItem(at: folder.appendingPathComponent(old)) }
   }

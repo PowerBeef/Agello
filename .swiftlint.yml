@@ -11,6 +11,7 @@ included:
   - AgelloTests
   - AgelloDeviceTests
   - AgelloUITests
+  - AgelloCLI
 excluded:
   - Vendor
   - build

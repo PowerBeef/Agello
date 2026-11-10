@@ -54,6 +54,11 @@ final class ModelStore: NSObject {
     super.init()
     // Retired preference from the two-model era.
     UserDefaults.standard.removeObject(forKey: "activeModelID")
+    // Models given from outside: what's there is ready, and nothing else starts.
+    guard Self.externalModelsDirectory == nil else {
+      refreshStates()
+      return
+    }
     BackgroundDownloads.delegate.store = self
     for spec in ModelCatalog.all { resumeData[spec.id] = Self.savedResumeData(for: spec.id) }
     refreshStates()
@@ -93,7 +98,16 @@ final class ModelStore: NSObject {
 
   // MARK: - Paths
 
+  /// A models folder given from outside (`AGELLO_MODELS_DIR`), for development tools that run
+  /// the engine on a Mac with models already on disk (docs/CLI.md). The store then only reads
+  /// it: no download, no deletion, no cleanup of files it doesn't know. Never set in the app.
+  nonisolated static let externalModelsDirectory: URL? = {
+    guard let path = ProcessInfo.processInfo.environment["AGELLO_MODELS_DIR"], !path.isEmpty else { return nil }
+    return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+  }()
+
   nonisolated static func modelsDirectory() throws -> URL {
+    if let externalModelsDirectory { return externalModelsDirectory }
     let base = try FileManager.default.url(
       for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil,
       create: true
@@ -162,6 +176,10 @@ final class ModelStore: NSObject {
   /// Download `spec`; `overCellular` false waits for Wi-Fi when the network is metered (see
   /// ``needsCellularConsent(for:)``).
   func startDownload(_ spec: ModelSpec, overCellular: Bool = true) {
+    if let folder = Self.externalModelsDirectory {
+      states[spec.id] = .failed(message: "\(spec.fileName) isn't in \(folder.path).")
+      return
+    }
     if let current = downloadingSpec {
       if current.id == spec.id { return }
       // One download at a time: pause (keeping resume data) rather than
@@ -272,6 +290,7 @@ final class ModelStore: NSObject {
   }
 
   func deleteModel(_ spec: ModelSpec) {
+    guard Self.externalModelsDirectory == nil else { return }
     cancelDownload(spec)
     if let url = localURL(for: spec) {
       try? FileManager.default.removeItem(at: url)
@@ -282,7 +301,7 @@ final class ModelStore: NSObject {
   /// Delete `.litertlm` files that are no longer in the catalog (e.g. after
   /// switching model variants), except one being downloaded right now.
   private func removeUnknownModelFiles() {
-    guard let dir = try? Self.modelsDirectory() else { return }
+    guard Self.externalModelsDirectory == nil, let dir = try? Self.modelsDirectory() else { return }
     let known = Set(ModelCatalog.all.map(\.fileName))
     let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
     for file in files
