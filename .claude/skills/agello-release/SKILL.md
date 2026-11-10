@@ -56,8 +56,11 @@ uploading, submitting) needs the user's go-ahead first.
    all three targets must sign. Then follow `asc:asc-build-lifecycle` until the
    build finishes processing.
 8. **TestFlight** (`asc:asc-testflight-orchestration`). Testers need an iPhone
-   15 Pro or later on iOS 27 (`iphone-performance-gaming-tier`) and about
-   4.4 GB free.
+   with 12 GB of memory (iPhone 17 Pro and Pro Max, iPhone Air, or later) on
+   iOS 27 and about 4.4 GB free. The App Store only enforces
+   `iphone-performance-gaming-tier` (iPhone 15 Pro and later): an 8 GB iPhone
+   can install the app and sees `UnsupportedDeviceView`. Say 12 GB in the
+   store text. Requirements can be relaxed in an update, never tightened.
 9. **Screenshots** (`asc:asc-screenshot-resize`, then `asc screenshots upload`).
    Take them from the device harness (`build/device-harness/attachments/`,
    from the `ui` suite), never the simulator. `asc:asc-shots-pipeline` is

@@ -21,7 +21,7 @@
 #   thinking   Long Thinking-mode scenarios (issue #703 prompt, budgets up to 2K).
 #   calibrate  Context-size calibration: memory and speed at 4K-32K KV caches.
 #   probes     LiteRT-LM feature probes (helper conversation, JSON, embeddings).
-#   memory     8 GB iPhone memory simulation (E4B at 5.0/4.0/3.5 GB usable).
+#   memory     Memory pressure simulation (E4B at 6.0/5.0/4.0/3.5 GB usable).
 #   screenshots  A guided UI tour with the real model: one screenshot per
 #              screen (attachments/screenshots/) for the README and App Store.
 #   bench      The autonomous harness (docs/HARNESS.md): each bench case sent

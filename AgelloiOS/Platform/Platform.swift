@@ -7,6 +7,11 @@ enum Platform {
   static let deviceName = "iPhone"
   /// The operating system in the app's text.
   static let osName = "iOS"
+  /// The least physical memory the app runs on (the maintainer's choice, 2026-11-10): the 12 GB
+  /// iPhones, which report 12.3 GB (iPhone 17 Pro and Pro Max, iPhone Air, and later). 8 GB
+  /// iPhones see ``UnsupportedDeviceView``. iOS has no capability key for it: the App Store's
+  /// strictest, `iphone-performance-gaming-tier` (Info.plist), admits iPhone 15 Pro and later.
+  static let minimumMemoryBytes: UInt64 = 11_000_000_000
   /// Where SwiftData keeps the chat store: SwiftData's default with the App Group entitlement,
   /// the group container, where every install's chats already are.
   static let chatStoreGroupContainer = ModelConfiguration.GroupContainer.automatic

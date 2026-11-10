@@ -55,7 +55,7 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 
 | Model | Size | Role | License |
 | --- | --- | --- | --- |
-| **Gemma 4 E4B** | 3.7 GB | Chat: text, vision, audio, reasoning, and tool calling in one file. Context: 32K tokens on devices with 12 GB of memory or more (16K on 8 GB devices), less when the device is short of memory as the model loads | Apache 2.0 |
+| **Gemma 4 E4B** | 3.7 GB | Chat: text, vision, audio, reasoning, and tool calling in one file. Context: 32K tokens on iPhone and on Macs with 16 GB (16K on 8 GB Macs), less when the device is short of memory as the model loads | Apache 2.0 |
 | **EmbeddingGemma 2** (text, 270M) | 165 MB | Turns passages and chats into 256-dimension vectors for retrieval and search by meaning. Downloads automatically after the chat model; keyword search fills in until then | Apache 2.0 |
 
 - **Source.** Downloaded at runtime from Hugging Face, without an account. EmbeddingGemma is the [`litert-community`](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm) build. The chat model is [`litert-community`'s Gemma 4 E4B build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) with one fix: its rotary positions stay exact with 16-bit GPU activations, with the same weights ([`PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope); see [the engineering notes](ENGINEERING.md#long-context-digits-on-the-gpu-litert-lm-3913)). The download is pinned to a commit.
@@ -87,4 +87,4 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 - DuckDuckGo results come from its HTML page (an unofficial interface); if it asks for a bot check, searches fall back to Wikipedia, or use your own SearXNG, Brave, or Tavily.
 - Only long document summaries keep running when you leave the app, and only on iPhones that support background GPU use (the iPhone 17 Pro on iOS 27 doesn't: there the summary stops with a notice, like any other reply).
 - Something shared to Agello is answered in a new chat the next time the app opens, not inside the share sheet.
-- Speed on 8 GB iPhones (A17 Pro) is validated by simulation but not yet measured on hardware.
+- Agello needs an iPhone with 12 GB of memory (iPhone 17 Pro and Pro Max, iPhone Air, or later). On an iPhone with less it opens on a screen that says so.

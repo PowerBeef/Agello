@@ -33,6 +33,10 @@ struct AgelloApp: App {
     WindowGroup {
       if AppBootstrap.hostsTests {
         Color.clear
+      } else if !DeviceProfile.isSupportedDevice {
+        // Below the hardware floor (12 GB): nothing loads, nothing downloads.
+        UnsupportedDeviceView()
+          .preferredColorScheme(.dark)
       } else {
         ContentView()
           .environment(appState)

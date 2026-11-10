@@ -21,6 +21,20 @@ struct DeviceProfile: Sendable, Equatable {
 
   var memoryGB: Double { Double(physicalMemoryBytes) / 1_000_000_000.0 }
 
+  /// Whether a device with `memoryBytes` of physical memory may run the app, given the
+  /// platform's floor (``Platform/minimumMemoryBytes``).
+  static func meetsFloor(memoryBytes: UInt64, minimum: UInt64) -> Bool {
+    memoryBytes >= minimum
+  }
+
+  /// Whether this device may run the app. `AGELLO_SIMULATE_MEMORY_GB` (UI tests) stands in for
+  /// the device's memory in this check only.
+  static var isSupportedDevice: Bool {
+    let simulated = ProcessInfo.processInfo.environment["AGELLO_SIMULATE_MEMORY_GB"].flatMap(Double.init)
+    let memory = simulated.map { UInt64($0 * 1_000_000_000) } ?? ProcessInfo.processInfo.physicalMemory
+    return meetsFloor(memoryBytes: memory, minimum: Platform.minimumMemoryBytes)
+  }
+
   // MARK: - Policy (pure)
 
   /// Free memory below which a running reply is stopped to avoid being
@@ -120,8 +134,8 @@ struct DeviceProfile: Sendable, Equatable {
     return standard
   }
 
-  /// The KV-cache size (`maxNumTokens`). Supported devices (iPhone 15 Pro and later, Macs with
-  /// 8 GB) all have 8 GB+; smaller values only apply to the simulator.
+  /// The KV-cache size (`maxNumTokens`). iPhones have 12 GB (the floor since 2026-11-10) and
+  /// Macs 8 GB or more; smaller values only apply to the simulator.
   static func defaultMaxTokens(model: ModelID, memoryBytes: UInt64) -> Int {
     if memoryBytes >= memoryForLargeContextBytes { return largeContextTokens }
     return memoryBytes >= 7_000_000_000 ? standardContextTokens : 4_096

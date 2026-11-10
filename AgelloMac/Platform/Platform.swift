@@ -7,6 +7,9 @@ enum Platform {
   static let deviceName = "Mac"
   /// The operating system in the app's text.
   static let osName = "macOS"
+  /// The least physical memory the app runs on: Macs with 8 GB (docs/MAC.md). The iPhone's
+  /// floor is 12 GB.
+  static let minimumMemoryBytes: UInt64 = 7_000_000_000
   /// Where SwiftData keeps the chat store: the app's own container. On a Mac the App Group's
   /// container can also be the iPhone app's (Designed for iPad), and extensions hand items over
   /// through ShareInbox, never the store (docs/MAC.md, open decisions 1 and 3).

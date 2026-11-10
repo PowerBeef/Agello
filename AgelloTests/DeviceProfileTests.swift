@@ -10,6 +10,15 @@ final class DeviceProfileTests: XCTestCase {
     XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 6_000_000_000), 4096)
   }
 
+  /// The hardware floor (2026-11-10): 12 GB iPhones, which report 12.3 GB; 8 GB Macs stay.
+  func testHardwareFloor() {
+    let iPhoneFloor: UInt64 = 11_000_000_000
+    XCTAssertTrue(DeviceProfile.meetsFloor(memoryBytes: 12_291_719_168, minimum: iPhoneFloor))
+    XCTAssertFalse(DeviceProfile.meetsFloor(memoryBytes: 8_000_000_000, minimum: iPhoneFloor))
+    XCTAssertTrue(DeviceProfile.meetsFloor(memoryBytes: 8_589_934_592, minimum: 7_000_000_000))
+    XCTAssertTrue(DeviceProfile.isSupportedDevice)
+  }
+
   /// Think's budget is 4,096 tokens by default on every device (2026-11-10); a budget saved at
   /// the old 1,024 moves once.
   func testThinkBudgetDefault() {

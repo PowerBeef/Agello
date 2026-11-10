@@ -72,7 +72,7 @@ Agello's color follows what you're doing. Each mode has its own accent, and it l
 → The [user guide](docs/USER_GUIDE.md) covers every screen and setting.
 
 > [!NOTE]
-> Agello isn't on the App Store yet. You can [build it from source](#get-started) for an iPhone 15 Pro or later.
+> Agello isn't on the App Store yet. You can [build it from source](#get-started) for an iPhone with 12 GB of memory (iPhone 17 Pro or later).
 
 ## Performance
 
@@ -216,7 +216,7 @@ Voice-activity turn detection, and one audio engine for echo-cancelled capture a
 
 ### Get started
 
-**You'll need** an iPhone 15 Pro or later (8 GB of memory) on iOS 27 with about 4.4 GB free, and a Mac with Xcode 27. The Apple Developer account needs the **Extended Virtual Addressing**, **Increased Memory Limit**, **Background GPU Access** and **App Groups** capabilities. Agello runs on a physical iPhone only: its LiteRT-LM path is untested in the simulator, and the failures that matter only show on hardware.
+**You'll need** an iPhone with 12 GB of memory (iPhone 17 Pro and Pro Max, iPhone Air, or later) on iOS 27 with about 4.4 GB free, and a Mac with Xcode 27. The Apple Developer account needs the **Extended Virtual Addressing**, **Increased Memory Limit**, **Background GPU Access** and **App Groups** capabilities. Agello runs on a physical iPhone only: its LiteRT-LM path is untested in the simulator, and the failures that matter only show on hardware.
 
 1. Open `Agello.xcodeproj`. Swift Package Manager resolves `swift-markdown` and `SwiftMath`; LiteRT-LM is vendored.
 2. The project is set up for team `FK2D8X36G2` and bundle IDs `com.patricedery.agello` (plus `.widgets` and `.share`), sharing the App Group `group.com.patricedery.agello`. On another account, change the team and bundle IDs under **Signing & Capabilities**.
