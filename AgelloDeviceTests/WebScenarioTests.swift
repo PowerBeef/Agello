@@ -155,6 +155,17 @@ final class WebScenarioTests: DeviceTestCase {
       (.user, "Who won the 2026 Tour de France?"),
       (.model, "Tadej Pogačar won the 2026 Tour de France, his fifth title [1][2]. Remco Evenepoel was second and Isaac del Toro third [1]."),
     ]
+    // The reply the iPhone gave at 32K (2026-11-10), with the winner's time and the podium: from
+    // it the follow-up was planned as "Remco Evenepoel 2026 Tour de France time", and the reply
+    // gave a stage's 28 seconds.
+    let raceWithTimes: [(role: ChatRole, text: String)] = [
+      (.user, "Who won the 2026 Tour de France?"),
+      (
+        .model,
+        "Tadej Pogačar won the 2026 Tour de France [1][2][3][4][5].\n\nHe finished with a total time of 73 hours, 56 minutes, and 26 seconds [1][2][3]. Pogačar's victory marked his fifth Tour de France title, equalling the all-time record [2][3][4].\n\nThe final podium finishers were:\n*   **1st:** Tadej Pogačar (UAE Team Emirates XRG) [1][2][3][4][5]\n*   **2nd:** Remco Evenepoel (Red Bull–Bora–Hansgrohe) [1][2][3][4][5]\n*   **3rd:** Isaac del Toro (UAE Team Emirates XRG) [1][2][3][4][5]"
+      ),
+    ]
+    let gapWords = ["margin", "gap", "difference", "standings", "classification", "ahead", "behind"]
     let cases: [(message: String, history: [(role: ChatRole, text: String)], search: Bool)] = [
       ("Hello there", [], false),
       ("Thanks, that's perfect!", race, false),
@@ -166,6 +177,7 @@ final class WebScenarioTests: DeviceTestCase {
       ("Plan a 3-day winter trip to Montreal with mostly indoor activities and a budget table.", [], true),
       ("How do I center a div with CSS grid?", [], true),
       ("By how many minutes?", race, true),
+      ("By how many minutes?", raceWithTimes, true),
       ("Who came third?", race, false),
     ]
     var rows: [[String: Any]] = []
@@ -188,6 +200,12 @@ final class WebScenarioTests: DeviceTestCase {
           !plan.queries.contains(where: { $0.localizedCaseInsensitiveContains("tour") })
         {
           wrong.append("\(item.message) (queries without the subject)")
+        }
+        // The margin is asked for itself, not worked out from one rider's time.
+        if item.message.hasPrefix("By how many"),
+          !plan.queries.contains(where: { query in gapWords.contains { query.localizedCaseInsensitiveContains($0) } })
+        {
+          wrong.append("\(item.message) (no query for the margin: \(plan.queries))")
         }
       } catch {
         // A failed plan searches the message as typed.

@@ -104,7 +104,7 @@ enum WebContext {
     question: String, history: [(role: ChatRole, text: String)], today: Date = .now
   ) -> String {
     let recent = history.suffix(4).map { turn in
-      "\(turn.role == .user ? "User" : "Assistant"): \(ContextBudget.prefix(turn.text, maxBytes: 400))"
+      "\(turn.role == .user ? "User" : "Assistant"): \(historyLine(turn.text))"
     }.joined(separator: "\n")
     let conversation = recent.isEmpty ? "" : "Conversation so far:\n\(recent)\n\n"
     return """
@@ -128,9 +128,21 @@ enum WebContext {
       specifications or facts needed to do it well; one query may look for a complete, \
       well-regarded example of the whole thing. Make each query self-contained: resolve names and \
       pronouns from the conversation, and give a follow-up the subject it's about (after a \
-      question about the newest iPhone, "How much is it?" searches for that iPhone's price). Use \
-      the language of the message.
+      question about the newest iPhone, "How much is it?" searches for that iPhone's price). A short \
+      follow-up asks more about the user's previous question (after "Who won the election?", "By \
+      how much?" searches for the winner's margin of victory). Use the language of the message.
       """
+  }
+
+  /// A past turn as the planner reads it: without citation markers and list markup, on one line,
+  /// cut to 400 bytes. With them a cited reply was cut after its second name, and the follow-up
+  /// was planned around that name (the runner-up of a race, 2026-11-10).
+  static func historyLine(_ text: String) -> String {
+    let plain = text.replacing(/\[\d+\]/, with: "").replacing(/\*+/, with: "")
+    let collapsed = plain.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+      .joined(separator: " ")
+      .replacing(" .", with: ".").replacing(" ,", with: ",")
+    return ContextBudget.prefix(collapsed, maxBytes: 400)
   }
 
   static func parsePlan(_ json: Data) -> Plan {

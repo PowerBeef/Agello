@@ -193,6 +193,19 @@ final class WebTests: XCTestCase {
     XCTAssertFalse(WebContext.parsePlan(Data(#"{"queries":["tour de france 2026"]}"#.utf8)).isRequest)
   }
 
+  /// A cited reply reaches the planner without its markers, so 400 bytes hold what it said: cut
+  /// after "2nd: Remco Evenepoel (Red", it had the follow-up searched for the runner-up's time.
+  func testPlannerHistoryDropsCitationMarkers() {
+    let reply =
+      "Tadej Pogačar won [1][2][3].\n\nThe podium:\n*   **1st:** Tadej Pogačar [1][2]\n*   **2nd:** Remco Evenepoel [1]"
+    XCTAssertEqual(
+      WebContext.historyLine(reply), "Tadej Pogačar won. The podium: 1st: Tadej Pogačar 2nd: Remco Evenepoel")
+    XCTAssertEqual(WebContext.historyLine(String(repeating: "é", count: 300)).utf8.count, 400)
+    let prompt = WebContext.queryPrompt(question: "By how many minutes?", history: [(.model, reply)])
+    XCTAssertTrue(prompt.contains("Assistant: Tadej Pogačar won. The podium:"))
+    XCTAssertFalse(prompt.contains("[1]"))
+  }
+
   /// Search when needed: "Hello there" came back as a reply about pages on professional greetings
   /// (2026-11-02). The planner names the message's kind; questions and requests search, and an
   /// answer without a kind still searches.

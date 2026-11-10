@@ -213,6 +213,13 @@ Lessons from the first round (Search when needed, 2026-11-02):
 - Put follow-ups with their conversation in the table: they fail
   differently from first messages.
 - JSON enum values must be one word on our runtime (`agello-inference-rules`).
+- Put the real input in the table, not a tidy stand-in: a follow-up passed with a two-sentence
+  made-up reply as history and failed with the reply the app had actually given (2026-11-10).
+  Look at what the helper reads after truncation: a cited reply cut to 400 bytes ended on the
+  runner-up's name, and the plan followed that name.
+- The table can be tuned on the iPhone when the Mac is busy: about three minutes a round
+  (`ONLY=AgelloDeviceTests/<Class>/<test> scripts/device-harness.sh <suite>`), with the report in
+  `build/device-harness/harness-report.json`.
 
 ## The test host
 
