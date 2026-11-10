@@ -38,7 +38,8 @@ final class BenchUITests: XCTestCase {
     var row: [String: Any] = ["id": bench.id, "think": bench.think, "search": bench.search]
     app = XCUIApplication()
     // BENCH_TRACE=off measures what tracing costs: the same case, the screen's timings only.
-    if ProcessInfo.processInfo.environment["BENCH_TRACE"] != "off" { app.launchArguments = ["--trace"] }
+    app.launchArguments = bench.launchArguments
+    if ProcessInfo.processInfo.environment["BENCH_TRACE"] != "off" { app.launchArguments.append("--trace") }
     app.launchEnvironment["AGELLO_BENCH_DRAFT"] = bench.prompt
     app.launch()
 
@@ -57,42 +58,19 @@ final class BenchUITests: XCTestCase {
     row["thinkShown"] = element("composer.think").value as? String ?? ""
     if bench.think, let budget = bench.thinkingBudget { row["thinkBudgetSet"] = setThinkBudget(budget) }
 
-    let send = element("chat.send")
-    guard send.waitForExistence(timeout: 10) else {
-      XCTFail("\(bench.id): the draft didn't arrive, so there is no Send button")
-      return row
+    // One turn per message: the prompt (already the composer's draft), then each follow-up typed.
+    var turns: [[String: Any]] = []
+    for (index, message) in ([bench.prompt] + bench.followUps).enumerated() {
+      if index > 0 {
+        let input = element("chat.input")
+        input.tap()
+        input.typeText(message)
+      }
+      let turn = sendAndWait(bench, turn: index + 1)
+      turns.append(turn)
+      if turn["finished"] as? Bool != true { break }
     }
-    attachScreenshot("bench-\(bench.id)-before-send")
-    guard send.isHittable else {
-      XCTFail("\(bench.id): Send isn't on screen")
-      return row
-    }
-    let sent = Date()
-    send.tap()
-    row["sentAt"] = ISO8601DateFormatter().string(from: sent)
-
-    // Started: Stop shows. First text: the reply's bubble exists with a label.
-    let stop = element("chat.stop")
-    if stop.waitForExistence(timeout: 30) { row["secondsToStop"] = Date().timeIntervalSince(sent) }
-    let bubble = app.descendants(matching: .any).matching(identifier: "message.model").firstMatch
-    if wait(upTo: bench.timeout, every: 2, until: { bubble.exists }) {
-      row["secondsToFirstText"] = Date().timeIntervalSince(sent)
-    }
-    let finished = wait(upTo: bench.timeout, every: 5, until: { !stop.exists })
-    row["finished"] = finished
-    row["secondsToDone"] = Date().timeIntervalSince(sent)
-    XCTAssertTrue(finished, "\(bench.id): still writing after \(Int(bench.timeout)) s")
-
-    // What the screen holds: the reply as VoiceOver reads it, the banner if any, and proof
-    // that both ends of the chat can be reached.
-    let spoken = bubble.exists ? bubble.label : ""
-    row["screenCharacters"] = spoken.count
-    row["screenTail"] = String(spoken.suffix(200))
-    row["codeBlocksOnScreen"] = app.descendants(matching: .any).matching(identifier: "message.code").count
-    row["notice"] = element("chat.banner.notice").exists ? element("chat.banner.notice").label : ""
-    row["error"] = element("chat.banner.error").exists ? element("chat.banner.error").label : ""
-    attach(Data(spoken.utf8), named: "bench-\(bench.id)-screen.txt")
-    attachScreenshot("bench-\(bench.id)-end")
+    row["turns"] = turns
     let chat = app.scrollViews.firstMatch
     if chat.exists {
       for _ in 0..<12 { chat.swipeDown(velocity: .fast) }
@@ -101,6 +79,44 @@ final class BenchUITests: XCTestCase {
     }
     app.terminate()
     return row
+  }
+
+  /// Taps Send, waits for the reply, and reads the screen: one turn's row.
+  private func sendAndWait(_ bench: BenchCase, turn number: Int) -> [String: Any] {
+    var turn: [String: Any] = ["turn": number]
+    let name = "bench-\(bench.id)-\(number)"
+    let send = element("chat.send")
+    guard send.waitForExistence(timeout: 10), send.isHittable else {
+      attachScreenshot("\(name)-no-send")
+      XCTFail("\(bench.id) turn \(number): no Send button (the draft didn't arrive, or it's off screen)")
+      return turn
+    }
+    let bubbles = app.descendants(matching: .any).matching(identifier: "message.model")
+    let before = bubbles.count
+    let sent = Date()
+    send.tap()
+    turn["sentAt"] = ISO8601DateFormatter().string(from: sent)
+
+    // Started: Stop shows. First text: a new reply bubble. Search and file reading come first.
+    let stop = element("chat.stop")
+    if wait(upTo: 120, every: 1, until: { stop.exists }) { turn["secondsToStop"] = Date().timeIntervalSince(sent) }
+    if wait(upTo: bench.timeout, every: 2, until: { bubbles.count > before }) {
+      turn["secondsToFirstText"] = Date().timeIntervalSince(sent)
+    }
+    let finished = wait(upTo: bench.timeout, every: 5, until: { !stop.exists })
+    turn["finished"] = finished
+    turn["secondsToDone"] = Date().timeIntervalSince(sent)
+    XCTAssertTrue(finished, "\(bench.id) turn \(number): still writing after \(Int(bench.timeout)) s")
+
+    // What the screen holds: the reply as VoiceOver reads it, and any banner.
+    let bubble = bubbles.element(boundBy: max(0, bubbles.count - 1))
+    let spoken = bubble.exists ? bubble.label : ""
+    turn["screenCharacters"] = spoken.count
+    turn["notice"] = element("chat.banner.notice").exists ? element("chat.banner.notice").label : ""
+    turn["error"] = element("chat.banner.error").exists ? element("chat.banner.error").label : ""
+    attach(Data(spoken.utf8), named: "\(name)-screen.txt")
+    attachScreenshot("\(name)-end")
+    return turn
   }
 
   /// Waits for `condition`, looking every `interval` seconds. Each look has the app snapshot its

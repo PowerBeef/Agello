@@ -12,10 +12,50 @@ struct BenchCase {
   /// The longest the reply may take before the case counts as stuck.
   var timeout: TimeInterval = 300
 
-  /// H1 holds one case; the quality bench's others move here in H2
-  /// (`AgelloDeviceTests/QualityBenchProbe.swift`).
+  /// Sent after the first reply, one at a time, typed into the composer.
+  var followUps: [String] = []
+  /// Extra launch arguments, for what the driver can't do by hand (a file from the system picker).
+  var launchArguments: [String] = []
+
+  /// The quality bench (eight requests as users send them, once probe 24 of the device tests),
+  /// the three-part coding prompt, and two flows: a Search follow-up and a file with a follow-up.
+  /// `scripts/bench-report.py` holds each case's checks, by `id`.
   static let all = [
-    BenchCase(id: "ttl-cache", prompt: Prompts.threePartCoding)
+    BenchCase(
+      id: "calculator-search",
+      prompt: "Create a beautiful calculator app for mobile in a single self contained html file", search: true),
+    BenchCase(
+      id: "todo",
+      prompt: "Write a to-do list web app in one HTML file: add, edit, complete and delete tasks, saved in localStorage, comfortable on a phone."),
+    BenchCase(
+      id: "swiftui-search",
+      prompt: "Write a SwiftUI view for iOS that lists notes with swipe to delete, pull to refresh, and a search field. Use the current APIs.",
+      search: true),
+    BenchCase(
+      id: "python",
+      prompt: "Write a Python script that downloads a CSV file from a URL given on the command line, prints the average of a column named in a second argument, and handles network and parsing errors cleanly."),
+    BenchCase(id: "facts-search", prompt: "What changed in Swift 6.2?", search: true),
+    BenchCase(
+      id: "explain",
+      prompt: "Explain step by step how HTTPS keeps a connection private, for someone who knows no cryptography."),
+    BenchCase(
+      id: "email",
+      prompt: "Write a polite email to my landlord asking to fix a leaking kitchen faucet this week, with a subject line.",
+      think: false),
+    BenchCase(
+      id: "trip-search",
+      prompt: "Plan a 3-day winter trip to Montreal with mostly indoor activities and a budget table.", search: true),
+    BenchCase(id: "ttl-cache", prompt: Prompts.threePartCoding),
+    // The follow-up that was searched as the runner-up's time (2026-11-10): the margin is 6 min 26 s.
+    BenchCase(
+      id: "followup-search", prompt: "Who won the 2026 Tour de France?", think: false, search: true,
+      followUps: ["By how many minutes?"]),
+    // A 60-page report from the app's sample (`--uitest-sample-report`): section 23 is about water
+    // quality, inspected by district 4.
+    BenchCase(
+      id: "file-report", prompt: "Summarize this report in a few bullet points.", think: false,
+      followUps: ["What is section 23 about, and which district inspected it?"],
+      launchArguments: ["--uitest-sample-report"]),
   ]
 
   enum Prompts {

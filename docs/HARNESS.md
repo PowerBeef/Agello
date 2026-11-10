@@ -1,6 +1,6 @@
 # The autonomous harness
 
-A plan, approved by the maintainer on 2026-11-10. H1 is done (below); nothing later is built.
+A plan, approved by the maintainer on 2026-11-10. H1 and H2 are done (below); nothing later is built.
 
 The goal: one command runs Agello on the iPhone as a user would, through its real screens, and
 comes back with one report per reply that joins what was on screen, what the app did, and what the
@@ -30,7 +30,7 @@ each saw one layer.
 | Launch arguments | `AppBootstrap`, `AppReset` | Clean state, sample files, the fake microphone |
 | Engine telemetry, levels 0–4 | our LiteRT-LM build, `EngineTelemetry` | The engine layer of each report |
 | A `Reply` signpost interval and a first-token event | `ChatEngine` | Extended to the whole path |
-| The quality bench and its checks | `QualityBenchProbe`, `scripts/quality-codecheck.sh` | Its nine cases move to the UI driver |
+| The quality bench and its checks | once `QualityBenchProbe` and `scripts/quality-codecheck.sh` | Moved to the UI driver and `scripts/bench-report.py` in H2 |
 | `scripts/device-harness.sh` | lock, `caffeinate`, report pull, storage summary | Gains a `bench` suite and a preflight |
 
 The unit suite and the engine-level device suites (`inference`, `files`, `web`, `thinking`,
@@ -149,6 +149,27 @@ reply as Markdown.
 - **Open for H3:** the bench decodes this reply at 40 tok/s where a hand run the day before gave
   49. Tracing and the driver's looking are ruled out; the phone's heat after a day of runs and
   the accessibility session XCUITest keeps open are not.
+
+### H2, done on 2026-11-10
+
+The bench holds eleven cases (`AgelloUITests/BenchCases.swift`): the quality bench's eight
+requests, the three-part coding prompt, a Search follow-up and a file with a follow-up.
+`QualityBenchProbe` and `scripts/quality-codecheck.sh` are gone.
+
+- **The driver** types follow-ups into the composer and attaches the app's sample report at
+  launch; each message is a turn with its own trace, matched by its send time.
+- **The trace** carries each reply's sources; the search plan is the helper step's output.
+- **The checkers run on the Mac** (`scripts/bench-report.py`): generated web apps loaded in a
+  web view and pressed (`scripts/bench/webapp-check.swift`), Swift type-checked against the iOS
+  SDK, Python compiled, expected facts looked for, citations counted. The report opens with one
+  line per turn.
+- **The first full run** (iPhone 17 Pro, 13 turns, about 20 minutes, nobody watching): every
+  reply ended by itself and every screen matched its trace. Failed checks, all the model's: the
+  calculator doesn't show 56 for 7 × 8, the SwiftUI view has one compile error, and the
+  three-part prompt's code misses requirements as before.
+- **Heat is part of H1's open question.** The phone's thermal state went from nominal to fair at
+  the third case and decode fell from about 42 to 35 tok/s over the run; two short cases alone
+  had decoded at 46 to 56.
 
 ## Decisions for the maintainer
 

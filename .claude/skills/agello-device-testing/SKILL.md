@@ -91,12 +91,15 @@ Other extra arguments go to `xcodebuild` as is.
 
 ## The bench (the autonomous harness)
 
-`scripts/device-harness.sh bench` sends each bench case (`AgelloUITests/BenchCases.swift`) through
+`scripts/device-harness.sh bench` sends each bench case (`AgelloUITests/BenchCases.swift`: the quality
+bench's eight requests, a three-part coding prompt, a Search follow-up, a file with a follow-up) through
 the app's own screens in a **Release** build, with the app tracing the reply (`--trace`,
 `Agello/Support/ReplyTrace.swift`). It then pulls the traces and writes
 `build/device-harness/bench/report.md` (and `report.json`, and each reply as Markdown):
 settings in effect, each step with memory, why the reply ended, what the screen showed, the
-engine's telemetry, and a verdict (the reply's code run against tests in `scripts/bench/<id>/`).
+engine's telemetry, and each case's checks from `scripts/bench-report.py` (web apps loaded and
+pressed, Swift type-checked, Python compiled or run against `scripts/bench/<id>/`, expected facts).
+A full run is 13 turns and about 20 minutes; the phone warms up, so compare speeds case by case.
 
 - `BENCH_ONLY=id,id` runs some cases; `BENCH_TRACE=off` runs without tracing (screen timings only).
 - It leaves the Release build on the phone, and keeps the user's chats: each case starts a new
