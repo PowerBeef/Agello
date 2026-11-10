@@ -1,5 +1,6 @@
-# Shared by scripts/device-harness.sh and the Claude Code hooks in
-# .claude/hooks/ (sourced, not run). One harness run at a time on this
+# Shared by scripts/device-harness.sh, the scripts that relaunch the app
+# (device-run.sh, bench-direct.sh), scripts/storage.sh and the Claude Code
+# hooks in .claude/hooks/ (sourced, not run). One harness run at a time on this
 # machine: runs share the iPhone or this Mac, and the hooks read the lock to
 # guard the checkout being built. The lock is a folder in the main checkout's
 # build/, so worktrees share it; its `info` file holds key=value lines:
@@ -33,4 +34,14 @@ harness_lock_building() {
   [ "$(harness_lock_value "$1" last)" = yes ] || return 0
   log="$(harness_lock_value "$1" log)"
   ! grep -q "^Test Suite '.*' started" "$log" 2>/dev/null
+}
+
+# For scripts that relaunch the app on the iPhone: exits with 3 while a harness
+# run on the iPhone holds the lock for the checkout at $1, since a relaunch
+# would end the test host and the suite with it.
+harness_refuse_while_running() {
+  running="$(harness_lock_info "$(harness_lock_dir "$1")")" || return 0
+  [ "$(harness_lock_value "$running" platform)" = mac ] && return 0
+  echo "A harness run holds the iPhone ($(harness_lock_value "$running" suite), pid $(harness_lock_value "$running" pid)): relaunching the app would end it. Wait for it to finish." >&2
+  exit 3
 }

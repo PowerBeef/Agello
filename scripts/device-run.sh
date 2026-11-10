@@ -6,7 +6,8 @@
 #       (Re)launch the installed app and save its output (os_log, including the
 #       engine/generation/lifecycle categories, and LiteRT-LM's native logs)
 #       for N seconds (default 30). App arguments go to the app, e.g.
-#       `logs 20 --mock-engine`. The app keeps running afterwards.
+#       `logs 20 --mock-engine`. The app keeps running afterwards. Refuses
+#       (exit 3) while a harness run holds the iPhone: a relaunch would end it.
 #   scripts/device-run.sh screenshot [name]
 #       Save the iPhone's screen as a PNG.
 #   scripts/device-run.sh crashes [pull]
@@ -37,6 +38,9 @@ case "$COMMAND" in
       '' | *[!0-9]*) ;;
       *) seconds="$1"; shift ;;
     esac
+    # shellcheck source=scripts/lib/harness-lock.sh
+    . "$ROOT/scripts/lib/harness-lock.sh"
+    harness_refuse_while_running "$ROOT"
     log="$OUT/logs-$STAMP.log"
     echo "Logging Agello for ${seconds}s (keep the iPhone unlocked)..."
     # OS_ACTIVITY_DT_MODE mirrors os_log to the console, as when Xcode runs the app.

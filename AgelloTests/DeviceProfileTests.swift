@@ -4,7 +4,8 @@ import XCTest
 
 final class DeviceProfileTests: XCTestCase {
   func testDefaultMaxTokens() {
-    // No longer a setting: 32K with 12 GB (iPhone 17 Pro, 16 GB Macs), 16K on 8 GB devices.
+    // No longer a setting: 32K with 12 GB (the iPhone floor). The smaller values only serve the
+    // iPhone app run on a Mac with less memory.
     XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 12_291_719_168), 32_768)
     XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 8_000_000_000), 16_384)
     XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 6_000_000_000), 4096)
@@ -52,7 +53,7 @@ final class DeviceProfileTests: XCTestCase {
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 16_384, roomBytes: 3_750_000_000), 16_384)
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 16_384, roomBytes: 3_500_000_000), 16_384)
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 16_384, roomBytes: 0), 8_192)
-    // No limit reported (simulator): the standard window. A Mac's working set leaves plenty.
+    // No limit reported: the standard window.
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 16_384, roomBytes: nil), 16_384)
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 16_384, roomBytes: 5_300_000_000), 16_384)
     // A smaller standard window never grows.
@@ -90,7 +91,7 @@ final class DeviceProfileTests: XCTestCase {
     XCTAssertFalse(keeps(true, 8_192, 634_881_023))
     XCTAssertTrue(keeps(true, 32_768, 1_400_000_000))
     XCTAssertFalse(keeps(true, 32_768, 1_300_000_000))
-    // Not reported (the Mac): keep.
+    // Not reported: keep.
     XCTAssertTrue(keeps(true, 32_768, 0))
     // Google's runtime wipes it whatever the memory.
     XCTAssertFalse(keeps(false, 8_192, 0))

@@ -7,12 +7,16 @@
 # Usage: scripts/bench-direct.sh CASE_ID      (an id of AgelloUITests/BenchCases.swift)
 # The app keeps the settings it has (Think, its budget): the bench sets them, so run it first.
 # The traces land in build/device-harness/bench-direct/.
+# It relaunches the app, so it refuses (exit 3) while a harness run holds the iPhone.
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CASE="${1:?Usage: scripts/bench-direct.sh CASE_ID}"
 # shellcheck source=scripts/lib/device.sh
 . "$ROOT/scripts/lib/device.sh"
 resolve_device_id "$ROOT"
+# shellcheck source=scripts/lib/harness-lock.sh
+. "$ROOT/scripts/lib/harness-lock.sh"
+harness_refuse_while_running "$ROOT"
 BUNDLE_ID="com.patricedery.agello"
 OUT="$ROOT/build/device-harness/bench-direct"
 rm -rf "$OUT"

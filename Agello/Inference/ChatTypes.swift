@@ -241,7 +241,7 @@ enum ChatError: Error, Sendable, Equatable {
     case .replyTruncated:
       return "The reply was cut short because the model's memory filled up. Start a new chat for long answers."
     case .messageTooLong:
-      return "This message is too long for the model's memory. Shorten it or raise the KV cache in Settings."
+      return "This message is too long for the model's memory. Shorten it, or attach the text as a file."
     case .underlying(let message): return message
     }
   }
