@@ -1,6 +1,6 @@
 # The Mac command line
 
-A plan, approved by the maintainer on 2026-11-10. C1 is built (below); C2 to C8 aren't.
+A plan, approved by the maintainer on 2026-11-10. C1 to C3 are built (below); C4 to C8 aren't.
 
 `agello` runs Agello's engine on a Mac from a command line: the app's own code, on the runtime
 build of your choice, with the runtime's telemetry and the app's trace of every reply. It's a
@@ -63,10 +63,27 @@ do nothing unless set, and the app never sets them (`DevelopmentHooksTests`).
 agello env                         # this Mac, the runtime build, the models and folders in use
 agello ask "prompt" [options]      # one message through the app's engine; the reply on stdout
 agello ask --mock "prompt"         # the scripted engine: no model, no GPU
+agello bench --only todo,email --repeat 3 --warmup --label release --out build/cli/runs/release.jsonl
+scripts/cli-report.py build/cli/runs/release.jsonl      # the answer checks, after the measuring
 ```
 
-`agello --help` lists the options: Think and its budget, Search, the tools, the window, the
-backend, speculative decoding, the sampler preset, the helpers, JSON output.
+`agello --help` lists the options: Think and its budget, Search, files, an image, a voice
+message, follow-ups, the tools, the window, the backend, speculative decoding, the sampler preset,
+the helpers, JSON output. Ctrl-C stops a reply as the Stop button does. The runtime's log lines
+go to `runtime.log` beside the traces unless `--verbose` is given.
+
+`agello bench` runs the iPhone bench's cases (`AgelloUITests/BenchCases.swift`, compiled into
+the tool) with one engine load, a new chat per case, and Think set per case as the phone's driver
+sets it. Each reply is one line of JSON in `--out`, with `agello-bench`'s keys plus the app's:
+the settings in effect, why the reply ended, the reasoning, what reached the engine
+(`engineSend`), the engine's telemetry for that turn alone, the Mac's state before and after,
+and the path of the app's trace (`FILE.traces/`). The fork's scripts read it as they read
+`agello-bench`'s:
+
+```sh
+python3 ../LiteRT-LM/tools/agello-bench/compare.py build/cli/runs/*.jsonl --base release
+python3 ../LiteRT-LM/tools/agello-bench/telemetry.py build/cli/runs/release.jsonl --case explain
+```
 
 ## Milestones
 
@@ -90,8 +107,32 @@ backend, speculative decoding, the sampler preset, the helpers, JSON output.
 - `agello ask --mock` answers through the whole pipeline (settings, the chat store in memory,
   `AppState.send`, the trace) with the window at 32,000.
 - The iPhone app compiles with the hooks; `swiftlint` has no error.
-- Not done yet: a reply from the real model on this Mac, and the iPhone `unit` run with the
-  hooks' test.
+- The real model answers: a 10 s load with a cold cache, 1.2 s warm, the 32K window, on the GPU.
+- Not done yet: the iPhone `unit` run with the hooks' test.
+
+### C2 and C3, built on 2026-11-10
+
+- **Parity with the phone.** Six bench cases without Search (seven turns) reach the engine
+  exactly as on the iPhone 17 Pro: the same window (32,000), tokens after prefill (276 for
+  `todo`, 1,026 for the three-part prompt, 4,879 and 9,698 for the file and its follow-up),
+  output caps, reasoning budgets and tool calls, compared with the phone's traces of the same
+  day. The prompt, the budgets and the tools are the app's.
+- **Replies are not the phone's token for token.** `explain` is 1,503 tokens here and 1,666 on
+  the phone, `email` 159 and 197; the file case's two replies have the phone's exact lengths
+  (172 and 49). Different GPUs, different greedy paths: speed and accuracy work happens here,
+  and the phone confirms.
+- **Speed on this Mac** (M6, release build, 32K window, Think on): `explain` decodes at
+  89.8 tok/s, and at 89.7 on the second pass; the first token comes after 0.28 s, and after 2.0 s
+  with a 4,879-token file to read (2,514 tok/s prefill).
+- **The fork's scripts read the records unchanged:** `compare.py` gives medians and intervals
+  per case, `telemetry.py` the per-token breakdown (on `explain`: 11.1 ms a step, 86 % of it the
+  GPU's MTP verify run, the GPU busy 94 % of the decode time).
+- **The answer checks are shared.** They moved from `scripts/bench-report.py` to
+  `scripts/bench/checks.py`; the phone's report gives the same verdicts as before on its last
+  run, and `scripts/cli-report.py` applies them to the command line's records, with pass rates
+  over repeated runs.
+- The sample report of the file case moved from the chat screen to
+  `Agello/Knowledge/SampleDocuments.swift`, which both benches use.
 
 ## What it can't tell you
 

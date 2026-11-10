@@ -89,8 +89,14 @@ final class Session {
   /// Sends `prompt` and waits for the whole reply. `onText` gets the answer as it grows, at the
   /// pace the chat screen sees it (the app writes streamed text into the turn every 100 ms).
   func ask(
-    _ prompt: String, search: Bool, in thread: ChatThread, onText: @escaping @MainActor (String) -> Void
+    _ prompt: String, search: Bool, files: [ExtractedDocument] = [], image: Data? = nil, audio: URL? = nil,
+    in thread: ChatThread, onText: @escaping @MainActor (String) -> Void
   ) async -> Exchange {
+    // Files belong to the chat from the send on and index in the background, as in the app.
+    let documents = files.compactMap { appState.knowledge.add($0, threadID: thread.id) }
+    let records = documents.map {
+      FileRecord(id: $0.id, name: $0.name, kind: $0.kindRaw, pageCount: $0.pageCount)
+    }
     let earlier = Set(thread.orderedTurns.map(\.id))
     let tracesBefore = Self.traceFiles()
     let started = ContinuousClock.now
@@ -109,7 +115,10 @@ final class Session {
       }
     }
     let accepted = await appState.send(
-      text: prompt, imageData: nil, audioFileURL: nil, webSearch: search, in: thread)
+      text: prompt, imageData: image, audioFileURL: audio, files: records, webSearch: search, in: thread)
+    if !accepted {
+      for document in documents { appState.knowledge.delete(document) }
+    }
     watcher.cancel()
     await watcher.value
     let seconds = (ContinuousClock.now - started) / .seconds(1)

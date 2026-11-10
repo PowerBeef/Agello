@@ -23,9 +23,13 @@ let package = Package(
       dependencies: [.product(name: "LiteRTLM", package: "LiteRT-LM")],
       path: ".",
       exclude: [
-        "Agello.xcodeproj", "AgelloDeviceTests", "AgelloShare", "AgelloTests", "AgelloUITests",
-        "AgelloWidgets", "AgelloiOS", "Vendor", "build", "docs", "scripts", "CLAUDE.md", "LICENSE",
-        "NOTICE", "README.md", "buildServer.json",
+        "Agello.xcodeproj", "AgelloDeviceTests", "AgelloShare", "AgelloTests", "AgelloWidgets",
+        // The UI tests, but for the bench's cases (below).
+        "AgelloUITests/AccessibilityAuditUITests.swift", "AgelloUITests/BenchUITests.swift",
+        "AgelloUITests/ChatFlowUITests.swift", "AgelloUITests/DeviceFloorUITests.swift",
+        "AgelloUITests/ScreenshotTourUITests.swift",
+        "AgelloiOS", "Vendor", "build", "docs", "scripts", "CLAUDE.md", "LICENSE", "NOTICE",
+        "README.md", "buildServer.json",
         // The app's interface, and what only it uses.
         "Agello/App", "Agello/Assets.xcassets", "Agello/PrivacyInfo.xcprivacy", "Agello/Resources",
         "Agello/Views", "Agello/Markdown", "Agello/Support/Theme",
@@ -45,6 +49,8 @@ let package = Package(
         "Agello/System/ShareInbox.swift", "Agello/System/SharedItems.swift",
         "Agello/System/SpotlightIndex.swift",
         "Agello/Voice/VoiceText.swift",
+        // One list of bench cases for the iPhone's driver and for `agello bench`.
+        "AgelloUITests/BenchCases.swift",
         "AgelloCLI/Sources",
       ]
     )
