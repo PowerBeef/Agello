@@ -138,24 +138,18 @@ final class AppState {
     self.engine =
       useMockEngine ? MockChatEngine() : LiteRTChatEngine()
     self.knowledge = KnowledgeBase(store: self.store, useHashingEmbedder: useMockEngine)
-    let saved = UserDefaults.standard.data(forKey: "inferenceOptions")
-      .flatMap { try? JSONDecoder().decode(InferenceOptions.self, from: $0) }
+    let saved = UserDefaults.standard.decoded(InferenceOptions.self, forKey: "inferenceOptions")
     let launched = InferenceOptions.launch(
-      saved: saved, memoryBytes: ProcessInfo.processInfo.physicalMemory,
-      budgetMigrated: UserDefaults.standard.bool(forKey: "thinkingBudgetFollowsWindow"))
+      saved: saved, budgetMigrated: UserDefaults.standard.bool(forKey: "thinkingBudgetIs4096"))
     self.options = launched
     if launched != saved { UserDefaults.standard.set(try? JSONEncoder().encode(launched), forKey: "inferenceOptions") }
-    UserDefaults.standard.set(true, forKey: "thinkingBudgetFollowsWindow")
+    UserDefaults.standard.set(true, forKey: "thinkingBudgetIs4096")
     self.enableTools = UserDefaults.standard.object(forKey: "enableTools") as? Bool ?? true
     self.memoryEnabled = UserDefaults.standard.bool(forKey: "memoryEnabled")
-    if let data = UserDefaults.standard.data(forKey: "webSearch"),
-      let decoded = try? JSONDecoder().decode(WebSearchSettings.self, from: data)
-    {
+    if let decoded = UserDefaults.standard.decoded(WebSearchSettings.self, forKey: "webSearch") {
       self.webSettings = decoded
     }
-    if let data = UserDefaults.standard.data(forKey: "personalization"),
-      let decoded = try? JSONDecoder().decode(Personalization.self, from: data)
-    {
+    if let decoded = UserDefaults.standard.decoded(Personalization.self, forKey: "personalization") {
       self.personalization = decoded
     }
     if let raw = UserDefaults.standard.string(forKey: "selectedThreadID") {
@@ -548,6 +542,7 @@ final class AppState {
     guard let context = modelContext else { return false }
     generationError = nil
     notice = nil
+    ReplyTrace.begin(prompt: prompt, options: options, resolved: resolved, search: webSearch, tools: enableTools)
     let stopsAtStart = stopCount
     var stopped: Bool { stopCount != stopsAtStart }
     isPreparing = true
@@ -686,6 +681,7 @@ final class AppState {
       thread.append(reply)
     }
     try? context.save()
+    ReplyTrace.reply(id: reply.id, sources: sources.count)
 
     isGenerating = true
     isPreparing = false
@@ -701,6 +697,9 @@ final class AppState {
       voiceModeActive && audioFileURL != nil
       ? thread.turns.first { $0.id == reply.parentID && $0.isUser } : nil
     await consume(stream, into: reply, context: context, voiceTurn: voiceTurn)
+    ReplyTrace.end(
+      text: reply.isDeleted ? "" : reply.text, thought: reply.isDeleted ? "" : reply.thought, stats: reply.isDeleted ? nil : reply.stats,
+      error: generationError, notice: notice)
     // A sampling conversation (Regenerate) serves only this reply.
     if samples { conversationThreadID = nil }
     // Sources found by the automatic web_search tool during the reply.

@@ -35,6 +35,9 @@ struct AppBootstrap {
       AppReset.perform(context: container.mainContext)
     }
 
+    // The bench driver's prompt is the draft of a new chat (docs/HARNESS.md): don't reopen the last one.
+    if env["AGELLO_BENCH_DRAFT"] != nil { UserDefaults.standard.removeObject(forKey: "selectedThreadID") }
+
     let state = AppState(useMockEngine: useMock)
     // Must be the same context the views use (`.modelContainer` injects
     // mainContext): turns are appended to view-owned threads, then saved here.

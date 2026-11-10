@@ -24,6 +24,10 @@
 #   memory     8 GB iPhone memory simulation (E4B at 5.0/4.0/3.5 GB usable).
 #   screenshots  A guided UI tour with the real model: one screenshot per
 #              screen (attachments/screenshots/) for the README and App Store.
+#   bench      The autonomous harness (docs/HARNESS.md): each bench case sent
+#              through the app's screens in a Release build, the app tracing
+#              the reply; traces pulled and joined in bench/report.md.
+#              BENCH_ONLY=id,id runs some cases. iPhone only.
 #   all        unit, inference + files, then ui.
 #
 # Env: PLATFORM (iphone, the default; mac: this Mac runs the iPhone app
@@ -62,7 +66,7 @@ case "$PLATFORM" in
     ;;
   mac)
     case "$SUITE" in
-      ui | screenshots | memory)
+      ui | screenshots | memory | bench)
         echo "The $SUITE suite runs on the iPhone only, not with PLATFORM=mac." >&2
         exit 2
         ;;
@@ -73,7 +77,7 @@ case "$PLATFORM" in
     ;;
   macos-native)
     case "$SUITE" in
-      ui | screenshots | memory)
+      ui | screenshots | memory | bench)
         echo "The $SUITE suite doesn't run with PLATFORM=macos-native (ui and screenshots come with M7)." >&2
         exit 2
         ;;
@@ -169,7 +173,7 @@ format_output() {
 
 xcodebuild_test() {
   xcodebuild test \
-    -project "$ROOT/Agello.xcodeproj" -scheme "$SCHEME" -configuration Debug \
+    -project "$ROOT/Agello.xcodeproj" -scheme "$SCHEME" -configuration "${CONFIGURATION:-Debug}" \
     -destination "$DESTINATION" -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
     -resultBundlePath "$result" "$@"
 }
@@ -270,6 +274,16 @@ case "$SUITE" in
     export TEST_RUNNER_HARNESS_SCREENSHOTS=1
     scopes="AgelloUITests/ScreenshotTourUITests"
     ;;
+  bench)
+    # Release, in a scheme of its own: the unit and device tests need @testable (Debug).
+    export TEST_RUNNER_HARNESS_BENCH=1
+    [ -n "${BENCH_ONLY:-}" ] && export TEST_RUNNER_BENCH_ONLY="$BENCH_ONLY"
+    [ -n "${BENCH_TRACE:-}" ] && export TEST_RUNNER_BENCH_TRACE="$BENCH_TRACE"
+    SCHEME=AgelloBench
+    CONFIGURATION=Release
+    BENCH_STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    scopes="AgelloUITests/BenchUITests"
+    ;;
   all)
     if [ -n "${ONLY:-}" ]; then
       echo "ONLY needs a single suite (unit, inference, ui…), not all." >&2
@@ -298,7 +312,18 @@ if [ -n "$scopes" ]; then
   # shellcheck disable=SC2086
   run_suite "$SUITE" $only "$@" || status=$?
 fi
-pull_report
+if [ "$SUITE" = bench ]; then
+  # The app's traces of this run, then the joined report.
+  rm -rf "$OUT/bench"
+  mkdir -p "$OUT/bench"
+  xcrun devicectl device copy from --device "$DEVICE_ID" \
+    --domain-type appDataContainer --domain-identifier "$BUNDLE_ID" \
+    --source Documents/traces --destination "$OUT/bench/traces" >/dev/null 2>&1 \
+    || echo "No traces on the device"
+  python3 "$ROOT/scripts/bench-report.py" "$OUT" "$BENCH_STARTED" || status=$?
+else
+  pull_report
+fi
 # What the project's disk use is now, and any scratch the run left (one-off OUT folders included).
 echo
 "$ROOT/scripts/storage.sh" brief || true

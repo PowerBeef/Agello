@@ -1,6 +1,6 @@
 # The autonomous harness
 
-A plan, approved by the maintainer on 2026-11-10. H1 is in progress; nothing later is built.
+A plan, approved by the maintainer on 2026-11-10. H1 is done (below); nothing later is built.
 
 The goal: one command runs Agello on the iPhone as a user would, through its real screens, and
 comes back with one report per reply that joins what was on screen, what the app did, and what the
@@ -121,6 +121,34 @@ one readable summary, and each reply as Markdown. Checkers then judge the replie
 
 H1 proves the design. If the three layers don't join cleanly there, the plan changes before the
 rest is built.
+
+### H1, done on 2026-11-10
+
+`scripts/device-harness.sh bench` builds Release (the `AgelloBench` scheme), runs
+`AgelloUITests/BenchUITests` with `--trace`, pulls `Documents/traces` from the phone, and
+`scripts/bench-report.py` writes `build/device-harness/bench/report.md`, `report.json` and each
+reply as Markdown.
+
+- **The three layers join.** The driver's row and the app's trace are matched by the send time;
+  the screen's text, read back through accessibility, ends as the trace's text ends.
+- **The driver** starts a new chat with the prompt as the composer's draft
+  (`AGELLO_BENCH_DRAFT`), sets Think and Search with the composer's pills and Think's budget in
+  Settings → Advanced, taps Send, and scrolls to the top when the reply is done.
+- **The trace** (`Agello/Support/ReplyTrace.swift`) holds the settings in effect, the steps (send,
+  fit, reply, engine send, first token, first text on screen, engine finished, helpers, scene
+  changes) with memory at each, why the reply ended, its text and stats, and the engine's
+  telemetry before and after.
+- **The verdict** for the three-part prompt runs the reply's code against tests written from the
+  prompt (`scripts/bench/ttl-cache/`).
+- **Tracing costs nothing measurable:** 117.3 s and 117.5 s with it on, about 125 s on screen
+  with it off (the screen is read every 5 s). Looking every second or every five made no
+  difference either.
+- **What it found on its first run:** the phone's Think budget was 1,024, not the 4,096 the app
+  had been given: a device-test run killed mid-test had left its options in the app's settings.
+  Device tests now restore a lost snapshot at their next run, and the bench sets its own budget.
+- **Open for H3:** the bench decodes this reply at 40 tok/s where a hand run the day before gave
+  49. Tracing and the driver's looking are ruled out; the phone's heat after a day of runs and
+  the accessibility session XCUITest keeps open are not.
 
 ## Decisions for the maintainer
 

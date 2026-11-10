@@ -49,6 +49,17 @@ enum RuntimeTelemetry {
     return TelemetryTotals(json: Data(String(cString: text).utf8))
   }
 
+  /// The whole snapshot as the runtime writes it (counters, spans, GPU time, anomalies), for a
+  /// reply's trace (``ReplyTrace``); nil without telemetry.
+  static func snapshotJSON() -> String? {
+    guard let take = symbol("litert_lm_telemetry_snapshot_json", as: Snapshot.self),
+      let free = symbol("litert_lm_telemetry_free_string", as: Free.self),
+      let text = take()
+    else { return nil }
+    defer { free(text) }
+    return String(cString: text)
+  }
+
   private typealias Snapshot = @convention(c) () -> UnsafeMutablePointer<CChar>?
   private typealias Free = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void
   private typealias GetLevel = @convention(c) () -> Int32

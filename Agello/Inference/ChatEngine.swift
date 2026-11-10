@@ -464,7 +464,10 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       ContextBudget.fits(used: total, input: 0, maxNumTokens: window, thinkingBudget: thinking)
     }
     let used = await tokensAfterPrefill(text: text, imageData: imageData, audioFileURL: audioFileURL)
-    if fits(used) { return false }
+    if fits(used) {
+      ReplyTrace.mark("fit", ["trimmed": .bool(false), "used": .int(used)])
+      return false
+    }
 
     // The message alone, on an empty conversation: preamble, tools and the message, counted.
     try await rebuild(history: [])
@@ -626,6 +629,9 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     try await endHelper(keep: keep, engine: engine, resolved: resolved, options: options)
     Log.engine.info(
       "helper: \(output.utf8.count) bytes in \(Date().timeIntervalSince(started), format: .fixed(precision: 2))s, kept \(keep)")
+    ReplyTrace.mark(
+      "helper",
+      ["helperSeconds": .double(Date().timeIntervalSince(started)), "output": .string(String(output.prefix(600))), "kept": .bool(keep)])
     return Data(output.utf8)
   }
 
@@ -772,6 +778,13 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       thinkingBudget: resolved.thinkingBudget, maxOutputTokens: resolved.maxOutputTokens)
     ToolBudget.begin(budget.limits)
     defer { ToolBudget.end() }
+    ReplyTrace.mark(
+      "engine send",
+      [
+        "window": .int(resolved.maxNumTokens), "afterPrefill": .int(prefilled), "room": .int(room),
+        "outputCap": .int(budget.outputCap), "followUpCap": .int(budget.followUpCap),
+        "thinkingBudget": .int(budget.thinkingBudget ?? 0), "toolCalls": .int(budget.limits.maxCalls),
+      ])
     // Safety net for tool rounds (results are trimmed by estimate): stop before streamed output
     // and tool results could exceed the room. Without tools the runtime's cap is exact.
     let guardsToolRounds = budget.limits.maxCalls > 0
@@ -854,6 +867,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         if firstChunkAt == nil {
           firstChunkAt = Date()
           Self.signposter.emitEvent("First token", id: signpostID)
+          ReplyTrace.markOnce("first token")
         }
         let thought = chunk.channels["thought"]
         if guardsToolRounds {
@@ -908,6 +922,12 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       Log.generation.info(
         "finished: \(final.footerLine, privacy: .public), out=\(final.outputTokens ?? -1) cap=\(budget.outputCap)/\(budget.followUpCap) think=\(budget.thinkingBudget ?? 0) kv=\(self.usedTokens())/\(resolved.maxNumTokens)"
       )
+      ReplyTrace.mark(
+        "engine finished",
+        [
+          "outputTokens": .int(final.outputTokens ?? -1), "lastCap": .int(lastCap), "tools": .int(reportedTools),
+          "kvUsed": .int(self.usedTokens()),
+        ])
       continuation.yield(.finished(final))
       continuation.finish()
     } catch {

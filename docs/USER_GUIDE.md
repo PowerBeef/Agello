@@ -36,7 +36,7 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | **Models** | Download, pause, resume, or delete Gemma 4 E4B and EmbeddingGemma |
 | **On-device tools** | Turn the tools (date and time, calculator) on or off |
 | **Advanced → Performance** | GPU or CPU backend · speculative decoding (MTP) · show performance details under each reply (off by default) |
-| **Advanced → Reasoning** | Thinking on or off, and its token budget (4,096 tokens by default where the context is 32K, 1,024 elsewhere). Reasoning leaves the model's memory once the reply is done, so it never uses up a chat's context. |
+| **Advanced → Reasoning** | Thinking on or off, and its token budget (4,096 tokens by default). Reasoning leaves the model's memory once the reply is done, so it never uses up a chat's context. |
 | **Advanced → Sampling** | Precise (temperature 0.2) · Balanced (0.7) · Creative (1.0) |
 | **Advanced → Voice & Vision** | Image and audio input · image detail (140 or 280 visual tokens; Detailed also uses 280 with the current model file) |
 | **Advanced → System prompt** | The base instructions for every conversation |

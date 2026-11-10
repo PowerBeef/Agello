@@ -50,6 +50,7 @@ scripts/device-harness.sh all         # unit, then inference+files+web, then ui
 # Opt-in:
 scripts/device-harness.sh thinking | memory | calibrate | probes
 scripts/device-harness.sh screenshots # UI tour, one screenshot per screen
+scripts/device-harness.sh bench       # the autonomous harness (docs/HARNESS.md): bench cases through the UI, Release
 ```
 
 Start suites with the Bash tool's `run_in_background: true` and send the
@@ -87,6 +88,24 @@ ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-har
 ```
 
 Other extra arguments go to `xcodebuild` as is.
+
+## The bench (the autonomous harness)
+
+`scripts/device-harness.sh bench` sends each bench case (`AgelloUITests/BenchCases.swift`) through
+the app's own screens in a **Release** build, with the app tracing the reply (`--trace`,
+`Agello/Support/ReplyTrace.swift`). It then pulls the traces and writes
+`build/device-harness/bench/report.md` (and `report.json`, and each reply as Markdown):
+settings in effect, each step with memory, why the reply ended, what the screen showed, the
+engine's telemetry, and a verdict (the reply's code run against tests in `scripts/bench/<id>/`).
+
+- `BENCH_ONLY=id,id` runs some cases; `BENCH_TRACE=off` runs without tracing (screen timings only).
+- It leaves the Release build on the phone, and keeps the user's chats: each case starts a new
+  chat. It does change Think, Search and Think's budget, through the app's own controls.
+- Use it, not the quality probe, to answer "what does the app do with this prompt": device tests
+  run `AppState` with the harness's options, which once differed from the phone's.
+- A device-test run that is killed leaves its options in the app's settings until the next
+  device-test run restores them (`harnessSettingsSnapshot`). Don't kill one mid-test if a wait
+  will do.
 
 ## On this Mac
 

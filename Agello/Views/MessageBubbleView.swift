@@ -118,6 +118,7 @@ struct MessageBubbleView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(Self.spokenText(turn.text)))
         .accessibilityIdentifier("message.model")
+        .onAppear { ReplyTrace.onScreen(turn.id) }
       } else if isStreaming {
         thinkingDots
       }

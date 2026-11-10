@@ -69,6 +69,7 @@ struct AdvancedSettingsView: View {
         )
         .monospacedDigit()
         .themedRow()
+        .accessibilityIdentifier("advanced.thinkBudget")
       }
     } header: {
       Text("Reasoning").eyebrowStyle()

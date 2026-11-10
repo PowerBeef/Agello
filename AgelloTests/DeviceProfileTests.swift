@@ -10,24 +10,21 @@ final class DeviceProfileTests: XCTestCase {
     XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 6_000_000_000), 4096)
   }
 
-  /// Think's default follows the window (2026-11-09); a budget saved at the old default moves once.
-  func testThinkBudgetFollowsTheWindow() {
-    let large: UInt64 = 12_291_719_168
-    XCTAssertEqual(DeviceProfile.defaultThinkingBudget(memoryBytes: large), 4_096)
-    XCTAssertEqual(DeviceProfile.defaultThinkingBudget(memoryBytes: 8_000_000_000), 1_024)
-    XCTAssertEqual(InferenceOptions.launch(saved: nil, memoryBytes: large, budgetMigrated: true).thinkingBudget, 4_096)
+  /// Think's budget is 4,096 tokens by default on every device (2026-11-10); a budget saved at
+  /// the old 1,024 moves once.
+  func testThinkBudgetDefault() {
+    XCTAssertEqual(InferenceOptions().thinkingBudget, 4_096)
+    XCTAssertEqual(InferenceOptions.launch(saved: nil, budgetMigrated: true).thinkingBudget, 4_096)
     var saved = InferenceOptions()
     saved.thinkingBudget = 1_024
     saved.maxNumTokensOverride = 32_768
-    let moved = InferenceOptions.launch(saved: saved, memoryBytes: large, budgetMigrated: false)
+    let moved = InferenceOptions.launch(saved: saved, budgetMigrated: false)
     XCTAssertEqual(moved.thinkingBudget, 4_096)
     XCTAssertNil(moved.maxNumTokensOverride)
     // Chosen after the move, or by hand: kept.
-    XCTAssertEqual(InferenceOptions.launch(saved: saved, memoryBytes: large, budgetMigrated: true).thinkingBudget, 1_024)
+    XCTAssertEqual(InferenceOptions.launch(saved: saved, budgetMigrated: true).thinkingBudget, 1_024)
     saved.thinkingBudget = 2_048
-    XCTAssertEqual(InferenceOptions.launch(saved: saved, memoryBytes: large, budgetMigrated: false).thinkingBudget, 2_048)
-    saved.thinkingBudget = 1_024
-    XCTAssertEqual(InferenceOptions.launch(saved: saved, memoryBytes: 8_000_000_000, budgetMigrated: false).thinkingBudget, 1_024)
+    XCTAssertEqual(InferenceOptions.launch(saved: saved, budgetMigrated: false).thinkingBudget, 2_048)
   }
 
   /// 32K by default where the device has 12 GB (2026-11-09), stepping down to 16K below 5.1 GB

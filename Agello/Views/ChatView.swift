@@ -149,6 +149,11 @@ struct ChatView: View {
     }
     .onDisappear { reader.stop() }
     .onAppear {
+      // The bench driver (docs/HARNESS.md): a long prompt arrives as the composer's draft, and
+      // the driver taps the real send button. Typing 3K characters through XCUITest is slow.
+      if thread == nil, draft.isEmpty, let prompt = ProcessInfo.processInfo.environment["AGELLO_BENCH_DRAFT"] {
+        draft = prompt
+      }
       // UI tests: the system file picker can't be driven, so attach a sample.
       let arguments = ProcessInfo.processInfo.arguments
       if thread == nil, pendingFiles.isEmpty {

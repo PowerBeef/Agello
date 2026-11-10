@@ -86,15 +86,13 @@ struct DeviceProfile: Sendable, Equatable {
   /// Macs with 16 GB. 8 GB devices keep ``standardContextTokens``.
   static let memoryForLargeContextBytes: UInt64 = 11_000_000_000
 
-  /// Think's default reasoning budget: ``largeContextThinkingBudget`` on devices that take
-  /// ``largeContextTokens`` (the maintainer's choice, 2026-11-09: 1,024 tokens cut a coding plan
-  /// mid-word there), ``standardThinkingBudget`` elsewhere. It stays a setting.
-  static func defaultThinkingBudget(memoryBytes: UInt64) -> Int {
-    memoryBytes >= memoryForLargeContextBytes ? largeContextThinkingBudget : standardThinkingBudget
-  }
-
-  static let standardThinkingBudget = 1_024
-  static let largeContextThinkingBudget = 4_096
+  /// Think's default reasoning budget, on every device (the maintainer's choice, 2026-11-10;
+  /// 12 GB devices had it since 2026-11-09): with 1,024 tokens a coding plan was cut mid-word.
+  /// It's a ceiling, and it stays a setting. At 16K the reply reserve grows from 5,120 to 5,461
+  /// tokens (``ContextBudget/replyReserve(maxNumTokens:thinkingBudget:)``); at 8K it doesn't.
+  static let defaultThinkingBudget = 4_096
+  /// The default until 2026-11-10: a budget saved at it moves to the new one, once.
+  static let previousThinkingBudget = 1_024
 
   /// Room the app needs left as it loads to take ``largeContextTokens``:
   /// ``roomForStandardContextBytes`` plus the 1.6 GB more a 32K engine peaks at. The memory

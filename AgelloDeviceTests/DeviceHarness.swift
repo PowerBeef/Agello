@@ -32,20 +32,20 @@ final class DeviceHarness {
 
   let container: ModelContainer
   let appState: AppState
-  /// Options every scenario starts from, as a fresh install has them on this device (Think's
-  /// budget follows the window: with the struct's 1,024 the quality bench cut its reasoning where
-  /// the app no longer does, 2026-11-10); scenarios that change options restore this in tearDown.
-  let baselineOptions = InferenceOptions.launch(
-    saved: nil, memoryBytes: ProcessInfo.processInfo.physicalMemory, budgetMigrated: true)
+  /// Options every scenario starts from, as a fresh install has them (with the options
+  /// struct's defaults the quality bench once ran Think at 1,024 tokens while the app used
+  /// 4,096, 2026-11-10); scenarios that change options restore this in tearDown.
+  let baselineOptions = InferenceOptions.launch(saved: nil, budgetMigrated: true)
   /// Web search as a fresh install has it (allowed, not automatic): the
   /// phone's own saved settings must not decide whether scenarios search.
   let baselineWeb = WebSearchSettings()
 
   private static let defaultsKeys = [
     "inferenceOptions", "enableTools", "selectedThreadID", "benchmarkReport", "memoryEnabled",
-    "personalization", "webSearch", "thinkingBudgetFollowsWindow",
+    "personalization", "webSearch", "thinkingBudgetIs4096",
   ]
   private var savedDefaults: [String: Any] = [:]
+  private static let snapshotKey = "harnessSettingsSnapshot"
   private var report: [String: Any] = [:]
   private var announcedReport = false
 
@@ -54,10 +54,14 @@ final class DeviceHarness {
 
   private init() {
     // The harness shares UserDefaults with the real app: snapshot the user's
-    // settings so ``restoreUserDefaults()`` can put them back.
+    // settings so ``restoreUserDefaults()`` can put them back. The snapshot is saved too: a run
+    // that was killed never restored, and left a test's options in the app (a 1,024-token Think
+    // budget on the maintainer's iPhone, 2026-11-10). The next run starts from that snapshot.
+    if let lost = UserDefaults.standard.dictionary(forKey: Self.snapshotKey) { Self.restore(lost) }
     for key in Self.defaultsKeys {
       savedDefaults[key] = UserDefaults.standard.object(forKey: key)
     }
+    UserDefaults.standard.set(savedDefaults, forKey: Self.snapshotKey)
     container = try! ModelContainer(
       for: ChatStore.schema,
       configurations: ModelConfiguration(isStoredInMemoryOnly: true))
@@ -143,13 +147,18 @@ final class DeviceHarness {
   }
 
   func restoreUserDefaults() {
-    for key in Self.defaultsKeys {
-      if let value = savedDefaults[key] {
+    Self.restore(savedDefaults)
+  }
+
+  private static func restore(_ saved: [String: Any]) {
+    for key in defaultsKeys {
+      if let value = saved[key] {
         UserDefaults.standard.set(value, forKey: key)
       } else {
         UserDefaults.standard.removeObject(forKey: key)
       }
     }
+    UserDefaults.standard.removeObject(forKey: snapshotKey)
   }
 
   /// Put options back to the baseline (and apply them to a loaded engine).

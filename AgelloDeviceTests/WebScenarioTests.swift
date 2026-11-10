@@ -162,7 +162,12 @@ final class WebScenarioTests: DeviceTestCase {
       (.user, "Who won the 2026 Tour de France?"),
       (
         .model,
-        "Tadej Pogačar won the 2026 Tour de France [1][2][3][4][5].\n\nHe finished with a total time of 73 hours, 56 minutes, and 26 seconds [1][2][3]. Pogačar's victory marked his fifth Tour de France title, equalling the all-time record [2][3][4].\n\nThe final podium finishers were:\n*   **1st:** Tadej Pogačar (UAE Team Emirates XRG) [1][2][3][4][5]\n*   **2nd:** Remco Evenepoel (Red Bull–Bora–Hansgrohe) [1][2][3][4][5]\n*   **3rd:** Isaac del Toro (UAE Team Emirates XRG) [1][2][3][4][5]"
+        "Tadej Pogačar won the 2026 Tour de France [1][2][3][4][5].\n\n"
+          + "He finished with a total time of 73 hours, 56 minutes, and 26 seconds [1][2][3]. Pogačar's victory marked his fifth Tour de France title, equalling the all-time record [2][3][4].\n\n"
+          + "The final podium finishers were:\n"
+          + "*   **1st:** Tadej Pogačar (UAE Team Emirates XRG) [1][2][3][4][5]\n"
+          + "*   **2nd:** Remco Evenepoel (Red Bull–Bora–Hansgrohe) [1][2][3][4][5]\n"
+          + "*   **3rd:** Isaac del Toro (UAE Team Emirates XRG) [1][2][3][4][5]"
       ),
     ]
     let gapWords = ["margin", "gap", "difference", "standings", "classification", "ahead", "behind"]

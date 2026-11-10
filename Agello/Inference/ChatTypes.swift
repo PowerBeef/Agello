@@ -109,7 +109,7 @@ struct InferenceOptions: Codable, Sendable, Equatable {
   /// KV-cache size override. `nil` means "auto" (device + model aware).
   var maxNumTokensOverride: Int? = nil
   var enableThinking: Bool = false
-  var thinkingBudget: Int = 1024
+  var thinkingBudget: Int = DeviceProfile.defaultThinkingBudget
   var samplerPreset: SamplerPreset = .balanced
   var systemPrompt: String = "You are a helpful on-device assistant."
   var enableVision: Bool = true
@@ -132,14 +132,13 @@ struct InferenceOptions: Codable, Sendable, Equatable {
   /// The options a launch starts from: the saved ones (nil on a first launch) or the defaults.
   /// - The context is no longer a setting (2026-11-02): a saved custom window goes back to the
   ///   device's. Tests and probes still set the override in memory.
-  /// - Think's budget defaults to the device's (``DeviceProfile/defaultThinkingBudget(memoryBytes:)``).
-  ///   A budget saved at the old 1,024 default moves to it once (`budgetMigrated` false); one
-  ///   chosen afterwards stays.
-  static func launch(saved: InferenceOptions?, memoryBytes: UInt64, budgetMigrated: Bool) -> InferenceOptions {
+  /// - A Think budget saved at the old 1,024 default moves to the new one once (`budgetMigrated`
+  ///   false); one chosen afterwards stays.
+  static func launch(saved: InferenceOptions?, budgetMigrated: Bool) -> InferenceOptions {
     var options = saved ?? InferenceOptions()
     options.maxNumTokensOverride = nil
-    if saved == nil || (!budgetMigrated && options.thinkingBudget == DeviceProfile.standardThinkingBudget) {
-      options.thinkingBudget = DeviceProfile.defaultThinkingBudget(memoryBytes: memoryBytes)
+    if !budgetMigrated, options.thinkingBudget == DeviceProfile.previousThinkingBudget {
+      options.thinkingBudget = DeviceProfile.defaultThinkingBudget
     }
     return options
   }
