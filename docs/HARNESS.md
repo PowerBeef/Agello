@@ -1,6 +1,6 @@
 # The autonomous harness
 
-A plan, approved by the maintainer on 2026-11-10. H1 to H4 are done (below); H5 and H6 aren't built.
+A plan, approved by the maintainer on 2026-11-10. H1 to H4 and H6 are done (below); H5 isn't built.
 
 The goal: one command runs Agello on the iPhone as a user would, through its real screens, and
 comes back with one report per reply that joins what was on screen, what the app did, and what the
@@ -26,7 +26,7 @@ each saw one layer.
 
 | Piece | Where | Role in the new harness |
 | --- | --- | --- |
-| 25 UI tests, a tour with the real model | `AgelloUITests/` | The driver's helpers and identifiers (`chat.input`, `chat.stop`, `message.model`) |
+| The UI tests, and a tour with the real model | `AgelloUITests/` | The driver's helpers and identifiers (`chat.input`, `chat.stop`, `message.model`) |
 | Launch arguments | `AppBootstrap`, `AppReset` | Clean state, sample files, the fake microphone |
 | Engine telemetry, levels 0–4 | our LiteRT-LM build, `EngineTelemetry` | The engine layer of each report |
 | A `Reply` signpost interval and a first-token event | `ChatEngine` | Extended to the whole path |
@@ -46,6 +46,7 @@ A new class in `AgelloUITests`, run as the `bench` suite.
 
 - It launches the app clean, sets Think and Search with the composer's own buttons, enters the
   prompt, taps send, and waits on conditions (`chat.stop` appears, then goes), never on sleeps.
+  As built, one fixed wait remains: 8 s after each reply, so the title and memory helpers run.
 - When the reply ends it reads the rendered text back, scrolls to the top and the bottom to prove
   both are reachable, and attaches a screenshot of the end.
 - It measures from outside, coarsely: send to first visible text, send to done. The precise
@@ -81,7 +82,7 @@ in the trace, at the level the run asks for.
 
 ### The join and the verdicts
 
-A script on the Mac merges the three into `build/device-harness/bench/<run>/`: one JSON report,
+A script on the Mac merges the three into `build/device-harness/bench/`: one JSON report,
 one readable summary, and each reply as Markdown. Checkers then judge the replies:
 
 - **Whole:** every part asked for is there, code blocks are closed, and the reply ended by itself.
@@ -90,6 +91,9 @@ one readable summary, and each reply as Markdown. Checkers then judge the replie
 - **Agrees:** the text on screen is the text in the trace.
 
 ### Running unattended
+
+This list is the plan. What H4 built of it, and what it left unchecked, is under
+[H4](#h4-done-on-2026-11-10).
 
 - **Preflight** before the build: the phone is connected and unlocked, UI automation is enabled,
   iPhone Mirroring is closed, a Focus is on, there's room on disk, and the battery isn't low.
@@ -113,7 +117,7 @@ one readable summary, and each reply as Markdown. Checkers then judge the replie
 | | Scope | Done when |
 | --- | --- | --- |
 | **H1** | One case end to end: the three-part coding prompt of 2026-11-09. The bench driver, trace v1 (settings, path, why it ended, stats), the pull and merge, the code checker. | One command gives a report with all three layers for that reply, with tracing's cost measured. |
-| **H2** | The bench's nine cases and the Search, file and follow-up flows on the driver, with their checkers. | The quality bench runs through the UI, and `QualityBenchProbe` is retired. |
+| **H2** | The bench's eight cases and the Search, file and follow-up flows on the driver, with their checkers. | The quality bench runs through the UI, and `QualityBenchProbe` is retired. |
 | **H3** | Deeper probes: first render and flush cadence, scroll jumps and hitches, a memory timeline, helper tasks (titles, memories), signposts. | A slow or jumpy reply shows which layer was slow. |
 | **H4** | Autonomy: preflight, one session, interruptions, resume, comparison with a baseline. | A full run needs nothing but an unlocked phone, and says what changed since the last. |
 | **H5** | Coverage: every screen and menu, the attach menu with sample files, Voice with the fake microphone, share and intent routes. | The driver has touched every control the app has. |
@@ -146,9 +150,10 @@ reply as Markdown.
 - **What it found on its first run:** the phone's Think budget was 1,024, not the 4,096 the app
   had been given: a device-test run killed mid-test had left its options in the app's settings.
   Device tests now restore a lost snapshot at their next run, and the bench sets its own budget.
-- **Open for H3:** the bench decodes this reply at 40 tok/s where a hand run the day before gave
-  49. Tracing and the driver's looking are ruled out; the phone's heat after a day of runs and
-  the accessibility session XCUITest keeps open are not.
+- **Open for H3, answered there:** the bench decodes this reply at 40 tok/s where a hand run the
+  day before gave 49. Tracing and the driver's looking are ruled out; the phone's heat after a
+  day of runs and the accessibility session XCUITest keeps open are not. [H3](#h3-done-on-2026-11-10)
+  measured both.
 
 ### H2, done on 2026-11-10
 
@@ -236,23 +241,34 @@ locked phone stopped at the preflight with exit 4 and left no lock. Not exercise
 interrupted during the run, so the retry hasn't met a real call or lock yet.
 
 The first baseline, 13 turns: every reply ended by itself with the screen matching its trace,
-at 29 to 44 tok/s with the driver attached and the phone warming. Three cases fail checks, and
+at 29 to 44 tok/s with the driver attached and the phone warming. The first token came after
+0.6 s in the four plain cases (Think on), 1.5 s on the three-part prompt, and 3 to 9 s where a
+search or a file comes first. Three cases fail checks, and
 the baseline records them as the model's current state: the calculator doesn't show 56 for
 7 × 8, the SwiftUI answer has 5 compile errors, and the three-part coding prompt misses
 requirements (one failure in each part, two in its own tests).
 
+### H6, done on 2026-11-10
+
+Done with the documentation audit of that day, ahead of H5. `CLAUDE.md` and the
+`agello-device-testing` skill name the bench as the way the app is driven and checked on the
+phone; iPhone Mirroring is the user's own tool, for looking only, and the instructions say that
+it and a harness run exclude each other (the preflight refuses a run while it's open). What was
+learned about driving the mirror is kept in one paragraph of the skill.
+
 ## Decisions for the maintainer
 
 1. **Long prompts.** Typing 2,900 characters through XCUITest is slow and a newline may send
-   early. Proposed: a test-only argument fills the composer's draft, and the driver still taps the
-   real send button. Typing stays covered by the existing UI tests.
-2. **The bench builds Release.** Proposed: yes. The engine-level suites keep Debug.
-3. **Tracing only by launch argument.** Proposed: yes for now. A switch in Settings → Advanced, so
-   a user can share a trace of a bad reply, is a later choice.
+   early. Built in H1 (`AGELLO_BENCH_DRAFT`): a test-only argument fills the composer's draft, and
+   the driver still taps the real send button. Typing stays covered by the existing UI tests.
+2. **The bench builds Release.** Built in H1 (the `AgelloBench` scheme). The engine-level suites
+   keep Debug.
+3. **Tracing only by launch argument.** Built in H1 (`--trace`), for now. A switch in Settings →
+   Advanced, so a user can share a trace of a bad reply, is a later choice.
 4. **Where results live.** Built in H4: reports in `build/` (scratch), the numbers that
    matter in the roadmap, and one small committed file of accepted baselines
    (`scripts/bench/baseline.json`).
-5. **Order.** H1 first, then H2 to H6 in order.
+5. **Order.** Decided: H1 first, then H2 to H6 in order.
 
 ## Risks
 

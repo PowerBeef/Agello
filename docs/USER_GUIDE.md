@@ -38,7 +38,7 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | **Advanced → Performance** | GPU or CPU backend · speculative decoding (MTP) · show performance details under each reply (off by default) |
 | **Advanced → Reasoning** | Thinking on or off, and its token budget (4,096 tokens by default). Reasoning leaves the model's memory once the reply is done, so it never uses up a chat's context. |
 | **Advanced → Sampling** | Precise (temperature 0.2) · Balanced (0.7) · Creative (1.0) |
-| **Advanced → Voice & Vision** | Image and audio input · image detail (140 or 280 visual tokens; Detailed also uses 280 with the current model file) |
+| **Advanced → Voice & Vision** | Image and audio input · image detail (Fast, 140 visual tokens, or Balanced, 280; Detailed isn't offered with the current model file) |
 | **Advanced → System prompt** | The base instructions for every conversation |
 | **Advanced → Benchmark** | A 1,024-token prefill and 256-token decode run, comparable to Google's published numbers |
 | **Advanced → Device** | This iPhone, the engine, and what's loaded |
@@ -58,8 +58,8 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | **Gemma 4 E4B** | 3.7 GB | Chat: text, vision, audio, reasoning, and tool calling in one file. Context: 32K tokens, less when the iPhone is short of memory as the model loads | Apache 2.0 |
 | **EmbeddingGemma 2** (text, 270M) | 165 MB | Turns passages and chats into 256-dimension vectors for retrieval and search by meaning. Downloads automatically after the chat model; keyword search fills in until then | Apache 2.0 |
 
-- **Source.** Downloaded at runtime from Hugging Face, without an account. EmbeddingGemma is the [`litert-community`](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm) build. The chat model is [`litert-community`'s Gemma 4 E4B build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) with one fix: its rotary positions stay exact with 16-bit GPU activations, with the same weights ([`PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope); see [the engineering notes](ENGINEERING.md#long-context-digits-on-the-gpu-litert-lm-3913)). The download is pinned to a commit.
-- **Downloads** run in a background `URLSession`: they continue while the app is in the background, resume after a relaunch, support pause and resume, check free space first, and are verified by HTTP status and file size. Models are stored in Application Support and excluded from iCloud backup.
+- **Source.** Downloaded at runtime from Hugging Face, without an account. EmbeddingGemma is the [`litert-community`](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm) build. The chat model is [`litert-community`'s Gemma 4 E4B build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) with one fix: its rotary positions stay exact with 16-bit GPU activations, with the same weights ([`PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope); see [the engineering notes](ENGINEERING.md#long-context-digits-on-the-gpu-litert-lm-3913)). Both downloads are pinned to a commit.
+- **Downloads** run in a background `URLSession`: they continue while the app is in the background, resume after a relaunch, support pause and resume, check free space first, and are verified by HTTP status, file size and SHA-256 checksum. Models are stored in Application Support and excluded from iCloud backup.
 - **Earlier versions.** Chats created with Gemma 4 E2B continue on E4B. Older model files (E2B, and the unpatched E4B) are deleted automatically, and the current file downloads once.
 
 ## Troubleshooting
@@ -71,7 +71,7 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | UI tests fail with *"Timed out while enabling automation mode"* | Unlock the iPhone and keep it unlocked during the run. |
 | The download stopped | Tap **Resume** in **Settings → Models**. Downloads continue in the background, but force-quitting the app cancels them. |
 | *"Older messages were dropped from the model's memory"* | Expected in long chats: the oldest turns make room for new ones. Start a new chat to begin fresh. |
-| *"This message is too long for the model's memory"* | The message alone doesn't fit the model's memory (about 10,000 tokens, roughly 7,500 words). Attach the text as a file instead. |
+| *"This message is too long for the model's memory"* | The message alone doesn't fit the model's memory (about 21,000 tokens, roughly 15,000 words; about 10,000 tokens when the iPhone is short of memory). Attach the text as a file instead. |
 | *"Web search failed … Answered without it"* | Offline, or the provider refused (rate limit). Try again, or choose another provider in **Settings → Web search**. |
 | UI tests stall on a system alert | XCTest can't answer system permission prompts on device; the tests use `--uitest-fake-mic` and the scripted engine where needed. |
 

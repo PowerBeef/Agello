@@ -79,10 +79,10 @@ REF=<agello-next commit> TAG=<tag> ./Vendor/use-release-litert.sh
 
 Then update this file and `NOTICE` (from the release's
 `THIRD_PARTY_NOTICES.md`; copy it to `Agello/Resources/NOTICE.txt`), and run
-the suites on this Mac and the iPhone.
+the suites on the iPhone.
 
 - **A local build, for test runs:** `Vendor/use-local-litert.sh` (never commit
   `Vendor/LiteRT-LM` while it points at `dist/`).
 - **Google's binary again:** `REF=<agello commit> ./Vendor/refresh-litert-lm.sh`
   vendors the `agello` branch (v0.18.0 plus the Swift patches) with Google's
-  release XCFramework. The Mac app doesn't run on it.
+  release XCFramework.

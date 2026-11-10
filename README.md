@@ -37,7 +37,7 @@ Chats, photos, files and recordings stay on the phone. The network is used only 
 <img src="docs/images/readme/icons/fast.svg" width="40" height="40" alt="">
 
 **Fast**<br>
-About **0.4 s** to the first word and **~40 tokens a second** as it writes, on an iPhone 17 Pro. A 40-page PDF is indexed in under 2 seconds.
+On an iPhone 17 Pro: about **half a second** to the first word and **40 to 50 tokens a second** as it writes, depending on how warm the phone is. A 40-page PDF is indexed in under 2 seconds.
 
 </td>
 <td width="33%" valign="top">
@@ -64,7 +64,7 @@ Agello's color follows what you're doing. Each mode has its own accent, and it l
 - **Conversations.** A side drawer with chats grouped by date, pinned chats, and projects that share instructions and files. Search finds chats by words and by meaning ("Japan vacation" finds "Kyoto itinerary"). Edit or regenerate any message, and switch between versions with ‹ 2/3 ›.
 - **Rich answers.** Live streaming with headings, tables, task lists, highlighted code with a Copy button, and typeset math. **Think** shows step-by-step reasoning in a card you can open, and built-in tools check the date and do arithmetic.
 - **Documents.** Attach PDFs, text, Markdown, code, CSV, JSON or RTF, or scan paper with the camera. Answers cite their pages, like *(report.pdf, p. 23)*. "Summarize this" reads a long document section by section, and keeps going in the background on iPhones that support it.
-- **Web search with sources.** One tap lets Agello look things up when your message needs it: for a question or something to build, it searches, reads the top pages, picks the relevant parts and answers with `[1]`-style citations; a greeting or a translation is answered right away. DuckDuckGo by default, or Brave, Tavily or your own SearXNG.
+- **Web search with sources.** One tap lets Agello look things up when your message needs it: for a question or something to build, it searches, reads the top pages, picks the relevant parts and answers with `[1]`-style citations; a greeting or a translation is answered right away. DuckDuckGo by default, or Wikipedia, Brave, Tavily or your own SearXNG.
 - **Voice and vision.** Show it a photo, dictate in your language, send voice messages Gemma listens to directly, or start **voice mode**: a hands-free conversation with captions and an optional camera. Talk over it to interrupt.
 - **Personal.** Tell Agello about yourself and how to answer. Opt-in memory keeps lasting facts ("Lives in Montreal"), and you can see and edit every one.
 - **At home on iOS.** Liquid Glass, VoiceOver and Dynamic Type; Siri and Shortcuts ("Ask Agello", "Talk to Agello"), the Action Button, Home and Lock Screen widgets, Control Center, Spotlight, the share sheet and `agello://` links. Model downloads continue in the background and are checked when they finish.
@@ -76,14 +76,21 @@ Agello's color follows what you're doing. Each mode has its own accent, and it l
 
 ## Performance
 
-<img src="docs/images/readme/performance.webp" width="100%" alt="On an iPhone 17 Pro: 0.4 seconds to the first word, 38 tokens per second in a chat with an 8K window, 1.7 seconds to index a 40-page PDF, 1.3 seconds to the first spoken sentence. Decode speed by context window: 43 tokens per second at 4K, 38 at 8K, 34 at 16K, 27 at 32K.">
+<img src="docs/images/readme/performance.webp" width="100%" alt="Google's LiteRT-LM runtime in October 2026, on an iPhone 17 Pro: 0.4 seconds to the first word, 38 tokens per second in a chat with the 8K window that was then the default, 1.7 seconds to index a 40-page PDF, 1.3 seconds to the first spoken sentence. Decode speed by context window: 43 tokens per second at 4K, 38 at 8K, 34 at 16K, 27 at 32K.">
 
 <details>
 <summary><b>Every measurement</b></summary>
 
 <br>
 
-Gemma 4 E4B on an iPhone 17 Pro (12 GB, iOS 27), GPU, with speculative decoding (MTP), on Google's LiteRT-LM v0.18.0 runtime (the one the app used until 2026-10-28), measured before 2026-10-14. Decode speed drops as the phone warms: a cooled calibration on 2026-10-15 measured 37 / 39 / 31 / 20 tok/s. The app now runs our own build of the runtime, whose iPhone run is still to come; in that cooled calibration an earlier version of it decoded 37–45 tok/s at a 32K window.
+The image above and the table below show Google's runtime in October 2026. Since 2026-10-28 the app runs our own build of the runtime (release `agello-next-20261024`, build `99b8f5f6ea49`), and since 2026-11-09 chat uses a 32K window. On an iPhone 17 Pro with that build:
+
+- On 2026-11-10, in a Release build with the 32K window, a 4,517-token reply decoded at 43.3 tok/s with the phone's thermal state at "fair". A hand run on a cool phone the day before gave about 49 ([harness notes](docs/HARNESS.md#h3-done-on-2026-11-10)).
+- The calibration of 2026-11-02 (a Debug build, thermal state nominal throughout) decoded a one-sentence reply at 39 / 42 / 42 tok/s with 8K / 16K / 32K windows, so the window hardly changes the speed any more. A 32K engine peaks at about 3.5 GB ([roadmap](docs/ROADMAP.md#next)).
+- In the bench of 2026-11-10 (Think on, the UI driver attached), plain replies started after 0.6 s ([harness notes](docs/HARNESS.md#h4-done-on-2026-11-10)).
+- The table's other rows haven't been measured again on this build.
+
+**History: Google's LiteRT-LM v0.18.0, before 2026-10-14.** Gemma 4 E4B on an iPhone 17 Pro (12 GB, iOS 27), GPU, with speculative decoding (MTP), on Google's LiteRT-LM v0.18.0 runtime (the one the app used until 2026-10-28), with the 8K window that was then the default. Decode speed drops as the phone warms: a cooled calibration on 2026-10-15 measured 37 / 39 / 31 / 20 tok/s.
 
 | | |
 | --- | --- |
@@ -205,8 +212,8 @@ Voice-activity turn detection, and one audio engine for echo-cancelled capture a
 
 <img src="docs/images/readme/icons/tests.svg" width="40" height="40" alt="">
 
-**376 tests, run on a real iPhone**<br>
-296 unit tests, 56 scenarios and runtime probes with the real models in-process, and 24 real-tap UI flows, including an accessibility audit. They run through a device harness that also simulates 8 GB iPhones. No simulator: the failures that matter only happen on hardware.
+**Over 400 tests, run on a real iPhone**<br>
+Unit tests, scenarios and runtime probes with the real models in-process, and real-tap UI flows, including an accessibility audit. They run through a device harness that also simulates memory pressure on a 12 GB phone. No simulator: the failures that matter only happen on hardware. [Testing](docs/TESTING.md) has the counts.
 
 </td>
 </tr>
@@ -216,7 +223,7 @@ Voice-activity turn detection, and one audio engine for echo-cancelled capture a
 
 ### Get started
 
-**You'll need** an iPhone with 12 GB of memory (iPhone 17 Pro and Pro Max, iPhone Air, or later) on iOS 27 with about 4.4 GB free, and a Mac with Xcode 27. The Apple Developer account needs the **Extended Virtual Addressing**, **Increased Memory Limit**, **Background GPU Access** and **App Groups** capabilities. Agello runs on a physical iPhone only: its LiteRT-LM path is untested in the simulator, and the failures that matter only show on hardware.
+**You'll need** an iPhone with 12 GB of memory (iPhone 17 Pro and Pro Max, iPhone Air, or later) on iOS 27 with about 7 GB free, and a Mac with Xcode 27. The Apple Developer account needs the **Extended Virtual Addressing**, **Increased Memory Limit**, **Background GPU Access** and **App Groups** capabilities. Agello runs on a physical iPhone only: its LiteRT-LM path is untested in the simulator, and the failures that matter only show on hardware.
 
 1. Open `Agello.xcodeproj`. Swift Package Manager resolves `swift-markdown` and `SwiftMath`; LiteRT-LM is vendored.
 2. The project is set up for team `FK2D8X36G2` and bundle IDs `com.patricedery.agello` (plus `.widgets` and `.share`), sharing the App Group `group.com.patricedery.agello`. On another account, change the team and bundle IDs under **Signing & Capabilities**.
@@ -232,7 +239,7 @@ Voice-activity turn detection, and one audio engine for echo-cancelled capture a
 Run the tests with the device harness, on the iPhone or on an Apple silicon Mac running the iPhone app:
 
 ```sh
-scripts/device-harness.sh unit                      # 296 unit tests, scripted engine, ~3 min
+scripts/device-harness.sh unit                      # unit tests, scripted engine, ~3 min
 scripts/device-harness.sh inference                 # the real model on the iPhone
 PLATFORM=mac scripts/device-harness.sh inference    # the same on this Mac
 ```
@@ -242,6 +249,7 @@ PLATFORM=mac scripts/device-harness.sh inference    # the same on this Mac
 ```text
 Agello/            the app: AppState, Inference/, Knowledge/, Markdown/, ModelHub/,
                    Persistence/, System/, Voice/, Views/, Support/ (Theme/: the design system)
+AgelloiOS/         the app's entry, the drawer shell, camera and scanner, Info.plist, Platform/
 AgelloWidgets/     widgets and Control Center controls
 AgelloShare/       share extension ("Ask Agello")
 AgelloTests/       unit tests
@@ -249,7 +257,8 @@ AgelloDeviceTests/ on-device scenarios and runtime probes with the real models
 AgelloUITests/     real-tap UI flows and the accessibility audit
 scripts/           device test harness, device tools, README art
 Vendor/LiteRT-LM/  LiteRT-LM Swift package, pinned to our runtime release
-docs/              user guide, architecture, engineering notes, testing, privacy policy
+docs/              user guide, architecture, engineering notes, testing, the harness, LiteRT-LM,
+                   roadmap, privacy policy
 ```
 
 ### Design system
@@ -276,6 +285,7 @@ The README art comes from the same tokens: `scripts/readme-art/render.sh` redraw
 | [Architecture](docs/ARCHITECTURE.md) | Components, the life of a message, the data model, concurrency |
 | [Engineering notes](docs/ENGINEERING.md) | The #3913 workaround in full, and every reliability safeguard |
 | [Testing](docs/TESTING.md) | The suites, the device harness, and how to run them |
+| [The autonomous harness](docs/HARNESS.md) | The bench that drives the app's own screens on the iPhone, and what each milestone found |
 | [LiteRT-LM](docs/LITERT-LM.md) | The LiteRT-LM the app ships, what it sets, and a map of the fork's verified runtime and model reference |
 | [Privacy policy](https://powerbeef.github.io/Agello/privacy) | What stays on the iPhone, and what the network is used for |
 | [Roadmap](docs/ROADMAP.md) | What has shipped and what's next |
@@ -286,7 +296,7 @@ The README art comes from the same tokens: `scripts/readme-art/render.sh` redraw
 
 1. A tool call that fails is answered with an error the model can read, instead of ending the reply.
 2. A stream holds its conversation weakly, which fixed a 10-minute engine stall when a conversation was dropped while its stream was finishing.
-3. Streams live in a table keyed by ID, so a rejected tool call reported three times ends the stream once instead of freeing it three times; Stop also works between tool rounds, and tool rounds are bounded.
+3. Streams live in a table keyed by ID, so a rejected tool call reported up to three times ends the stream once instead of freeing it each time; Stop also works between tool rounds, and tool rounds are bounded.
 4. `Engine.tokenize` and `countTokens`, and an embedding option that truncates long inputs instead of failing the batch.
 
 Upstream stores prebuilt binaries in Git LFS, which intermittently breaks Swift Package Manager resolution; the build uses only the checksummed XCFramework attached to our release. [Vendor/README.md](Vendor/README.md) has the details and the update steps.
@@ -297,10 +307,7 @@ Work happens directly on `main`. Keep the unit tests and the on-device harness g
 
 ### Roadmap
 
-- **Shipped:** the chat, files, projects and memory, web search and dictation, voice mode with the camera, and system integration. Then a reliability pass: crash fixes in the runtime wrapper, exact token counting, retrieval for CJK and number-heavy files, sampling that matches Settings, VoiceOver and the accessibility audit, MetricKit diagnostics, and a privacy policy.
-- **Next:** the iPhone run of our own LiteRT-LM build, which the app now uses: in the cooled calibration an earlier version decoded 37–45 tok/s at a 32K window, against 20 for Google's binary the same night.
-
-→ [The full roadmap](docs/ROADMAP.md)
+What has shipped, where the work stands and what's next are in [the roadmap](docs/ROADMAP.md).
 
 ## License
 

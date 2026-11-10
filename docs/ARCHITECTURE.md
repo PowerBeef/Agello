@@ -47,7 +47,7 @@ flowchart TB
 | `ShareInbox`, `SpotlightIndex` | Items shared from other apps wait in an App Group inbox for the app to answer; chats are indexed for system search. |
 | `BackgroundWork` | A continued processing task (background GPU) around long document summaries, with system progress UI that can cancel it. |
 | `ModelStore`, `ModelCatalog` | Pinned model downloads in a background `URLSession`, size verification, storage, and cleanup of retired files. |
-| `DeviceProfile` | Device memory policy: default context size, the low-memory stop threshold, the largest context the Settings slider offers. |
+| `DeviceProfile` | Device memory policy: the 12 GB floor, the context window chosen at each load from the memory left, the low-memory stop threshold. |
 
 ## One message, end to end
 
