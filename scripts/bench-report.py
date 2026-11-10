@@ -1,18 +1,41 @@
 #!/usr/bin/env python3
 """Join a bench run's three layers into one report (docs/HARNESS.md).
 
-Usage: scripts/bench-report.py OUT STARTED
-  OUT      the harness folder (build/device-harness): attachments/bench/ holds what the UI
-           driver saw, bench/traces/ the app's traces pulled from the phone.
-  STARTED  the run's start, ISO 8601 UTC: older traces belong to other runs.
+Usage: scripts/bench-report.py OUT STARTED [PREVIOUS]
+  OUT       the harness folder (build/device-harness): attachments/bench/ holds what the UI
+            driver saw, bench/traces/ the app's traces pulled from the phone.
+  STARTED   the run's start, ISO 8601 UTC: older traces belong to other runs.
+  PREVIOUS  the report.json of the run this one resumes: its cases that weren't run again stay.
 
-Writes OUT/bench/report.json, report.md and each reply as Markdown. Exits 1 when a case has no
-trace, didn't end by itself, or the screen and the trace disagree.
+       scripts/bench-report.py --remaining REPORT.json BenchCases.swift
+  Prints the case ids REPORT doesn't hold complete, comma-separated (for BENCH_RESUME=1).
+
+Writes OUT/bench/report.json, report.md and each reply as Markdown, and compares the run with
+scripts/bench/baseline.json (BENCH_ACCEPT=1 makes this run the baseline). Exits 1 when a case
+has no trace, didn't end by itself, or the screen and the trace disagree.
 """
 import datetime, json, os, re, shutil, subprocess, sys, tempfile
 
-out, started = sys.argv[1], sys.argv[2]
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def complete(case):
+    """A turn the report holds whole: traced, ended by the model, on screen as traced."""
+    return case.get("ended") == "model" and case.get("screenAgrees") and not case.get("interrupted")
+
+
+if sys.argv[1] == "--remaining":
+    previous = json.load(open(sys.argv[2]))
+    done = {}
+    for case in previous.get("cases", []):
+        name = case["id"].split("/")[0]
+        done[name] = done.get(name, True) and complete(case)
+    ids = re.findall(r'BenchCase\(\s*id: "([^"]+)"', open(sys.argv[3]).read())
+    print(",".join(name for name in ids if not done.get(name)))
+    sys.exit(0)
+
+out, started = sys.argv[1], sys.argv[2]
+previous_report = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None
 bench = os.path.join(out, "bench")
 os.makedirs(bench, exist_ok=True)
 
@@ -312,7 +335,11 @@ cases, problems = [], []
 for row in surface["rows"]:
     for turn in row.get("turns", []):
         name = row["id"] if turn["turn"] == 1 else f"{row['id']}/{turn['turn']}"
-        case = {"id": name, "surface": turn, "think": row.get("think"), "search": row.get("search")}
+        case = {
+            "id": name, "surface": turn, "think": row.get("think"), "search": row.get("search"),
+            "device": {key: row.get(key) for key in ("thermalStateAtStart", "battery", "charging", "secondsCooling") if key in row},
+            "attempts": row.get("attempts", 1), "firstAttempt": row.get("firstAttempt", ""),
+        }
         cases.append(case)
         sent = when(turn["sentAt"]) if turn.get("sentAt") else None
         near = [t for t in traces if sent and abs((when(t["startedAt"]) - sent).total_seconds()) < 15]
@@ -339,13 +366,17 @@ for row in surface["rows"]:
             # The screen shows the reply: the end of what VoiceOver reads is the end of the trace's text.
             "screenAgrees": bool(screen) and spoken(screen)[-60:] == spoken(reply)[-60:],
         })
+        # The app left the foreground while it replied: the reply isn't what a user would get.
+        case["interrupted"] = any(event["name"] in ("scene background", "scene inactive") for event in trace.get("events", [])[1:])
         verdict = {}
         checks = CHECKS.get(row["id"], [])
         for check in checks[turn["turn"] - 1] if turn["turn"] <= len(checks) else []:
             verdict.update(check(reply))
         case["verdict"] = verdict
         case["failedChecks"] = failed_checks(verdict) + ([] if case["fencesClosed"] else ["a code block isn't closed"])
-        if case["ended"] != "model":
+        if case["interrupted"]:
+            problems.append(f"{name}: interrupted (the app left the foreground); run it again with BENCH_RESUME=1")
+        elif case["ended"] != "model":
             problems.append(f"{name}: ended by {case['ended']}")
         if not case["screenAgrees"]:
             problems.append(f"{name}: the screen and the trace disagree")
@@ -353,7 +384,55 @@ for row in surface["rows"]:
             f"# {name}\n\n**Prompt:**\n\n{trace.get('prompt', '')}\n\n**Sources:**\n\n" + "\n".join(f"- {source}" for source in case["sources"])
             + f"\n\n**Reasoning:**\n\n{trace.get('thought', '')}\n\n**Reply:**\n\n{reply}\n")
 
-json.dump({"started": started, "cases": cases, "problems": problems}, open(os.path.join(bench, "report.json"), "w"), indent=1, sort_keys=True)
+# A resumed run keeps the previous run's cases it didn't run again, in the bench's order.
+if previous_report and os.path.exists(previous_report):
+    rerun = {case["id"].split("/")[0] for case in cases}
+    kept = [case for case in json.load(open(previous_report)).get("cases", []) if case["id"].split("/")[0] not in rerun]
+    order = re.findall(r'BenchCase\(\s*id: "([^"]+)"', open(os.path.join(root, "AgelloUITests", "BenchCases.swift")).read())
+    cases = sorted(kept + cases, key=lambda case: (order.index(case["id"].split("/")[0]) if case["id"].split("/")[0] in order else 99, case["id"]))
+
+# What changed since the accepted baseline.
+baseline_path = os.path.join(root, "scripts", "bench", "baseline.json")
+summary = {
+    case["id"]: {
+        "ended": case.get("ended"), "outputTokens": case.get("stats", {}).get("outputTokens"),
+        "tokPerSecond": round(case.get("stats", {}).get("decodeTokensPerSecond") or 0, 1),
+        "failedChecks": case.get("failedChecks", []), "search": bool(case.get("search")),
+    }
+    for case in cases if "ended" in case
+}
+changes = []
+baseline = json.load(open(baseline_path)) if os.path.exists(baseline_path) else None
+if baseline:
+    for name, now in summary.items():
+        before = baseline["cases"].get(name)
+        if before is None:
+            changes.append(f"{name}: new case")
+            continue
+        if now["ended"] != before["ended"]:
+            changes.append(f"{name}: ended by {now['ended']}, was {before['ended']}")
+        fixed = [check for check in before["failedChecks"] if check not in now["failedChecks"]]
+        broken = [check for check in now["failedChecks"] if check not in before["failedChecks"]]
+        if broken:
+            changes.append(f"{name}: now failing: {'; '.join(broken)}")
+        if fixed:
+            changes.append(f"{name}: no longer failing: {'; '.join(fixed)}")
+        # Without Search a reply is the same every time: a different length is a different reply.
+        if not now["search"] and now["outputTokens"] != before["outputTokens"]:
+            changes.append(f"{name}: the reply changed ({before['outputTokens']} tokens, now {now['outputTokens']})")
+        if before["tokPerSecond"] and abs(now["tokPerSecond"] - before["tokPerSecond"]) / before["tokPerSecond"] > 0.15:
+            changes.append(f"{name}: {now['tokPerSecond']} tok/s, was {before['tokPerSecond']} (check the thermal state before reading this)")
+    changes += [f"{name}: not in this run" for name in baseline["cases"] if name not in summary]
+
+json.dump({"started": started, "cases": cases, "problems": problems, "sinceBaseline": changes}, open(os.path.join(bench, "report.json"), "w"), indent=1, sort_keys=True)
+accepted = False
+if os.environ.get("BENCH_ACCEPT") == "1":
+    if problems:
+        print("Not accepted as the baseline: the run has problems.")
+    else:
+        json.dump({"accepted": started, "cases": summary}, open(baseline_path, "w"), indent=1, sort_keys=True)
+        print(f"Accepted as the baseline: {baseline_path}")
+        accepted = True
 
 lines = [f"# Bench run of {started}", "", "| Case | Ended | Tokens | tok/s | First token | On screen | Checks |", "| --- | --- | --- | --- | --- | --- | --- |"]
 for case in cases:
@@ -366,6 +445,12 @@ for case in cases:
         f"{stats.get('timeToFirstToken', 0):.1f} s | {'matches' if case['screenAgrees'] else 'DIFFERS'} | "
         f"{'; '.join(case['failedChecks']) or 'pass'} |")
 lines.append("")
+if baseline:
+    lines += [f"## Since the baseline of {baseline['accepted']}", ""] + ([f"- {change}" for change in changes] or ["Nothing changed."]) + [""]
+if accepted:
+    lines += ["This run is the baseline from now on.", ""]
+elif not baseline:
+    lines += ["No baseline yet: run with BENCH_ACCEPT=1 to make a run the baseline.", ""]
 for case in cases:
     surface_row = case["surface"]
     lines += [f"## {case['id']}", ""]
@@ -387,6 +472,13 @@ for case in cases:
         f"done after {surface_row.get('secondsToDone', 0):.1f} s; {surface_row.get('screenCharacters', 0)} characters read back, "
         f"{'matching' if case['screenAgrees'] else 'NOT matching'} the trace",
     ]
+    device = case.get("device", {})
+    if device:
+        cooling = f", after {device['secondsCooling']:.0f} s of cooling" if device.get("secondsCooling") else ""
+        lines.append(
+            f"- **Phone:** thermal state {device.get('thermalStateAtStart')} at the start{cooling}, battery {100 * (device.get('battery') or 0):.0f} %"
+            f"{', charging' if device.get('charging') else ''}"
+            + (f"; second attempt ({case['firstAttempt']})" if case.get("attempts", 1) > 1 else ""))
     lines += layers(case)
     if case["search"]:
         lines.append(f"- **Search:** plan {' '.join(case['searchPlan'].split()) or 'none recorded'}; {len(case['sources'])} sources, {case['citations']} citations")
@@ -411,7 +503,7 @@ for case in cases:
 if problems:
     lines += ["## Problems", ""] + [f"- {problem}" for problem in problems] + [""]
 open(os.path.join(bench, "report.md"), "w").write("\n".join(lines))
-print("\n".join(lines[: len(cases) + 5]))
+print("\n".join(lines[: len(cases) + 7 + max(len(changes), 1)]))
 if problems:
     print("Problems:\n" + "\n".join(f"- {problem}" for problem in problems))
 print(f"Report: {os.path.join(bench, 'report.md')}")

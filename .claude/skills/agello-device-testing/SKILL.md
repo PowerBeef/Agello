@@ -19,6 +19,11 @@ MobileBuildMCP is configured with the `device` workflow only.
    `xcrun devicectl device info lockState --device <udid>` says
    `passcodeRequired: false` when it's unlocked. Never lock the phone or end
    iPhone Mirroring yourself unless the user asks at the time.
+   The script checks this itself before an iPhone run (the preflight: phone
+   reachable and unlocked, iPhone Mirroring closed, 10 GB free on this Mac) and
+   exits with 4 and the one thing to fix. On exit 4, ask the user to unlock
+   the phone or close Mirroring; don't do it for them, and don't skip the
+   check (`PREFLIGHT=off`) to get past it.
 2. For `ui` and `screenshots`: Settings → Developer → Enable UI Automation is
    on (it asks for the passcode once). Otherwise XCUITest waits 60 s for a
    passcode prompt on the phone and fails with "Timed out while enabling
@@ -102,6 +107,13 @@ pressed, Swift type-checked, Python compiled or run against `scripts/bench/<id>/
 A full run is 13 turns and about 20 minutes; the phone warms up, so compare speeds case by case.
 
 - `BENCH_ONLY=id,id` runs some cases; `BENCH_TRACE=off` runs without tracing (screen timings only).
+- `BENCH_RESUME=1` runs only the cases the last report doesn't hold complete and keeps the
+  others: use it after a run cut short (a call, a lock). A case that loses the foreground is
+  retried once by itself.
+- Each report opens with what changed since the baseline (`scripts/bench/baseline.json`:
+  checks, how replies ended, a different reply where Search is off, speeds more than 15 % away).
+  `BENCH_ACCEPT=1` makes a run the new baseline: only when the user accepts its results.
+- `BENCH_COOL=1` waits for the phone to cool before each case, for speeds.
 - `scripts/bench-direct.sh CASE` sends one case with no driver attached (the installed Release
   build launches with the prompt and sends it itself). Use it for speed: XCUITest's
   accessibility session costs about 8 % of decode speed and causes late frames (2026-11-10).

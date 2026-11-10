@@ -1,0 +1,104 @@
+{
+ "accepted": "2026-11-10T18:53:04Z",
+ "cases": {
+  "calculator-search": {
+   "ended": "model",
+   "failedChecks": [
+    "7 \u00d7 8: no 56"
+   ],
+   "outputTokens": 3157,
+   "search": true,
+   "tokPerSecond": 44.2
+  },
+  "email": {
+   "ended": "model",
+   "failedChecks": [],
+   "outputTokens": 197,
+   "search": false,
+   "tokPerSecond": 44.2
+  },
+  "explain": {
+   "ended": "model",
+   "failedChecks": [],
+   "outputTokens": 1666,
+   "search": false,
+   "tokPerSecond": 31.4
+  },
+  "facts-search": {
+   "ended": "model",
+   "failedChecks": [],
+   "outputTokens": 1373,
+   "search": true,
+   "tokPerSecond": 38.5
+  },
+  "file-report": {
+   "ended": "model",
+   "failedChecks": [],
+   "outputTokens": 172,
+   "search": false,
+   "tokPerSecond": 31.4
+  },
+  "file-report/2": {
+   "ended": "model",
+   "failedChecks": [],
+   "outputTokens": 49,
+   "search": false,
+   "tokPerSecond": 34.9
+  },
+  "followup-search": {
+   "ended": "model",
+   "failedChecks": [],
+   "outputTokens": 316,
+   "search": true,
+   "tokPerSecond": 33.2
+  },
+  "followup-search/2": {
+   "ended": "model",
+   "failedChecks": [],
+   "outputTokens": 43,
+   "search": true,
+   "tokPerSecond": 31.5
+  },
+  "python": {
+   "ended": "model",
+   "failedChecks": [],
+   "outputTokens": 2235,
+   "search": false,
+   "tokPerSecond": 38.5
+  },
+  "swiftui-search": {
+   "ended": "model",
+   "failedChecks": [
+    "5 Swift errors"
+   ],
+   "outputTokens": 1483,
+   "search": true,
+   "tokPerSecond": 37.4
+  },
+  "todo": {
+   "ended": "model",
+   "failedChecks": [],
+   "outputTokens": 3827,
+   "search": false,
+   "tokPerSecond": 41.0
+  },
+  "trip-search": {
+   "ended": "model",
+   "failedChecks": [],
+   "outputTokens": 1911,
+   "search": true,
+   "tokPerSecond": 29.5
+  },
+  "ttl-cache": {
+   "ended": "model",
+   "failedChecks": [
+    "Part 1: 1 failed",
+    "Part 2: 1 failed",
+    "its own tests: 2 failed"
+   ],
+   "outputTokens": 4517,
+   "search": false,
+   "tokPerSecond": 39.8
+  }
+ }
+}

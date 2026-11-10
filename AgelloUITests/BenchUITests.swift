@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// The bench driver of the autonomous harness (docs/HARNESS.md, H1): each case is sent through
@@ -25,8 +26,17 @@ final class BenchUITests: XCTestCase {
       Set($0.split(separator: ",").map(String.init))
     }
     var rows: [[String: Any]] = []
+    UIDevice.current.isBatteryMonitoringEnabled = true
     for bench in BenchCase.all where only?.contains(bench.id) ?? true {
-      let row = XCTContext.runActivity(named: "bench \(bench.id)") { _ in run(bench) }
+      // An interrupted case (a call, a lock, the app sent to the background) runs once more
+      // and isn't a failure unless it's interrupted again.
+      var row = XCTContext.runActivity(named: "bench \(bench.id)") { _ in run(bench, isLastAttempt: false) }
+      if row["interrupted"] as? Bool == true {
+        let first = row["interruption"] as? String ?? "interrupted"
+        row = XCTContext.runActivity(named: "bench \(bench.id), again") { _ in run(bench, isLastAttempt: true) }
+        row["attempts"] = 2
+        row["firstAttempt"] = first
+      }
       rows.append(row)
       attach(try JSONSerialization.data(withJSONObject: ["rows": rows], options: [.prettyPrinted, .sortedKeys]), named: "bench-surface.json")
     }
@@ -34,8 +44,17 @@ final class BenchUITests: XCTestCase {
   }
 
   /// One case: launch, set the modes, send, wait, read the screen.
-  private func run(_ bench: BenchCase) -> [String: Any] {
+  private func run(_ bench: BenchCase, isLastAttempt: Bool) -> [String: Any] {
     var row: [String: Any] = ["id": bench.id, "think": bench.think, "search": bench.search]
+    // Heat slows decoding by up to a fifth: BENCH_COOL=1 waits for the phone to cool first.
+    if ProcessInfo.processInfo.environment["BENCH_COOL"] == "1" {
+      let started = Date()
+      _ = wait(upTo: 600, every: 10, until: { ProcessInfo.processInfo.thermalState == .nominal })
+      row["secondsCooling"] = Date().timeIntervalSince(started)
+    }
+    row["thermalStateAtStart"] = ProcessInfo.processInfo.thermalState.rawValue
+    row["battery"] = Double(UIDevice.current.batteryLevel)
+    row["charging"] = UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full
     app = XCUIApplication()
     // BENCH_TRACE=off measures what tracing costs: the same case, the screen's timings only.
     app.launchArguments = bench.launchArguments
@@ -66,9 +85,15 @@ final class BenchUITests: XCTestCase {
         input.tap()
         input.typeText(message)
       }
-      let turn = sendAndWait(bench, turn: index + 1)
+      let turn = sendAndWait(bench, turn: index + 1, isLastAttempt: isLastAttempt)
       turns.append(turn)
-      if turn["finished"] as? Bool != true { break }
+      if turn["finished"] as? Bool != true || turn["foreground"] as? Bool != true {
+        row["interrupted"] = true
+        row["interruption"] =
+          turn["foreground"] as? Bool == true
+          ? "turn \(index + 1) didn't finish" : "the app left the foreground in turn \(index + 1)"
+        break
+      }
     }
     row["turns"] = turns
     let chat = app.scrollViews.firstMatch
@@ -85,7 +110,7 @@ final class BenchUITests: XCTestCase {
   }
 
   /// Taps Send, waits for the reply, and reads the screen: one turn's row.
-  private func sendAndWait(_ bench: BenchCase, turn number: Int) -> [String: Any] {
+  private func sendAndWait(_ bench: BenchCase, turn number: Int, isLastAttempt: Bool) -> [String: Any] {
     var turn: [String: Any] = ["turn": number]
     let name = "bench-\(bench.id)-\(number)"
     let send = element("chat.send")
@@ -106,10 +131,17 @@ final class BenchUITests: XCTestCase {
     if wait(upTo: bench.timeout, every: 2, until: { bubbles.count > before }) {
       turn["secondsToFirstText"] = Date().timeIntervalSince(sent)
     }
-    let finished = wait(upTo: bench.timeout, every: 5, until: { !stop.exists })
-    turn["finished"] = finished
+    // Done when Stop goes, or interrupted when the app is no longer in front.
+    let finished = wait(
+      upTo: bench.timeout, every: 5, until: { !stop.exists || app.state != .runningForeground })
+    turn["foreground"] = app.state == .runningForeground
+    turn["finished"] = finished && !stop.exists
     turn["secondsToDone"] = Date().timeIntervalSince(sent)
-    XCTAssertTrue(finished, "\(bench.id) turn \(number): still writing after \(Int(bench.timeout)) s")
+    if isLastAttempt {
+      XCTAssertTrue(
+        turn["finished"] as? Bool == true && turn["foreground"] as? Bool == true,
+        "\(bench.id) turn \(number): interrupted or still writing after \(Int(bench.timeout)) s")
+    }
 
     // What the screen holds: the reply as VoiceOver reads it, and any banner.
     let bubble = bubbles.element(boundBy: max(0, bubbles.count - 1))

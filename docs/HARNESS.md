@@ -1,6 +1,6 @@
 # The autonomous harness
 
-A plan, approved by the maintainer on 2026-11-10. H1, H2 and H3 are done (below); H4 to H6 aren't built.
+A plan, approved by the maintainer on 2026-11-10. H1 to H4 are done (below); H5 and H6 aren't built.
 
 The goal: one command runs Agello on the iPhone as a user would, through its real screens, and
 comes back with one report per reply that joins what was on screen, what the app did, and what the
@@ -207,6 +207,40 @@ in both runs):
   driver. An engine question, not the harness's.
 - Not done: scroll jumps (the `ui` suite's `testStreamingNeverJumps` still guards them).
 
+### H4, done on 2026-11-10
+
+A full run needs an unlocked phone and nothing else, and says what changed since the last.
+
+- **Preflight.** Every iPhone run, of any suite, first checks that the phone is reachable and
+  unlocked, that iPhone Mirroring is closed and that this Mac has 10 GB free. It stops with the
+  one thing to fix and exit code 4, before building and without taking the lock
+  (`PREFLIGHT=off` skips it). Not checked: UI automation, a Focus, the battery (the report
+  records the battery and the thermal state at each case's start instead).
+- **Interruptions.** A case that loses the foreground (a call, a lock) is marked interrupted and
+  run once more; only a second interruption fails it. The report never counts an interrupted
+  reply as the model's.
+- **Resume.** `BENCH_RESUME=1` runs only the cases the last report doesn't hold complete (traced,
+  ended by the model, the screen matching) and keeps the others, so a run cut short costs its
+  missing cases, not twenty minutes.
+- **Baseline.** `BENCH_ACCEPT=1` makes a run without problems the baseline
+  (`scripts/bench/baseline.json`, committed: per turn how it ended, its tokens, its speed, its
+  failed checks). Every later report opens with what changed: a check that now fails or passes,
+  a reply that ended another way, a different reply where Search is off (the model repeats
+  itself exactly there), a speed more than 15 % away.
+- **Cooling.** `BENCH_COOL=1` waits, up to ten minutes a case, for the thermal state to return
+  to nominal: for runs whose speeds matter.
+
+Checked on the iPhone 17 Pro: a resumed run of ten cases (18 minutes) completed the report, was
+accepted as the baseline, and a second resume answered "Nothing to resume"; a run started on a
+locked phone stopped at the preflight with exit 4 and left no lock. Not exercised: no case was
+interrupted during the run, so the retry hasn't met a real call or lock yet.
+
+The first baseline, 13 turns: every reply ended by itself with the screen matching its trace,
+at 29 to 44 tok/s with the driver attached and the phone warming. Three cases fail checks, and
+the baseline records them as the model's current state: the calculator doesn't show 56 for
+7 × 8, the SwiftUI answer has 5 compile errors, and the three-part coding prompt misses
+requirements (one failure in each part, two in its own tests).
+
 ## Decisions for the maintainer
 
 1. **Long prompts.** Typing 2,900 characters through XCUITest is slow and a newline may send
@@ -215,8 +249,9 @@ in both runs):
 2. **The bench builds Release.** Proposed: yes. The engine-level suites keep Debug.
 3. **Tracing only by launch argument.** Proposed: yes for now. A switch in Settings → Advanced, so
    a user can share a trace of a bad reply, is a later choice.
-4. **Where results live.** Proposed: reports in `build/` (scratch, as today), the numbers that
-   matter in the roadmap, and one small committed file of accepted baselines.
+4. **Where results live.** Built in H4: reports in `build/` (scratch), the numbers that
+   matter in the roadmap, and one small committed file of accepted baselines
+   (`scripts/bench/baseline.json`).
 5. **Order.** H1 first, then H2 to H6 in order.
 
 ## Risks

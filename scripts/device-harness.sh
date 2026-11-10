@@ -3,7 +3,7 @@
 # the iPhone app (PLATFORM=mac). Never the simulator.
 #
 # Usage:
-#   scripts/device-harness.sh [unit|inference|files|web|ui|all|thinking|memory|calibrate|probes|screenshots] [extra xcodebuild args...]
+#   scripts/device-harness.sh [unit|inference|files|web|ui|all|thinking|memory|calibrate|probes|screenshots|bench] [extra xcodebuild args...]
 #
 #   unit       Unit tests (planner, budgets, schema, markdown, files, projects,
 #              the app pipeline through the scripted engine), on the iPhone.
@@ -26,8 +26,13 @@
 #   bench      The autonomous harness (docs/HARNESS.md): each bench case sent
 #              through the app's screens in a Release build, the app tracing
 #              the reply; traces pulled and joined in bench/report.md.
-#              BENCH_ONLY=id,id runs some cases. iPhone only.
-#   all        unit, inference + files, then ui.
+#              BENCH_ONLY=id,id runs some cases; BENCH_RESUME=1 runs only those
+#              the last report doesn't hold complete; BENCH_COOL=1 waits for
+#              the phone to cool before each case (for speeds); BENCH_ACCEPT=1
+#              makes this run the baseline later runs are compared with
+#              (scripts/bench/baseline.json); BENCH_TRACE=off runs without the
+#              app's trace (screen timings only). iPhone only.
+#   all        unit, inference + files + web, then ui.
 #
 # Env: PLATFORM (iphone, the default; mac: this Mac runs the iPhone app
 #      "Designed for iPad/iPhone" through its Metal path; ui, screenshots and
@@ -43,8 +48,13 @@
 #      Homebrew's, looked up directly so other xcbeautify copies in PATH are ignored).
 # Outputs: $OUT/<suite>.xcresult, $OUT/<suite>.log (raw xcodebuild output),
 #          $OUT/attachments/, $OUT/harness-report.json
+# An iPhone run starts with a preflight: the phone reachable and unlocked,
+# iPhone Mirroring closed, 10 GB free on this Mac. It exits with 4 and the one
+# thing to fix (PREFLIGHT=off skips it).
 # One run at a time on this machine: while another run holds the lock
 # (build/.harness.lock in the main checkout), the script exits with 3.
+# Other exit codes: 2 for a usage error, xcodebuild's otherwise (65: tests
+# failed), and for bench 1 when the report finds a problem.
 # The script keeps this Mac awake until it exits.
 set -eu
 
@@ -106,6 +116,36 @@ write_lock_info() {
 }
 # Keep this Mac awake until the script exits: an iPhone run needs it too.
 caffeinate -dims -w $$ &
+
+# Before an iPhone run builds anything: the one thing to fix, if there is one. A locked phone
+# otherwise stalls the run at "Unlock iPhone to Continue" after the whole build.
+preflight() {
+  if ! xcrun devicectl list devices 2>/dev/null | grep "$DEVICE_ID" | grep -q "available\|connected"; then
+    echo "Preflight: the iPhone ($DEVICE_ID) isn't reachable. Connect it, then run again." >&2
+    return 4
+  fi
+  if xcrun devicectl device info lockState --device "$DEVICE_ID" 2>/dev/null | grep -q "passcodeRequired: true"; then
+    if pgrep -f ScreenContinuity >/dev/null 2>&1; then
+      echo "Preflight: the iPhone is locked and iPhone Mirroring is open, which keeps it locked. Close iPhone Mirroring and unlock the iPhone, then run again." >&2
+    else
+      echo "Preflight: the iPhone is locked. Unlock it (and keep it unlocked for the run), then run again." >&2
+    fi
+    return 4
+  fi
+  if pgrep -f ScreenContinuity >/dev/null 2>&1; then
+    echo "Preflight: iPhone Mirroring is open. It connects when the phone locks and would stop the run: close it." >&2
+    return 4
+  fi
+  free_gb="$(df -g / | awk 'NR == 2 {print $4}')"
+  if [ "${free_gb:-99}" -lt 10 ]; then
+    echo "Preflight: only $free_gb GB free on this Mac; a build needs room. Run scripts/storage.sh." >&2
+    return 4
+  fi
+  return 0
+}
+if [ "$PLATFORM" = iphone ] && [ "${PREFLIGHT:-on}" != off ]; then
+  preflight || exit 4
+fi
 
 BUNDLE_ID="com.patricedery.agello"
 mkdir -p "$OUT"
@@ -239,9 +279,24 @@ case "$SUITE" in
     export TEST_RUNNER_HARNESS_BENCH=1
     [ -n "${BENCH_ONLY:-}" ] && export TEST_RUNNER_BENCH_ONLY="$BENCH_ONLY"
     [ -n "${BENCH_TRACE:-}" ] && export TEST_RUNNER_BENCH_TRACE="$BENCH_TRACE"
+    [ -n "${BENCH_COOL:-}" ] && export TEST_RUNNER_BENCH_COOL="$BENCH_COOL"
     SCHEME=AgelloBench
     CONFIGURATION=Release
     BENCH_STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    # Resuming: only the cases the last report doesn't hold complete; its other cases are kept.
+    BENCH_PREVIOUS=""
+    if [ "${BENCH_RESUME:-}" = 1 ] && [ -f "$OUT/bench/report.json" ]; then
+      BENCH_PREVIOUS="$OUT/bench-previous-report.json"
+      cp "$OUT/bench/report.json" "$BENCH_PREVIOUS"
+      remaining="$(python3 "$ROOT/scripts/bench-report.py" --remaining "$BENCH_PREVIOUS" "$ROOT/AgelloUITests/BenchCases.swift")"
+      if [ -z "$remaining" ]; then
+        echo "Nothing to resume: the last report holds every case complete."
+        rm -f "$BENCH_PREVIOUS"
+        exit 0
+      fi
+      echo "Resuming: $remaining"
+      export TEST_RUNNER_BENCH_ONLY="$remaining"
+    fi
     scopes="AgelloUITests/BenchUITests"
     ;;
   all)
@@ -280,7 +335,8 @@ if [ "$SUITE" = bench ]; then
     --domain-type appDataContainer --domain-identifier "$BUNDLE_ID" \
     --source Documents/traces --destination "$OUT/bench/traces" >/dev/null 2>&1 \
     || echo "No traces on the device"
-  python3 "$ROOT/scripts/bench-report.py" "$OUT" "$BENCH_STARTED" || status=$?
+  python3 "$ROOT/scripts/bench-report.py" "$OUT" "$BENCH_STARTED" "$BENCH_PREVIOUS" || status=$?
+  rm -f "$BENCH_PREVIOUS"
 else
   pull_report
 fi
