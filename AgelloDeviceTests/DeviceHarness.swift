@@ -2,7 +2,11 @@ import Metal
 import SwiftData
 import XCTest
 
-import UIKit
+// Not on a Mac under `swift test` (docs/CLI.md), where these scenarios run on the command
+// line's build of the engine.
+#if canImport(UIKit)
+  import UIKit
+#endif
 
 @testable import Agello
 
@@ -70,7 +74,9 @@ final class DeviceHarness {
     appState.webSettings = baselineWeb
     // Long downloads and generations must not be interrupted by auto-lock (the harness script
     // keeps the Mac that drives the run awake with caffeinate).
-    UIApplication.shared.isIdleTimerDisabled = true
+    #if canImport(UIKit)
+      UIApplication.shared.isIdleTimerDisabled = true
+    #endif
     let gpu = MTLCreateSystemDefaultDevice()
     report["device"] = [
       "model": Self.deviceModel,
@@ -111,10 +117,20 @@ final class DeviceHarness {
   }
 
   /// UIKit's device name on iPhone (and for the iPhone app run on a Mac).
-  private static var deviceModel: String { UIDevice.current.model }
+  private static var deviceModel: String {
+    #if canImport(UIKit)
+      UIDevice.current.model
+    #else
+      "Mac"
+    #endif
+  }
 
   private static var systemDescription: String {
-    "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
+    #if canImport(UIKit)
+      "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
+    #else
+      "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"
+    #endif
   }
 
   private static func sysctl(_ name: String) -> String {

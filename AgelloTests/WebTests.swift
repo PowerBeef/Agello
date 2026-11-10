@@ -4,8 +4,13 @@ import XCTest
 
 final class WebTests: XCTestCase {
   private func fixture(_ name: String, _ ext: String) throws -> Data {
-    let url = try XCTUnwrap(
-      Bundle(for: WebTests.self).url(forResource: name, withExtension: ext), "Missing \(name).\(ext)")
+    #if SWIFT_PACKAGE
+      // `swift test` on a Mac (docs/CLI.md): SwiftPM copies the folder into the package's bundle.
+      let found = Bundle.module.url(forResource: name, withExtension: ext, subdirectory: "Fixtures")
+    #else
+      let found = Bundle(for: WebTests.self).url(forResource: name, withExtension: ext)
+    #endif
+    let url = try XCTUnwrap(found, "Missing \(name).\(ext)")
     return try Data(contentsOf: url)
   }
 
@@ -156,11 +161,14 @@ final class WebTests: XCTestCase {
     XCTAssertTrue(linked.contains("See [3] and [9]."), "No URL / no source: unchanged")
     XCTAssertTrue(linked.contains("`array[1]`"))
     XCTAssertTrue(linked.contains("x[1]"))
-    // The markdown parser renders them as links.
-    guard case .paragraph(let first) = MarkdownDocument(parsing: linked).blocks.first else {
-      return XCTFail()
-    }
-    XCTAssertTrue(first.runs.contains { $0.link?.absoluteString == "https://a.example" })
+    #if !SWIFT_PACKAGE
+      // The markdown parser renders them as links (the parser is the interface's: not in the
+      // Mac command line's build).
+      guard case .paragraph(let first) = MarkdownDocument(parsing: linked).blocks.first else {
+        return XCTFail("The linked text isn't a paragraph")
+      }
+      XCTAssertTrue(first.runs.contains { $0.link?.absoluteString == "https://a.example" })
+    #endif
   }
 
   func testWebPromptLayout() {

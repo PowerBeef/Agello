@@ -54,7 +54,7 @@ for d in "$MAIN"/build/*; do
   size="$(kb "$d")"
   case "$name" in
     device-harness | mac-harness) row keep "$size" "build/$name: the latest harness results" ;;
-    cli) row keep "$size" "build/cli: the Mac command line's builds, one per runtime in use (about 0.3 GB each), and its traces" ;;
+    cli) row keep "$size" "build/cli: the Mac command line's builds, one per runtime in use (about 0.3 GB each; test/ is the tests' debug build), its runs and traces (delete runs/ once their numbers are recorded)" ;;
     bench-venv) row keep "$size" "build/bench-venv: pytest for the bench's checks (bench-report.py rebuilds it when missing)" ;;
     device-harness-* | mac-harness-*)
       row scratch "$size" "build/$name: one-off harness results (once their numbers are recorded)" "$d" ;;

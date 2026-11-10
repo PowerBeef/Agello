@@ -172,6 +172,40 @@ PLATFORM=mac ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scrip
   `open -b com.patricedery.agello --args --mock-engine` (CLAUDE.md, "Claude
   desktop app").
 
+## On this Mac, natively: the command line
+
+`agello` (docs/CLI.md) is the app's own engine code built for macOS with SwiftPM: a development
+tool for work on the runtime, never shipped. It's faster to iterate with than the iPhone, and it
+can be built against any checkout of our LiteRT-LM. The iPhone still confirms what ships.
+
+```sh
+swift build -c release --scratch-path build/cli/release            # then build/cli/release/release/agello
+scripts/cli-check.sh                                                # does it still build? (every harness run ends with it)
+scripts/cli-test.sh unit [Class[/method]]                           # 269 unit tests, about a minute, no phone
+scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-model scenarios on this Mac's GPU
+build/cli/release/release/agello bench --only todo,explain --out build/cli/runs/x.jsonl
+scripts/cli-bench.sh release next -- --only explain                 # two runtime builds, in turns, with the comparison
+scripts/cli-report.py | cli-timeline.py | cli-accuracy.py           # answer checks, where the time went, GPU against CPU
+```
+
+- **Ask before a real-model run** (anything but `unit`, `--mock`, a build or `cli-check.sh`): it
+  takes this Mac's GPU, which the user often needs. Records flag a busy Mac (`suspect`), and
+  `cli-bench.sh` reports a noise band: a change inside it isn't a change.
+- **What compiles there** is `Package.swift`'s list: `AppState`, `Inference/`, `Knowledge/`,
+  `ModelHub/`, `Persistence/` and a few files of `Support/` and `System/`. A platform type the
+  engine calls needs its twin in `AgelloCLI/Sources/Platform/`; an engine file elsewhere must be
+  added to the list. `cli-check.sh` says when an app change broke it.
+- **It runs as the iPhone decides:** the engine sees a simulated 8 GiB app limit, so the window
+  is 32K as on the phone (`--memory-limit` changes it). Six bench cases were checked to reach
+  the engine exactly as on the iPhone 17 Pro; the replies themselves differ between the GPUs.
+- **Nothing of this Mac's is touched:** models are read from `~/Models/agello` and never
+  changed, caches go to `~/Models/agello/cache/agello-cli/<build id>/`, tests run with their home
+  folder redirected to `build/cli/test-home`, and chats live in memory.
+- **Not there:** the interface's tests, the `ui`, `screenshots`, `bench` (the iPhone's) and
+  `memory` suites, Search providers that need a key.
+- `PLATFORM=mac` (above) runs the iPhone app's own build on this Mac through Xcode; the command
+  line is the lighter way to the same engine, and the one that can change runtimes.
+
 ## Outside test runs
 
 `scripts/device-run.sh` looks at the installed app directly (results in

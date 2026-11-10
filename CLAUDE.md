@@ -44,6 +44,8 @@ scripts/device-run.sh logs 20       # relaunch the installed app, save 20 s of i
 scripts/storage.sh                  # the project's disk use against its budget; `clean` deletes the scratch
 swift build -c release --scratch-path build/cli/release   # the Mac command line (docs/CLI.md); then build/cli/release/release/agello
 scripts/cli-bench.sh release next -- --only explain       # two runtime builds through the app's engine on this Mac (ask first)
+scripts/cli-test.sh unit                                   # 269 unit tests natively on this Mac, about a minute, no phone
+scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-model scenarios natively (a Mac run: ask first)
 ```
 
 `ONLY` takes `Target/Class[/method]` entries inside the chosen suite (not with `all`):

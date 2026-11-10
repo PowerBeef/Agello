@@ -1,6 +1,6 @@
 # The Mac command line
 
-A plan, approved by the maintainer on 2026-11-10. C1 to C6 are built (below); C7 and C8 aren't.
+A plan, approved by the maintainer on 2026-11-10. C1 to C6 and C8 are built (below); C7, the new probes inside the runtime, isn't: it's work in the fork.
 
 `agello` runs Agello's engine on a Mac from a command line: the app's own code, on the runtime
 build of your choice, with the runtime's telemetry and the app's trace of every reply. It's a
@@ -129,6 +129,22 @@ scripts/cli-report.py build/cli/runs/quality.jsonl
   its 95 % range, per build. This is quality as users meet it, where token identity isn't.
 - Search cases vary with the live web: keep them out of comparisons between builds.
 
+## The tests, natively
+
+```sh
+scripts/cli-test.sh unit                         # 269 unit tests on the scripted engine, about a minute
+scripts/cli-test.sh unit AppStateTests           # one class, or Class/method
+scripts/cli-test.sh inference                    # the real-model scenarios on this Mac's GPU (also files, web, thinking, probes, calibrate)
+```
+
+The package has two test targets on the same folders the iPhone's test targets compile,
+`AgelloTests` and `AgelloDeviceTests`, importing the command line's module. `scripts/cli-test.sh`
+builds them and runs them with the home folder redirected to `build/cli/test-home`, so a test
+never reads or writes this Mac's own Library, Documents or settings; the real-model suites read
+the models from `~/Models/agello` and take the harness lock. Left out: the tests of the
+interface (markdown rendering, the shell, message actions, voice capture, intents), the
+background-task tests and the memory envelopes, which need the iPhone.
+
 ## Reading where the time went
 
 ```sh
@@ -229,6 +245,18 @@ agello bench --only email --telemetry 3 --out build/cli/runs/trace.jsonl       #
 - `AppState.regenerate` takes an optional seed (the app passes none), and
   `LiteRTChatEngine.tokenIDs` exposes the tokenizer; both are covered by the unit tests' next
   iPhone run.
+
+### C8, built on 2026-11-10
+
+- **269 unit tests pass natively** in 73 s (of the iPhone's 333: the rest test the interface).
+- **The `inference` suite passes natively, 23 of 23, in 105 s**: load, text, chat isolation,
+  stop, tools, Think, image, audio, vision toggles, the context limit, exact token counts,
+  titles, memory, dictation, voice turns, digits past 2,048 and 4,096 tokens, the benchmark.
+  The other real-model suites build; they haven't been run here yet.
+- The device tests' harness lost its hard dependency on UIKit (three `#if canImport(UIKit)`),
+  and the web tests find their fixtures in SwiftPM's bundle when built as a package.
+- The tests' home is redirected, checked: after a run, this Mac's
+  `~/Library/Application Support/Models` still doesn't exist.
 
 ## What it can't tell you
 

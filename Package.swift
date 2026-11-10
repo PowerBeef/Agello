@@ -33,9 +33,8 @@ let package = Package(
         // The app's interface, and what only it uses.
         "Agello/App", "Agello/Assets.xcassets", "Agello/PrivacyInfo.xcprivacy", "Agello/Resources",
         "Agello/Views", "Agello/Markdown", "Agello/Support/Theme",
-        "Agello/Support/Announcements.swift", "Agello/Support/MetricsReporter.swift",
+        "Agello/Support/Announcements.swift",
         "Agello/System/AppIntents.swift", "Agello/System/SharedIntents.swift",
-        "Agello/System/AppReset.swift", "Agello/System/AppRouter.swift",
         "Agello/Voice/CameraFeed.swift", "Agello/Voice/VoiceAudio.swift",
         "Agello/Voice/VoiceSession.swift",
       ],
@@ -48,11 +47,36 @@ let package = Package(
         "Agello/Support/ReplyTrace.swift",
         "Agello/System/ShareInbox.swift", "Agello/System/SharedItems.swift",
         "Agello/System/SpotlightIndex.swift",
+        // Logic the engine doesn't call, kept in so its unit tests run here too (`swift test`).
+        "Agello/System/AppReset.swift", "Agello/System/AppRouter.swift",
+        "Agello/Support/MetricsReporter.swift",
         "Agello/Voice/VoiceText.swift",
         // One list of bench cases for the iPhone's driver and for `agello bench`.
         "AgelloUITests/BenchCases.swift",
         "AgelloCLI/Sources",
       ]
-    )
+    ),
+    // The app's unit tests that need no interface, on the scripted engine (scripts/cli-test.sh).
+    .testTarget(
+      name: "AgelloTests",
+      dependencies: ["Agello"],
+      path: "AgelloTests",
+      exclude: [
+        ".swiftlint.yml",
+        // These test the interface, or what only the iPhone has.
+        "AboutTests.swift", "AppRouterTests.swift", "BackgroundWorkTests.swift", "MarkdownTests.swift",
+        "MessageActionsTests.swift", "ShellModelTests.swift", "ThreadGroupingTests.swift",
+        "VoiceTests.swift",
+      ],
+      resources: [.copy("Fixtures")]
+    ),
+    // The real-model scenarios and probes, on this Mac's GPU (scripts/cli-test.sh).
+    .testTarget(
+      name: "AgelloDeviceTests",
+      dependencies: ["Agello"],
+      path: "AgelloDeviceTests",
+      // The memory envelopes simulate the iPhone's limit with ballast: they stay on the iPhone.
+      exclude: [".swiftlint.yml", "MemoryEnvelopeScenarioTests.swift"]
+    ),
   ]
 )

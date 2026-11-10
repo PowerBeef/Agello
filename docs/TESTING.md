@@ -47,6 +47,14 @@ PLATFORM=mac scripts/device-harness.sh inference
 
 The first run registers the Mac for development with the signing team. Results land in `build/mac-harness/`; app logs come from `log stream --predicate 'subsystem == "com.patricedery.agello"'` and crash reports from `~/Library/Logs/DiagnosticReports/`.
 
+### The Mac command line
+
+For work on the runtime, the app's engine also builds as a command line for macOS
+([CLI.md](CLI.md)): `scripts/cli-test.sh unit` runs the unit tests that need no interface
+natively (269, about a minute), `scripts/cli-test.sh inference` the real-model scenarios on the
+Mac's GPU, and `agello bench` the bench's cases with the runtime's telemetry, against any build
+of our LiteRT-LM. It's a development tool: what ships is confirmed on the iPhone.
+
 ### Looking at the iPhone
 
 With iPhone Mirroring on this Mac, the phone's screen is a window: you can look at the app and tap through it without picking up the phone, and so can Claude's computer use. The session pauses after a few minutes idle (click **Connect** to resume), and a test run takes over the phone: the mirror waits until the phone is locked again. Opening the mirror during a run locks the phone and stops the run. Look before or after a run, not during.
