@@ -127,6 +127,14 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     return measured > 0 ? measured : seedTokens
   }
 
+  /// `text` as the model's tokenizer encodes it, or nil without an engine. For comparing
+  /// replies token by token (docs/CLI.md): these are the text's tokens, re-encoded, not the
+  /// ids the sampler chose.
+  func tokenIDs(_ text: String) async -> [Int]? {
+    guard let engine else { return nil }
+    return try? await engine.tokenize(text)
+  }
+
   /// Tokens `text` encodes to with the model's tokenizer; estimated (erring high) if the
   /// runtime can't count.
   private func textTokens(_ text: String) async -> Int {

@@ -97,7 +97,30 @@ final class Session {
     let records = documents.map {
       FileRecord(id: $0.id, name: $0.name, kind: $0.kindRaw, pageCount: $0.pageCount)
     }
-    let earlier = Set(thread.orderedTurns.map(\.id))
+    let exchange = await exchange(in: thread, onText: onText) {
+      await self.appState.send(
+        text: prompt, imageData: image, audioFileURL: audio, files: records, webSearch: search, in: thread)
+    }
+    if !exchange.accepted {
+      for document in documents { appState.knowledge.delete(document) }
+    }
+    return exchange
+  }
+
+  /// Answers `reply`'s prompt again, as the Regenerate button does: sampled, without
+  /// speculative decoding, here with a fixed `seed` so a run can be repeated.
+  func regenerate(_ reply: ChatTurn, in thread: ChatThread, seed: Int) async -> Exchange {
+    await exchange(in: thread, onText: { _ in }, perform: {
+      await self.appState.regenerate(reply, in: thread, seed: seed)
+    })
+  }
+
+  /// Runs one send and gathers what came back: the new reply turn, the time, the trace file.
+  private func exchange(
+    in thread: ChatThread, onText: @escaping @MainActor (String) -> Void,
+    perform: @MainActor () async -> Bool
+  ) async -> Exchange {
+    let earlier = Set(thread.turns.map(\.id))
     let tracesBefore = Self.traceFiles()
     let started = ContinuousClock.now
     let watcher = Task { @MainActor in
@@ -114,17 +137,18 @@ final class Session {
         try? await Task.sleep(for: .milliseconds(100))
       }
     }
-    let accepted = await appState.send(
-      text: prompt, imageData: image, audioFileURL: audio, files: records, webSearch: search, in: thread)
-    if !accepted {
-      for document in documents { appState.knowledge.delete(document) }
-    }
+    let accepted = await perform()
     watcher.cancel()
     await watcher.value
     let seconds = (ContinuousClock.now - started) / .seconds(1)
     let reply = thread.orderedTurns.last { !$0.isUser && !earlier.contains($0.id) }
     let trace = Self.traceFiles().subtracting(tracesBefore).max()
     return Exchange(accepted: accepted, reply: reply, seconds: seconds, tracePath: trace)
+  }
+
+  /// `text` as the model's tokenizer encodes it (nil on the scripted engine).
+  func tokenIDs(_ text: String) async -> [Int]? {
+    await (appState.engine as? LiteRTChatEngine)?.tokenIDs(text)
   }
 
   /// The title and memory helpers the app runs a few seconds after a reply, run now.

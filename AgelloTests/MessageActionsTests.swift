@@ -77,6 +77,14 @@ final class MessageActionsTests: XCTestCase {
     XCTAssertEqual(seedsAfter, 2, "An ordinary message doesn't sample")
   }
 
+  /// A seed given from outside is the one used (runs that must repeat, docs/CLI.md).
+  func testRegenerateWithAGivenSeedUsesIt() async throws {
+    let thread = await twoExchanges()
+    await appState.regenerate(try XCTUnwrap(thread.orderedTurns.last), in: thread, seed: 4_242)
+    let seeds = await mock.samplingSeeds
+    XCTAssertEqual(seeds, [4_242])
+  }
+
   func testEditCreatesANewBranchAndKeepsTheOriginal() async throws {
     let thread = await twoExchanges()
     let first = try XCTUnwrap(thread.orderedTurns.first)

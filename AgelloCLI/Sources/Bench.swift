@@ -17,6 +17,11 @@ struct Bench {
     var helpers = true
     var telemetryLevel: Int32?
     var caseTimeout: Double?
+    var timelineInterval = 1.0
+    var settleSeconds = 1.0
+    /// Sampled replies per case after its greedy one (Regenerate with seeds `seed + 1…`).
+    var samples = 0
+    var seed = 1_000
 
     init(_ arguments: inout Arguments) {
       only = Set(arguments.values("only").flatMap { $0.split(separator: ",").map(String.init) })
@@ -27,6 +32,10 @@ struct Bench {
       helpers = !arguments.flag("no-helpers")
       telemetryLevel = arguments.value("telemetry").flatMap(Int32.init)
       caseTimeout = arguments.value("timeout").flatMap(Double.init)
+      timelineInterval = arguments.value("timeline-interval").flatMap(Double.init) ?? 1
+      settleSeconds = arguments.value("settle").flatMap(Double.init) ?? 1
+      samples = max(0, arguments.value("samples").flatMap(Int.init) ?? 0)
+      seed = arguments.value("seed").flatMap(Int.init) ?? 1_000
     }
   }
 
@@ -119,10 +128,12 @@ struct Bench {
     }
     let thread = session.newThread()
     let files = SampleDocuments.named(in: bench.launchArguments).map { [$0] } ?? []
+    var firstReply: ChatTurn?
     for (index, prompt) in ([bench.prompt] + bench.followUps).enumerated() {
       let id = index == 0 ? bench.id : "\(bench.id)/\(index + 1)"
-      let before = Machine.state()
+      let before = await settledState()
       EngineProbe.reset()
+      let timeline = EngineTimeline(interval: options.timelineInterval)
       let limit = options.caseTimeout ?? bench.timeout
       let timedOut = Task { @MainActor in
         try await Task.sleep(for: .seconds(limit))
@@ -132,20 +143,25 @@ struct Bench {
       let exchange = await session.ask(
         prompt, search: bench.search && index == 0, files: index == 0 ? files : [], in: thread
       ) { _ in }
+      if index == 0 { firstReply = exchange.reply }
       timedOut.cancel()
       let ranOut = (try? await timedOut.value) ?? false
+      let engineTimeline = await timeline.finish()
+      let after = Machine.state()
       // The engine's account of this turn alone, before the helpers add theirs.
       let telemetry = EngineProbe.snapshot()
       let totals = RuntimeTelemetry.totals()
       if options.helpers { await session.runHelpers() }
-      var record = record(id: id, bench: bench, exchange: exchange, repetition: repetition, warmup: warmup)
+      var record = await record(id: id, bench: bench, exchange: exchange, repetition: repetition, warmup: warmup)
       record["prompt"] = prompt
       record["telemetry"] = telemetry ?? NSNull()
       if let totals, totals.prefillMilliseconds > 0 {
         record["prefillTPS"] = Double(totals.tokensPrefilled) / (totals.prefillMilliseconds / 1000)
       }
       record["timeout"] = ranOut
-      record["load"] = ["before": before, "after": Machine.state()]
+      record["load"] = ["before": before, "after": after]
+      record["suspect"] = Machine.suspicions(before: before, after: after)
+      record["engineTimeline"] = engineTimeline
       if let level = options.telemetryLevel, level >= 3, let trace = exchange.tracePath {
         let path = (trace as NSString).deletingPathExtension + ".engine.json"
         if EngineProbe.writeTrace(to: path) { record["engineTrace"] = path }
@@ -153,17 +169,69 @@ struct Bench {
       append(record)
       let ended = record["ended"] as? String ?? "?"
       if !warmup, ended != "model" { problems += 1 }
+      let suspect = (record["suspect"] as? [String] ?? []).joined(separator: "; ")
       note(String(
-        format: "%@ %d/%d: %d tokens, %.1f tok/s, first token %.2f s, %.1f s, ended %@",
+        format: "%@ %d/%d: %d tokens, %.1f tok/s, first token %.2f s, %.1f s, ended %@%@",
         id, repetition, options.repeats, record["decode"] as? Int ?? 0, record["decodeTPS"] as? Double ?? 0,
-        record["ttft"] as? Double ?? 0, exchange.seconds, ended))
+        record["ttft"] as? Double ?? 0, exchange.seconds, ended, suspect.isEmpty ? "" : " [suspect: \(suspect)]"))
       guard exchange.accepted, appState.generationError == nil else { break }
     }
+    if !warmup, options.samples > 0, let firstReply {
+      await sample(bench, reply: firstReply, in: thread, repetition: repetition)
+    }
+  }
+
+  /// Quality as users meet it: the same prompt answered again, sampled, as Regenerate does
+  /// (no speculative decoding, the preset's sampler), each with a fixed seed.
+  private mutating func sample(_ bench: BenchCase, reply: ChatTurn, in thread: ChatThread, repetition: Int) async {
+    var previous = reply
+    for sample in 1...options.samples {
+      let before = await settledState()
+      EngineProbe.reset()
+      let seed = options.seed + sample
+      let exchange = await session.regenerate(previous, in: thread, seed: seed)
+      let telemetry = EngineProbe.snapshot()
+      let after = Machine.state()
+      var record = await record(
+        id: bench.id + "~sampled", bench: bench, exchange: exchange, repetition: repetition, warmup: false)
+      record["kind"] = "app-sample"
+      record["prompt"] = bench.prompt
+      record["sample"] = sample
+      record["sampleSeed"] = seed
+      record["mtp"] = false
+      record["telemetry"] = telemetry ?? NSNull()
+      record["load"] = ["before": before, "after": after]
+      record["suspect"] = Machine.suspicions(before: before, after: after)
+      append(record)
+      let ended = record["ended"] as? String ?? "?"
+      if ended != "model" { problems += 1 }
+      note(String(
+        format: "%@ sample %d/%d (seed %d): %d tokens, %.1f tok/s, ended %@", bench.id, sample, options.samples,
+        seed, record["decode"] as? Int ?? 0, record["decodeTPS"] as? Double ?? 0, ended))
+      guard exchange.accepted, let reply = exchange.reply else { break }
+      previous = reply
+    }
+  }
+
+  /// The Mac's state once this process's own last turn has left the GPU's utilization figure
+  /// (it's an average over a few seconds): a pause, then up to 8 s more while the GPU still
+  /// reads busy. What it reads after that is someone else's work.
+  private func settledState() async -> [String: Any] {
+    try? await Task.sleep(for: .seconds(options.settleSeconds))
+    var state = Machine.state()
+    var waited = 0.0
+    while let busy = state["gpuUtilization"] as? NSNumber, busy.intValue > 30, waited < 8 {
+      try? await Task.sleep(for: .seconds(1))
+      waited += 1
+      state = Machine.state()
+    }
+    state["settledSeconds"] = options.settleSeconds + waited
+    return state
   }
 
   private func record(
     id: String, bench: BenchCase, exchange: Session.Exchange, repetition: Int, warmup: Bool
-  ) -> [String: Any] {
+  ) async -> [String: Any] {
     let appState = session.appState
     let stats = exchange.reply?.stats
     let resolved = appState.resolved
@@ -202,6 +270,11 @@ struct Bench {
         "environment": ProcessInfo.processInfo.environment.filter { $0.key.hasPrefix("AGELLO_") },
       ],
     ]
+    // The reply as tokens, for comparing two backends token by token (scripts/cli-accuracy.py).
+    if let reply = exchange.reply, let answer = await session.tokenIDs(reply.text) {
+      record["outputTokenIDs"] = answer
+      record["thoughtTokenIDs"] = await session.tokenIDs(reply.thought) ?? []
+    }
     // The step the phone's traces are compared on: what reached the engine.
     if let events = trace?["events"] as? [[String: Any]],
       let send = events.first(where: { $0["name"] as? String == "engine send" })

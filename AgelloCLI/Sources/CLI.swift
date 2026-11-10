@@ -36,6 +36,10 @@ struct AgelloCommand {
       --out FILE.jsonl       where records are appended (default build/cli/runs/<time>-<label>.jsonl);
                              traces go beside it, in FILE.traces/
       --telemetry 0-4        the runtime's telemetry level (3 also writes each reply's event trace)
+      --samples N            after each case, N more replies to its first message, sampled as
+                             Regenerate does (ids end in ~sampled); --seed S sets the first seed
+      --timeline-interval S  how often the engine's totals are sampled during a reply (default 1)
+      --settle S             the pause before each turn, so the Mac's state is read at rest (default 1)
       --timeout SECONDS      per turn, instead of each case's own
       --no-helpers           skip the title and memory helpers after each reply
 

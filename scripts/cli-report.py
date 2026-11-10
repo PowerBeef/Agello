@@ -48,7 +48,8 @@ if os.path.exists(cache_path):
 
 problems = []
 for record in records:
-    case, _, turn = record["id"].partition("/")
+    # A sampled reply (`todo~sampled`) is judged as its case's first turn.
+    case, _, turn = record["id"].replace("~sampled", "").partition("/")
     key = hashlib.sha256((record["id"] + "\0" + record["output"]).encode()).hexdigest()[:20]
     if key not in verdicts:
         verdict, failed = checks.judge(case, int(turn or 1), record["output"])

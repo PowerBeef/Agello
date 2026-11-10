@@ -469,16 +469,17 @@ final class AppState {
   }
 
   /// Answer `reply`'s prompt again as a new version of the reply (the old
-  /// one stays reachable through the version switcher).
+  /// one stays reachable through the version switcher). It samples with a seed of its own;
+  /// `seed` fixes it, for runs that must repeat (docs/CLI.md).
   @discardableResult
-  func regenerate(_ reply: ChatTurn, in thread: ChatThread) async -> Bool {
+  func regenerate(_ reply: ChatTurn, in thread: ChatThread, seed: Int? = nil) async -> Bool {
     guard canRegenerate(reply, in: thread), let prompt = promptTurn(of: reply, in: thread) else {
       return false
     }
     return await generate(
       prompt: prompt.text, imageData: prompt.imageData, audioFileURL: nil, in: thread,
       history: thread.textHistory(before: prompt), replacing: reply,
-      webSearch: prompt.parts.webSearch, samples: true
+      webSearch: prompt.parts.webSearch, samplingSeed: seed ?? Int.random(in: 1...Int(Int32.max))
     ) {}
   }
 
@@ -524,7 +525,7 @@ final class AppState {
   private func generate(
     prompt: String, imageData: Data?, audioFileURL: URL?, in thread: ChatThread,
     history rewound: [(role: ChatRole, text: String)]?, replacing: ChatTurn? = nil,
-    webSearch: Bool = false, samples: Bool = false, persist: () -> Void
+    webSearch: Bool = false, samplingSeed: Int? = nil, persist: () -> Void
   ) async -> Bool {
     guard !isGenerating, !isPreparing, !isBenchmarking else { return false }
     guard let context = modelContext else { return false }
@@ -613,10 +614,9 @@ final class AppState {
       // Regenerate: a reply that differs from the one it replaces. A rebuilt conversation repeats
       // its reply (seed 0) and MTP decodes greedily (probe 18), so this one samples with a seed
       // of its own; the next message rebuilds the usual conversation.
-      if samples {
+      if let samplingSeed {
         do {
-          try await self.engine.reseedSampling(
-            history: history, seed: Int.random(in: 1...Int(Int32.max)))
+          try await self.engine.reseedSampling(history: history, seed: samplingSeed)
         } catch {
           self.conversationThreadID = nil
           let chatError = error as? ChatError ?? .underlying(message: error.localizedDescription)
@@ -687,7 +687,7 @@ final class AppState {
     await consume(stream, into: reply, context: context, voiceTurn: voiceTurn)
     ReplyTrace.end(reply: reply.isDeleted ? nil : reply, error: generationError, notice: notice)
     // A sampling conversation (Regenerate) serves only this reply.
-    if samples { conversationThreadID = nil }
+    if samplingSeed != nil { conversationThreadID = nil }
     // Sources found by the automatic web_search tool during the reply.
     let toolSources = WebSourcesRecorder.drain()
     if !toolSources.isEmpty {

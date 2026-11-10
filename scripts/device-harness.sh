@@ -344,4 +344,6 @@ fi
 # What the project's disk use is now, and any scratch the run left (one-off OUT folders included).
 echo
 "$ROOT/scripts/storage.sh" brief || true
+# The Mac command line compiles the engine's files too: say so the same day an app change breaks it.
+"$ROOT/scripts/cli-check.sh" || true
 exit $status

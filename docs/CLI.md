@@ -1,6 +1,6 @@
 # The Mac command line
 
-A plan, approved by the maintainer on 2026-11-10. C1 to C3 are built (below); C4 to C8 aren't.
+A plan, approved by the maintainer on 2026-11-10. C1 to C6 are built (below); C7 and C8 aren't.
 
 `agello` runs Agello's engine on a Mac from a command line: the app's own code, on the runtime
 build of your choice, with the runtime's telemetry and the app's trace of every reply. It's a
@@ -85,6 +85,70 @@ python3 ../LiteRT-LM/tools/agello-bench/compare.py build/cli/runs/*.jsonl --base
 python3 ../LiteRT-LM/tools/agello-bench/telemetry.py build/cli/runs/release.jsonl --case explain
 ```
 
+## Comparing two builds of the runtime
+
+```sh
+scripts/cli-bench.sh release next -- --only todo,explain,ttl-cache    # what ships against the fork's local build
+ROUNDS=5 scripts/cli-bench.sh release again=release -- --only explain # one build against itself: the noise
+```
+
+`scripts/cli-bench.sh` builds every arm first, then runs `agello bench` once per arm and round
+with the arms taking turns (one process each, so drift and heat land on all alike), then writes
+the comparison (`compare.py`: medians, a 95 % interval for each change, the base arm's own noise
+band) and the answer checks (`cli-report.py`). A change inside the noise band isn't a change.
+
+- It takes the harness lock, so it and an iPhone run never measure or build at the same time.
+- Before each process it waits for the GPU to be free (`QUIET_WAIT`, 60 s); a run that starts
+  anyway says so in its records.
+- Every record carries the Mac's state before and after its turn (load, what other processes
+  used of the CPU, GPU utilization, swap, thermal state, memory-pressure events) and a `suspect`
+  list when one of them makes the number doubtful.
+- A real-model run is a Mac run: ask the maintainer first.
+
+## Accuracy
+
+```sh
+agello bench --backend cpu --only email,explain --label cpu --out build/cli/runs/acc/cpu.jsonl   # the reference: about 10 tok/s
+agello bench --only email,explain --label gpu --out build/cli/runs/acc/gpu.jsonl
+scripts/cli-accuracy.py build/cli/runs/acc/cpu.jsonl build/cli/runs/acc/gpu.jsonl
+
+agello bench --only email,todo --samples 10 --label gpu --out build/cli/runs/quality.jsonl
+scripts/cli-report.py build/cli/runs/quality.jsonl
+```
+
+- **Against the CPU backend.** With the shipping settings a reply is decoded greedily on either
+  backend, so the two replies start alike and part at the first token where the backends'
+  arithmetic ranks two candidates differently. `cli-accuracy.py` reports the tokens shared from
+  the start, whether the replies part in the reasoning or the answer, and the text on each side.
+  A split at a near tie is ordinary between two float implementations; a split early in every
+  reply, or on a digit or a name, is what #3913 looked like. Records carry each reply's tokens
+  (`outputTokenIDs`, `thoughtTokenIDs`: the text re-encoded by the model's tokenizer).
+- **The answer checks over many sampled runs.** `--samples N` answers each case's first message
+  N more times as Regenerate does (sampled with the preset, no speculative decoding), with seeds
+  `--seed`+1 and up, so a run repeats exactly. `cli-report.py` gives each check's pass rate with
+  its 95 % range, per build. This is quality as users meet it, where token identity isn't.
+- Search cases vary with the live web: keep them out of comparisons between builds.
+
+## Reading where the time went
+
+```sh
+scripts/cli-timeline.py build/cli/runs/release.jsonl --case ttl-cache          # a reply cut in thirds
+scripts/cli-timeline.py build/cli/runs/release.jsonl --case ttl-cache --rows   # second by second
+agello bench --only email --telemetry 4 --out build/cli/runs/kernels.jsonl     # then telemetry.py --kernels 12
+agello bench --only email --telemetry 3 --out build/cli/runs/trace.jsonl       # an event trace per reply
+```
+
+- **The engine timeline** is in every bench record: the runtime's totals sampled once a second
+  while the reply is written. `cli-timeline.py` cuts the decoding in parts by tokens and gives,
+  for each, what a decode step produced (tokens per step, drafts MTP kept) and what it cost
+  (the step, the GPU's verify and drafter runs, waiting on the GPU, host work). A reply slows
+  either because steps yield less or because they cost more: the two columns say which.
+- **Level 4** times each GPU kernel in its own encoder. It halves the speed, so it's a pass of
+  its own, read for shares (`telemetry.py --kernels`).
+- **Level 3** writes the runtime's events as a Chrome/Perfetto trace beside the app's trace
+  (`*.engine.json`). The runtime keeps the last 65,536 events per thread, about three seconds of
+  decoding: enough for a short reply or the end of a long one. C7 lifts that.
+
 ## Milestones
 
 | | What | Done when |
@@ -133,6 +197,38 @@ python3 ../LiteRT-LM/tools/agello-bench/telemetry.py build/cli/runs/release.json
   over repeated runs.
 - The sample report of the file case moved from the chat screen to
   `Agello/Knowledge/SampleDocuments.swift`, which both benches use.
+
+### C4 and C5, built on 2026-11-10
+
+- **A long reply doesn't slow down on this Mac.** The three-part coding prompt (3,992 tokens
+  here) decodes at 100, 113 and 116 tok/s by thirds. A decode step costs the same throughout
+  (27.5, 26.9, 26.9 ms; the GPU's verify run 22.7 to 23.0 ms), and speed follows the drafts MTP
+  keeps (58 %, 68 %, 71 %). `todo` (3,853 tokens) shows the same. So the 20 % slowdown seen in
+  the last third on the iPhone ([HARNESS.md](HARNESS.md), H3) isn't a cost that grows with the
+  position in our runtime's algorithm, at least on this GPU; on the phone the step itself got
+  slower, which points at heat. Still to confirm on the iPhone.
+- **Per-kernel shares** (level 4, `email`): a decode run is 72 % `fc1x1_int4_weights`, a prefill
+  run 43 % the int8 convolution and 28 % `weights_convert_uint4_to_int8`, the conversion the
+  fork's T4 notes already name as the next thing to hoist.
+- **The event trace wraps**, as expected: 107 of 646 decode steps of a 1,503-token reply were
+  left in it. The once-a-second timeline doesn't have that limit.
+- **A busy Mac shows.** During these runs the GPU read 75 to 86 % busy from other work, and the
+  records were flagged ("the GPU was 75 % busy before the case").
+- **The build check** (`scripts/cli-check.sh`) runs at the end of every harness run and prints
+  one line; broken on purpose, it quotes the compiler's error.
+
+### C6, built on 2026-11-10
+
+- **CPU against GPU, one case** (`email`): the CPU backend decodes it at 10.7 tok/s with MTP on,
+  the GPU at 97. The replies share their first 59 tokens (37 % of the shorter) and part in the
+  answer at "…consistently, and I ▸am concerned" against "▸would appreciate": two fair
+  continuations, the look of a near tie. A wider run over the bench is still to do.
+- **Sampled runs repeat.** Three sampled replies to `email` (seeds 1001 to 1003: 186, 160 and
+  175 tokens) came back identical in a second process; all three pass their check. Sampling
+  runs at 47 tok/s here, half the greedy speed, since Regenerate turns speculative decoding off.
+- `AppState.regenerate` takes an optional seed (the app passes none), and
+  `LiteRTChatEngine.tokenIDs` exposes the tokenizer; both are covered by the unit tests' next
+  iPhone run.
 
 ## What it can't tell you
 

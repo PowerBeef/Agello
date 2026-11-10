@@ -43,6 +43,7 @@ xcodebuild build -project Agello.xcodeproj -scheme Agello \
 scripts/device-run.sh logs 20       # relaunch the installed app, save 20 s of its logs
 scripts/storage.sh                  # the project's disk use against its budget; `clean` deletes the scratch
 swift build -c release --scratch-path build/cli/release   # the Mac command line (docs/CLI.md); then build/cli/release/release/agello
+scripts/cli-bench.sh release next -- --only explain       # two runtime builds through the app's engine on this Mac (ask first)
 ```
 
 `ONLY` takes `Target/Class[/method]` entries inside the chosen suite (not with `all`):
