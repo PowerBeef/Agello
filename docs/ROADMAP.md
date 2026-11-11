@@ -73,7 +73,7 @@ The plan is [BACKEND.md](BACKEND.md); this is its order of work by what each ste
 - This repo: clean after B1's commit; nothing since `5a0928c` is pushed.
 - The fork (`../LiteRT-LM`, `agello`): one local commit, `3691fbd9` (the telemetry report and doc). The runtime's worktree (`../agello-arms/next/LiteRT-LM`) is on the new local branch `agello-one`: `agello-next` plus `3118b5d4` (the probes; `agello-next` itself holds that commit too) and `e3c93749` (the one repository). Three more commits prune it (`7e4d9b8d`, `a9553bde`, `edb2c7db`). Its `dist/` is the last commit's build, `9128dc9c2055`, so `scripts/cli-bench.sh … next` measures the pruned one repository. Nothing is pushed. The checkouts `../LiteRT` and `../ml-drift` are no longer read by the build.
 - `build/cli/runs/`: `c7` (B0's comparison), `c7-probes` (the traced run and the logits dump), `noise` (the baseline), `noise-session-busy`, `b2`, and `b3-a`, `b3-b`, `b3-c` (the pruning's one-round reply checks). Their numbers are in BACKEND.md and CLI.md, so they can go when space is wanted.
-- Disk: 60 GB free on 2026-11-11, over the floor again.
+- Disk: 52 GB free at the end of 2026-11-11. Bazel's output base was deleted that day on the maintainer's go (`bazelisk clean --expunge`), so the next runtime build starts from scratch: about 9 minutes and 8 GB. The built framework in the worktree's `dist/` (`9128dc9c2055`) doesn't need it, so B3's speed run can go ahead.
 
 **When the Mac is free** (in this order):
 
