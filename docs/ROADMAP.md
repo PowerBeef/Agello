@@ -6,7 +6,7 @@ What has shipped, what's next, and the manual checks still to do. Updated 2026-1
 
 The handoff between work sessions: read this first, then the section of the plan it points to.
 
-- **The backend's direction** ([BACKEND.md](BACKEND.md), the maintainer's correction of 2026-11-10): the backend becomes a hard fork, our own runtime for Apple GPUs and iOS 27, and the work on it is squeezing speed out of the hardware. Their choices: one repository (our LiteRT and ML Drift code moves into the runtime's, only what the Apple build compiles); Google's upstream as a read-only source (no merges, single fixes ported by hand, #3913 answered only if someone replies); and the app drops its code for Google's binary and for the CPU backend (the Advanced setting and the fallback after a failed GPU load). No more comparisons with Google's runtime or the CPU backend: the harness judges performance between builds of ours, and Claude judges output quality by reading the replies. Milestones B0 to B6 are planned and none is started; the same day the maintainer paused every run and build because the Mac was busy, so nothing here has been built or measured. Done without a build: the plan, and `scripts/cli-accuracy.py` (GPU against CPU) became `scripts/cli-replies.py` (where two builds' replies part). Next, when the Mac is free: B0 (finish C7) and B1 (the app's two spare paths, then the iPhone suites).
+- **The backend's direction** ([BACKEND.md](BACKEND.md), the maintainer's correction of 2026-11-10): the backend becomes a hard fork, our own runtime for Apple GPUs and iOS 27, and the work on it is squeezing speed out of the hardware. Their choices: one repository (our LiteRT and ML Drift code moves into the runtime's, only what the Apple build compiles); Google's upstream as a read-only source (no merges, single fixes ported by hand, #3913 answered only if someone replies); and the app drops its code for Google's binary and for the CPU backend (the Advanced setting and the fallback after a failed GPU load). No more comparisons with Google's runtime or the CPU backend: the harness judges performance between builds of ours, and Claude judges output quality by reading the replies. Milestones B0 to B6 are planned and none is started; the same day the maintainer paused every run and build because the Mac was busy, so nothing here has been built or measured. Done without a build: the plan, and `scripts/cli-accuracy.py` (GPU against CPU) became `scripts/cli-replies.py` (where two builds' replies part). The maintainer chose to wait for a free Mac even for B1's code. What to run, in order, when the Mac or the iPhone is free again is under [Next](#next), "When testing is available again".
 - **The Mac command line** ([CLI.md](CLI.md), approved 2026-11-10): `agello` runs the app's own engine code on this Mac, on the runtime build of your choice, to work on our LiteRT-LM backend with deep telemetry. It's a development tool built with SwiftPM (`Package.swift`, `AgelloCLI/`), never shipped; there is still no Mac app. C1 to C6 and C8 are built. `agello ask` and `agello bench` run the bench's cases through the app's pipeline: six cases without Search reach the engine exactly as on the iPhone 17 Pro, and the fork's `compare.py` and `telemetry.py` read the records unchanged. `scripts/cli-bench.sh` compares runtime builds in turns, `cli-timeline.py` says where a reply's time went, `cli-replies.py` shows where two builds' replies part, `--samples` gives the answer checks' pass rates over seeded runs, and `scripts/cli-test.sh` runs 269 unit tests and the 23 `inference` scenarios natively. First findings on the M6 (shipped runtime, 32K window): about 90 to 115 tok/s; a 4K-token reply doesn't slow down (a decode step costs the same from the first third to the last, and speed follows the drafts MTP keeps), so the slowdown seen late in long replies on the iPhone isn't a position cost in our runtime on this GPU and points at heat; a decode run is 72 % `fc1x1_int4_weights`, a prefill run 28 % `weights_convert_uint4_to_int8`. Three hooks in shared code redirect the models, cache and trace folders and do nothing unless set; `AppState.regenerate` takes an optional seed. Still owed: the iPhone `unit` run with the new tests, a noise run on a quiet Mac (the GPU was 73 to 86 % busy with other work during these), and C7, the new probes inside the runtime: they're written in the fork's worktree (uncommitted) and the runtime builds with them (`d5ed12808214`), but its comparison with the shipped build was interrupted by the pause.
 - **Documentation audit (2026-11-10):** the README, `docs/`, `CLAUDE.md`, the skills and the script headers were checked against the code and corrected (about a hundred findings; the list is in `build/drafts/docs-audit-2026-11-10.md`). `scripts/device-run.sh logs` and `scripts/bench-direct.sh` now refuse while a harness run holds the iPhone, and the "message too long" error no longer points to a setting that's gone. Left: `unit` hasn't run on the iPhone since the error's wording changed (the phone was locked; it compiles, and the tests compare against the message itself); the README's performance image still shows Google's runtime from October (it needs new art, and the table's other rows a fresh measurement on our build), and the fork's reference (`facts.md` F-003, F-018, F-029) still describes Google's v0.18.0 as what ships.
 - **Agello is an iPhone app only again** (the maintainer's choice, 2026-11-10): iOS 27 and up, iPhones with 12 GB. Agello for Mac is removed: the `AgelloMac` targets and scheme, its folder and icons, its plan (`docs/MAC.md`), `PLATFORM=macos-native`, and the logic only it used (the Mac's available-memory formula, critical memory pressure, probes 21 and 22). It's in the git history before `1f869b1`. `PLATFORM=mac`, the iPhone app run on this Mac, stays as a development bed. The Mac work this page records below (M0 to M3, the Mac slice of our runtime) is history.
@@ -62,15 +62,49 @@ The handoff between work sessions: read this first, then the section of the plan
 
 ## Next
 
-1. **Our LiteRT-LM build** (the fork's `agello-next` branch): released, vendored and gated on the iPhone (Current status). Left: merging `agello-next` in the fork (the maintainer pushes).
-2. **Energy and performance budgets,** written down and checked with the `calibrate` suite and MetricKit. The baseline is Google's v0.18.0 on the iPhone 17 Pro, measured on 2026-10-24 at a nominal thermal state throughout:
+### When testing is available again
+
+Paused on 2026-11-10: the Mac was busy and the iPhone away, so the direction above is written down and nothing of it is built. The plan is [BACKEND.md](BACKEND.md); this is its order of work by what each step needs. One run at a time, and a real-model run on the Mac is still asked for first.
+
+**State left on this Mac:**
+
+- This repo: two files uncommitted, `AgelloCLI/Sources/EngineTimeline.swift` and `scripts/cli-timeline.py` (they read the new probes' fields and change nothing on the shipped runtime). The comment changed in `AgelloCLI/Sources/Bench.swift` (`f9b60dd`) hasn't been compiled.
+- The runtime's worktree (`../agello-arms/next/LiteRT-LM`, `agello-next` at `f1b88286`): the C7 probes, 10 files uncommitted, with a copy of the diff in `build/drafts/c7-probes-on-f1b88286.patch`. Its `dist/` is the build with them, `d5ed12808214`.
+- `build/cli/runs/c7/` holds the interrupted comparison's partial records: delete them before the rerun.
+- Disk: 47 GB free, under the 50 GB floor. Bazel's output (8 GB) and the new build's engine cache (`~/Models/agello/cache/agello-cli/d5ed12808214/`, 2.5 GB) are kept for B0; if the pause is long, `bazelisk clean --expunge` in the worktree gives the 8 GB back at the cost of a full rebuild.
+
+**When the Mac is free** (in this order):
+
+1. **Compile what changed without a build:** `scripts/cli-check.sh --build`, the iPhone compile check and `swiftlint`.
+2. **B0, finish C7.** `ROUNDS=3 OUT=build/cli/runs/c7 scripts/cli-bench.sh release next -- --only explain,email,file-report`. Wanted: every reply identical to the shipped build's, speed inside the noise. Then check the new data shows in a run (the `token`, `mtp.draft`, `mtp.verify`, `engine.init` and `session.create` spans, `kv_copy_bytes`, `gpu_allocated_mb`, the `device` object, a level-3 trace that no longer wraps, the logits dump). Then commit the probes in the worktree, update the fork's `telemetry.py` and `TELEMETRY.md`, commit the two files here and write C7 into [CLI.md](CLI.md). The two probes not written (shader compile time, GPU time without gaps) live in LiteRT and ML Drift: they wait for B2.
+3. **B4, the Mac's half:** the noise run, `ROUNDS=5 scripts/cli-bench.sh release again=release -- --only explain,email,file-report`. The earlier one ran with the GPU 73 to 86 % busy and read +10.9 % between two copies of one build.
+4. **B1, written and checked here first:** the app without its code for Google's binary and the CPU backend. `swift build`, the iPhone compile check, `swiftlint`, `scripts/cli-test.sh unit`, then `scripts/cli-test.sh inference`.
+5. **The real-model suites never run natively:** `scripts/cli-test.sh files`, `web`, `thinking`, `probes`.
+6. **B2, then B3:** one repository, then the pruning, each checked with step 2's comparison. These need Bazel builds (about 8 minutes and 8 GB each time the compiler or the flags change).
+7. Check the iPhone app still installs on this Mac with the 12 GB capability (`PLATFORM=mac`).
+
+**When the iPhone is free** (connected, unlocked, iPhone Mirroring closed):
+
+1. **`scripts/device-harness.sh unit`,** owed since the "message too long" wording changed, with the hooks' test and the regenerate seed's test added since.
+2. **After B1:** `unit`, `inference`, `files`, `web`, `thinking`, `ui`. B1 changes shipping code and isn't done until these pass.
+3. **B4, the iPhone's half:** `scripts/device-harness.sh bench` against the committed baseline, and a new baseline (`BENCH_ACCEPT=1`) once B1 is in.
+4. **Is the slowdown late in long replies heat?** The Mac says it isn't a position cost; the phone hasn't confirmed it (`BENCH_COOL=1`, the same case cool and hot).
+5. Delete the lab file left on the phone: `TEST_RUNNER_LAB_REMOVE=e4b-ropecomposite.litertlm ONLY=AgelloDeviceTests/ProbeScenarioTests/test13_RemoveLabModels scripts/device-harness.sh probes`.
+6. Every B5 change, once the Mac says it's a gain: the bench and the suites it touches.
+
+**On the maintainer's go only:** pushing `main` (nothing since `5a0928c` is pushed); anything on GitHub for the hard fork (Open decisions); pushing or releasing the runtime; H5 of the harness.
+
+### After that
+
+1. **Our own runtime** ([BACKEND.md](BACKEND.md)): the hard fork, milestones B0 to B6, in the order above. The release the app ships (`agello-next-20261024`) is vendored and gated on the iPhone (Current status); merging `agello-next` into `agello` in the fork is replaced by B2's one repository.
+2. **Energy and performance budgets,** written down and checked with the `calibrate` suite and MetricKit. The baseline is our own runtime (third entry below, and B4's fresh one); Google's v0.18.0 on the iPhone 17 Pro, measured on 2026-10-24 at a nominal thermal state throughout, stays here as history and isn't measured again:
    - **`calibrate`** at 4K / 8K / 16K / 32K windows. First token: 1.5 / 2.1 / 5.8 / 16.0 s for 1.3K / 2.3K / 4.4K / 8.4K-token prompts. Decode: 37 / 39 / 45 / 27 tok/s on a one-sentence reply, and 82 / 74 / 68 / 55 on a 120-token list drawn from the prompt. Peak footprint: 1.2 / 1.3 / 1.9 / 3.4 GB.
    - **`memory`,** memory pressure simulated at 5.0 / 4.0 / 3.5 GB usable (the suite then stood for 8 GB iPhones). E4B loads at 8K with vision, audio and MTP each time, and text, an image, audio, and 2.3K and 4.4K-token prompts all pass. The app peaks at 2.7 GB, leaving 2.3 / 1.3 / 0.8 GB after 1 / 2 / 3 memory warnings, and decode slows to 41 / 35 / 29 tok/s. It's an optimistic bound: the phone keeps its full RAM for the model file.
    - **Our runtime** (`agello-next-20261024`), same phone, iOS 27.2, 2026-11-02, nominal thermal state throughout:
      - `calibrate`: first token 1.3 / 1.6 / 3.2 / 6.7 s (2.4× faster at 32K); decode 33 / 39 / 42 / 42 tok/s on the sentence (32K: 1.55×) and 71 / 66 / 67 / 62 on the list; peak footprint 1.1 / 1.3 / 1.9 / 3.5 GB. Decode hardly depends on the window any more. Watch: the list decodes 10–13% slower than Google's at 4K and 8K. The same run with the phone hot (thermal state serious, after the suites while charging) decoded 32–37 and 47–57 tok/s.
      - `memory`: every step passes at 5.0 / 4.0 / 3.5 GB; the app peaks at 2.5 GB (2.7 on Google's), leaving 4.6 / 1.5 / 1.05 GB at the lowest (the phone was hot: decode 38 / 32 / 30 tok/s).
    - **Earlier,** in a cooled calibration on the iPhone 17 Pro, an earlier version of our build decoded 37–45 tokens a second at a 32K window. Google's binary decoded 20 the same night.
-3. **#3913 follow-up.** Run the next exports from the thread (above) through probe 20 and agello-bench. If a re-exported Google file or a runtime fix ships, check it with probe 10 and the `inference` suite, and the catalog can go back to Google's file (`agello-litert-update`, "When Google fixes #3913").
+3. **#3913.** The app keeps our patched model file. Since the direction of 2026-11-10 the thread is answered only if someone replies to us (`gh api repos/google-ai-edge/LiteRT-LM/issues/3913/comments`): no more runs of others' exports, and no plan to go back to Google's file.
 
 ## Manual checks
 
@@ -85,7 +119,7 @@ Done on 2026-11-02: the runtime gate for item 1 of Next, and the iPhone checks o
 
 ## Later
 
-Each of these is measured, then kept or dropped:
+Each of these is measured, then kept or dropped. The runtime's own list is [BACKEND.md](BACKEND.md), B5:
 - **Speed:**
   - the vision encoder on the GPU;
   - batched embedding lookups on the CPU;
@@ -94,9 +128,10 @@ Each of these is measured, then kept or dropped:
   - Metal binary archives for a faster cold start;
   - a ring-buffer cache for the local attention layers;
   - the composer in its own view, so typing redraws less.
-- **Upstream:** rebase the fork on upstream LiteRT-LM.
+- **Upstream:** nothing. Google's repositories are a read-only source since 2026-11-10; a fix or a new model's support is ported by hand when we want it.
 
 ## Open decisions
 
+- **The hard fork on GitHub** ([BACKEND.md](BACKEND.md), B2): which repository carries the one code base and under what name, its default branch, and whether `PowerBeef/LiteRT` and `PowerBeef/ml-drift` are archived. Our #3913 comments link into the forks (the `research/3913` tag, `tools/model-surgery/patch_rope.py`): check they still resolve before anything is renamed or removed. Until decided, the work stays on a local branch.
 - **What the 12 GB floor's headroom buys** beyond 32K and the 4,096-token Think budget (Current status).
 - **H5 of the harness,** coverage of every screen and menu: on the maintainer's go.

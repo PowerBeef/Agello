@@ -1,7 +1,9 @@
 # The backend: our own runtime
 
 A plan, from the maintainer's direction of 2026-11-10. Nothing in it is built yet: the Mac was
-busy that day, and every step below needs a build or a run.
+busy that day and the maintainer chose to wait for it, B1's code included. The order of work for
+when the Mac or the iPhone is free again is in [ROADMAP.md](ROADMAP.md#next), "When testing is
+available again".
 
 Agello's backend stops being Google's LiteRT-LM with patches kept close to upstream. It becomes
 our own code base, a hard fork, with one job: run our model file on Apple GPUs under iOS 27 as
