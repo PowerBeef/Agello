@@ -102,7 +102,27 @@ for f in "$MODELS"/*; do
         esac
       done
       row keep "$lab" "~/Models/agello/lab: lab models and probe suites (the #3913 exports were deleted on 2026-11-03; a new round's files are scratch once its numbers are recorded)" ;;
-    cache) row keep "$(kb "$f")" "~/Models/agello/cache: the GPU caches of agello-bench (--cache) and of the Mac command line (agello-cli/, one folder per runtime build)" ;;
+    cache)
+      # The Mac command line keeps one cache folder per runtime build (about 2.5 GB each), and
+      # every rebuilt runtime adds one. The two loaded last stay (what ships, and the build being
+      # compared with it); a folder for an older build is scratch: it recompiles in one load.
+      old=0
+      count=0
+      # shellcheck disable=SC2012 # the folders are named by build ids
+      builds="$(ls -td "$f"/agello-cli/*/kv-all-* 2>/dev/null)"
+      saved_ifs="$IFS"
+      IFS='
+'
+      for g in $builds; do
+        count=$((count + 1))
+        [ "$count" -le 2 ] && continue
+        build_dir="$(dirname "$g")"
+        size="$(kb "$build_dir")"
+        old=$((old + ${size:-0}))
+        row scratch "$size" "~/Models/agello/cache/agello-cli/$(basename "$build_dir"): the Mac command line's GPU cache for an older runtime build" "$build_dir"
+      done
+      IFS="$saved_ifs"
+      row keep $(($(kb "$f") - old)) "~/Models/agello/cache: the GPU caches of agello-bench (--cache) and of the Mac command line (agello-cli/, one folder per runtime build; the two loaded last are kept)" ;;
     revisions.txt) ;;
     *_cache.bin | *.xnnpack_cache | *cache*)
       row scratch "$(kb "$f")" "~/Models/agello/$name: an engine cache written beside the models" "$f" ;;
