@@ -16,7 +16,9 @@ and its re-pin steps below as what B2 replaces. The build, release and vendoring
 `../agello-arms/next/LiteRT-LM` is on the local branch `agello-one` (not pushed), where LiteRT
 is the folder `agello/litert` and ML Drift `agello/ml_drift`, read by the `WORKSPACE` as
 `local_repository`. There, edit the two in place and run `agello/build-xcframework.sh`: no
-override, no push, no re-pin. The `../LiteRT` and `../ml-drift` checkouts and the "Changing
+override, no push, no re-pin. The branch is pruned to what the Apple build reads (3,548 files of
+10,348): after deleting anything more, check with `bazelisk clean` and
+`agello/build-xcframework.sh --disk_cache=`, since the cache hides a missing header. The `../LiteRT` and `../ml-drift` checkouts and the "Changing
 LiteRT or ML Drift" steps below apply only to `agello-next`, which is what the shipped release
 was built from. Never export LiteRT with a plain `git archive`: it downloads Google's prebuilt
 libraries through Git LFS (`docs/BACKEND.md`, "As built, B2").
