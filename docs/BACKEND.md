@@ -173,7 +173,8 @@ As built, B3 (2026-11-11), three commits on `agello-one` (`7e4d9b8d`, `a9553bde`
     NDK rules among them).
 - **Owed:** the five-round speed run on an idle Mac (`ROUNDS=5 scripts/cli-bench.sh release
   next -- --only explain,email,file-report`), on the build stamped with the last commit,
-  `9128dc9c2055`. The one-round checks aren't speed readings.
+  `9128dc9c2055`. The one-round checks aren't speed readings, and the run of 2026-11-11 was
+  too disturbed to count (the ledger has it).
 
 ### B5. The performance work
 
@@ -268,7 +269,7 @@ What each change bought, from B4 on. Mac figures are the M6's, through the app's
 | --- | --- | --- | --- | --- | --- |
 | 2026-11-11 | B0: the probes (`agello-next` `3118b5d4`, build `d5ed12808214`), 3 rounds | 4 of 4 identical | −0.0 % | +1.2 % | Same output; no cost at the everyday levels. Not released. |
 | 2026-11-11 | B1: the app without the CPU backend and Google's-binary code (same runtime) | 4 of 4 identical to the app before it | inside the noise | inside the noise | Same output. The iPhone runs are owed. |
-| 2026-11-11 | B3: the pruning (`agello-one` `edb2c7db`, build `9128dc9c2055`) | 4 of 4 identical, three times | owed | owed | Same output. The five-round speed run is owed. Not released. |
+| 2026-11-11 | B3: the pruning (`agello-one` `edb2c7db`, build `9128dc9c2055`) | 4 of 4 identical, four times | owed | owed | Same output. A five-round speed run was made that afternoon and doesn't count: another project was using the Mac, 27 of its 40 records were disturbed (the Mac swapped, the GPU was shared) and the run was stopped at the maintainer's request before its extra rounds. Its best runs read +0.8 % on decode and −0.4 % on prefill, with cases ±5 % apart, which says nothing either way. To run again on a quiet Mac. Not released. |
 | 2026-11-11 | B2: one repository (`agello-one` `e3c93749`, build `8998da09bac2`), 5 rounds | 4 of 4 identical | −0.1 % on the 21 undisturbed records of 40 (+0.9 % on all) | −1.9 %, on those as on all: inside prefill's band (2.9 % at most) | Same output and the same speed. Other work on the Mac disturbed the run (the GPU at 96 to 98 % before two records). Not released. |
 
 The iPhone's baseline is the bench's (`scripts/bench/baseline.json`); a new one is due once B1
