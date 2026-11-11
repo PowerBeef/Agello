@@ -1,11 +1,23 @@
 # The Mac command line
 
-A plan, approved by the maintainer on 2026-11-10. C1 to C6 and C8 are built (below); C7, the new probes inside the runtime, isn't: it's work in the fork.
+A plan, approved by the maintainer on 2026-11-10 and corrected by them the same day ("Direction", below). C1 to C6 and C8 are built; C7, the new probes inside the runtime, is part-way: it's work in the fork.
 
 `agello` runs Agello's engine on a Mac from a command line: the app's own code, on the runtime
 build of your choice, with the runtime's telemetry and the app's trace of every reply. It's a
 development tool for working on our LiteRT-LM backend. It is never shipped, there is no Mac app,
 and the iPhone stays where a change is confirmed: this Mac is faster, cooler and has more memory.
+
+## Direction
+
+The maintainer's correction of 2026-11-10 ([BACKEND.md](BACKEND.md) has the whole of it):
+
+- **One backend: ours, on the GPU.** The tool measures builds of our runtime against each other.
+  It doesn't measure Google's runtime or the CPU backend, and neither is built or kept on this
+  Mac as a reference.
+- **The harness judges performance; Claude judges output quality, by reading the replies.** The
+  answer checks are evidence for that reading, not the verdict.
+- **The backend becomes a hard fork**, one repository of our own, and the app drops its code for
+  Google's binary and for the CPU backend. `--backend` leaves the tool with it.
 
 ## Why
 
@@ -105,28 +117,32 @@ band) and the answer checks (`cli-report.py`). A change inside the noise band is
   list when one of them makes the number doubtful.
 - A real-model run is a Mac run: ask the maintainer first.
 
-## Accuracy
+## Output quality
 
 ```sh
-agello bench --backend cpu --only email,explain --label cpu --out build/cli/runs/acc/cpu.jsonl   # the reference: about 10 tok/s
-agello bench --only email,explain --label gpu --out build/cli/runs/acc/gpu.jsonl
-scripts/cli-accuracy.py build/cli/runs/acc/cpu.jsonl build/cli/runs/acc/gpu.jsonl
+OUT=build/cli/runs/kernel scripts/cli-bench.sh release next -- --only email,explain   # compare.txt counts the identical replies
+scripts/cli-replies.py build/cli/runs/kernel/release.jsonl build/cli/runs/kernel/next.jsonl   # where the others part
 
-agello bench --only email,todo --samples 10 --label gpu --out build/cli/runs/quality.jsonl
+agello bench --only email,todo --samples 10 --label next --out build/cli/runs/quality.jsonl
 scripts/cli-report.py build/cli/runs/quality.jsonl
 ```
 
-- **Against the CPU backend.** With the shipping settings a reply is decoded greedily on either
-  backend, so the two replies start alike and part at the first token where the backends'
-  arithmetic ranks two candidates differently. `cli-accuracy.py` reports the tokens shared from
-  the start, whether the replies part in the reasoning or the answer, and the text on each side.
-  A split at a near tie is ordinary between two float implementations; a split early in every
-  reply, or on a digit or a name, is what #3913 looked like. Records carry each reply's tokens
+- **Quality is judged by reading.** Claude reads the replies and gives the verdict: the same,
+  better or worse. Nothing is compared with the CPU backend or with Google's runtime.
+- **Identical replies need no judging.** With the shipping settings a reply is decoded greedily,
+  so two builds whose arithmetic agrees give the same tokens, and the comparison counts them.
+- **Where they part.** When a change moves the arithmetic (a kernel, a precision, a fused
+  operation), two replies start alike and part at the first token where two candidates swap
+  rank. `cli-replies.py` reports the tokens shared from the start, whether the replies part in
+  the reasoning or the answer, and the text on each side: that's what gets read. A split at a
+  near tie between two fair continuations is ordinary; a split early in every reply, or on a
+  digit or a name, is what #3913 looked like. Records carry each reply's tokens
   (`outputTokenIDs`, `thoughtTokenIDs`: the text re-encoded by the model's tokenizer).
 - **The answer checks over many sampled runs.** `--samples N` answers each case's first message
   N more times as Regenerate does (sampled with the preset, no speculative decoding), with seeds
   `--seed`+1 and up, so a run repeats exactly. `cli-report.py` gives each check's pass rate with
-  its 95 % range, per build. This is quality as users meet it, where token identity isn't.
+  its 95 % range, per build. They're evidence for the reading (does the code run, did the reply
+  end by itself), not the verdict.
 - Search cases vary with the live web: keep them out of comparisons between builds.
 
 ## The tests, natively
@@ -174,7 +190,7 @@ agello bench --only email --telemetry 3 --out build/cli/runs/trace.jsonl       #
 | **C3** | `agello bench`: the iPhone bench's cases (`AgelloUITests/BenchCases.swift`), one record per reply in `agello-bench`'s format, the answer checkers shared with `scripts/bench-report.py`. | The fork's `compare.py` and `telemetry.py` read a run unchanged. |
 | **C4** | Telemetry in depth: a per-token timeline from the runtime's trace joined with the app's, per-kernel shares on demand, the Mac's state in every record. | The slowdown late in a long reply ([HARNESS.md](HARNESS.md), H3) is attributed to a layer. |
 | **C5** | Runs across builds: alternating runs with a noise band, a build check with every harness run so an app change that breaks the tool shows the same day. | Two copies of the shipped build compare as "no change". |
-| **C6** | Accuracy: the Metal backend against the CPU backend token by token, and the checkers' pass rates over many sampled runs. | A backend change gets an accuracy verdict beside its speed. |
+| **C6** | Output quality: where two builds' replies part, and the checkers' pass rates over many sampled runs, for the reading that gives the verdict. (As first built: the GPU against the CPU backend token by token, dropped by the correction.) | A backend change gets a quality verdict beside its speed. |
 | **C7** | New probes inside the runtime, in the fork: shader compile time, memory by buffer type, KV copy bytes, the sampled token on each step, GPU time without gaps, per-step logits on demand. | The new data shows in a run, with replies and speeds unchanged at the everyday levels. |
 | **C8** | The test suites natively: `swift test` for the unit tests that need no interface, then the real-model scenarios. | They run on this Mac without the phone or Xcode's test host. |
 
@@ -199,7 +215,7 @@ agello bench --only email --telemetry 3 --out build/cli/runs/trace.jsonl       #
   day. The prompt, the budgets and the tools are the app's.
 - **Replies are not the phone's token for token.** `explain` is 1,503 tokens here and 1,666 on
   the phone, `email` 159 and 197; the file case's two replies have the phone's exact lengths
-  (172 and 49). Different GPUs, different greedy paths: speed and accuracy work happens here,
+  (172 and 49). Different GPUs, different greedy paths: speed and quality work happens here,
   and the phone confirms.
 - **Speed on this Mac** (M6, release build, 32K window, Think on): `explain` decodes at
   89.8 tok/s, and at 89.7 on the second pass; the first token comes after 0.28 s, and after 2.0 s
@@ -235,10 +251,12 @@ agello bench --only email --telemetry 3 --out build/cli/runs/trace.jsonl       #
 
 ### C6, built on 2026-11-10
 
-- **CPU against GPU, one case** (`email`): the CPU backend decodes it at 10.7 tok/s with MTP on,
-  the GPU at 97. The replies share their first 59 tokens (37 % of the shorter) and part in the
-  answer at "…consistently, and I ▸am concerned" against "▸would appreciate": two fair
-  continuations, the look of a near tie. A wider run over the bench is still to do.
+- **CPU against GPU, one case, before the correction** (`email`): the CPU backend decodes it at
+  10.7 tok/s with MTP on, the GPU at 97. The replies share their first 59 tokens (37 % of the
+  shorter) and part in the answer at "…consistently, and I ▸am concerned" against "▸would
+  appreciate": two fair continuations, the look of a near tie. No wider run follows: the CPU
+  reference is dropped, and the script that made this table now compares two builds of ours
+  (`cli-replies.py`).
 - **Sampled runs repeat.** Three sampled replies to `email` (seeds 1001 to 1003: 186, 160 and
   175 tokens) came back identical in a second process; all three pass their check. Sampling
   runs at 47 tok/s here, half the greedy speed, since Regenerate turns speculative decoding off.

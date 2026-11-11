@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""Compare two backends' replies token by token (docs/CLI.md).
+"""Where two builds' replies part, for reading (docs/CLI.md, "Output quality").
 
-Usage: scripts/cli-accuracy.py REFERENCE.jsonl TEST.jsonl [--out REPORT.md]
+Usage: scripts/cli-replies.py BASE.jsonl CHANGED.jsonl [--out REPORT.md]
 
-Both files are `agello bench` records of the same cases with the shipping settings, under which
-replies are decoded greedily on either backend (speculative decoding on): the reference from
-the CPU backend (`agello bench --backend cpu`, about 10 tok/s on an M6), the test from the GPU
-backend under study. Their replies
-start alike and part ways at the first token where the two backends' arithmetic ranks two
-candidates differently; from there the texts are different continuations, so what counts is
-where that happens:
+Both files are `agello bench` records of the same cases with the shipping settings, from two
+builds of our runtime (`scripts/cli-bench.sh` writes one file per build). Replies are decoded
+greedily under those settings, so two builds whose arithmetic agrees give the same tokens and
+there is nothing to judge. When a change moves the arithmetic (a kernel, a precision, a fused
+operation), the replies start alike and part at the first token where two candidates swap rank;
+from there the texts are different continuations. This lists, for each case:
 
 - the tokens both replies share from the start, and the share of the shorter reply that is;
 - whether they part in the reasoning or in the answer;
 - the text on each side of the split.
 
-A split at a near tie is harmless and happens between any two float implementations; a split
-early in every reply, or one that lands on a digit or a name, is the kind #3913 was. Sampled
-replies (`~sampled`) and warm-ups are left out. Exits 0: this is a measurement, not a gate.
+It gives no verdict: quality is judged by reading the replies it points to. A split at a near tie
+between two fair continuations is ordinary; a split early in every reply, or one that lands on a
+digit or a name, is the kind #3913 was. Sampled replies (`~sampled`) and warm-ups are left out.
+Exits 0.
 """
 import json, os, statistics, sys
 
@@ -66,9 +66,9 @@ def describe(record):
 
 first_ref, first_test = reference[shared[0]], test[shared[0]]
 lines = [
-    "# Token agreement", "",
-    f"Reference: {describe(first_ref)}. Test: {describe(first_test)}.", "",
-    "| Case | Reference tokens | Test tokens | Shared from the start | Share | They part in | Reference continues | Test continues |",
+    "# Where the replies part", "",
+    f"Base: {describe(first_ref)}. Changed: {describe(first_test)}.", "",
+    "| Case | Base tokens | Changed tokens | Shared from the start | Share | They part in | Base continues | Changed continues |",
     "| --- | --- | --- | --- | --- | --- | --- | --- |",
 ]
 shares, identical = [], 0

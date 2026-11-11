@@ -5,6 +5,13 @@ description: Update the vendored LiteRT-LM package (Vendor/LiteRT-LM), work in t
 
 # Updating LiteRT-LM
 
+**Direction changed on 2026-11-10** (`docs/BACKEND.md`): the backend becomes a hard fork in one
+repository, and Google's upstream is a read-only source. Until milestone B6 rewrites this skill,
+read it with that in mind: don't sync, merge or rebase onto upstream, don't vendor or measure
+Google's binary (`refresh-litert-lm.sh`, the WebGPU arm), and treat the three-repository layout
+and its re-pin steps below as what B2 replaces. The build, release and vendoring commands for
+`agello-next` still hold.
+
 `Vendor/LiteRT-LM` holds only the Swift package surface of our fork's
 `agello-next` branch: `Package.swift` (with the checksummed
 `CLiteRTLM.xcframework` download of our release, `agello-next-20261024` since

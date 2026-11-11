@@ -185,7 +185,7 @@ scripts/cli-test.sh unit [Class[/method]]                           # 269 unit t
 scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-model scenarios on this Mac's GPU
 build/cli/release/release/agello bench --only todo,explain --out build/cli/runs/x.jsonl
 scripts/cli-bench.sh release next -- --only explain                 # two runtime builds, in turns, with the comparison
-scripts/cli-report.py | cli-timeline.py | cli-accuracy.py           # answer checks, where the time went, GPU against CPU
+scripts/cli-report.py | cli-timeline.py | cli-replies.py            # answer checks, where the time went, where two builds' replies part
 ```
 
 - **Ask before a real-model run** (anything but `unit`, `--mock`, a build or `cli-check.sh`): it

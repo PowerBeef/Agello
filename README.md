@@ -287,6 +287,7 @@ The README art comes from the same tokens: `scripts/readme-art/render.sh` redraw
 | [Testing](docs/TESTING.md) | The suites, the device harness, and how to run them |
 | [The autonomous harness](docs/HARNESS.md) | The bench that drives the app's own screens on the iPhone, and what each milestone found |
 | [The Mac command line](docs/CLI.md) | `agello`: the app's engine from a command line on a Mac, for work on the runtime |
+| [The backend](docs/BACKEND.md) | The plan for our own runtime: a hard fork for Apple GPUs and iOS 27 |
 | [LiteRT-LM](docs/LITERT-LM.md) | The LiteRT-LM the app ships, what it sets, and a map of the fork's verified runtime and model reference |
 | [Privacy policy](https://powerbeef.github.io/Agello/privacy) | What stays on the iPhone, and what the network is used for |
 | [Roadmap](docs/ROADMAP.md) | What has shipped and what's next |

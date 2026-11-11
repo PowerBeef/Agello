@@ -270,7 +270,7 @@ struct Bench {
         "environment": ProcessInfo.processInfo.environment.filter { $0.key.hasPrefix("AGELLO_") },
       ],
     ]
-    // The reply as tokens, for comparing two backends token by token (scripts/cli-accuracy.py).
+    // The reply as tokens, for finding where two builds' replies part (scripts/cli-replies.py).
     if let reply = exchange.reply, let answer = await session.tokenIDs(reply.text) {
       record["outputTokenIDs"] = answer
       record["thoughtTokenIDs"] = await session.tokenIDs(reply.thought) ?? []
