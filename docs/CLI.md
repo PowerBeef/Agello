@@ -303,7 +303,9 @@ not released, and the app still ships `agello-next-20261024`):
 - **The `inference` suite passes natively, 23 of 23, in 105 s**: load, text, chat isolation,
   stop, tools, Think, image, audio, vision toggles, the context limit, exact token counts,
   titles, memory, dictation, voice turns, digits past 2,048 and 4,096 tokens, the benchmark.
-  The other real-model suites build; they haven't been run here yet.
+  The other real-model suites ran here on 2026-11-11, with the app's code after B1: `files`
+  5 of 5 (32 s), `web` 7 of 7 (83 s), `thinking` 3 of 3 (42 s), and `probes` 21 with no
+  failure in 613 s (4 skipped: they need lab model files that aren't on this Mac).
 - The device tests' harness lost its hard dependency on UIKit (three `#if canImport(UIKit)`),
   and the web tests find their fixtures in SwiftPM's bundle when built as a package.
 - The tests' home is redirected, checked: after a run, this Mac's

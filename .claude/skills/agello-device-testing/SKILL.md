@@ -390,9 +390,9 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
 
 - `ThinkingScenarioTests/test02_ReasoningStaysOutOfCache` failed on the Mac
   only with Google's v0.18.0 (2026-10-16: the cache grew 139 tokens over the
-  second Think turn). Not rechecked on the Mac with our runtime, which drops
-  the reasoning right after the reply; on the iPhone it passes, and a failure
-  there is a regression.
+  second Think turn). With our runtime, which drops the reasoning right after
+  the reply, it passes on the Mac too (natively, 2026-11-11) and on the
+  iPhone: a failure on either is a regression.
 
 ## Launch arguments and environment
 

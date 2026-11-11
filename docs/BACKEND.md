@@ -1,8 +1,9 @@
 # The backend: our own runtime
 
 A plan, from the maintainer's direction of 2026-11-10. Where it stands (2026-11-11, the Mac free
-again): B0 is done, B1 is written and passes on the Mac with its iPhone runs owed, and the Mac's
-half of B4 is measured ("The ledger", below). B2 to B6 aren't started. What's left to run, in
+again): B0 is done, B1 is written and passes on the Mac with its iPhone runs owed, the Mac's
+half of B4 is measured ("The ledger", below), and B2 is done on a local branch (the runtime
+builds from one repository). B3 to B6 aren't started. What's left to run, in
 order, is in [ROADMAP.md](ROADMAP.md#next), "When testing is available again".
 
 Agello's backend stops being Google's LiteRT-LM with patches kept close to upstream. It becomes
@@ -63,7 +64,7 @@ maintainer's go, as before.
 | --- | --- | --- |
 | **B0** (done 2026-11-11) | Land the measuring instruments: C7 of [CLI.md](CLI.md), the probes inside the runtime. | The new build's replies are identical to the shipped build's and its speed is inside the noise; the probes show in a run. |
 | **B1** (written 2026-11-11; the iPhone runs are owed) | The app sheds its two spare paths (below). | The unit tests pass natively and on the iPhone, with `inference`, `files`, `web`, `thinking` and `ui` on the iPhone. |
-| **B2** | One repository: LiteRT and ML Drift imported at the pinned commits as folders, the build reading them in place of the archives. No source changes. | Replies identical to the build before the move, speed inside the noise, and a kernel edit rebuilds without a pin. |
+| **B2** (done 2026-11-11, local branch `agello-one`) | One repository: LiteRT and ML Drift imported at the pinned commits as folders, the build reading them in place of the archives. No source changes. | Replies identical to the build before the move, speed inside the noise, and a kernel edit rebuilds without a pin. |
 | **B3** | Prune to what the Apple build compiles: other platforms, other GPU APIs, vendor NPUs, converters, the other bindings and build systems, and the path that runs the language model on the CPU. | The same check as B2, with the file count before and after recorded. |
 | **B4** (the Mac's half done 2026-11-11) | The baseline: a noise run on a quiet Mac, the bench on the iPhone, and a ledger of what each later change bought. | Both baselines are committed with their noise bands. |
 | **B5** | The performance work (below), one thread at a time. | Each thread: a gain outside the noise on the Mac, confirmed on the iPhone, with a quality verdict. |
@@ -126,6 +127,22 @@ As built (2026-11-11):
 - **On GitHub, on the maintainer's go only:** which repository carries the one code base and
   under what name, its default branch, and archiving the other two. Until then the work lives on
   a local branch.
+
+As built, B2 (2026-11-11), on the local branch `agello-one` of the runtime's checkout
+(`../agello-arms/next/LiteRT-LM`, commit `e3c93749`; nothing pushed, nothing changed on GitHub):
+
+- LiteRT is in `agello/litert` (7,801 files) and ML Drift in `agello/ml_drift` (877), exported
+  at the commits the release pinned and checked identical, file by file, to the two archives
+  Bazel had downloaded for it. The `WORKSPACE` reads the folders (`local_repository`).
+- Export with Git LFS off (`GIT_LFS_SKIP_SMUDGE=1` and the filter unset): a plain `git archive`
+  of LiteRT downloads Google's prebuilt libraries (about 230 MB) in place of their pointers.
+  That happened once here, and the files and the LFS objects were removed.
+- The build stamp reports the two as in tree with the commit they came from; the build id
+  follows this repository's commit alone. First build from the folders: 145 s, most of it from
+  Bazel's disk cache, since the sources are the same bytes.
+- An edit to `ml_drift/common/kernels/fully_connected.cc` rebuilt the framework in 6 s (26
+  actions) with a new build id and no pin; restoring the file gave back the same binary.
+- The checkout holds 10,348 files now: the pruning (B3) starts from there.
 
 ### B5. The performance work
 
@@ -200,6 +217,7 @@ What each change bought, from B4 on. Mac figures are the M6's, through the app's
 | --- | --- | --- | --- | --- | --- |
 | 2026-11-11 | B0: the probes (`agello-next` `3118b5d4`, build `d5ed12808214`), 3 rounds | 4 of 4 identical | −0.0 % | +1.2 % | Same output; no cost at the everyday levels. Not released. |
 | 2026-11-11 | B1: the app without the CPU backend and Google's-binary code (same runtime) | 4 of 4 identical to the app before it | inside the noise | inside the noise | Same output. The iPhone runs are owed. |
+| 2026-11-11 | B2: one repository (`agello-one` `e3c93749`, build `8998da09bac2`), 5 rounds | 4 of 4 identical | +0.9 % | −1.9 % | Same output; inside the noise of a run that other work on the Mac disturbed (7 of 40 records flagged, the GPU at 96 to 98 % before two of them). Not released. |
 
 The iPhone's baseline is the bench's (`scripts/bench/baseline.json`); a new one is due once B1
 has passed there.
