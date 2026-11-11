@@ -17,13 +17,25 @@
 #
 # Env: ROUNDS (default 3: each build runs the cases that many times, one process a time),
 #      OUT (default build/cli/runs/<time>), CHECKS (off skips the answer checks),
-#      QUIET_WAIT (seconds to wait for the GPU to be free before each process, default 60;
-#      a run that starts anyway is flagged suspect in its records), REPEAT (per process, default 1).
+#      REPEAT (per process, default 1), and for the Mac's load (docs/CLI.md, "System load"):
+#      QUIET (off: no readiness check, no extra rounds; for a run read only for its replies),
+#      QUIET_WAIT (seconds to wait for the Mac to be ready before measuring, default 120; still
+#      busy after that, the run refuses with exit 4 and what to fix),
+#      MIN_CLEAN (undisturbed runs wanted of each case and build, default 3 or ROUNDS if less),
+#      EXTRA_ROUNDS (the most rounds added to get them, default 3).
 #
 # One measuring run at a time on this Mac: it takes the harness lock (exit 3 while an iPhone
 # run or another of these holds it) and keeps the Mac awake. Builds happen before any
 # measuring, the answer checks after it: both would disturb the speeds.
-# Outputs in OUT: <arm>.jsonl (records), <arm>.traces/, compare.txt, report.md, cli-bench.log.
+#
+# The Mac's load: scripts/mac-ready.sh must say ready before the first run and is asked again
+# before each process; afterwards scripts/cli-load.py reads from the records which runs were
+# disturbed and by what, rounds are added while a case lacks undisturbed runs, and the
+# comparison is made on the undisturbed records. Start it and leave the Mac alone, the Claude
+# session that started it included.
+# Outputs in OUT: <arm>.jsonl (records), <arm>.traces/, load.txt (what was disturbed, and each
+# build's best run), compare.txt (undisturbed records), compare-all.txt (every record),
+# clean/ (the undisturbed records), report.md, cli-bench.log.
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,7 +43,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT/scripts/lib/harness-lock.sh"
 ROUNDS="${ROUNDS:-3}"
 REPEAT="${REPEAT:-1}"
-QUIET_WAIT="${QUIET_WAIT:-60}"
+QUIET="${QUIET:-on}"
+QUIET_WAIT="${QUIET_WAIT:-120}"
+EXTRA_ROUNDS="${EXTRA_ROUNDS:-3}"
+MIN_CLEAN="${MIN_CLEAN:-3}"
+[ "$MIN_CLEAN" -gt "$ROUNDS" ] && MIN_CLEAN="$ROUNDS"
 OUT="${OUT:-$ROOT/build/cli/runs/$(date +%Y%m%d-%H%M%S)}"
 FORK="$ROOT/../LiteRT-LM/tools/agello-bench"
 
@@ -96,41 +112,71 @@ rm -rf "$OUT/env-traces" "$OUT/runtime.log"
 # The edit guard lets target edits through from here: the binaries are built.
 echo "Test Suite 'cli-bench' started" >>"$LOG"
 
-gpu_busy() {
-  ioreg -r -c IOAccelerator -d 1 2>/dev/null | sed -n 's/.*"Device Utilization %"=\([0-9]*\).*/\1/p' | head -1
-}
-wait_for_quiet() {
-  waited=0
-  busy="$(gpu_busy)"
-  while [ "${busy:-0}" -gt 30 ] && [ "$waited" -lt "$QUIET_WAIT" ]; do
-    [ "$waited" -eq 0 ] && echo "  The GPU is $busy % busy: waiting up to ${QUIET_WAIT}s for it to be free…"
-    sleep 5
-    waited=$((waited + 5))
-    busy="$(gpu_busy)"
-  done
-}
-
 # 2. Measure: the arms take turns, one process each, so drift lands on all of them alike.
-status=0
-round=1
-while [ "$round" -le "$ROUNDS" ]; do
-  for name in $names; do
-    eval "binary=\"\$binary_$name\""
-    wait_for_quiet
-    echo "Round $round of $ROUNDS, $name:"
-    "$binary" bench --label "$name" --out "$OUT/$name.jsonl" --warmup --repeat "$REPEAT" "$@" 2>&1 | sed 's/^/  /' || status=$?
-  done
-  round=$((round + 1))
-done
-
-# 3. After the measuring: the comparison, then the answer checks.
 files=""
 for name in $names; do files="$files $OUT/$name.jsonl"; done
+if [ "$QUIET" != off ]; then
+  # Refuse a Mac that's busy: the numbers wouldn't be worth the run.
+  if ! MAC_READY_OWN_LOCK=1 "$ROOT/scripts/mac-ready.sh" --wait "$QUIET_WAIT"; then
+    echo "Not measured. Free the Mac and run it again, or QUIET=off for a run read only for its replies." >&2
+    exit 4
+  fi
+fi
+status=0
+measure_round() {
+  round_label="$1"
+  shift
+  for name in $names; do
+    eval "binary=\"\$binary_$name\""
+    # Busy again between two processes: wait a little, then measure anyway. The records say
+    # afterwards whether the run was disturbed.
+    if [ "$QUIET" != off ]; then
+      SAMPLE=5 MAC_READY_OWN_LOCK=1 "$ROOT/scripts/mac-ready.sh" --quiet --wait 60 | sed 's/^/  /' || true
+    fi
+    echo "Round $round_label, $name:"
+    "$binary" bench --label "$name" --out "$OUT/$name.jsonl" --warmup --repeat "$REPEAT" "$@" 2>&1 | sed 's/^/  /' || status=$?
+  done
+}
+round=1
+while [ "$round" -le "$ROUNDS" ]; do
+  measure_round "$round of $ROUNDS" "$@"
+  round=$((round + 1))
+done
+# Which runs the Mac's load disturbed; more rounds while a case lacks undisturbed ones.
+if [ "$QUIET" != off ]; then
+  extra=0
+  # shellcheck disable=SC2086
+  until python3 "$ROOT/scripts/cli-load.py" $files --min-clean "$MIN_CLEAN" >/dev/null; do
+    if [ "$extra" -ge "$EXTRA_ROUNDS" ]; then
+      echo "Still short of undisturbed runs after $EXTRA_ROUNDS extra rounds: the Mac isn't quiet (see load.txt)."
+      break
+    fi
+    extra=$((extra + 1))
+    echo "Some cases have fewer than $MIN_CLEAN undisturbed runs: one more round ($extra of at most $EXTRA_ROUNDS)."
+    measure_round "$((ROUNDS + extra)) (extra)" "$@"
+  done
+fi
+
+# 3. After the measuring: the comparison, then the answer checks.
 base="${names# }"
 base="${base%% *}"
-if [ -f "$FORK/compare.py" ]; then
+compared="$files"
+if [ "$QUIET" != off ]; then
   # shellcheck disable=SC2086
-  python3 "$FORK/compare.py" $files --base "$base" | tee "$OUT/compare.txt"
+  python3 "$ROOT/scripts/cli-load.py" $files --clean-dir "$OUT/clean" --min-clean "$MIN_CLEAN" --base "$base" --out "$OUT/load.txt" || true
+  compared=""
+  for name in $names; do compared="$compared $OUT/clean/$name.jsonl"; done
+fi
+if [ -f "$FORK/compare.py" ]; then
+  if [ "$QUIET" != off ]; then
+    # Every record, for the file; the undisturbed ones are the comparison to read.
+    # shellcheck disable=SC2086
+    python3 "$FORK/compare.py" $files --base "$base" >"$OUT/compare-all.txt" 2>&1 || true
+    echo
+    echo "The comparison below is on the undisturbed records (every record: compare-all.txt)."
+  fi
+  # shellcheck disable=SC2086
+  python3 "$FORK/compare.py" $compared --base "$base" | tee "$OUT/compare.txt"
 else
   echo "No fork checkout at ../LiteRT-LM: the comparison (compare.py) is skipped."
 fi

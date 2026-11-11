@@ -186,11 +186,18 @@ scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-mo
 build/cli/release/release/agello bench --only todo,explain --out build/cli/runs/x.jsonl
 scripts/cli-bench.sh release next -- --only explain                 # two runtime builds, in turns, with the comparison
 scripts/cli-report.py | cli-timeline.py | cli-replies.py            # answer checks, where the time went, where two builds' replies part
+scripts/mac-ready.sh | cli-load.py                                   # is the Mac quiet enough to measure; which runs its load disturbed
 ```
 
 - **Ask before a real-model run** (anything but `unit`, `--mock`, a build or `cli-check.sh`): it
-  takes this Mac's GPU, which the user often needs. Records flag a busy Mac (`suspect`), and
-  `cli-bench.sh` reports a noise band: a change inside it isn't a change.
+  takes this Mac's GPU, which the user often needs.
+- **A measuring run handles the Mac's load itself** (`docs/CLI.md`, "System load"):
+  `cli-bench.sh` asks `scripts/mac-ready.sh` first and refuses a busy Mac (exit 4, with what to
+  fix: tell the user, never work around it), reads from the records which runs were disturbed
+  (`load.txt`), adds rounds while a case lacks undisturbed ones, and compares on those
+  (`compare.txt`; `compare-all.txt` has every record). Start it in the background and stay
+  idle until it ends: a session streaming text is load too. `QUIET=off` is for a run read only
+  for its replies. A change inside the noise band isn't a change.
 - **What compiles there** is `Package.swift`'s list: `AppState`, `Inference/`, `Knowledge/`,
   `ModelHub/`, `Persistence/` and a few files of `Support/` and `System/`. A platform type the
   engine calls needs its twin in `AgelloCLI/Sources/Platform/`; an engine file elsewhere must be

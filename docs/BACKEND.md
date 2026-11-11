@@ -198,14 +198,25 @@ again on the baseline, since these figures come from a busy Mac.
 7. **The encoders on the GPU.** Images and audio are encoded on the CPU today.
 8. **Heat on the iPhone.** Late in long replies the phone slows about 20 % and the Mac doesn't,
    which points at heat; unconfirmed on the phone.
+9. **The host's side of a decode step** (found 2026-11-11 by `scripts/cli-load.py`). In one run
+   in four on an idle Mac the GPU's time per step is unchanged and the host's goes from 1.6 ms
+   to 5 to 8 ms: the same work costs the process three times the CPU time (0.82 s against
+   0.26 s for one `email` reply), which reads as the scheduler running the runtime's threads on
+   efficiency cores. It costs up to 21 % of decode speed on a short reply. To check: which
+   quality of service the runtime's threads ask for, whether the iPhone shows the same two
+   speeds (it would look like the phone's unexplained slow replies), and what pinning the
+   decode thread to the performance cores' class gives.
 
 ### How a change is judged
 
 1. **Build** the change as the `next` build beside the shipped one.
-2. **Performance, on the Mac:** `scripts/cli-bench.sh release next`, builds taking turns, on a
-   quiet Mac, five rounds, with the Claude session that started it idle (a session streaming
-   output takes the GPU: "The ledger"). Read the medians. A change inside the noise band isn't
-   a change.
+2. **Performance, on the Mac:** `ROUNDS=5 scripts/cli-bench.sh release next`, builds taking
+   turns. The run checks the Mac is quiet before it starts (`scripts/mac-ready.sh`), reads from
+   its records which runs the Mac's load disturbed, adds rounds while a case lacks undisturbed
+   ones, and compares on those ([CLI.md](CLI.md), "System load"). Leave the Mac alone while it
+   runs, the Claude session included. Read `compare.txt` and `load.txt`. A change inside the
+   noise band isn't a change, and a build disturbed more often than the other is to be looked
+   into, not filtered.
 3. **Quality:** `compare.txt` counts the replies identical to the base. For the others,
    `scripts/cli-replies.py` shows where each parts, and Claude reads both sides, with the answer
    checks' results beside them. The verdict and its reasons go in the ledger. "Worse" stops the
@@ -241,6 +252,15 @@ What each change bought, from B4 on. Mac figures are the M6's, through the app's
   streams and edits in the app (15 to 22 %), 86 to 97. The first noise run, started with the
   session working, read +11.7 % between the two copies on `email` (`build/cli/runs/noise-session-busy`).
 - Under these conditions a change of 1 % in the geometric mean is the smallest worth believing.
+- **Since the harness reads the load** (2026-11-11, [CLI.md](CLI.md), "System load"): 27 of that
+  run's 40 records are undisturbed, and on those the two copies agree to 0.0 % on decode (each
+  case's median within 0.6 %, intervals within 2.3 %) with the noise band at 1.1 %; prefill
+  agrees to 0.6 %. Each build's best run of a case agrees to 0.2 % on decode.
+- **Two different disturbances.** Other work on the GPU stretches the GPU's side of a decode
+  step (up to three times, beside a process using it fully). The other stretches the host's
+  side with the GPU's unchanged: the process's own CPU work runs about three times slower, in
+  one run in four on an idle Mac, and a short reply loses up to 21 %. That one is a lead for
+  B5, below.
 
 **Changes:**
 
@@ -249,7 +269,7 @@ What each change bought, from B4 on. Mac figures are the M6's, through the app's
 | 2026-11-11 | B0: the probes (`agello-next` `3118b5d4`, build `d5ed12808214`), 3 rounds | 4 of 4 identical | −0.0 % | +1.2 % | Same output; no cost at the everyday levels. Not released. |
 | 2026-11-11 | B1: the app without the CPU backend and Google's-binary code (same runtime) | 4 of 4 identical to the app before it | inside the noise | inside the noise | Same output. The iPhone runs are owed. |
 | 2026-11-11 | B3: the pruning (`agello-one` `edb2c7db`, build `9128dc9c2055`) | 4 of 4 identical, three times | owed | owed | Same output. The five-round speed run is owed. Not released. |
-| 2026-11-11 | B2: one repository (`agello-one` `e3c93749`, build `8998da09bac2`), 5 rounds | 4 of 4 identical | +0.9 % | −1.9 % | Same output; inside the noise of a run that other work on the Mac disturbed (7 of 40 records flagged, the GPU at 96 to 98 % before two of them). Not released. |
+| 2026-11-11 | B2: one repository (`agello-one` `e3c93749`, build `8998da09bac2`), 5 rounds | 4 of 4 identical | −0.1 % on the 21 undisturbed records of 40 (+0.9 % on all) | −1.9 %, on those as on all: inside prefill's band (2.9 % at most) | Same output and the same speed. Other work on the Mac disturbed the run (the GPU at 96 to 98 % before two records). Not released. |
 
 The iPhone's baseline is the bench's (`scripts/bench/baseline.json`); a new one is due once B1
 has passed there.

@@ -110,16 +110,55 @@ the comparison (`compare.py`: medians, a 95 % interval for each change, the base
 band) and the answer checks (`cli-report.py`). A change inside the noise band isn't a change.
 
 - It takes the harness lock, so it and an iPhone run never measure or build at the same time.
-- Before each process it waits for the GPU to be free (`QUIET_WAIT`, 60 s); a run that starts
-  anyway says so in its records.
-- Every record carries the Mac's state before and after its turn (load, what other processes
-  used of the CPU, GPU utilization, swap, thermal state, memory-pressure events) and a `suspect`
-  list when one of them makes the number doubtful.
+- It measures the Mac's load and takes it into account: "System load", below.
 - A real-model run is a Mac run: ask the maintainer first.
-- **Start it and leave the session idle.** The desktop's GPU use sets the speed: a Claude
-  session streaming output and editing during the run cost the same build up to 15 % of its
-  decode speed on short cases (2026-11-11). Five rounds, read the medians, and trust the long
-  cases for decode: [BACKEND.md](BACKEND.md), "The ledger", has the noise band.
+
+## System load
+
+The Mac's own activity moves these numbers more than most runtime changes do, so the harness
+measures it three times: before the run, during it, and in the records afterwards.
+
+```sh
+scripts/mac-ready.sh                    # is this Mac quiet enough now? (10 s of sampling)
+scripts/mac-ready.sh --wait 300         # wait up to 5 minutes for it to be
+scripts/cli-load.py RUN/release.jsonl RUN/next.jsonl   # which runs were disturbed, and by what
+QUIET=off scripts/cli-bench.sh release next -- --only email   # a run read only for its replies
+```
+
+- **Before: `scripts/mac-ready.sh`.** The GPU's utilization (median and highest sample), the
+  cores other work keeps busy, free memory, the CPU's thermal limit, Low Power Mode, and the
+  builds and test runs going on beside it. `cli-bench.sh` waits for it to say ready
+  (`QUIET_WAIT`, 120 s) and refuses with exit 4 and the thing to fix when it doesn't; it asks
+  again before each process. The limits (`READY_GPU` 20 %, `READY_CPU` 1.5 cores, in the
+  script's header) come from this Mac: a still desktop holds the GPU at 12 to 17 %.
+- **During:** every record carries the Mac's state before and after its turn and a `suspect`
+  list, as before, and the runtime's telemetry splits each decode step into the GPU's time and
+  the host's.
+- **After: `scripts/cli-load.py`.** A build gives the same reply to the same case every time,
+  so its runs of a case do the same work and load can only slow them. The fastest run is the
+  build's speed on a quiet Mac, and a run is undisturbed within 3 % of that on the decode step
+  and 8 % on prefill. Each build is held to its own best, never to another's. For a disturbed
+  run it says which side lost the time: the GPU's (something else on the GPU) or the host's
+  (a busy CPU, or the runtime's threads moved to efficiency cores).
+- **What the run does with it.** While a case has fewer than three undisturbed runs
+  (`MIN_CLEAN`), it adds a round, up to three (`EXTRA_ROUNDS`). `compare.txt` is the comparison
+  on the undisturbed records, `compare-all.txt` on every record, and `load.txt` holds what was
+  disturbed and each build's best run of each case, which is worth reading even when most runs
+  were disturbed.
+- **What it warns about:** more than half the runs disturbed (run it again), and one build
+  disturbed much more often than the other. The builds take turns, so the Mac disturbs them
+  alike: a build that is slow more often is slow by itself, and its slow runs are to be read,
+  not filtered.
+- **Still: start it and leave the Mac alone,** the Claude session that started it included. A
+  session streaming text takes the GPU. The harness now notices; it can't give the time back.
+
+What it changed on 2026-11-11's runs, read again:
+
+| Run | Every record | Undisturbed records |
+| --- | --- | --- |
+| The build against itself, session idle (`noise`) | 27 of 40 undisturbed. Decode −0.2 %, `email` within [−13.5, +19.4] %, noise band up to 20.3 % | Decode −0.0 %, `email` within [−1.9, +1.0] %, noise band 1.1 % |
+| B2 against the shipped build, with bursts of other GPU work (`b2`) | 21 of 40 undisturbed. Decode +0.9 %, `explain` within [−65.9, +6.7] % | Decode −0.1 %, every case within 3 % |
+
 
 ## Output quality
 
