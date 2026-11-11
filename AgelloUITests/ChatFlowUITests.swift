@@ -53,7 +53,7 @@ final class ChatFlowUITests: XCTestCase {
     if !Self.isSimulator {
       XCTAssertTrue(reply.localizedCaseInsensitiveContains("Paris"), reply)
     }
-    // Performance details are off by default (Settings → Advanced).
+    // Performance details are off by default (the hidden developer screen turns them on).
     XCTAssertFalse(element("message.stats").exists, "Stats shown without the setting")
   }
 
@@ -174,24 +174,25 @@ final class ChatFlowUITests: XCTestCase {
     send("Say 'one'.")
     try waitForReplyToFinish(timeout: 120)
     openSettings()
-    // The sampler presets live in Settings → Advanced, a lazily loaded Form:
-    // scroll them into view.
-    let advanced = element("settings.advanced")
-    for _ in 0..<6 where !advanced.isHittable {
+    // On-device tools is the engine-level choice left in Settings: each flip asks the engine to
+    // rebuild the conversation. The Form loads lazily: scroll the switch into view.
+    let tools = element("settings.tools")
+    for _ in 0..<6 where !tools.isHittable {
       app.swipeUp()
     }
-    advanced.tap()
-    let precise = app.buttons["Precise"].firstMatch
-    XCTAssertTrue(precise.waitForExistence(timeout: 5), "Advanced settings did not open")
-    for _ in 0..<8 where !precise.isHittable {
-      app.swipeUp()
+    XCTAssertTrue(tools.waitForExistence(timeout: 5), "The tools switch isn't in Settings")
+    // The switch sits at the row's trailing edge: a tap on the row's middle lands on its label.
+    let knob = tools.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5))
+    let before = tools.value as? String
+    knob.tap()
+    let flipped = NSPredicate(format: "value != %@", before ?? "")
+    XCTAssertEqual(
+      XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: flipped, object: tools)], timeout: 5), .completed,
+      "The tools switch didn't flip")
+    // Five more, quickly: it ends where it started, after six rebuild requests.
+    for _ in 0..<5 {
+      knob.tap()
     }
-    for preset in ["Precise", "Creative", "Balanced", "Creative", "Precise"] {
-      app.buttons[preset].firstMatch.tap()
-    }
-    // Back to Settings: Settings' own bar (with Done) stays in the hierarchy
-    // underneath, so ask for Advanced's bar specifically.
-    app.navigationBars["Advanced"].buttons.element(boundBy: 0).tap()
     for _ in 0..<8 where !element("settings.status").isHittable {
       app.swipeDown()
     }

@@ -75,7 +75,6 @@ final class BenchUITests: XCTestCase {
     setToggle("composer.think", to: bench.think)
     setToggle("composer.search", to: bench.search)
     row["thinkShown"] = element("composer.think").value as? String ?? ""
-    if bench.think, let budget = bench.thinkingBudget { row["thinkBudgetSet"] = setThinkBudget(budget) }
 
     // One turn per message: the prompt (already the composer's draft), then each follow-up typed.
     var turns: [[String: Any]] = []
@@ -177,53 +176,6 @@ final class BenchUITests: XCTestCase {
     if (toggle.value as? String == "On") != on { toggle.tap() }
     let wanted = NSPredicate(format: "value == %@", on ? "On" : "Off")
     _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: wanted, object: toggle)], timeout: 5)
-  }
-
-  /// Settings → Advanced → Reasoning: steps the budget to `tokens` (128 a tap) and comes back to
-  /// the chat. Returns the budget the stepper shows at the end.
-  private func setThinkBudget(_ tokens: Int) -> Int {
-    element("chat.drawer").tap()
-    guard element("drawer.settings").waitForExistence(timeout: 5) else { return -1 }
-    element("drawer.settings").tap()
-    let advanced = element("settings.advanced")
-    for _ in 0..<6 where !advanced.exists || !advanced.isHittable { app.swipeUp() }
-    guard advanced.waitForExistence(timeout: 5) else { return -1 }
-    advanced.tap()
-    // The stepper's two buttons carry its identifier with a suffix; the row's text shows the value.
-    let title = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Budget:'")).firstMatch
-    guard title.waitForExistence(timeout: 5) else { return -1 }
-    func shown() -> Int { Int(title.label.filter(\.isNumber)) ?? -1 }
-    func button(_ name: String) -> XCUIElement {
-      let own = NSPredicate(
-        format: "identifier BEGINSWITH 'advanced.thinkBudget' AND (identifier ENDSWITH %@ OR label == %@)", name, name)
-      let match = app.buttons.matching(own).firstMatch
-      return match.exists ? match : app.buttons[name].firstMatch
-    }
-    for _ in 0..<40 {
-      let now = shown()
-      guard now > 0, now != tokens else { break }
-      let step = button(now < tokens ? "Increment" : "Decrement")
-      guard step.exists else { break }
-      step.tap()
-    }
-    let result = shown()
-    app.navigationBars["Advanced"].buttons.element(boundBy: 0).tap()
-    let done = element("settings.done")
-    if done.waitForExistence(timeout: 5) {
-      done.tap()
-      _ = done.waitForNonExistence(timeout: 5)
-    }
-    // Settings opened from the drawer, which is still open under the sheet: close it once the
-    // sheet is gone, and again if the first tap landed while it was still sliding away.
-    let close = element("drawer.close")
-    for _ in 0..<3 where close.waitForExistence(timeout: 2) {
-      let hittable = NSPredicate(format: "isHittable == true")
-      _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: hittable, object: close)], timeout: 3)
-      close.tap()
-      if close.waitForNonExistence(timeout: 3) { break }
-    }
-    _ = element("chat.input").waitForExistence(timeout: 5)
-    return result
   }
 
   private func attach(_ data: Data, named name: String) {

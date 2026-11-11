@@ -126,17 +126,15 @@ struct InferenceOptions: Codable, Sendable, Equatable {
     case maxOutputTokens
   }
 
-  /// The options a launch starts from: the saved ones (nil on a first launch) or the defaults.
-  /// - The context is no longer a setting (2026-11-02): a saved custom window goes back to the
-  ///   device's. Tests and probes still set the override in memory.
-  /// - A Think budget saved at the old 1,024 default moves to the new one once (`budgetMigrated`
-  ///   false); one chosen afterwards stays.
-  static func launch(saved: InferenceOptions?, budgetMigrated: Bool) -> InferenceOptions {
-    var options = saved ?? InferenceOptions()
-    options.maxNumTokensOverride = nil
-    if !budgetMigrated, options.thinkingBudget == DeviceProfile.previousThinkingBudget {
-      options.thinkingBudget = DeviceProfile.defaultThinkingBudget
-    }
+  /// The options a launch starts from: the defaults, with Think as it was left (the composer's
+  /// button is the one choice a person makes here). The rest is the app's: the window follows
+  /// memory, and speculative decoding, the reasoning budget, the sampler, vision, audio, image
+  /// detail and the system prompt are no longer settings (2026-11-11, when Advanced was removed),
+  /// so a value saved from that screen doesn't keep applying where nobody can see it. Tests,
+  /// probes and the Mac command line still set any of them in memory.
+  static func launch(saved: InferenceOptions?) -> InferenceOptions {
+    var options = InferenceOptions()
+    options.enableThinking = saved?.enableThinking ?? false
     return options
   }
 }

@@ -1,13 +1,15 @@
 import SwiftUI
 
-/// Settings: the model's status on top, then what most people change
-/// (personalization, memory, web search, Spotlight, models, tools), with the
-/// engine's developer controls one level down in Advanced. Everything
-/// applies live (via `onChange`).
+/// Settings: the model's status on top, then what people change
+/// (personalization, memory, web search, Spotlight, models, tools), help and
+/// about. The engine's choices aren't settings: the app makes them. Everything
+/// applies live (via `onChange`). Five taps on the version line open
+/// ``DeveloperSettingsView``.
 struct SettingsView: View {
   @Environment(AppState.self) private var appState
   @Environment(\.dismiss) private var dismiss
   @AppStorage(SpotlightIndex.enabledKey) private var spotlightEnabled = true
+  @State private var showDeveloper = false
 
   private var bindable: Bindable<AppState> { Bindable(appState) }
 
@@ -17,7 +19,7 @@ struct SettingsView: View {
         statusSection
         youSection
         modelSection
-        advancedSection
+        helpSection
         aboutSection
       }
       .themedList(Theme.Brand.glacier)
@@ -29,9 +31,9 @@ struct SettingsView: View {
             .accessibilityIdentifier("settings.done")
         }
       }
-      // Advanced edits options too: it is pushed on this stack, so these
-      // stay alive while it shows.
       .appliesEngineSettings(appState)
+      // On the Form, not on a row: a destination inside a lazy container isn't always found.
+      .navigationDestination(isPresented: $showDeveloper) { DeveloperSettingsView() }
     }
   }
 
@@ -166,6 +168,7 @@ struct SettingsView: View {
           tint: Theme.Brand.gold)
       }
       .themedRow()
+      .accessibilityIdentifier("settings.tools")
     } header: {
       Text("Model").eyebrowStyle()
     } footer: {
@@ -174,19 +177,22 @@ struct SettingsView: View {
     }
   }
 
-  private var advancedSection: some View {
+  private var helpSection: some View {
     Section {
-      NavigationLink {
-        AdvancedSettingsView()
-      } label: {
+      ShareLink(
+        item: DiagnosticsExport(),
+        preview: SharePreview(String(localized: "Agello diagnostics"))
+      ) {
         RowLabel(
-          title: String(localized: "Advanced"), symbol: "slider.horizontal.3",
+          title: String(localized: "Share diagnostics"), symbol: "stethoscope",
           tint: Theme.Brand.silver)
       }
       .themedRow()
-      .accessibilityIdentifier("settings.advanced")
+      .accessibilityIdentifier("settings.diagnostics")
+    } header: {
+      Text("Help").eyebrowStyle()
     } footer: {
-      Text("Performance, reasoning, sampling, voice and vision, the system prompt, and the benchmark.")
+      Text("Crash and performance reports from \(Platform.osName) and the app's log of the last hour, kept on this \(Platform.deviceName) until you share them. The log can include parts of your questions.")
         .foregroundStyle(Theme.Text.tertiary)
     }
   }
@@ -218,6 +224,10 @@ struct SettingsView: View {
         .font(.caption2)
         .frame(maxWidth: .infinity)
         .foregroundStyle(Theme.Text.tertiary)
+        // Five taps open the developer screen (the stats line, the benchmark, what's loaded).
+        .contentShape(Rectangle())
+        .onTapGesture(count: 5) { showDeveloper = true }
+        .accessibilityIdentifier("settings.version")
     }
   }
 

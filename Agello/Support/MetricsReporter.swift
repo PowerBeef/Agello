@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 /// MetricKit's metrics and diagnostics (crashes, hangs, CPU and disk-write exceptions), kept on
 /// this iPhone (Application Support/Diagnostics, the newest ``kept``) for the user to share from
-/// Settings → Advanced. Nothing is sent anywhere.
+/// Settings → Help. Nothing is sent anywhere.
 final class MetricsReporter: NSObject, MXMetricManagerSubscriber, @unchecked Sendable {
   static let shared = MetricsReporter()
   static let kept = 30

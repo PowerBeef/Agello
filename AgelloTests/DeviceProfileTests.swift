@@ -19,21 +19,27 @@ final class DeviceProfileTests: XCTestCase {
     XCTAssertTrue(DeviceProfile.isSupportedDevice)
   }
 
-  /// Think's budget is 4,096 tokens by default on every device (2026-11-10); a budget saved at
-  /// the old 1,024 moves once.
-  func testThinkBudgetDefault() {
+  /// A launch starts from the defaults and keeps one saved choice, Think (2026-11-11: the
+  /// Advanced screen is gone, so what was saved from it must not keep applying unseen).
+  func testLaunchKeepsOnlyThink() {
     XCTAssertEqual(InferenceOptions().thinkingBudget, 4_096)
-    XCTAssertEqual(InferenceOptions.launch(saved: nil, budgetMigrated: true).thinkingBudget, 4_096)
+    XCTAssertEqual(InferenceOptions.launch(saved: nil), InferenceOptions())
     var saved = InferenceOptions()
+    saved.enableThinking = true
     saved.thinkingBudget = 1_024
     saved.maxNumTokensOverride = 32_768
-    let moved = InferenceOptions.launch(saved: saved, budgetMigrated: false)
-    XCTAssertEqual(moved.thinkingBudget, 4_096)
-    XCTAssertNil(moved.maxNumTokensOverride)
-    // Chosen after the move, or by hand: kept.
-    XCTAssertEqual(InferenceOptions.launch(saved: saved, budgetMigrated: true).thinkingBudget, 1_024)
-    saved.thinkingBudget = 2_048
-    XCTAssertEqual(InferenceOptions.launch(saved: saved, budgetMigrated: false).thinkingBudget, 2_048)
+    saved.enableSpeculativeDecoding = false
+    saved.enableVision = false
+    saved.enableAudio = false
+    saved.visualDetail = .fast
+    saved.samplerPreset = .creative
+    saved.systemPrompt = "Answer in pirate speak."
+    saved.maxOutputTokens = 64
+    var expected = InferenceOptions()
+    expected.enableThinking = true
+    XCTAssertEqual(InferenceOptions.launch(saved: saved), expected)
+    saved.enableThinking = false
+    XCTAssertEqual(InferenceOptions.launch(saved: saved), InferenceOptions())
   }
 
   /// 32K by default where the device has 12 GB (2026-11-09), stepping down to 16K below 5.1 GB

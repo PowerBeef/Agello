@@ -17,7 +17,7 @@ Everything Agello can do, where to find it, and what to do when something goes w
 | **Chat screen** | ☰ (or a swipe from the left edge) opens the drawer; the pencil starts a new chat; `⋯` renames or deletes the current chat. A new chat is saved only when you send its first message. |
 | **Composer** | `+` adds a photo, a file, a scanned document, or a voice message · **Think** turns reasoning on (the screen glows lavender) · **Search** lets Agello research the web when your message needs it (teal): the facts for a question, or the techniques and documentation for something to write or build. Greetings, small talk, and work on text you've given (rewrite, translate, summarize) are answered without searching · 🎙 dictates · ↑ sends, or the waveform starts voice mode when the composer is empty · ■ stops. You can type your next message while a reply streams. |
 | **Talk** | In voice mode, just speak: the answer arrives as text and speech. Talk over it, or tap the orb, to interrupt. The camera button sends what you're looking at with your question. |
-| **A reply** | Use the row under it to copy, read aloud, regenerate, or share; ‹ › switches between versions. **Settings → Advanced → Show performance details** adds each reply's time to first token, speed and backend. |
+| **A reply** | Use the row under it to copy, read aloud, regenerate, or share; ‹ › switches between versions. |
 | **Your message** | Long-press to copy or edit it; editing loads it back into the composer and branches the conversation. |
 | **Drawer** | Chats grouped by date with pinned chats on top. Search all chats by words, plus **Related chats** by meaning ("Japan vacation" finds "Kyoto itinerary"). Long-press a chat to pin, rename, move to a project, or delete it; Settings sits at the bottom. |
 | **A project** | Name, instructions, shared files, its chats, and "New chat in this project". Every chat in a project follows its instructions and can use its files. |
@@ -25,7 +25,7 @@ Everything Agello can do, where to find it, and what to do when something goes w
 
 ## Settings
 
-Settings opens from the bottom of the drawer. The card on top shows the model and whether it's ready; the engine's developer controls sit one level down, in **Advanced**.
+Settings opens from the bottom of the drawer. The card on top shows the model and whether it's ready. How the model runs (its speed settings, its reasoning budget, image detail) isn't a setting: Agello chooses.
 
 | Section | Options |
 | --- | --- |
@@ -35,13 +35,7 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | **Spotlight** | Show chats in system search (on by default) |
 | **Models** | Download, pause, resume, or delete Gemma 4 E4B and EmbeddingGemma |
 | **On-device tools** | Turn the tools (date and time, calculator) on or off |
-| **Advanced → Performance** | Speculative decoding (MTP) · show performance details under each reply (off by default) |
-| **Advanced → Reasoning** | Thinking on or off, and its token budget (4,096 tokens by default). Reasoning leaves the model's memory once the reply is done, so it never uses up a chat's context. |
-| **Advanced → Sampling** | Precise (temperature 0.2) · Balanced (0.7) · Creative (1.0) |
-| **Advanced → Voice & Vision** | Image and audio input · image detail (Fast, 140 visual tokens, or Balanced, 280; Detailed isn't offered with the current model file) |
-| **Advanced → System prompt** | The base instructions for every conversation |
-| **Advanced → Benchmark** | A 1,024-token prefill and 256-token decode run on the GPU |
-| **Advanced → Device** | This iPhone, the engine, and what's loaded |
+| **Help** | Share diagnostics: the system's crash and performance reports and the app's log of the last hour, kept on the iPhone until you share them |
 
 ## Outside the app
 

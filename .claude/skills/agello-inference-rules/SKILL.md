@@ -112,12 +112,15 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   (`loadedContextTokens`), so a settings change doesn't reload to try a
   larger one. Budgets read the engine's `resolved.maxNumTokens`, never the
   default. Don't raise it without the memory suite.
-- Think's reasoning budget is a setting (Advanced, 128–4,096) with a default of
-  4,096 on every device (`DeviceProfile.defaultThinkingBudget`, the
-  maintainer's choice on 2026-11-10; 1,024 cut a coding plan mid-word on the
-  iPhone 17 Pro). It's a ceiling, and the reply reserve below counts it. `InferenceOptions.launch` moves a budget
-  saved at the old 1,024 once (`thinkingBudgetIs4096` in UserDefaults); a
-  budget chosen afterwards stays.
+- Think's reasoning budget is 4,096 tokens on every device
+  (`DeviceProfile.defaultThinkingBudget`, the maintainer's choice on
+  2026-11-10; 1,024 cut a coding plan mid-word on the iPhone 17 Pro), and not
+  a setting since 2026-11-11, when the Advanced screen was removed. It's a
+  ceiling, and the reply reserve below counts it. `InferenceOptions.launch`
+  starts every launch from the defaults and keeps only Think: speculative
+  decoding, the sampler, vision, audio, image detail and the system prompt
+  are the app's choices, set in memory by tests and the Mac command line
+  only.
 - When history is trimmed, the reply reserve stays free: a quarter of the
   window plus the reasoning budget, at most a third
   (`ContextBudget.replyReserve`): 8,000 tokens at 32K and 10,666 with Think,

@@ -23,7 +23,7 @@ struct AppBootstrap {
     let env = ProcessInfo.processInfo.environment
     let useMock = args.contains("--mock-engine") || env["AGELLO_MOCK_ENGINE"] != nil
 
-    // Crash, hang and performance reports from the system, kept on the device (Settings → Advanced).
+    // Crash, hang and performance reports from the system, kept on the device (Settings → Help).
     if !Self.hostsTests { MetricsReporter.shared.start() }
 
     let opened = ChatStoreLoader.open()

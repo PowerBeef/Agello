@@ -25,7 +25,7 @@ store or share any of your data. There are no accounts, analytics, advertising o
   You can turn this off in Settings, which clears them.
 - **Diagnostics**: iOS gives Agello its crash and performance reports, and Agello keeps a log of
   its recent activity. Both stay on your iPhone; you can share them yourself from Settings →
-  Advanced → Share diagnostics (the log can include parts of your questions).
+  Help → Share diagnostics (the log can include parts of your questions).
 
 Deleting a chat deletes its messages and files. Deleting the app deletes everything Agello stored.
 Your iPhone's own backups (iCloud or a computer) can include Agello's chats, as for other apps;

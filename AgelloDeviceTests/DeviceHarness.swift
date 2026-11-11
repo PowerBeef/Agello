@@ -37,14 +37,14 @@ final class DeviceHarness {
   /// Options every scenario starts from, as a fresh install has them (with the options
   /// struct's defaults the quality bench once ran Think at 1,024 tokens while the app used
   /// 4,096, 2026-11-10); scenarios that change options restore this in tearDown.
-  let baselineOptions = InferenceOptions.launch(saved: nil, budgetMigrated: true)
+  let baselineOptions = InferenceOptions.launch(saved: nil)
   /// Web search as a fresh install has it (allowed, not automatic): the
   /// phone's own saved settings must not decide whether scenarios search.
   let baselineWeb = WebSearchSettings()
 
   private static let defaultsKeys = [
     "inferenceOptions", "enableTools", "selectedThreadID", "benchmarkReport", "memoryEnabled",
-    "personalization", "webSearch", "thinkingBudgetIs4096",
+    "personalization", "webSearch",
   ]
   private var savedDefaults: [String: Any] = [:]
   private static let snapshotKey = "harnessSettingsSnapshot"

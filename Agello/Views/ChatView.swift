@@ -41,7 +41,7 @@ struct ChatView: View {
   /// The list keeps the latest text in view (the user hasn't scrolled up).
   @State private var followsLatest = true
   @FocusState private var inputFocused: Bool
-  /// Settings → Advanced → Performance: time to first token, speed, backend.
+  /// The developer screen's "Show performance details": time to first token, speed, backend.
   @AppStorage("showPerformanceDetails") private var showStats = false
 
   /// What the next message does; tints the backdrop, pills and send button.

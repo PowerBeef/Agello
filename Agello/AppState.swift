@@ -139,11 +139,9 @@ final class AppState {
       useMockEngine ? MockChatEngine() : LiteRTChatEngine()
     self.knowledge = KnowledgeBase(store: self.store, useHashingEmbedder: useMockEngine)
     let saved = UserDefaults.standard.decoded(InferenceOptions.self, forKey: "inferenceOptions")
-    let launched = InferenceOptions.launch(
-      saved: saved, budgetMigrated: UserDefaults.standard.bool(forKey: "thinkingBudgetIs4096"))
+    let launched = InferenceOptions.launch(saved: saved)
     self.options = launched
     if launched != saved { UserDefaults.standard.set(try? JSONEncoder().encode(launched), forKey: "inferenceOptions") }
-    UserDefaults.standard.set(true, forKey: "thinkingBudgetIs4096")
     self.enableTools = UserDefaults.standard.object(forKey: "enableTools") as? Bool ?? true
     self.memoryEnabled = UserDefaults.standard.bool(forKey: "memoryEnabled")
     if let decoded = UserDefaults.standard.decoded(WebSearchSettings.self, forKey: "webSearch") {

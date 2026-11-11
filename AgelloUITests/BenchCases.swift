@@ -5,8 +5,8 @@ struct BenchCase {
   var id: String
   var prompt: String
   var think = true
-  /// Think's budget, set in Settings → Advanced before the case: the bench doesn't depend on
-  /// what the phone's settings were left at. nil leaves it.
+  /// Think's budget on the Mac command line (`agello bench`). The app's is fixed at 4,096 since
+  /// 2026-11-11, so the iPhone bench sets nothing. nil leaves the tool's default.
   var thinkingBudget: Int? = 4_096
   var search = false
   /// The longest the reply may take before the case counts as stuck.

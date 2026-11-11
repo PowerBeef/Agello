@@ -85,11 +85,9 @@ struct DeviceProfile: Sendable, Equatable {
 
   /// Think's default reasoning budget, on every device (the maintainer's choice, 2026-11-10;
   /// 12 GB devices had it since 2026-11-09): with 1,024 tokens a coding plan was cut mid-word.
-  /// It's a ceiling, and it stays a setting. At 16K the reply reserve grows from 5,120 to 5,461
+  /// It's a ceiling, and no longer a setting (2026-11-11). At 16K the reply reserve grows from 5,120 to 5,461
   /// tokens (``ContextBudget/replyReserve(maxNumTokens:thinkingBudget:)``); at 8K it doesn't.
   static let defaultThinkingBudget = 4_096
-  /// The default until 2026-11-10: a budget saved at it moves to the new one, once.
-  static let previousThinkingBudget = 1_024
 
   /// Room the app needs left as it loads to take ``largeContextTokens``:
   /// ``roomForStandardContextBytes`` plus the 1.6 GB more a 32K engine peaks at. The memory

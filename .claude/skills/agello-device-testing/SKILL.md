@@ -369,10 +369,12 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
 
 ## UI tests and the design
 
-- Reply stats (`message.stats`) are hidden unless Settings → Advanced →
-  Show performance details is on.
-- The sampler presets ("Precise"…) live in Settings → Advanced
-  (`settings.advanced`).
+- Reply stats (`message.stats`) are hidden unless "Show performance details"
+  is on, in the developer screen: five taps on Settings' version line
+  (`settings.version`), then `settings.showStats`.
+- There's no Advanced screen (removed 2026-11-11): the sampler presets, the
+  Think budget and the other engine choices aren't in the UI. The engine-level
+  switch left in Settings is On-device tools (`settings.tools`).
 - `--uitest-reset` wipes chats, projects, files, memories and all settings
   (models are kept): the dev install's own data on the phone goes too.
 - Screenshots for the README and App Store come from

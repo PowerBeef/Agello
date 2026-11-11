@@ -47,7 +47,7 @@ final class Session {
   /// The settings a launch reads: cleared, so each run starts as a fresh install.
   private static let defaultsKeys = [
     "inferenceOptions", "enableTools", "selectedThreadID", "benchmarkReport", "memoryEnabled",
-    "personalization", "webSearch", "thinkingBudgetIs4096",
+    "personalization", "webSearch",
   ]
 
   init(_ settings: Settings) throws {
@@ -58,7 +58,7 @@ final class Session {
       for: ChatStore.schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
     appState = AppState(useMockEngine: settings.mock)
     appState.modelContext = container.mainContext
-    var options = InferenceOptions.launch(saved: nil, budgetMigrated: true)
+    var options = InferenceOptions.launch(saved: nil)
     options.enableThinking = settings.think
     if let budget = settings.thinkingBudget { options.thinkingBudget = budget }
     options.enableSpeculativeDecoding = settings.speculativeDecoding

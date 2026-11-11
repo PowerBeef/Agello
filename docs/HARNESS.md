@@ -136,8 +136,8 @@ reply as Markdown.
 - **The three layers join.** The driver's row and the app's trace are matched by the send time;
   the screen's text, read back through accessibility, ends as the trace's text ends.
 - **The driver** starts a new chat with the prompt as the composer's draft
-  (`AGELLO_BENCH_DRAFT`), sets Think and Search with the composer's pills and Think's budget in
-  Settings → Advanced, taps Send, and scrolls to the top when the reply is done.
+  (`AGELLO_BENCH_DRAFT`), sets Think and Search with the composer's pills (Think's budget is the
+  app's own, 4,096 tokens, since 2026-11-11), taps Send, and scrolls to the top when the reply is done.
 - **The trace** (`Agello/Support/ReplyTrace.swift`) holds the settings in effect, the steps (send,
   fit, reply, engine send, first token, first text on screen, engine finished, helpers, scene
   changes) with memory at each, why the reply ended, its text and stats, and the engine's
@@ -263,8 +263,8 @@ learned about driving the mirror is kept in one paragraph of the skill.
    the driver still taps the real send button. Typing stays covered by the existing UI tests.
 2. **The bench builds Release.** Built in H1 (the `AgelloBench` scheme). The engine-level suites
    keep Debug.
-3. **Tracing only by launch argument.** Built in H1 (`--trace`), for now. A switch in Settings →
-   Advanced, so a user can share a trace of a bad reply, is a later choice.
+3. **Tracing only by launch argument.** Built in H1 (`--trace`), for now. A switch beside
+   Settings → Help's diagnostics, so a user can share a trace of a bad reply, is a later choice.
 4. **Where results live.** Built in H4: reports in `build/` (scratch), the numbers that
    matter in the roadmap, and one small committed file of accepted baselines
    (`scripts/bench/baseline.json`).
