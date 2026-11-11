@@ -71,7 +71,7 @@ Paused on 2026-11-10: the Mac was busy and the iPhone away, so the direction abo
 - This repo: two files uncommitted, `AgelloCLI/Sources/EngineTimeline.swift` and `scripts/cli-timeline.py` (they read the new probes' fields and change nothing on the shipped runtime). The comment changed in `AgelloCLI/Sources/Bench.swift` (`f9b60dd`) hasn't been compiled.
 - The runtime's worktree (`../agello-arms/next/LiteRT-LM`, `agello-next` at `f1b88286`): the C7 probes, 10 files uncommitted, with a copy of the diff in `build/drafts/c7-probes-on-f1b88286.patch`. Its `dist/` is the build with them, `d5ed12808214`.
 - `build/cli/runs/c7/` holds the interrupted comparison's partial records: delete them before the rerun.
-- Disk: 47 GB free, under the 50 GB floor. Bazel's output (8 GB) and the new build's engine cache (`~/Models/agello/cache/agello-cli/d5ed12808214/`, 2.5 GB) are kept for B0; if the pause is long, `bazelisk clean --expunge` in the worktree gives the 8 GB back at the cost of a full rebuild.
+- Disk: 47 GB free, under the 50 GB floor, which the maintainer set aside for the moment (2026-11-10: "Don't worry for the disk space for the moment"). So Bazel's output (8 GB) and the new build's engine cache (`~/Models/agello/cache/agello-cli/d5ed12808214/`, 2.5 GB) stay where they are for B0, and nothing is cleaned to get back over the floor. The budget itself hasn't changed: ask before treating this as still in force in a later session.
 
 **When the Mac is free** (in this order):
 
