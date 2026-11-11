@@ -51,29 +51,24 @@ struct DeviceProfile: Sendable, Equatable {
 
   /// Whether a helper (title, memory, search planning, summary, dictation)
   /// runs beside the chat's conversation instead of replacing it.
-  /// - Google's LiteRT-LM (v0.18.0) loses the conversation whenever another
-  ///   one runs (its restore leaves the helper's cache in the GPU buffers),
-  ///   so the chat must be reseeded.
-  /// - Ours (a runtime with a build id) keeps it: the runtime copies its KV
-  ///   cache aside while the helper runs and restores it in about 0.1 s
-  ///   (2.9 s to reseed 8K tokens of history on the Mac). The copy (0.47 GB
-  ///   at 16K) lives while the helper runs (the engine restores the chat as
-  ///   soon as the helper ends), so it needs that much memory above
-  ///   ``lowMemoryStopBytes``.
+  ///
+  /// The runtime copies the chat's KV cache aside while the helper runs and
+  /// restores it in about 0.1 s (2.9 s to reseed 8K tokens of history on the
+  /// Mac). The copy (0.47 GB at 16K, 0.92 GB at 32K) lives while the helper
+  /// runs (the engine restores the chat as soon as the helper ends), so it
+  /// needs that much memory above ``lowMemoryStopBytes``. Short of it, the
+  /// chat's conversation is released before the helper and reseeded after.
   /// `availableBytes` 0 means not reported: keep. (The iPhone app on a Mac
   /// reports its physical memory.)
-  static func keepsConversationAcrossHelpers(
-    runtimeKeepsSessions: Bool, maxNumTokens: Int, availableBytes: UInt64
-  ) -> Bool {
-    guard runtimeKeepsSessions else { return false }
+  static func keepsConversationAcrossHelpers(maxNumTokens: Int, availableBytes: UInt64) -> Bool {
     guard availableBytes > 0 else { return true }
     let peak = kvBytesPerToken * UInt64(max(0, maxNumTokens))
     return availableBytes >= peak + lowMemoryStopBytes
   }
 
   /// The chat context, no longer a setting (2026-11-02). On our runtime decode hardly depends on
-  /// the window (iPhone 17 Pro, cooled: 39 / 42 / 42 tok/s at 8K / 16K / 32K; on Google's v0.18.0
-  /// it fell 39 → 34 → 27), and 16K peaks at 1.9 GB. Devices with
+  /// the window (iPhone 17 Pro, cooled: 39 / 42 / 42 tok/s at 8K / 16K / 32K), and 16K peaks at
+  /// 1.9 GB. Devices with
   /// ``memoryForLargeContextBytes`` take ``largeContextTokens``; a load short of memory steps
   /// down (``contextTokens(standard:roomBytes:)``).
   static let standardContextTokens = 16_384

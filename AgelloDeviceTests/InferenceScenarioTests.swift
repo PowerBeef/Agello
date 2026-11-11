@@ -34,7 +34,9 @@ final class InferenceScenarioTests: DeviceTestCase {
     values["engineState"] = "\(appState.engineState)"
     harness.record("01_load", values, in: self)
     XCTAssertTrue(loaded, "Load failed: \(appState.engineState)\n\(loadLog.joined(separator: "\n"))")
-    XCTAssertEqual(appState.resolved?.useGPU, true, "Expected GPU backend; ladder: \(loadLog)")
+    // The first rung of the ladder, with vision and audio: no failed attempt before it.
+    XCTAssertFalse(loadLog.contains { $0.hasPrefix("failed") }, "ladder: \(loadLog)")
+    XCTAssertEqual(appState.resolved?.enableVision, true, "ladder: \(loadLog)")
   }
 
   func test02_TextReply() async throws {
@@ -201,7 +203,7 @@ final class InferenceScenarioTests: DeviceTestCase {
     await appState.engine.unload()
     let config = try EngineConfig(
       modelPath: url.path, backend: .gpu, maxNumTokens: 2048,
-      cacheDir: try EngineCache.directory(maxNumTokens: 2048))
+      cacheDir: try EngineCache.directory())
     let engine = Engine(engineConfig: config)
     try await engine.initialize()
     let conversation = try await engine.createConversation(
@@ -411,10 +413,10 @@ final class InferenceScenarioTests: DeviceTestCase {
     XCTAssertLessThanOrEqual(cached, 2048)
   }
 
-  /// Helper task: a model-written title after the first exchange. Google's
-  /// runtime wipes the engine's conversation (the chat is rebuilt from
-  /// history); ours keeps it (the next message reads only itself). Either
-  /// way the chat must stay intact.
+  /// Helper task: a model-written title after the first exchange. The
+  /// runtime keeps the chat's conversation across it (the next message reads
+  /// only itself); short of memory it's released and rebuilt from history.
+  /// Either way the chat must stay intact.
   func test11_TitleAndContextAfterHelper() async throws {
     try await requireLoadedModel()
     let thread = harness.newThread()

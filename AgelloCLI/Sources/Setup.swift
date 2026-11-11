@@ -20,8 +20,7 @@ enum Setup {
     let models = expand(arguments.value("models") ?? modelsDefault)
     // One cache root per runtime build: the engine deletes other builds' folders in its root,
     // and two builds compared in turn should each load warm.
-    let build = EngineCache.runtimeBuildID ?? "no-build-id"
-    let cache = expand(arguments.value("cache") ?? cacheDefault) + "/" + build
+    let cache = expand(arguments.value("cache") ?? cacheDefault) + "/" + EngineCache.runtimeBuildID
     var tracesDefault = "build/cli/traces"
     if command == "bench" {
       // Decided here, once: the bench reads the same option again.

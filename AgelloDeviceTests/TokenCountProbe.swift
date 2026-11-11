@@ -21,7 +21,7 @@ extension ProbeScenarioTests {
     let engine = Engine(
       engineConfig: try EngineConfig(
         modelPath: url.path, backend: .gpu, maxNumTokens: 8_192,
-        cacheDir: try EngineCache.directory(maxNumTokens: 8_192)))
+        cacheDir: try EngineCache.directory()))
     try await engine.initialize()
 
     let arms: [(name: String, thinking: Bool)] = [("plain", false), ("think", true)]
@@ -53,11 +53,9 @@ extension ProbeScenarioTests {
         let after = try conversation.getTokenCount()
         // Our runtime refills a Think reply without its reasoning right after it, so that refill
         // is the turn's last prefill (2 or 3 tokens, 2026-10-27), and the message's own prefill is
-        // what the cache gained besides it. Google's refills at the next message instead.
+        // what the cache gained besides it.
         let gained = after - before
-        let refilled =
-          EngineCache.runtimeBuildID != nil
-          && gained != info.lastPrefillTokenCount + info.lastDecodeTokenCount
+        let refilled = gained != info.lastPrefillTokenCount + info.lastDecodeTokenCount
         let prefilled = refilled ? gained - info.lastPrefillTokenCount : info.lastPrefillTokenCount
         rows.append([
           "arm": arm.name, "turn": index, "predicted": predicted, "prefilled": prefilled,

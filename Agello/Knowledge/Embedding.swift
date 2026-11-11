@@ -18,7 +18,7 @@ protocol TextEmbedder: Sendable {
 }
 
 /// EmbeddingGemma 2 (text, 270M) through LiteRT-LM, truncated to 256
-/// dimensions (Matryoshka) and normalized. Loads on first use: GPU, then CPU.
+/// dimensions (Matryoshka) and normalized. Loads on first use, on the GPU.
 actor LiteRTEmbedder: TextEmbedder {
   static let dimensions = 256
   nonisolated let identifier = "embeddinggemma-2-text-270m@\(LiteRTEmbedder.dimensions)"
@@ -98,18 +98,21 @@ actor LiteRTEmbedder: TextEmbedder {
   private func load() async throws -> EmbeddingEngine {
     let cacheDir = try EngineCache.embeddingDirectory()
     var lastError: Error?
-    for backend: Backend in [.gpu, .cpu()] {
-      // In the background a GPU load fails: don't settle for the CPU for good.
+    // On the GPU, tried twice: there's no other backend, and search falls back to keywords
+    // (BM25) when the embedder can't load.
+    for trial in 1...2 {
+      // In the background a GPU load fails: stop, and load when the app is back.
       guard GPUGate.isOpen else { throw GPUGate.closedError }
       let candidate = EmbeddingEngine(
-        config: EmbeddingEngineConfig(modelPath: modelURL.path, backend: backend, cacheDir: cacheDir))
+        config: EmbeddingEngineConfig(modelPath: modelURL.path, backend: .gpu, cacheDir: cacheDir))
       do {
         try await candidate.initialize()
-        Log.engine.info("embedder: loaded on \(String(describing: backend), privacy: .public)")
+        Log.engine.info("embedder: loaded (try \(trial))")
         return candidate
       } catch {
         lastError = error
-        Log.engine.error("embedder: \(String(describing: backend), privacy: .public) failed: \(String(describing: error), privacy: .public)")
+        Log.engine.error("embedder: load failed (try \(trial)): \(String(describing: error), privacy: .public)")
+        if trial == 1 { try? await Task.sleep(for: .milliseconds(750)) }
       }
     }
     throw lastError ?? ChatError.engineNotReady

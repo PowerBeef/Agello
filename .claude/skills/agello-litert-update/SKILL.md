@@ -8,7 +8,7 @@ description: Update the vendored LiteRT-LM package (Vendor/LiteRT-LM), work in t
 **Direction changed on 2026-11-10** (`docs/BACKEND.md`): the backend becomes a hard fork in one
 repository, and Google's upstream is a read-only source. Until milestone B6 rewrites this skill,
 read it with that in mind: don't sync, merge or rebase onto upstream, don't vendor or measure
-Google's binary (`refresh-litert-lm.sh`, the WebGPU arm), and treat the three-repository layout
+Google's binary (the WebGPU arm; the app's code for it left on 2026-11-11), and treat the three-repository layout
 and its re-pin steps below as what B2 replaces. The build, release and vendoring commands for
 `agello-next` still hold.
 
@@ -264,10 +264,10 @@ nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
   `REF=<commit> TAG=<tag> Vendor/use-release-litert.sh` here. `BUILD.md` on the
   fork covers the release, the third-party notices (for `NOTICE`) and the
   privacy manifest check (no new required-reason categories as of 2026-10-15).
-- **Build provenance:** `litert_lm_get_build_info()` (our builds only) names
-  the commits, flags and a build id; `EngineCache` keys its folders by that id,
-  so switching between Google's binary and ours needs no cache juggling (the
-  other build's folders are deleted at the next load).
+- **Build provenance:** `litert_lm_get_build_info()` names the commits, flags
+  and a build id; `EngineCache` keys its folders by that id, so switching
+  between two builds of ours needs no cache juggling (the other build's
+  folders are deleted at the next load).
 - **Measuring:** `tools/agello-bench` on `agello` (build it against an arm
   with `LITERTLM_PACKAGE=<checkout> swift build -c release --scratch-path
   .build-<arm>`), ABAB runs, `compare.py` for changes with confidence
@@ -304,11 +304,9 @@ Then update the release and build id in `Vendor/README.md`, the README's
 `docs/LITERT-LM.md`, and `NOTICE` (from the release's `THIRD_PARTY_NOTICES.md`,
 copied to `Agello/Resources/NOTICE.txt`).
 
-- Never vendor Google's tag directly (`REPO=google-ai-edge/LiteRT-LM REF=…`):
-  it drops the patches.
-- `REF=<agello commit> ./Vendor/refresh-litert-lm.sh` alone goes back to
-  Google's v0.18.0 binary with the Swift patches. That undoes our runtime
-  fixes: only on the user's decision.
+- Never vendor Google's tag or Google's binary: the app has no code for a
+  runtime without our build id and telemetry (B1, 2026-11-11), and the script
+  that vendored it (`Vendor/refresh-litert-lm.sh`) is gone.
 
 ## 3. Build and fix
 

@@ -1,7 +1,6 @@
 import Foundation
 
-/// Result of an on-demand benchmark run (1024 prefill / 256 decode tokens,
-/// matching Google's published methodology).
+/// Result of an on-demand benchmark run (1024 prefill / 256 decode tokens).
 struct BenchmarkReport: Codable, Sendable, Equatable {
   var modelID: ModelID
   var backend: String

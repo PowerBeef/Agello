@@ -19,22 +19,20 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   benchmark, delete, helpers) one at a time. The actor is reentrant across its
   long awaits, so without it two loads interleave and hold two engines. Never
   call `serialized` from inside a serialized operation: that deadlocks.
-- Google's LiteRT-LM keeps one live conversation per engine. `helperJSON`,
-  `helperTexts`, and `transcribe` create throwaway conversations, which wipe
-  the main one (v0.18.0's session restore leaves the helper's KV cache in the
-  GPU buffers): the engine replaces it with an **empty** one, and the caller
-  must reseed history before the next send.
-- Our runtime (a build with a build id, `EngineCache.runtimeBuildID`) keeps
-  the main conversation: it copies its KV cache aside while the helper runs
-  and restores it when the engine switches back (about 0.1 s, against 2.9 s
-  to reseed 8K tokens on the Mac). `endHelper` switches back right away (the
-  chat's `getTokenCount()` does it), so the copy, one KV cache, lives only
-  while the helper runs; otherwise it would wait for the next message. The
-  engine keeps the chat only when one cache fits above `lowMemoryStopBytes`
-  (`DeviceProfile.keepsConversationAcrossHelpers`); otherwise it releases the
-  main conversation *before* the helper and leaves an empty one, as with
-  Google's. Callers ask `lastHelperKeptConversation` (`AppState.afterHelper`)
-  and unbind the chat only when it's false; a failed helper reports false.
+- `helperJSON`, `helperTexts`, and `transcribe` run in throwaway
+  conversations. The runtime keeps the main conversation beside them: it
+  copies its KV cache aside while the helper runs and restores it when the
+  engine switches back (about 0.1 s, against 2.9 s to reseed 8K tokens on the
+  Mac; the copy is 917.5 MB at a 32,000-token window). `endHelper` switches
+  back right away (the chat's `getTokenCount()` does it), so the copy, one KV
+  cache, lives only while the helper runs; otherwise it would wait for the
+  next message.
+- The engine keeps the chat only when one cache fits above
+  `lowMemoryStopBytes` (`DeviceProfile.keepsConversationAcrossHelpers`).
+  Otherwise it releases the main conversation *before* the helper and leaves
+  an **empty** one, and the caller must reseed history before the next send.
+  Callers ask `lastHelperKeptConversation` (`AppState.afterHelper`) and
+  unbind the chat only when it's false; a failed helper reports false.
 - While a helper runs, `cancel()` cancels the helper's conversation, never
   the kept main one (a cancelled conversation rejects the next message), even
   before the helper's conversation exists (`helperActive`). A helper that
@@ -42,9 +40,8 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   so the next send reseeds instead of reloading the engine.
 - Title and memory helpers run on a schedule (`queueHelpers`,
   `runPendingHelpers`): when the user leaves the chat or after
-  `HelperTasks.idleDelay` (3 s on our runtime, 60 s on Google's, where each
-  helper costs a full re-prefill), never right after each reply, never in
-  voice mode, never with a send pending.
+  `HelperTasks.idleDelay` (3 s), never right after each reply, never in voice
+  mode, never with a send pending.
 - A send prepares and fits its conversation in one `serialized` step
   (`PreparedSend`): a helper or dictation can't empty it in between.
 
@@ -90,9 +87,8 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
 - Reasoning never stays in the KV cache: `load` sets
   `ExperimentalFlags.filterChannelContentFromKvCache = true` explicitly (the
   runtime's builder defaults to true; an unset flag means that default, not
-  off). At the next message (Google's v0.18.0; our build does it right after
-  the reply) the runtime rewinds and refills the answer without its
-  reasoning, which matches a reseed from SwiftData history.
+  off). Right after the reply the runtime rewinds and refills the answer
+  without its reasoning, which matches a reseed from SwiftData history.
   Measured on the iPhone (two Think turns): 399 cached tokens with the
   filter, 536 with it explicitly off; `ThinkingScenarioTests/test02`
   guards it with `cachedTokenCount()`.
@@ -135,21 +131,25 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
 
 - A load can "succeed" with parts of the model unmapped. Every new engine must
   pass `validate()` (a one-token generation) before use, retried once after
-  750 ms. Loads try GPU then CPU, multimodal then text-only.
+  750 ms. Loads run on the GPU only: multimodal, then text-only
+  (`InferencePlanner.attempts`). The last attempt gets a second try whatever
+  the error, then the load fails and is reported: there is no CPU backend to
+  fall back to (removed 2026-11-11, `docs/BACKEND.md`), so don't add one. The
+  image and audio encoders still run on the CPU; that's a B5 thread.
 - `InferencePlanner.requiresEngineReload` lists the engine-level settings
-  (backend, KV size, vision, audio, MTP). Changing any of
+  (KV size, vision, audio, MTP). Changing any of
   them needs a full `load`. Everything else goes through
   `updateConversationOptions`, which reseeds the conversation.
 - Engine-level `ExperimentalFlags` must be set before creating the engine.
-- Engine caches go through `EngineCache`: `directory(maxNumTokens:)` for any
-  E4B engine, `embeddingDirectory()` for EmbeddingGemma, `EngineCache.disabled`
-  for one-off engines like the benchmark. Never hand an engine the cache root.
-  Google's LiteRT-LM keeps another weight copy per context size in one file
-  (each folder held about 2.5 GB for E4B) and never trims it (probe 14), so
-  with it each size has a folder (the two most recently used kept). Ours keys weights by content (T11): one folder,
-  `kv-all-<id>`, for every size. LiteRT-LM's cache keys ignore the runtime
-  build, so builds that report an id (ours) get folders of their own and
-  another build's folders are deleted (`EngineCache.runtimeBuildID`).
+- Engine caches go through `EngineCache`: `directory()` for any E4B engine,
+  `embeddingDirectory()` for EmbeddingGemma, `EngineCache.disabled` for
+  one-off engines like the benchmark. Never hand an engine the cache root:
+  `directory()` deletes everything in it that isn't this build's.
+  The runtime keys weights by content (T11): one folder, `kv-all-<id>`, and
+  one copy for every context size (probe 14 guards it; upstream's keying
+  wrote 2.2 GB more per size). LiteRT-LM's cache keys ignore the runtime
+  build, so the folders carry the build's id (`EngineCache.runtimeBuildID`)
+  and another build's folders are deleted at the next load.
 - Settings changed just before sending must apply to that message
   (`scheduleApplyOptions`, then send).
 
@@ -178,7 +178,7 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
     `agello-litert-update`), then run `test15_LongContextDigitFidelity`
     and probe 12.
 - Speculative decoding (MTP) breaks JSON-schema constrained decoding on
-  device, in Google's binary and in ours: the draft and verify states share
+  device: the draft and verify states share
   one grammar matcher, so verify masks come from the wrong position and a
   rejected draft stays committed (reference `troubleshooting.md`).
   `helperJSON` turns MTP off; plain-text helpers keep it.
@@ -188,23 +188,22 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   Search plan's `kind`). Free strings are fine.
 - Don't trust the model file's `thinking` or `functionCalling` flags: Gemma 4
   files report both as unsupported, yet both work.
-- Sampling (probe 18, Google's v0.18.0): with MTP on, every reply is greedy
-  whatever the preset; with MTP off the conversation's sampler applies, but
-  every conversation starts at seed 0, so a rebuilt conversation repeats the
-  same reply. A varied reply needs MTP off and a seed of its own
-  (`SamplerConfig(seed:)`); that's how Regenerate samples. Our build does the
-  same since `agello-next` `f1b88286` (4.1c); before it, the engine's first
-  conversation (the load's validation, greedy) fixed the sampler for every
-  conversation, so presets and Regenerate's seeds never applied (probe 18 on
-  the M6, 2026-10-24).
-- Reply stats: Google's binary gives them only in benchmark mode
-  (`ExperimentalFlags.enableBenchmark`, `getBenchmarkInfo`). On ours benchmark
-  mode makes every GPU wait spin (Mac calibration, 2026-10-24: 7.5–8.7 ms of
-  CPU per decoded token, against 0.7 ms with it off), so `load` leaves it off
-  and `RuntimeTelemetry` takes a reply's tokens and decode speed from the
-  runtime's telemetry totals before and after it (level 2, for decode times).
-  Don't turn benchmark mode on for ours; `LiteRTLM.benchmark` sets it for
-  itself and restores it.
+- Sampling (probe 18): with MTP on, every reply is greedy whatever the
+  preset; with MTP off the conversation's sampler applies, but every
+  conversation starts at seed 0, so a rebuilt conversation repeats the same
+  reply. A varied reply needs MTP off and a seed of its own
+  (`SamplerConfig(seed:)`); that's how Regenerate samples. This holds since
+  `agello-next` `f1b88286` (4.1c); before it, the engine's first conversation
+  (the load's validation, greedy) fixed the sampler for every conversation,
+  so presets and Regenerate's seeds never applied (probe 18 on the M6,
+  2026-10-24).
+- Reply stats come from the runtime's telemetry: `RuntimeTelemetry` takes a
+  reply's tokens and decode speed from the totals before and after it (level
+  2, for decode times). Benchmark mode (`ExperimentalFlags.enableBenchmark`,
+  `getBenchmarkInfo`) makes every GPU wait spin (Mac calibration, 2026-10-24:
+  7.5–8.7 ms of CPU per decoded token, against 0.7 ms with it off), so `load`
+  turns it off. Don't turn it on; `LiteRTLM.benchmark` sets it for itself and
+  restores it.
 - Visual tokens per image: E4B's file accepts at most 280
   (`VisualDetail.offered(limit:)`); a file that can't be inspected gets 280.
 
@@ -216,8 +215,8 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   foreground, except long file summaries running as a `BGContinuedProcessingTask`
   with background GPU. `GPUGate` (separate from `isBusy`) is closed in the
   background: helpers, dictation and indexing are cancelled and re-queued, and
-  a load interrupted by backgrounding stops rather than falling back to the
-  CPU for good (`GPUGate.closedError`).
+  a load interrupted by backgrounding stops (`GPUGate.closedError`) and runs
+  again when the app is back.
 - Extensions (widgets, share sheet) can't load the model. They hand off to the
   app.
 - Memory warnings go through `MemoryPolicy.action(level:)` and

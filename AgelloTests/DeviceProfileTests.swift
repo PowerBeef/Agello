@@ -79,23 +79,20 @@ final class DeviceProfileTests: XCTestCase {
     XCTAssertFalse(DeviceProfile.shouldStopForMemory(availableBytes: 0))
   }
 
-  /// Mac finding (T3): our runtime keeps the chat's conversation across a
-  /// helper at a peak cost of one copy of its KV cache; Google's wipes it.
+  /// Mac finding (T3): the runtime keeps the chat's conversation across a helper at a peak cost
+  /// of one copy of its KV cache (917.5 MB at a 32,000-token window, the runtime's own count).
   func testHelpersKeepTheConversationWhenMemoryAllows() {
-    func keeps(_ runtime: Bool, _ tokens: Int, _ available: UInt64) -> Bool {
-      DeviceProfile.keepsConversationAcrossHelpers(
-        runtimeKeepsSessions: runtime, maxNumTokens: tokens, availableBytes: available)
+    func keeps(_ tokens: Int, _ available: UInt64) -> Bool {
+      DeviceProfile.keepsConversationAcrossHelpers(maxNumTokens: tokens, availableBytes: available)
     }
     // 8K: 28,672 × 8,192 = 0.23 GB, plus the 0.4 GB stop threshold.
-    XCTAssertTrue(keeps(true, 8_192, 634_881_024))
-    XCTAssertFalse(keeps(true, 8_192, 634_881_023))
-    XCTAssertTrue(keeps(true, 32_768, 1_400_000_000))
-    XCTAssertFalse(keeps(true, 32_768, 1_300_000_000))
+    XCTAssertTrue(keeps(8_192, 634_881_024))
+    XCTAssertFalse(keeps(8_192, 634_881_023))
+    XCTAssertTrue(keeps(32_768, 1_400_000_000))
+    XCTAssertFalse(keeps(32_768, 1_300_000_000))
     // Not reported: keep.
-    XCTAssertTrue(keeps(true, 32_768, 0))
-    // Google's runtime wipes it whatever the memory.
-    XCTAssertFalse(keeps(false, 8_192, 0))
-    XCTAssertFalse(keeps(false, 8_192, 8_000_000_000))
+    XCTAssertTrue(keeps(32_768, 0))
+    XCTAssertEqual(DeviceProfile.kvBytesPerToken * 32_000, 917_504_000)
   }
 
   /// The largest window worth loading follows the app's memory limit (32,000 at 6.5 GB or more).

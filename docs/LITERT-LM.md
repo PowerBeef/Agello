@@ -31,16 +31,17 @@ All through the Swift API, in `ChatEngine.swift`, `Embedding.swift` and `EngineC
 full table, with what's left at defaults, is in
 [configuration.md, "What Agello sets"](https://github.com/PowerBeef/agello-litert-lm/blob/agello/docs/agello/reference/configuration.md#what-agello-sets).
 
-- **Every load:** `enableBenchmark` on with Google's binary (off with ours, whose reply stats come
-  from its telemetry, `RuntimeTelemetry`) and `filterChannelContentFromKvCache` on; speculative decoding
-  (MTP) from the plan; GPU first, then CPU; vision and audio on the CPU when enabled; `maxNumTokens`
-  from the plan; a cache folder from `EngineCache`.
+- **Every load:** `enableBenchmark` off (reply stats come from the runtime's telemetry,
+  `RuntimeTelemetry`) and `filterChannelContentFromKvCache` on; speculative decoding (MTP) from
+  the plan; the language model on the GPU, with no CPU fallback since 2026-11-11; the image and
+  audio encoders on the CPU when enabled; `maxNumTokens` from the plan; the cache folder from
+  `EngineCache`.
 - **Each new engine:** a one-token reply to "Hi" (`validate()`), with no sampler settings.
 - **Chat:** system prompt, history, tools, sampler, thinking budget and visual token budget per
   conversation; `sendMessageStream` with an output cap from `ContextBudget`.
 - **Helpers:** JSON helpers turn MTP off and use a JSON-schema response format; transcription
   samples greedily; the others pass no sampler.
-- **Embeddings:** GPU then CPU, normalized, 256 dimensions, batches of 8.
+- **Embeddings:** on the GPU (two tries, then search by keywords), normalized, 256 dimensions, batches of 8.
 
 ## Words to get right
 

@@ -184,8 +184,8 @@ final class AppStateTests: XCTestCase {
     XCTAssertEqual(reseedsAfter, reseedsBefore)
   }
 
-  /// Titles and memories wait for a quiet moment: on Google's runtime each helper empties the
-  /// chat's conversation, and running one between messages made the next reply re-read the chat.
+  /// Titles and memories wait for a quiet moment: a helper takes the GPU, and short of memory it
+  /// empties the chat's conversation, so one between messages made the next reply re-read the chat.
   func testHelpersWaitForAQuietMoment() async {
     let thread = appState.newThread(in: context)
     await appState.send(text: "Tell me about lighthouses", imageData: nil, audioFileURL: nil, in: thread)

@@ -17,7 +17,7 @@ The maintainer's correction of 2026-11-10 ([BACKEND.md](BACKEND.md) has the whol
 - **The harness judges performance; Claude judges output quality, by reading the replies.** The
   answer checks are evidence for that reading, not the verdict.
 - **The backend becomes a hard fork**, one repository of our own, and the app drops its code for
-  Google's binary and for the CPU backend. `--backend` leaves the tool with it.
+  Google's binary and for the CPU backend (done on 2026-11-11, with the tool's `--backend`).
 
 ## Why
 
@@ -80,7 +80,7 @@ scripts/cli-report.py build/cli/runs/release.jsonl      # the answer checks, aft
 ```
 
 `agello --help` lists the options: Think and its budget, Search, files, an image, a voice
-message, follow-ups, the tools, the window, the backend, speculative decoding, the sampler preset,
+message, follow-ups, the tools, the window, speculative decoding, the sampler preset,
 the helpers, JSON output. Ctrl-C stops a reply as the Stop button does. The runtime's log lines
 go to `runtime.log` beside the traces unless `--verbose` is given.
 
@@ -116,6 +116,10 @@ band) and the answer checks (`cli-report.py`). A change inside the noise band is
   used of the CPU, GPU utilization, swap, thermal state, memory-pressure events) and a `suspect`
   list when one of them makes the number doubtful.
 - A real-model run is a Mac run: ask the maintainer first.
+- **Start it and leave the session idle.** The desktop's GPU use sets the speed: a Claude
+  session streaming output and editing during the run cost the same build up to 15 % of its
+  decode speed on short cases (2026-11-11). Five rounds, read the medians, and trust the long
+  cases for decode: [BACKEND.md](BACKEND.md), "The ledger", has the noise band.
 
 ## Output quality
 
@@ -148,7 +152,7 @@ scripts/cli-report.py build/cli/runs/quality.jsonl
 ## The tests, natively
 
 ```sh
-scripts/cli-test.sh unit                         # 269 unit tests on the scripted engine, about a minute
+scripts/cli-test.sh unit                         # 261 unit tests on the scripted engine, about a minute
 scripts/cli-test.sh unit AppStateTests           # one class, or Class/method
 scripts/cli-test.sh inference                    # the real-model scenarios on this Mac's GPU (also files, web, thinking, probes, calibrate)
 ```

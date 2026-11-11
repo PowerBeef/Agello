@@ -6,7 +6,6 @@
 #   REF=<agello-next commit> TAG=<release tag> Vendor/use-release-litert.sh
 # Commit the result; then update Vendor/README.md, NOTICE (the release's THIRD_PARTY_NOTICES.md)
 # and the README's "Vendored LiteRT-LM" section, and run the suites on the iPhone.
-# Back to Google's binary: REF=<agello commit> Vendor/refresh-litert-lm.sh.
 set -eu
 REF="${REF:?set REF to the agello-next commit the release was built from}"
 TAG="${TAG:?set TAG to the release tag}"
@@ -18,7 +17,17 @@ if ! printf '%s' "$CHECKSUM" | grep -Eq '^[0-9a-f]{64}$'; then
   echo "No checksum.txt in release $TAG of $REPO." >&2
   exit 2
 fi
-REF="$REF" "$ROOT/Vendor/refresh-litert-lm.sh"
+# The package surface (Package.swift, swift/, LICENSE) from the fork at REF.
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+curl -sL --fail -o "$TMP/litertlm.tar.gz" "https://github.com/${REPO}/archive/${REF}.tar.gz"
+mkdir "$TMP/src"
+tar xzf "$TMP/litertlm.tar.gz" -C "$TMP/src"
+SRC="$(find "$TMP/src" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+rm -rf "$ROOT/Vendor/LiteRT-LM"
+mkdir -p "$ROOT/Vendor/LiteRT-LM"
+cp "$SRC/Package.swift" "$SRC/LICENSE" "$ROOT/Vendor/LiteRT-LM/"
+cp -r "$SRC/swift" "$ROOT/Vendor/LiteRT-LM/swift"
 URL="$BASE/CLiteRTLM.xcframework.zip" CHECKSUM="$CHECKSUM" perl -0pi -e \
   's|      path: "dist/CLiteRTLM.xcframework"|      url: "$ENV{URL}",\n      checksum: "$ENV{CHECKSUM}"|' \
   "$ROOT/Vendor/LiteRT-LM/Package.swift"

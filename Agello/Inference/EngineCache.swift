@@ -1,57 +1,30 @@
 import Darwin
 import Foundation
 
-/// Where LiteRT-LM keeps compiled GPU programs and GPU-format weights, kept
-/// to a bounded size.
+/// Where LiteRT-LM keeps compiled GPU programs and GPU-format weights.
 ///
-/// Google's LiteRT-LM stores another copy of the model's GPU weights for every
-/// context size an engine is created with (each E4B folder held about 2.5 GB),
-/// in one file it never trims while the model file is unchanged (probe 14). So with Google's
-/// binary each context size gets its own folder, and only the most recently
-/// used ones stay. A cached size loads in under a second; an evicted one
-/// recompiles once (~7.5 s for E4B).
+/// Our runtime keys the weights by content, so every context size shares one
+/// copy (Mac: 2.2 GB for 4K, 8K and 16K; a new size loads in 1.2–1.4 s, a
+/// first load compiles for about 7.5 s): one folder for the chat model,
+/// `kv-all-<build id>`, and one for the embedder, `embedding-<build id>`.
 ///
 /// LiteRT-LM's cache keys ignore which runtime build wrote them, and a program
-/// cache from another build can't be trusted. Builds that report a build id
-/// (ours, `litert_lm_get_build_info`) get folders of their own; a different
-/// build's folders are deleted on the next load. Ours key the weights by
-/// content, so every context size shares one copy (Mac: 2.2 GB for 4K, 8K
-/// and 16K, a new size loads in 1.2–1.4 s): one folder, `kv-all-<id>`, and
-/// `embedding-<id>`. Google's keep `kv-8192` and `embedding`.
+/// cache from another build can't be trusted. So the folders carry the build's
+/// id (`litert_lm_get_build_info`), and everything else in the cache root is
+/// deleted at the next load: other builds' folders, and the per-size folders
+/// and flat files of earlier versions.
 enum EngineCache {
-  /// Context sizes whose caches stay: the current one and the last other.
-  static let keptContextSizes = 2
   /// LiteRT-LM's value for "don't cache" (the benchmark's one-off engine).
   static let disabled = ":nocache"
-  /// The embedder's folder: one fixed configuration, never evicted.
-  static let embeddingFolder = "embedding"
 
-  /// The loaded runtime's build id, or nil for builds without one (Google's).
-  static let runtimeBuildID: String? = runtimeBuildInfo()?["build_id"]
+  /// The loaded runtime's build id.
+  static let runtimeBuildID: String = runtimeBuildInfo()?["build_id"] ?? "unknown"
 
-  static func folder(maxNumTokens: Int, build: String? = runtimeBuildID) -> String {
-    build.map { "kv-all-\($0)" } ?? "kv-\(maxNumTokens)"
-  }
+  static func folder(build: String = runtimeBuildID) -> String { "kv-all-\(build)" }
 
-  static func embeddingFolder(build: String? = runtimeBuildID) -> String {
-    build.map { "\(embeddingFolder)-\($0)" } ?? embeddingFolder
-  }
+  static func embeddingFolder(build: String = runtimeBuildID) -> String { "embedding-\(build)" }
 
-  /// The context size of a size folder: 8192 for `kv-8192` (and `kv-8192-abc`), nil for
-  /// `kv-all-abc`.
-  static func contextSize(ofSizeFolder name: String) -> Int? {
-    let parts = name.split(separator: "-", maxSplits: 2)
-    return parts.count >= 2 ? Int(parts[1]) : nil
-  }
-
-  /// The build a context-size folder belongs to: nil for `kv-8192`, "abc" for `kv-all-abc`
-  /// (and `kv-8192-abc`, from before shared weights).
-  static func build(ofSizeFolder name: String) -> String? {
-    let parts = name.split(separator: "-", maxSplits: 2)
-    return parts.count == 3 ? String(parts[2]) : nil
-  }
-
-  /// `litert_lm_get_build_info`, looked up at run time: Google's binary doesn't have it.
+  /// `litert_lm_get_build_info`, looked up at run time.
   static func runtimeBuildInfo() -> [String: String]? {
     typealias GetBuildInfo = @convention(c) () -> UnsafePointer<CChar>?
     guard let handle = dlopen(nil, RTLD_NOW), let address = dlsym(handle, "litert_lm_get_build_info"),
@@ -60,55 +33,19 @@ enum EngineCache {
     return (try? JSONSerialization.jsonObject(with: Data(String(cString: text).utf8))) as? [String: String]
   }
 
-  struct Entry: Equatable {
-    var name: String
-    var isDirectory: Bool
-    var modified: Date
+  /// What to delete from the cache root: everything but this build's two folders.
+  static func entriesToDelete(_ names: [String], build: String = runtimeBuildID) -> [String] {
+    let kept = [folder(build: build), embeddingFolder(build: build)]
+    return names.filter { !kept.contains($0) }
   }
 
-  /// What to delete from the cache root when `current` is about to be used:
-  /// this build's context-size folders beyond the `keep` most recently used
-  /// (`current` counts as the newest), and anything else except this build's
-  /// embedder folder: other builds' folders, and the flat cache files from
-  /// before per-size folders.
-  static func entriesToDelete(
-    _ entries: [Entry], current: String, keep: Int, build: String? = nil
-  ) -> [String] {
-    let sizeFolders = entries.filter {
-      $0.isDirectory && $0.name.hasPrefix("kv-") && $0.name != current
-        && Self.build(ofSizeFolder: $0.name) == build
-        // A size the runtime can no longer be asked for (32,768 before it
-        // meant 32,000) is never worth keeping over one that's still used.
-        && (Self.contextSize(ofSizeFolder: $0.name) ?? 0) <= ContextBudget.maxAllocatedPositions
-    }
-    .sorted { $0.modified > $1.modified }
-    let keptOthers = Set(sizeFolders.prefix(max(0, keep - 1)).map(\.name))
-    return entries.compactMap { entry in
-      if entry.name == current || keptOthers.contains(entry.name) { return nil }
-      if entry.isDirectory, entry.name == embeddingFolder(build: build) { return nil }
-      return entry.name
-    }
-  }
-
-  /// The cache folder for an engine with this context size: created, marked
-  /// as just used, and the older caches beyond the limit deleted.
-  static func directory(
-    maxNumTokens: Int, root: URL? = nil, build: String? = runtimeBuildID
-  ) throws -> String {
+  /// The chat model's cache folder: created, marked as just used (`scripts/storage.sh` reads
+  /// which build is current from it), and everything that isn't this build's deleted.
+  static func directory(root: URL? = nil, build: String = runtimeBuildID) throws -> String {
     let root = try root ?? defaultRoot()
     let files = FileManager.default
-    let current = folder(maxNumTokens: maxNumTokens, build: build)
-    let keys: Set<URLResourceKey> = [.isDirectoryKey, .contentModificationDateKey]
-    let urls = (try? files.contentsOfDirectory(at: root, includingPropertiesForKeys: Array(keys))) ?? []
-    let entries = urls.map { url -> Entry in
-      let values = try? url.resourceValues(forKeys: keys)
-      return Entry(
-        name: url.lastPathComponent, isDirectory: values?.isDirectory ?? false,
-        modified: values?.contentModificationDate ?? .distantPast)
-    }
-    // Our builds keep a single folder for every size.
-    let keep = build == nil ? keptContextSizes : 1
-    for name in entriesToDelete(entries, current: current, keep: keep, build: build) {
+    let names = (try? files.contentsOfDirectory(atPath: root.path)) ?? []
+    for name in entriesToDelete(names, build: build) {
       do {
         try files.removeItem(at: root.appendingPathComponent(name))
         Log.engine.info("engine cache: removed \(name, privacy: .public)")
@@ -116,14 +53,14 @@ enum EngineCache {
         Log.engine.error("engine cache: couldn't remove \(name, privacy: .public): \(error.localizedDescription, privacy: .public)")
       }
     }
-    let dir = root.appendingPathComponent(current, isDirectory: true)
+    let dir = root.appendingPathComponent(folder(build: build), isDirectory: true)
     try files.createDirectory(at: dir, withIntermediateDirectories: true)
     try files.setAttributes([.modificationDate: Date()], ofItemAtPath: dir.path)
     return dir.path
   }
 
   /// The embedder's cache folder.
-  static func embeddingDirectory(root: URL? = nil, build: String? = runtimeBuildID) throws -> String {
+  static func embeddingDirectory(root: URL? = nil, build: String = runtimeBuildID) throws -> String {
     let dir = try (root ?? defaultRoot()).appendingPathComponent(
       embeddingFolder(build: build), isDirectory: true)
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

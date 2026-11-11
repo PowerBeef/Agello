@@ -804,10 +804,10 @@ final class AppState {
     let threadID: UUID
   }
 
-  /// Title and memory work waiting for a quiet moment. On Google's LiteRT-LM each helper empties
-  /// the chat's conversation and the next message re-reads the whole chat, so helpers never run
-  /// between a reply and the next message: they run after a pause or when the user leaves the
-  /// chat, in the foreground, outside voice mode, and never while a send is pending.
+  /// Title and memory work waiting for a quiet moment. A helper uses the GPU the next message
+  /// would want, and short of memory it empties the chat's conversation, so helpers don't run
+  /// right after a reply: they run after a short pause or when the user leaves the chat, in the
+  /// foreground, outside voice mode, and never while a send is pending.
   @ObservationIgnored private var pendingTitles: [UUID] = []
   @ObservationIgnored private var pendingMemories: [PendingMemory] = []
   @ObservationIgnored private var helperTimer: Task<Void, Never>?
@@ -836,7 +836,7 @@ final class AppState {
   func scheduleHelpers() {
     helperTimer?.cancel()
     guard hasPendingHelpers else { return }
-    let delay = HelperTasks.idleDelay(keepsConversation: EngineCache.runtimeBuildID != nil)
+    let delay = HelperTasks.idleDelay
     helperTimer = Task { [weak self] in
       try? await Task.sleep(for: delay)
       guard !Task.isCancelled else { return }
@@ -1301,7 +1301,6 @@ final class AppState {
       engineState = .idle
     }
     do {
-      let useGPU = options.backendPreference == .gpu
       // A one-off 1,312-token engine: caching it would keep another 2.2 GB
       // copy of the weights (see EngineCache).
       let cacheDir = EngineCache.disabled
@@ -1317,7 +1316,7 @@ final class AppState {
         () -> (prefill: Double, decode: Double, ttft: Double) in
         let info = try await LiteRTLM.benchmark(
           modelPath: url.path,
-          backend: useGPU ? .gpu : .cpu(),
+          backend: .gpu,
           prefillTokens: 1024,
           decodeTokens: 256,
           cacheDir: cacheDir
@@ -1328,7 +1327,7 @@ final class AppState {
       }.value
       benchmarkReport = BenchmarkReport(
         modelID: spec.id,
-        backend: useGPU ? "GPU" : "CPU",
+        backend: "GPU",
         prefillTokensPerSecond: result.prefill,
         decodeTokensPerSecond: result.decode,
         timeToFirstToken: result.ttft,

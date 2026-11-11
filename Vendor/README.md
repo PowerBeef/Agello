@@ -83,6 +83,5 @@ the suites on the iPhone.
 
 - **A local build, for test runs:** `Vendor/use-local-litert.sh` (never commit
   `Vendor/LiteRT-LM` while it points at `dist/`).
-- **Google's binary again:** `REF=<agello commit> ./Vendor/refresh-litert-lm.sh`
-  vendors the `agello` branch (v0.18.0 plus the Swift patches) with Google's
-  release XCFramework.
+- **Google's binary** isn't vendored any more (2026-11-11, [docs/BACKEND.md](../docs/BACKEND.md)):
+  the app has no code for it. The script that did it is in the git history.

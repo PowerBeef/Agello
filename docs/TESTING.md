@@ -51,7 +51,7 @@ The first run registers the Mac for development with the signing team. Results l
 
 For work on the runtime, the app's engine also builds as a command line for macOS
 ([CLI.md](CLI.md)): `scripts/cli-test.sh unit` runs the unit tests that need no interface
-natively (269, about a minute), `scripts/cli-test.sh inference` the real-model scenarios on the
+natively (261, about a minute), `scripts/cli-test.sh inference` the real-model scenarios on the
 Mac's GPU, and `agello bench` the bench's cases with the runtime's telemetry, against any build
 of our LiteRT-LM. It's a development tool: what ships is confirmed on the iPhone.
 

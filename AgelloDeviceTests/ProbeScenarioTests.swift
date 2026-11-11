@@ -15,7 +15,7 @@ final class ProbeScenarioTests: DeviceTestCase {
   }
 
   private func gemmaEngine(
-    maxNumTokens: Int = 8_192, gpu: Bool = true, activations: ActivationDataType? = nil,
+    maxNumTokens: Int = 8_192, activations: ActivationDataType? = nil,
     audio: Bool = false, modelURL: URL? = nil
   ) async throws -> Engine {
     _ = try await harness.ensureDownloaded(ModelCatalog.e4b)
@@ -23,9 +23,9 @@ final class ProbeScenarioTests: DeviceTestCase {
     let url = try modelURL ?? XCTUnwrap(appState.store.localURL(for: ModelCatalog.e4b))
     let engine = Engine(
       engineConfig: try EngineConfig(
-        modelPath: url.path, backend: gpu ? .gpu : .cpu(), audioBackend: audio ? .cpu() : nil,
+        modelPath: url.path, backend: .gpu, audioBackend: audio ? .cpu() : nil,
         maxNumTokens: maxNumTokens,
-        cacheDir: try EngineCache.directory(maxNumTokens: maxNumTokens), activationDataType: activations))
+        cacheDir: try EngineCache.directory(), activationDataType: activations))
     try await engine.initialize()
     return engine
   }
@@ -273,18 +273,15 @@ final class ProbeScenarioTests: DeviceTestCase {
       ("top1", prompt(Array(passages.prefix(1)))), ("fullNumberedLabels", prompt(passages, numbered: true)),
     ]
     var results: [[String: String]] = []
-    for gpu in [true, false] {
-      let engine = try await gemmaEngine(gpu: gpu)
-      for (name, text) in cases where gpu || name == "full" {
-        let reply = try await Self.greedyWhole(engine: engine, prompt: text)
-        results.append([
-          "case": "\(gpu ? "gpu" : "cpu")_\(name)", "reply": reply,
-          "corrupted": reply.contains("202026") || reply.contains("222") ? "yes" : "no",
-          "promptTokensApprox": "\(ContextBudget.estimateTokens(text))",
-        ])
-        harness.record("probe06_digitConditions", ["results": results], in: self)
-      }
-      // `engine` is released here (Engine frees its native handle on deinit).
+    let engine = try await gemmaEngine()
+    for (name, text) in cases {
+      let reply = try await Self.greedyWhole(engine: engine, prompt: text)
+      results.append([
+        "case": "gpu_\(name)", "reply": reply,
+        "corrupted": reply.contains("202026") || reply.contains("222") ? "yes" : "no",
+        "promptTokensApprox": "\(ContextBudget.estimateTokens(text))",
+      ])
+      harness.record("probe06_digitConditions", ["results": results], in: self)
     }
   }
 

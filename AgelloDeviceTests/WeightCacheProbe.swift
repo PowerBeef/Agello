@@ -4,20 +4,18 @@ import XCTest
 @testable import Agello
 
 extension ProbeScenarioTests {
-  /// Probe 14: the GPU weight cache stays bounded. LiteRT-LM keeps a full
-  /// copy of the GPU weights (2.2 GB for E4B) for every context size in one
-  /// file: measured from an empty cache, 8K 2.20 GB (7.5 s load), 8K again
-  /// 2.20 GB (0.8 s), 4K 4.40 GB, 16K 6.60 GB; MTP and vision added nothing.
-  /// With Google's binary, `EngineCache` gives each context size its own
-  /// folder and keeps the `keptContextSizes` most recently used, so loading
-  /// 8K, 4K, 16K, 8K leaves two folders, each with one copy. Our build keys
-  /// the weights by content (T11): one folder and one copy for every size.
+  /// Probe 14: the GPU weight cache stays one copy. The runtime keys the
+  /// GPU-format weights by content (T11), so loading 8K, 4K, 16K and 8K again
+  /// leaves one folder, `kv-all-<build id>`, holding one copy (2.2 GB for
+  /// E4B). Upstream's keying wrote another copy per context size into one
+  /// file (2.20, 4.40, 6.60 GB): this probe is what would catch that coming
+  /// back.
   func test14_WeightCacheGrowth() async throws {
     _ = try await harness.ensureDownloaded(ModelCatalog.e4b)
     await appState.engine.unload()
     let url = try XCTUnwrap(appState.store.localURL(for: ModelCatalog.e4b))
     let files = FileManager.default
-    let root = URL(fileURLWithPath: try EngineCache.directory(maxNumTokens: 8_192))
+    let root = URL(fileURLWithPath: try EngineCache.directory())
       .deletingLastPathComponent()
     func folders() -> [String: Int64] {
       var sizes: [String: Int64] = [:]
@@ -43,7 +41,7 @@ extension ProbeScenarioTests {
       let engine = Engine(
         engineConfig: try EngineConfig(
           modelPath: url.path, backend: .gpu, visionBackend: .cpu(), maxNumTokens: tokens,
-          cacheDir: try EngineCache.directory(maxNumTokens: tokens)))
+          cacheDir: try EngineCache.directory()))
       try await engine.initialize()
       let loadSeconds = Date().timeIntervalSince(started)
       let conversation = try await engine.createConversation(with: ConversationConfig())
@@ -57,8 +55,7 @@ extension ProbeScenarioTests {
       rows.append(row)
       print("PROBE14 \(row)")
       harness.record("probe14_weight_cache", ["rows": rows], in: self)
-      XCTAssertLessThanOrEqual(sizeFolders.count, EngineCache.keptContextSizes, "\(sizes)")
-      XCTAssertNotNil(sizeFolders[EngineCache.folder(maxNumTokens: tokens)], "\(sizes)")
+      XCTAssertEqual(Array(sizeFolders.keys), [EngineCache.folder()], "\(sizes)")
       for (name, bytes) in sizeFolders {
         XCTAssertLessThan(bytes, singleCopyBytes, "\(name) holds more than one weight copy")
       }

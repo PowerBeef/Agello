@@ -181,7 +181,7 @@ can be built against any checkout of our LiteRT-LM. The iPhone still confirms wh
 ```sh
 swift build -c release --scratch-path build/cli/release            # then build/cli/release/release/agello
 scripts/cli-check.sh                                                # does it still build? (every harness run ends with it)
-scripts/cli-test.sh unit [Class[/method]]                           # 269 unit tests, about a minute, no phone
+scripts/cli-test.sh unit [Class[/method]]                           # 261 unit tests, about a minute, no phone
 scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-model scenarios on this Mac's GPU
 build/cli/release/release/agello bench --only todo,explain --out build/cli/runs/x.jsonl
 scripts/cli-bench.sh release next -- --only explain                 # two runtime builds, in turns, with the comparison
@@ -311,11 +311,11 @@ scratch the run left. An `OUT=build/<name>` run is scratch once its numbers are
 recorded (in the roadmap, a doc or a commit message); then run
 `scripts/storage.sh clean`.
 
-On our own LiteRT-LM build (see `agello-litert-update`, "The source build"),
-each scenario in `harness-report.json` also carries `telemetry`, the engine's
-account of that scenario: span timings, GPU time, host copies by buffer size,
-cache and delegation counters, logits probes, anomalies. Google's binary has
-none. Read it with the fork's report script:
+Each scenario in `harness-report.json` also carries `telemetry`, the engine's
+account of that scenario (our runtime's, see `agello-litert-update`, "The
+source build"): span timings, GPU time, host copies by buffer size, cache and
+delegation counters, logits probes, anomalies. Read it with the fork's report
+script:
 
 ```sh
 python3 ../LiteRT-LM/tools/agello-bench/telemetry.py build/mac-harness/harness-report.json

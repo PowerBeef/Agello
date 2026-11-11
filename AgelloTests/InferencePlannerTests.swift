@@ -9,7 +9,7 @@ final class InferencePlannerTests: XCTestCase {
   func testDefaultsE2BRoomy() {
     let resolved = InferencePlanner.resolve(
       options: InferenceOptions(), model: .e4b, memoryBytes: roomy)
-    XCTAssertTrue(resolved.useGPU)
+    XCTAssertEqual(resolved.backendLabel, "GPU")
     XCTAssertEqual(resolved.maxNumTokens, 16_384)
     XCTAssertNil(resolved.thinkingBudget)
     XCTAssertEqual(resolved.visualTokenBudget, 280)
@@ -91,36 +91,41 @@ final class InferencePlannerTests: XCTestCase {
     XCTAssertNil(resolved.visualTokenBudget)
   }
 
-  func testAttemptLadderPrefersGPUMultimodal() {
+  /// The ladder is multimodal, then text-only, all on the GPU (no CPU rungs since 2026-11-11).
+  func testAttemptLadderIsMultimodalThenTextOnly() {
     let plan = InferencePlanner.resolve(
       options: InferenceOptions(), model: .e4b, memoryBytes: roomy)
     let attempts = InferencePlanner.attempts(for: plan)
-    XCTAssertEqual(attempts.count, 4)
-    XCTAssertEqual(attempts.map(\.useGPU), [true, true, false, false])
-    XCTAssertEqual(attempts.map(\.enableVision), [true, false, true, false])
-    XCTAssertEqual(attempts.map(\.enableAudio), [true, false, true, false])
-    // Text-only attempts drop the visual budget too.
+    XCTAssertEqual(attempts.count, 2)
+    XCTAssertEqual(attempts[0], plan)
+    XCTAssertEqual(attempts.map(\.enableVision), [true, false])
+    XCTAssertEqual(attempts.map(\.enableAudio), [true, false])
+    // The text-only attempt drops the visual budget too.
     XCTAssertNil(attempts[1].visualTokenBudget)
     XCTAssertEqual(attempts[0].visualTokenBudget, 280)
+    XCTAssertEqual(plan.backendLabel, "GPU")
   }
 
-  func testAttemptLadderCpuPreferred() {
-    var options = InferenceOptions()
-    options.backendPreference = .cpu
-    let plan = InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: roomy)
-    let attempts = InferencePlanner.attempts(for: plan)
-    XCTAssertEqual(attempts.count, 2)
-    XCTAssertTrue(attempts.allSatisfy { !$0.useGPU })
-  }
-
-  func testAttemptLadderDedupesWhenMultimodalOff() {
+  func testAttemptLadderIsOneAttemptWhenMultimodalIsOff() {
     var options = InferenceOptions()
     options.enableVision = false
     options.enableAudio = false
     let plan = InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: roomy)
-    let attempts = InferencePlanner.attempts(for: plan)
-    XCTAssertEqual(attempts.count, 2)
-    XCTAssertEqual(attempts.map(\.useGPU), [true, false])
+    XCTAssertEqual(InferencePlanner.attempts(for: plan), [plan])
+  }
+
+  /// Settings saved before the backend choice left still decode, a saved CPU choice included.
+  func testSavedBackendPreferenceIsIgnored() throws {
+    var saved = InferenceOptions()
+    saved.enableThinking = true
+    saved.samplerPreset = .creative
+    var object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
+    XCTAssertNil(object["backendPreference"])
+    object["backendPreference"] = "cpu"
+    let decoded = try JSONDecoder().decode(
+      InferenceOptions.self, from: JSONSerialization.data(withJSONObject: object))
+    XCTAssertEqual(decoded, saved)
   }
 
   func testApplyCapabilitiesDisablesUnsupported() {
@@ -190,7 +195,6 @@ final class InferencePlannerTests: XCTestCase {
     for mutate in [
       { (o: inout InferenceOptions) in o.enableVision = false },
       { (o: inout InferenceOptions) in o.enableAudio = false },
-      { (o: inout InferenceOptions) in o.backendPreference = .cpu },
       { (o: inout InferenceOptions) in o.maxNumTokensOverride = 1024 },
       { (o: inout InferenceOptions) in o.enableSpeculativeDecoding = false },
     ] {
@@ -216,7 +220,6 @@ final class InferencePlannerTests: XCTestCase {
   func testConversationUpdateKeepsEngineFallbacks() {
     var engine = InferencePlanner.resolve(
       options: InferenceOptions(), model: .e4b, memoryBytes: roomy)
-    engine.useGPU = false  // GPU failed at load
     engine.enableVision = false  // no vision executor
     engine.visualTokenBudget = nil
     var options = InferenceOptions()
@@ -224,7 +227,6 @@ final class InferencePlannerTests: XCTestCase {
     options.visualDetail = .detailed
     let plan = InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: roomy)
     let updated = InferencePlanner.conversationUpdate(engine: engine, plan: plan)
-    XCTAssertFalse(updated.useGPU)
     XCTAssertFalse(updated.enableVision, "Must not claim vision the engine lacks")
     XCTAssertNil(updated.visualTokenBudget)
     XCTAssertEqual(updated.temperature, SamplerPreset.precise.temperature)

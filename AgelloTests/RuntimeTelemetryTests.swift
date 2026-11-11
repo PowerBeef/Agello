@@ -9,11 +9,9 @@ final class RuntimeTelemetryTests: XCTestCase {
       decodeMilliseconds: decodeMs)
   }
 
-  func testOnlyOurBuildsWithTelemetryLeaveBenchmarkMode() {
-    XCTAssertTrue(RuntimeTelemetry.replacesBenchmark(runtimeBuildID: "4ef5d92e2600", hasTelemetry: true))
-    XCTAssertFalse(RuntimeTelemetry.replacesBenchmark(runtimeBuildID: nil, hasTelemetry: true))
-    XCTAssertFalse(RuntimeTelemetry.replacesBenchmark(runtimeBuildID: "4ef5d92e2600", hasTelemetry: false))
-    XCTAssertFalse(RuntimeTelemetry.replacesBenchmark(runtimeBuildID: nil, hasTelemetry: false))
+  /// Reply stats come from the runtime's telemetry alone: the runtime the app links has it.
+  func testTheRuntimeHasTelemetry() {
+    XCTAssertNotNil(RuntimeTelemetry.totals())
   }
 
   func testParsesCountersAndSpanTotals() throws {

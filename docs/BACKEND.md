@@ -1,9 +1,9 @@
 # The backend: our own runtime
 
-A plan, from the maintainer's direction of 2026-11-10. Nothing in it is built yet: the Mac was
-busy that day and the maintainer chose to wait for it, B1's code included. The order of work for
-when the Mac or the iPhone is free again is in [ROADMAP.md](ROADMAP.md#next), "When testing is
-available again".
+A plan, from the maintainer's direction of 2026-11-10. Where it stands (2026-11-11, the Mac free
+again): B0 is done, B1 is written and passes on the Mac with its iPhone runs owed, and the Mac's
+half of B4 is measured ("The ledger", below). B2 to B6 aren't started. What's left to run, in
+order, is in [ROADMAP.md](ROADMAP.md#next), "When testing is available again".
 
 Agello's backend stops being Google's LiteRT-LM with patches kept close to upstream. It becomes
 our own code base, a hard fork, with one job: run our model file on Apple GPUs under iOS 27 as
@@ -61,11 +61,11 @@ maintainer's go, as before.
 
 | | What | Done when |
 | --- | --- | --- |
-| **B0** | Land the measuring instruments: finish C7 of [CLI.md](CLI.md) (the probes are written and the runtime builds with them; the comparison with the shipped build was interrupted). | The new build's replies are identical to the shipped build's and its speed is inside the noise; the probes show in a run. |
-| **B1** | The app sheds its two spare paths (below). | The unit tests pass natively and on the iPhone, with `inference`, `files`, `web`, `thinking` and `ui` on the iPhone. |
+| **B0** (done 2026-11-11) | Land the measuring instruments: C7 of [CLI.md](CLI.md), the probes inside the runtime. | The new build's replies are identical to the shipped build's and its speed is inside the noise; the probes show in a run. |
+| **B1** (written 2026-11-11; the iPhone runs are owed) | The app sheds its two spare paths (below). | The unit tests pass natively and on the iPhone, with `inference`, `files`, `web`, `thinking` and `ui` on the iPhone. |
 | **B2** | One repository: LiteRT and ML Drift imported at the pinned commits as folders, the build reading them in place of the archives. No source changes. | Replies identical to the build before the move, speed inside the noise, and a kernel edit rebuilds without a pin. |
 | **B3** | Prune to what the Apple build compiles: other platforms, other GPU APIs, vendor NPUs, converters, the other bindings and build systems, and the path that runs the language model on the CPU. | The same check as B2, with the file count before and after recorded. |
-| **B4** | The baseline: a noise run on a quiet Mac, the bench on the iPhone, and a ledger of what each later change bought. | Both baselines are committed with their noise bands. |
+| **B4** (the Mac's half done 2026-11-11) | The baseline: a noise run on a quiet Mac, the bench on the iPhone, and a ledger of what each later change bought. | Both baselines are committed with their noise bands. |
 | **B5** | The performance work (below), one thread at a time. | Each thread: a gain outside the noise on the Mac, confirmed on the iPhone, with a quality verdict. |
 | **B6** | Releases and instructions from the one repository: the release and vendoring scripts, the fork's reference, the `agello-litert-update` skill, this repo's docs. | A release built from the one repository ships in the app after its iPhone gate. |
 
@@ -90,6 +90,23 @@ B0 and B1 don't depend on each other. B2 comes before B3, and B4 before any B5 t
   keep decoding (CLAUDE.md, "Settings decoding").
 - The rules in `agello-inference-rules` are rewritten in the same commit: several describe
   Google's behaviour as a live case.
+
+As built (2026-11-11):
+
+- The load ladder is two rungs, multimodal then text-only, on the GPU. The last rung gets a
+  second try whatever the error; a load that still fails is reported. The embedder loads on the
+  GPU, tried twice, and search by keywords covers a failure as before.
+- `EngineCache` keeps this build's two folders (`kv-all-<id>`, `embedding-<id>`) and deletes
+  everything else in its root. An installed app's cache keeps its name, so nothing recompiles.
+- Reply stats come from the runtime's telemetry alone; benchmark mode is never on for a chat.
+- Settings saved with a `backendPreference` decode and the key is ignored (a unit test holds it).
+- Probe 14 stays, as the guard that the weights are one copy for every window. Probe 6 lost
+  its CPU reference. The command line lost `--backend`. `Vendor/refresh-litert-lm.sh` is gone,
+  its copying folded into `Vendor/use-release-litert.sh`.
+- The image and audio encoders still run on the CPU: that's a B5 thread, not a fallback.
+- Checked on the Mac: the app and all its test targets compile for the iPhone, 261 unit tests
+  and the 23 `inference` scenarios pass natively, and the bench's replies are identical to the
+  app's before the change. Not yet run on the iPhone.
 
 ### B2 and B3. One repository
 
@@ -138,13 +155,54 @@ again on the baseline, since these figures come from a busy Mac.
 
 1. **Build** the change as the `next` build beside the shipped one.
 2. **Performance, on the Mac:** `scripts/cli-bench.sh release next`, builds taking turns, on a
-   quiet Mac. A change inside the noise band isn't a change.
+   quiet Mac, five rounds, with the Claude session that started it idle (a session streaming
+   output takes the GPU: "The ledger"). Read the medians. A change inside the noise band isn't
+   a change.
 3. **Quality:** `compare.txt` counts the replies identical to the base. For the others,
    `scripts/cli-replies.py` shows where each parts, and Claude reads both sides, with the answer
    checks' results beside them. The verdict and its reasons go in the ledger. "Worse" stops the
    change.
 4. **Confirmation, on the iPhone:** the bench against its baseline, and the suites the change
    touches. Mac numbers are a lead: the phone's speed, heat and memory decide.
+
+## The ledger
+
+What each change bought, from B4 on. Mac figures are the M6's, through the app's engine
+(`scripts/cli-bench.sh`), 32,000-token window, speculative decoding on, medians over the rounds.
+
+**The Mac's baseline (2026-11-11):** the shipped runtime, `agello-next-20261024` (build
+`99b8f5f6ea49`), with the app's code after B1. Five rounds, the build against itself
+(`build/cli/runs/noise`).
+
+| Case | Prompt tokens | Prefill tok/s | Decode tok/s | First token |
+| --- | --- | --- | --- | --- |
+| `explain` (1,503 tokens written) | 1,125 | 1,947 | 91.8 | 0.30 s |
+| `email` (159) | 266 | 1,065 | 97.1 | 0.30 s |
+| `file-report` (172) | 4,879 | 2,531 | 105.7 | 2.0 s |
+| `file-report`, second message (49) | 4,647 | 2,242 | 114.3 | 2.1 s |
+
+**The noise band:**
+
+- Two copies of the build agree to −0.2 % on decode and +0.3 % on prefill (geometric means of
+  the medians), and to within 0.6 % and 1.4 % on every case.
+- Single runs don't: one in five is more than 5 % under its case's median, by up to 14 % on
+  `email`, whose decoding lasts 1.6 s. So five rounds and the medians, and the long cases
+  (`explain`, `file-report`) for decode.
+- The desktop's own GPU use sets the speed. With the GPU at 0 to 1 % before a run, `email`
+  decodes at 101.7 tok/s; at about 14 % (a still desktop), 100.5; while a Claude session
+  streams and edits in the app (15 to 22 %), 86 to 97. The first noise run, started with the
+  session working, read +11.7 % between the two copies on `email` (`build/cli/runs/noise-session-busy`).
+- Under these conditions a change of 1 % in the geometric mean is the smallest worth believing.
+
+**Changes:**
+
+| Date | Change | Replies | Decode | Prefill | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| 2026-11-11 | B0: the probes (`agello-next` `3118b5d4`, build `d5ed12808214`), 3 rounds | 4 of 4 identical | −0.0 % | +1.2 % | Same output; no cost at the everyday levels. Not released. |
+| 2026-11-11 | B1: the app without the CPU backend and Google's-binary code (same runtime) | 4 of 4 identical to the app before it | inside the noise | inside the noise | Same output. The iPhone runs are owed. |
+
+The iPhone's baseline is the bench's (`scripts/bench/baseline.json`); a new one is due once B1
+has passed there.
 
 ## What it costs
 

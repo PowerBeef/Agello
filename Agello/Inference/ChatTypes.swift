@@ -20,11 +20,6 @@ enum ModelID: String, Codable, Sendable, CaseIterable, Identifiable {
 
 // MARK: - User-facing inference options
 
-enum BackendPreference: String, Codable, Sendable, CaseIterable {
-  case gpu
-  case cpu
-}
-
 enum SamplerPreset: String, Codable, Sendable, CaseIterable {
   case precise
   case balanced
@@ -104,8 +99,10 @@ enum VisualDetail: String, Codable, Sendable, CaseIterable {
 
 /// Persisted user choices for inference. Resolved to concrete engine settings
 /// by ``InferencePlanner`` together with the device profile.
+///
+/// The model runs on the GPU: settings saved before 2026-11-11 also carry a `backendPreference`
+/// key (GPU or CPU), which decoding ignores.
 struct InferenceOptions: Codable, Sendable, Equatable {
-  var backendPreference: BackendPreference = .gpu
   /// KV-cache size override. `nil` means "auto" (device + model aware).
   var maxNumTokensOverride: Int? = nil
   var enableThinking: Bool = false
@@ -124,7 +121,7 @@ struct InferenceOptions: Codable, Sendable, Equatable {
 
   /// Stored keys (``webSearchTool`` is decided at runtime, never saved).
   private enum CodingKeys: String, CodingKey {
-    case backendPreference, maxNumTokensOverride, enableThinking, thinkingBudget, samplerPreset
+    case maxNumTokensOverride, enableThinking, thinkingBudget, samplerPreset
     case systemPrompt, enableVision, enableAudio, visualDetail, enableSpeculativeDecoding
     case maxOutputTokens
   }

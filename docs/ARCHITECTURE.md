@@ -24,7 +24,7 @@ flowchart TB
 
   Engine --> LiteRT["LiteRT-LM<br/>Engine + Conversation"]
   Knowledge --> Embed["LiteRTEmbedder<br/>EmbeddingGemma"]
-  LiteRT --> GPU["Metal GPU / CPU"]
+  LiteRT --> GPU["Metal GPU"]
   Embed --> GPU
 ```
 
@@ -33,8 +33,8 @@ flowchart TB
 | Component | Responsibility |
 | --- | --- |
 | `AppState` | The hub. Runs every engine operation (load, settings change, benchmark, delete, helpers) one at a time; binds the native conversation to the open chat; drives send, regenerate and edit through one generation path; streams replies into SwiftData about ten times a second; persists settings. |
-| `LiteRTChatEngine` | The single owner of a LiteRT-LM `Engine` and `Conversation`. Loads through a GPU → CPU, multimodal → text-only ladder, validates each engine, keeps every request inside the KV cache, and runs JSON-constrained helper prompts. `MockChatEngine` implements the same `ChatEngineProtocol` with a script, for tests and `--mock-engine`. |
-| `InferencePlanner`, `ContextBudget` | Pure, tested resolution of options and device memory into backend, KV-cache size, sampler, thinking and visual-token budgets, and speculative decoding; token estimates, history trimming and reply caps. Decides when a settings change needs an engine rebuild. |
+| `LiteRTChatEngine` | The single owner of a LiteRT-LM `Engine` and `Conversation`. Loads on the GPU through a multimodal → text-only ladder, validates each engine, keeps every request inside the KV cache, and runs JSON-constrained helper prompts. `MockChatEngine` implements the same `ChatEngineProtocol` with a script, for tests and `--mock-engine`. |
+| `InferencePlanner`, `ContextBudget` | Pure, tested resolution of options and device memory into KV-cache size, sampler, thinking and visual-token budgets, and speculative decoding; token estimates, history trimming and reply caps. Decides when a settings change needs an engine rebuild. |
 | `ToolBudget`, tools | Date/time, calculator and web search tools, each generation round's share of the remaining context, and the live tool status. |
 | Chat history | A SwiftData `VersionedSchema` (V1 → V3) with a migration plan: threads, turns, projects, documents and their passages, memories. |
 | `MarkdownDocument`, `MarkdownView` | Pure, tested parsing (swift-markdown) into typed blocks, with display math split out and inline LaTeX converted to Unicode; rendering with syntax-highlighted code and SwiftMath typesetting. |
@@ -56,7 +56,7 @@ flowchart TB
 1. Apply any setting changed since the last message (the **Think** toggle applies to *this* message).
 2. Build file context: whole files, cited passages, or a cached summary.
 3. Run a web search, if asked.
-4. Bind the native conversation to this chat, reseeding it from history if another chat or a cancellation used it last, or a helper that didn't keep it (Google's runtime always wipes it; ours keeps it when memory allows).
+4. Bind the native conversation to this chat, reseeding it from history if another chat or a cancellation used it last, or a helper that didn't keep it (the runtime keeps it when memory allows one more copy of the KV cache).
 5. Fit the context: estimate the message, trim older turns if needed, or reject a message that can never fit.
 6. Save the user turn and a placeholder reply, then stream tokens into it.
 7. Afterwards: learn memories, write a title after the first exchange, update Spotlight.

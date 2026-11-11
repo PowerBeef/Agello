@@ -35,12 +35,12 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | **Spotlight** | Show chats in system search (on by default) |
 | **Models** | Download, pause, resume, or delete Gemma 4 E4B and EmbeddingGemma |
 | **On-device tools** | Turn the tools (date and time, calculator) on or off |
-| **Advanced → Performance** | GPU or CPU backend · speculative decoding (MTP) · show performance details under each reply (off by default) |
+| **Advanced → Performance** | Speculative decoding (MTP) · show performance details under each reply (off by default) |
 | **Advanced → Reasoning** | Thinking on or off, and its token budget (4,096 tokens by default). Reasoning leaves the model's memory once the reply is done, so it never uses up a chat's context. |
 | **Advanced → Sampling** | Precise (temperature 0.2) · Balanced (0.7) · Creative (1.0) |
 | **Advanced → Voice & Vision** | Image and audio input · image detail (Fast, 140 visual tokens, or Balanced, 280; Detailed isn't offered with the current model file) |
 | **Advanced → System prompt** | The base instructions for every conversation |
-| **Advanced → Benchmark** | A 1,024-token prefill and 256-token decode run, comparable to Google's published numbers |
+| **Advanced → Benchmark** | A 1,024-token prefill and 256-token decode run on the GPU |
 | **Advanced → Device** | This iPhone, the engine, and what's loaded |
 
 ## Outside the app

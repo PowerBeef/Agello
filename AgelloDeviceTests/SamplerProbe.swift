@@ -47,7 +47,7 @@ extension ProbeScenarioTests {
       let engine = Engine(
         engineConfig: try EngineConfig(
           modelPath: url.path, backend: .gpu, maxNumTokens: 8_192,
-          cacheDir: try EngineCache.directory(maxNumTokens: 8_192)))
+          cacheDir: try EngineCache.directory()))
       try await engine.initialize()
       if arm.validated {
         let probe = try await engine.createConversation(with: ConversationConfig())

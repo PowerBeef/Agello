@@ -90,7 +90,7 @@ final class DeviceHarness {
       "gpu": gpu?.name ?? "none",
       "gpuAppleFamily": gpu.map(Self.appleFamily) ?? 0,
       "gpuWorkingSetGB": Double(gpu?.recommendedMaxWorkingSetSize ?? 0) / 1e9,
-      // How the LiteRT-LM runtime was built (our builds; Google's has none).
+      // How the LiteRT-LM runtime was built.
       "runtimeBuild": EngineCache.runtimeBuildInfo() ?? [:],
     ]
     report["startedAt"] = ISO8601DateFormatter().string(from: Date())
@@ -368,9 +368,8 @@ enum ProcessCPU {
 }
 
 /// The engine's own telemetry (agello/telemetry in our LiteRT-LM builds): counters, span timings,
-/// GPU time, anomalies and memory since the scenario started. Looked up at run time, so the
-/// harness also runs against Google's binary, which doesn't have it. The harness script sets
-/// the level (AGELLO_TELEMETRY, default 2).
+/// GPU time, anomalies and memory since the scenario started. Looked up at run time. The
+/// harness script sets the level (AGELLO_TELEMETRY, default 2).
 enum EngineTelemetry {
   private typealias Snapshot = @convention(c) () -> UnsafeMutablePointer<CChar>?
   private typealias Free = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void

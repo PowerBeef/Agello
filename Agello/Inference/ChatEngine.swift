@@ -43,10 +43,10 @@ protocol ChatEngineProtocol: Sendable {
   ) -> AsyncThrowingStream<ChatEvent, Error>
   func cancel() async
   /// Run a structured helper prompt (JSON-schema constrained) in a throwaway
-  /// conversation. Google's LiteRT-LM keeps one live conversation per engine,
-  /// so the helper wipes the main one, which is replaced by an empty one: the
-  /// caller must re-seed history before the next send. Our runtime keeps it
-  /// when memory allows (``lastHelperKeptConversation``).
+  /// conversation. The runtime keeps the main conversation beside it when
+  /// memory allows (``lastHelperKeptConversation``). When it doesn't, the main
+  /// one is released first and replaced by an empty one: the caller must
+  /// re-seed history before the next send.
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data
   /// Run plain-text helper prompts one after another (e.g. summarizing a
   /// long document section by section), each in a throwaway conversation.
@@ -188,11 +188,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     spec: ModelSpec, modelURL: URL, options: InferenceOptions, memoryBytes: UInt64,
     enableTools: Bool
   ) async throws -> ResolvedInference {
-    // Stats collection for the per-reply footer (TTFT, tok/s): benchmark mode on Google's
-    // binary; telemetry on ours, where benchmark mode would make every GPU wait spin.
+    // Stats for the per-reply footer (TTFT, tok/s) come from the runtime's telemetry: benchmark
+    // mode would make every GPU wait spin (RuntimeTelemetry).
     ExperimentalFlags.optIntoExperimentalAPIs()
-    ExperimentalFlags.enableBenchmark = !RuntimeTelemetry.inUse
-    if RuntimeTelemetry.inUse { RuntimeTelemetry.recordSpans() }
+    ExperimentalFlags.enableBenchmark = false
+    RuntimeTelemetry.recordSpans()
     // Reasoning never stays in the KV cache: at the next message the runtime
     // rewinds and refills the answer without it. That keeps the room for
     // the conversation, and matches a reseed from saved history (which has
@@ -238,15 +238,15 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     // conversation-level MTP flag (set in makeConversation) inherits these.
     ExperimentalFlags.enableSpeculativeDecoding = plan.enableSpeculativeDecoding
 
-    // Attempt ladder: preferred backend first, then the other; multimodal
-    // before text-only on each. Degrades gracefully when the model file
-    // lacks vision/audio executors or a backend fails to initialize.
+    // Attempt ladder: multimodal, then text-only, so a model file without
+    // vision/audio executors still loads. Everything runs on the GPU: a
+    // load that fails on the last attempt is retried once, then reported.
     let attempts = InferencePlanner.attempts(for: plan)
     var lastError: Error = ChatError.engineNotReady
     for attempt in attempts {
       let label = Self.describe(attempt)
       for trial in 1...2 {
-        // In the background a GPU load fails: stop rather than fall back to the CPU for good.
+        // In the background a GPU load fails: stop, and load when the app is back.
         guard GPUGate.isOpen else {
           loadLog.append("stopped: the app is in the background")
           throw GPUGate.closedError
@@ -283,7 +283,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
           // A broken-but-"successful" engine usually means a section failed
           // to map while a previous engine's mappings were still alive: give
           // them a moment to be released and retry the same configuration.
-          guard trial == 1, error is EngineValidationError else { break }
+          // The last attempt gets its second try whatever the error: nothing
+          // comes after it.
+          guard trial == 1, !(error is CancellationError),
+            error is EngineValidationError || attempt == attempts.last
+          else { break }
           try? await Task.sleep(for: .milliseconds(750))
         }
       }
@@ -345,11 +349,12 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   private static func makeEngine(modelURL: URL, resolved: ResolvedInference) async throws -> Engine {
     let config = try EngineConfig(
       modelPath: modelURL.path,
-      backend: resolved.useGPU ? .gpu : .cpu(),
+      backend: .gpu,
+      // The image and audio encoders still run on the CPU (docs/BACKEND.md, B5).
       visionBackend: resolved.enableVision ? .cpu() : nil,
       audioBackend: resolved.enableAudio ? .cpu() : nil,
       maxNumTokens: resolved.maxNumTokens,
-      cacheDir: try EngineCache.directory(maxNumTokens: resolved.maxNumTokens)
+      cacheDir: try EngineCache.directory()
     )
     let engine = Engine(engineConfig: config)
     // initialize() blocks for a long time; keep it off the caller's context.
@@ -521,7 +526,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 
   /// Whether engine-level settings changed (needs full `load`, not just reseed).
   /// Compared with the plan the engine was built for (before fallbacks), so a
-  /// CPU or text-only fallback doesn't force a reload on every change.
+  /// text-only fallback doesn't force a reload on every change.
   func engineSettingsChanged(for newOptions: InferenceOptions) async -> Bool {
     guard let spec, let builtPlan else { return true }
     return InferencePlanner.requiresEngineReload(
@@ -547,8 +552,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   // MARK: Helpers
 
   /// Before a helper: whether the main conversation stays
-  /// (``DeviceProfile/keepsConversationAcrossHelpers``). If not, it's released
-  /// first, so our runtime doesn't copy its KV cache aside.
+  /// (``DeviceProfile/keepsConversationAcrossHelpers(maxNumTokens:availableBytes:)``). If not,
+  /// it's released first, so the runtime doesn't copy its KV cache aside.
   private func beginHelper() -> Bool {
     lastHelperKeptConversation = false
     helperActive = true
@@ -556,7 +561,6 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     let keep =
       conversation != nil
       && DeviceProfile.keepsConversationAcrossHelpers(
-        runtimeKeepsSessions: EngineCache.runtimeBuildID != nil,
         maxNumTokens: resolved?.maxNumTokens ?? 0, availableBytes: MemoryProbe.availableBytes())
     if !keep { conversation = nil }
     return keep
@@ -808,8 +812,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     let started = Date()
     var firstChunkAt: Date?
     var streamedChunks = 0
-    // Our runtime's totals before the reply; its stats are the difference (RuntimeTelemetry).
-    let telemetryBefore = RuntimeTelemetry.inUse ? RuntimeTelemetry.totals() : nil
+    // The runtime's totals before the reply; its stats are the difference (RuntimeTelemetry).
+    let telemetryBefore = RuntimeTelemetry.totals()
     // Instruments (Points of Interest): the reply as an interval, its first token as an event.
     let signpostID = Self.signposter.makeSignpostID()
     let replyInterval = Self.signposter.beginInterval("Reply", id: signpostID)
@@ -825,9 +829,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
 
     func stats(started: Date, firstChunkAt: Date?) -> GenerationStats {
-      // Token counts and speed from the runtime (its telemetry on our builds, BenchmarkInfo on
-      // Google's); time to first token from this reply's own clock (the runtime's figure is the
-      // conversation's first reply, not this one).
+      // Token counts and speed from the runtime's telemetry; time to first token from this
+      // reply's own clock (the runtime's figure is the conversation's first reply, not this one).
       if let telemetryBefore, let after = RuntimeTelemetry.totals(),
         let reply = ReplyTelemetry(before: telemetryBefore, after: after)
       {
@@ -837,18 +840,6 @@ actor LiteRTChatEngine: ChatEngineProtocol {
           inputTokens: reply.inputTokens,
           outputTokens: reply.outputTokens,
           decodeTokensPerSecond: reply.decodeTokensPerSecond,
-          backend: resolved.backendLabel,
-          modelID: spec.id
-        )
-      }
-      if let info = try? conversation.getBenchmarkInfo() {
-        return GenerationStats(
-          timeToFirstToken: firstChunkAt?.timeIntervalSince(started),
-          totalTime: Date().timeIntervalSince(started),
-          inputTokens: info.lastPrefillTokenCount,
-          outputTokens: info.lastDecodeTokenCount,
-          decodeTokensPerSecond: info.lastDecodeTokensPerSecond > 0
-            ? info.lastDecodeTokensPerSecond : nil,
           backend: resolved.backendLabel,
           modelID: spec.id
         )
@@ -992,8 +983,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 /// Deterministic scripted engine. No model required.
 ///
 /// It models what the runtime does to the conversation, so tests check behavior: the texts
-/// the "native" conversation holds (``held``), helpers that wipe it as Google's LiteRT-LM does
-/// (or keep it, like ours), a cancelled conversation that rejects the next send until it is
+/// the "native" conversation holds (``held``), helpers that keep it or, short of memory, wipe
+/// it, a cancelled conversation that rejects the next send until it is
 /// reseeded, injected stream errors, and a gate that holds the next helper.
 actor MockChatEngine: ChatEngineProtocol {
   var script: [ChatChunk]

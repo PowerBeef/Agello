@@ -3,7 +3,6 @@ import Foundation
 /// Fully resolved engine settings. Pure value produced by ``InferencePlanner``
 /// and mapped onto LiteRT-LM types at the engine boundary.
 struct ResolvedInference: Sendable, Equatable {
-  var useGPU: Bool
   var maxNumTokens: Int
   var enableVision: Bool
   var enableAudio: Bool
@@ -16,7 +15,8 @@ struct ResolvedInference: Sendable, Equatable {
   var enableSpeculativeDecoding: Bool
   var maxOutputTokens: Int?
 
-  var backendLabel: String { useGPU ? "GPU" : "CPU" }
+  /// The language model runs on the GPU (Metal), with no other backend.
+  var backendLabel: String { "GPU" }
 }
 
 /// Model-file capabilities from `ModelInfo` introspection (no engine needed).
@@ -69,7 +69,7 @@ enum ContextBudget {
   /// The most positions LiteRT-LM allocates for the Gemma 4 E2B/E4B files: a
   /// `maxNumTokens` of 32,003 (their export window) or more gets 32,000, the
   /// largest multiple of 256 below it, so a "32K" request of 32,768 has 768
-  /// fewer positions than it asks for (both Google's binary and ours).
+  /// fewer positions than it asks for.
   static let maxAllocatedPositions = 32_000
 
   /// Positions the runtime allocates for a requested `maxNumTokens`. Budgets
@@ -239,7 +239,6 @@ enum InferencePlanner {
     }
 
     return ResolvedInference(
-      useGPU: options.backendPreference == .gpu,
       maxNumTokens: maxNumTokens,
       enableVision: options.enableVision,
       enableAudio: options.enableAudio,
@@ -281,13 +280,12 @@ enum InferencePlanner {
   }
 
   /// Whether moving from the plan an engine was built for (`built`, before
-  /// any fallback) to `requested` needs a new Engine. Backend, KV size,
+  /// any fallback) to `requested` needs a new Engine. KV size,
   /// vision/audio executors, and MTP are fixed at Engine creation.
   static func requiresEngineReload(built: ResolvedInference, requested: ResolvedInference)
     -> Bool
   {
-    built.useGPU != requested.useGPU
-      || built.maxNumTokens != requested.maxNumTokens
+    built.maxNumTokens != requested.maxNumTokens
       || built.enableVision != requested.enableVision
       || built.enableAudio != requested.enableAudio
       || built.enableSpeculativeDecoding != requested.enableSpeculativeDecoding
@@ -309,26 +307,14 @@ enum InferencePlanner {
     return out
   }
 
-  /// Ordered engine-init attempts: preferred backend first, then the other;
-  /// multimodal before text-only on each. Duplicates removed (e.g. when the
-  /// options already disable multimodal, or CPU is preferred).
+  /// Ordered engine-init attempts: the plan, then the same without vision and audio (a model
+  /// file can lack their executors). One attempt when the plan is already text-only. There's no
+  /// other backend to fall back to: a GPU load that fails is retried and then reported.
   static func attempts(for plan: ResolvedInference) -> [ResolvedInference] {
-    let backends: [Bool] = plan.useGPU ? [true, false] : [false]
-    var attempts: [ResolvedInference] = []
-    for gpu in backends {
-      for multimodal in [true, false] {
-        var attempt = plan
-        attempt.useGPU = gpu
-        if !multimodal {
-          attempt.enableVision = false
-          attempt.enableAudio = false
-          attempt.visualTokenBudget = nil
-        }
-        if !attempts.contains(attempt) {
-          attempts.append(attempt)
-        }
-      }
-    }
-    return attempts
+    var textOnly = plan
+    textOnly.enableVision = false
+    textOnly.enableAudio = false
+    textOnly.visualTokenBudget = nil
+    return textOnly == plan ? [plan] : [plan, textOnly]
   }
 }

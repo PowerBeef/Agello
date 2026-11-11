@@ -18,7 +18,7 @@ extension ProbeScenarioTests {
     let engine = Engine(
       engineConfig: try EngineConfig(
         modelPath: url.path, backend: .gpu, maxNumTokens: 8_192,
-        cacheDir: try EngineCache.directory(maxNumTokens: 8_192)))
+        cacheDir: try EngineCache.directory()))
     try await engine.initialize()
     let markers = PromptText.controlTokens + ["<bos>", "<eos>", "<pad>", "<start_of_turn>", "<end_of_turn>"]
     var rows: [[String: Any]] = []

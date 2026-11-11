@@ -17,7 +17,6 @@ struct AgelloCommand {
       --search               Search on for this message
       --no-tools             without the on-device tools
       --kv N                 a window of N tokens instead of the one memory allows
-      --backend gpu|cpu      (default gpu)
       --no-mtp               without speculative decoding
       --sampler precise|balanced|creative
       --file PATH            attach a file (PDF, text, image of a page); may be repeated
@@ -28,7 +27,7 @@ struct AgelloCommand {
       --show-thought         print the reasoning before the answer
       --json                 one JSON object instead of the streamed reply
 
-    Options for bench (and --mock, --no-tools, --kv, --backend, --no-mtp, --sampler):
+    Options for bench (and --mock, --no-tools, --kv, --no-mtp, --sampler):
       --only id,id           some cases (default: all of AgelloUITests/BenchCases.swift)
       --repeat N             every case N times (default 1)
       --warmup               one short reply first, left out of comparisons

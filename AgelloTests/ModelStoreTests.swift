@@ -76,8 +76,8 @@ final class ModelStoreTests: XCTestCase {
     XCTAssertEqual(values.isExcludedFromBackup, true)
   }
 
-  /// The first load writes the engine cache beside the file (2.4 GB per context size for
-  /// E4B on Google's binary): a download that leaves no room for it can't be used.
+  /// The first load writes the engine cache beside the file (about 2.4 GB for E4B): a download
+  /// that leaves no room for it can't be used.
   func testStorageCheckCountsTheEngineCache() {
     let spec = ModelCatalog.e4b
     XCTAssertTrue(ModelStore.hasRoom(for: spec, availableBytes: nil))

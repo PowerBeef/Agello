@@ -12,7 +12,6 @@ final class Session {
     var thinkingBudget: Int?
     var tools = true
     var windowTokens: Int?
-    var backend: BackendPreference = .gpu
     var speculativeDecoding = true
     var sampler: SamplerPreset?
 
@@ -25,12 +24,6 @@ final class Session {
       tools = !arguments.flag("no-tools")
       windowTokens = arguments.value("kv").flatMap(Int.init)
       speculativeDecoding = !arguments.flag("no-mtp")
-      if let name = arguments.value("backend") {
-        guard let preference = BackendPreference(rawValue: name) else {
-          throw UsageError("--backend takes gpu or cpu.")
-        }
-        backend = preference
-      }
       if let name = arguments.value("sampler") {
         guard let preset = SamplerPreset(rawValue: name) else {
           throw UsageError("--sampler takes precise, balanced or creative.")
@@ -68,7 +61,6 @@ final class Session {
     var options = InferenceOptions.launch(saved: nil, budgetMigrated: true)
     options.enableThinking = settings.think
     if let budget = settings.thinkingBudget { options.thinkingBudget = budget }
-    options.backendPreference = settings.backend
     options.enableSpeculativeDecoding = settings.speculativeDecoding
     options.maxNumTokensOverride = settings.windowTokens
     if let sampler = settings.sampler { options.samplerPreset = sampler }

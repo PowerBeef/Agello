@@ -14,7 +14,7 @@ struct ModelSpec: Identifiable, Sendable, Equatable {
   /// SHA-256 of the file (Hugging Face's LFS id), checked before the file is used.
   var sha256: String?
   /// Disk the engine cache takes beside the file once the model loads (GPU-format weights
-  /// and programs, per context size on Google's binary).
+  /// and programs, one copy for every context size).
   var engineCacheBytes: Int64 = 0
 
   var downloadURL: URL {

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The engine's developer controls: backend, speculative decoding, the KV
+/// The engine's developer controls: speculative decoding, the KV
 /// cache, reasoning, sampling, voice and vision, the system prompt, the
 /// benchmark, and this device. Option changes apply through
 /// `SettingsView`'s `onChange` (this screen is pushed on its stack).
@@ -35,12 +35,6 @@ struct AdvancedSettingsView: View {
 
   private var performanceSection: some View {
     Section {
-      Picker("Backend", selection: bindable.options.backendPreference) {
-        Text("GPU (Metal)").tag(BackendPreference.gpu)
-        Text("CPU").tag(BackendPreference.cpu)
-      }
-      .pickerStyle(.segmented)
-      .themedRow()
       Toggle("Speculative decoding (MTP)", isOn: bindable.options.enableSpeculativeDecoding)
         .themedRow()
       Toggle("Show performance details", isOn: $showStats)
@@ -50,8 +44,7 @@ struct AdvancedSettingsView: View {
       Text("Performance").eyebrowStyle()
     } footer: {
       Text(
-        "The GPU decodes about twice as fast and falls back to the CPU automatically. "
-          + "Speculative decoding doubles GPU decode speed with no quality change. "
+        "Speculative decoding doubles decode speed with no quality change. "
           + "Performance details show time to first token, speed and backend under each reply."
       )
       .foregroundStyle(Theme.Text.tertiary)
@@ -178,7 +171,7 @@ struct AdvancedSettingsView: View {
       Text("Benchmark").eyebrowStyle()
     } footer: {
       Text(
-        "1,024 prefill and 256 decode tokens. Google reports 1,189 prefill and 25 decode tokens per second for E4B on the iPhone 17 Pro GPU, without speculative decoding."
+        "1,024 prefill and 256 decode tokens on the GPU, without speculative decoding."
       )
       .foregroundStyle(Theme.Text.tertiary)
     }

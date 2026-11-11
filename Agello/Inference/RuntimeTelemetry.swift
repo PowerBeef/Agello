@@ -1,35 +1,20 @@
 import Darwin
 import Foundation
 
-/// Reply stats on our LiteRT-LM builds, without benchmark mode.
+/// Reply stats from the runtime's telemetry, without benchmark mode.
 ///
-/// The per-reply stats (input and output tokens, decode speed) came from the conversation's
-/// `BenchmarkInfo`, which needs the engine in benchmark mode. In our builds benchmark mode also
-/// makes every GPU wait spin, about 29 ms of CPU per token on the M6 against 2 ms when the
-/// waits sleep. Our builds record the same figures in their telemetry (`agello/telemetry`):
-/// running totals of tokens prefilled and decoded (counters) and of the time spent in each
-/// turn's prefill and decode (spans, level 2 and up). A reply's figures are the difference
-/// between the totals taken before and after it. Google's binary has no telemetry, keeps
-/// benchmark mode and reads `BenchmarkInfo` as before.
+/// LiteRT-LM gives per-reply stats (input and output tokens, decode speed) in the conversation's
+/// `BenchmarkInfo`, which needs the engine in benchmark mode, and benchmark mode makes every GPU
+/// wait spin: about 29 ms of CPU per token on the M6 against 2 ms when the waits sleep. So the
+/// engine never turns it on. The runtime records the same figures in its telemetry
+/// (`agello/telemetry`): running totals of tokens prefilled and decoded (counters) and of the
+/// time spent in each turn's prefill and decode (spans, level 2 and up). A reply's figures are
+/// the difference between the totals taken before and after it.
 ///
 /// The functions are looked up at run time, as `EngineCache.runtimeBuildInfo` is.
 enum RuntimeTelemetry {
   /// The level that records span timings (counters alone are level 1, the runtime's default).
   static let spanLevel: Int32 = 2
-
-  /// Whether replies take their stats from telemetry instead of benchmark mode: a build of
-  /// ours (it reports a build id) that has telemetry.
-  static func replacesBenchmark(runtimeBuildID: String?, hasTelemetry: Bool) -> Bool {
-    runtimeBuildID != nil && hasTelemetry
-  }
-
-  /// Whether the loaded runtime's replies take their stats from telemetry.
-  static let inUse = replacesBenchmark(
-    runtimeBuildID: EngineCache.runtimeBuildID, hasTelemetry: isAvailable)
-
-  static var isAvailable: Bool {
-    symbol("litert_lm_telemetry_snapshot_json", as: Snapshot.self) != nil
-  }
 
   /// Raises the level to record spans; a higher level (the test harness's choice) stays.
   static func recordSpans() {
