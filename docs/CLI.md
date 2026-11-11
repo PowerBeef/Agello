@@ -1,6 +1,6 @@
 # The Mac command line
 
-A plan, approved by the maintainer on 2026-11-10 and corrected by them the same day ("Direction", below). C1 to C6 and C8 are built; C7, the new probes inside the runtime, is part-way: it's work in the fork.
+A plan, approved by the maintainer on 2026-11-10 and corrected by them the same day ("Direction", below). C1 to C8 are built; of C7's probes inside the runtime, two wait for the one repository ([BACKEND.md](BACKEND.md), B2).
 
 `agello` runs Agello's engine on a Mac from a command line: the app's own code, on the runtime
 build of your choice, with the runtime's telemetry and the app's trace of every reply. It's a
@@ -178,8 +178,14 @@ agello bench --only email --telemetry 3 --out build/cli/runs/trace.jsonl       #
 - **Level 4** times each GPU kernel in its own encoder. It halves the speed, so it's a pass of
   its own, read for shares (`telemetry.py --kernels`).
 - **Level 3** writes the runtime's events as a Chrome/Perfetto trace beside the app's trace
-  (`*.engine.json`). The runtime keeps the last 65,536 events per thread, about three seconds of
-  decoding: enough for a short reply or the end of a long one. C7 lifts that.
+  (`*.engine.json`). A runtime with C7's probes keeps the last 262,144 events per thread and
+  leaves LiteRT's own trace sites out of them, so a 1,500-token reply fits whole; the shipped
+  build (`agello-next-20261024`) keeps 65,536 with those sites in, about three seconds of decoding.
+- **A runtime with C7's probes** (`next`, below) adds to the timeline and the trace: each token
+  with its id, the two halves of an MTP round (`mtp.draft`, `mtp.verify`), the bytes each KV
+  copy moves, and what the GPU has allocated. `AGELLO_TELEMETRY_LOGITS_OUT=<file>` in the
+  environment writes the eight best logits of every row the sampler reads, for comparing two
+  builds where their replies part.
 
 ## Milestones
 
@@ -263,6 +269,29 @@ agello bench --only email --telemetry 3 --out build/cli/runs/trace.jsonl       #
 - `AppState.regenerate` takes an optional seed (the app passes none), and
   `LiteRTChatEngine.tokenIDs` exposes the tokenizer; both are covered by the unit tests' next
   iPhone run.
+
+### C7, built on 2026-11-10 and checked on 2026-11-11
+
+Probes in the runtime (`agello-next` `3118b5d4`, built as `d5ed12808214`, local: not pushed,
+not released, and the app still ships `agello-next-20261024`):
+
+- **What they record:** a `token` event per token with its id; `mtp.draft` and `mtp.verify`;
+  `engine.init` and `session.create`; `kv_copy_bytes`; the GPU's allocated memory
+  (`MTLDevice.currentAllocatedSize`) with the thermal state and low power; a trace ring four
+  times larger without LiteRT's own sites; the logits dump. `EngineTimeline.swift` and
+  `cli-timeline.py` read them, and the fork's `telemetry.py` and `TELEMETRY.md` cover them.
+- **Unchanged at the everyday levels** (`build/cli/runs/c7`, 3 rounds, `explain`, `email`,
+  `file-report`): every reply identical to the shipped build's (4 of 4), decode −0.2 to +0.2 %,
+  prefill +0.3 to +2.0 % inside its intervals, first token −0.3 to −3.5 % inside them.
+- **First readings** (M6, 32,000-token window):
+  - An MTP round is 4.8 ms of drafting and 24.8 ms of verifying: verify is 81 % of the decode
+    steps, the drafter 16 %.
+  - A KV copy for a helper moves 917.5 MB (28,672 bytes a token, as `DeviceProfile` counts)
+    and takes 112 ms.
+  - Metal reports 6.8 GB allocated while the footprint is 3.9 GB: a lead for the memory work.
+  - A level 3 trace of the 1,503-token `explain` reply holds all of it: 50,699 events over 21.7 s.
+- **Not written:** shader and pipeline compile time, and GPU time without the gaps between
+  dispatches. Both live in LiteRT and ML Drift, and wait for the one repository.
 
 ### C8, built on 2026-11-10
 

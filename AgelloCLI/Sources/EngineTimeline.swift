@@ -20,12 +20,14 @@ final class EngineTimeline: Sendable {
   static let counters = [
     "tokens_decoded", "tokens_prefilled", "mtp_rounds", "mtp_drafted", "mtp_accepted", "runs_verify",
     "runs_drafter", "runs_decode", "command_buffers", "gpu_waits", "host_lock_copy_bytes",
-    "host_unlock_copy_bytes", "embedding_lookups", "stream_chunks",
+    "host_unlock_copy_bytes", "embedding_lookups", "stream_chunks", "kv_copies", "kv_copy_bytes",
   ]
   static let spans = [
     "decode.step", "run.verify", "run.drafter", "run.decode", "gpu.verify", "gpu.drafter", "gpu.decode",
     "gpu.prefill", "gpu.wait.decode", "gpu.queue_delay", "host.lock_read", "host.unlock_write",
     "embedding_lookup", "sample", "detokenize", "stream_callback", "turn.prefill", "turn.decode",
+    // Runtime builds with the C7 probes: a live token count, and MTP's two halves in full.
+    "token", "mtp.draft", "mtp.verify", "kv_clone",
   ]
 
   /// Starts sampling every `interval` seconds, off the main thread.
@@ -62,6 +64,7 @@ final class EngineTimeline: Sendable {
     let memory = snapshot["memory"] as? [String: Any] ?? [:]
     row["footprintMB"] = (memory["footprint_mb"] as? NSNumber)?.doubleValue ?? 0
     row["graphicsMB"] = (memory["graphics_footprint_mb"] as? NSNumber)?.doubleValue ?? 0
+    row["gpuAllocatedMB"] = (memory["gpu_allocated_mb"] as? NSNumber)?.doubleValue ?? 0
     row["thermal"] = Double(ProcessInfo.processInfo.thermalState.rawValue)
     return row
   }

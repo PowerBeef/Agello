@@ -53,9 +53,10 @@ def delta(a, b, key):
 
 
 def live_tokens(row):
-    """Tokens written so far. The runtime counts `tokens_decoded` when the turn ends; while it
-    runs, each decode step has yielded one token plus the drafts MTP kept."""
-    return row.get("decode.step.n", 0) + row.get("mtp_accepted", 0)
+    """Tokens written so far. A runtime with the token probe counts them as they are written
+    (`token`). Older builds count `tokens_decoded` only when the turn ends; while it runs, each
+    decode step has yielded one token plus the drafts MTP kept."""
+    return row.get("token.n") or row.get("decode.step.n", 0) + row.get("mtp_accepted", 0)
 
 
 def stretch(a, b):
