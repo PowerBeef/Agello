@@ -7,7 +7,9 @@
 #   Vendor/use-local-litert.sh [path/to/LiteRT-LM]   # default: ../agello-arms/next/LiteRT-LM
 # Back to the committed (released) package:
 #   git checkout -- Vendor/LiteRT-LM && git clean -fdq Vendor/LiteRT-LM && rm -rf Vendor/LiteRT-LM/dist
-#   (then delete DerivedData's CLiteRTLM-*.pcm as below, and use Google's caches again)
+#   then delete what this script deletes in DerivedData (below) and resolve the package again
+#   (xcodebuild -resolvePackageDependencies -project Agello.xcodeproj -scheme Agello): otherwise
+#   Xcode keeps building with the local framework. The harness report's runtimeBuild says which ran.
 # LiteRT-LM's cache keys ignore the build: move the app's engine caches aside when switching
 # builds (Library/Caches/com.patricedery.agello.litertlm in the app's container).
 # Don't commit Vendor/LiteRT-LM while it points at dist/: nobody else has that build.
@@ -34,8 +36,15 @@ if [ ! -f "$MAC/Versions/A/CLiteRTLM" ] || [ ! -L "$MAC/Versions/Current" ] || [
 fi
 # A different CLiteRTLM.framework under the same module name leaves a stale precompiled module
 # in DerivedData ("module.modulemap has been modified since the module file was built").
+# A build doesn't resolve the package again by itself and would keep the last framework
+# (2026-11-12), and the app's embedded copy is only replaced by a newer file: the built
+# frameworks go, the app's included, and the package is resolved below.
 rm -rf "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/CLiteRTLM-*.pcm \
-  "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Products/Debug-*/CLiteRTLM.framework
+  "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/*/CLiteRTLM-*.pcm \
+  "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Products/*-iphoneos/CLiteRTLM.framework \
+  "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Products/Debug-*/CLiteRTLM.framework \
+  "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Products/*/Agello.app/Frameworks/CLiteRTLM.framework
+xcodebuild -resolvePackageDependencies -project "$ROOT/Agello.xcodeproj" -scheme Agello >/dev/null 2>&1 || true
 echo "Agello now builds against the local LiteRT-LM in $SRC:"
 cat "$DEST/dist/BUILD-INFO.txt"
 # Each slice's platform, from its binary and from its Info.plist (they must agree).

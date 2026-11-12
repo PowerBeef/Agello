@@ -71,6 +71,8 @@ package_of() {
 
 LOCK="$(harness_lock_dir "$ROOT")"
 mkdir -p "$(dirname "$LOCK")" "$OUT"
+# A full path: the reading runs from inside it.
+OUT="$(cd "$OUT" && pwd)"
 if ! mkdir "$LOCK" 2>/dev/null; then
   sleep 1
   if running="$(harness_lock_info "$LOCK")"; then
@@ -113,8 +115,10 @@ rm -rf "$OUT/env-traces" "$OUT/runtime.log"
 echo "Test Suite 'cli-bench' started" >>"$LOG"
 
 # 2. Measure: the arms take turns, one process each, so drift lands on all of them alike.
+# The records by name: the reading runs from inside OUT, whose path may hold spaces (this
+# checkout's does), which would split an unquoted list of full paths.
 files=""
-for name in $names; do files="$files $OUT/$name.jsonl"; done
+for name in $names; do files="$files $name.jsonl"; done
 if [ "$QUIET" != off ]; then
   # Refuse a Mac that's busy: the numbers wouldn't be worth the run.
   if ! MAC_READY_OWN_LOCK=1 "$ROOT/scripts/mac-ready.sh" --wait "$QUIET_WAIT"; then
@@ -146,7 +150,7 @@ done
 if [ "$QUIET" != off ]; then
   extra=0
   # shellcheck disable=SC2086
-  until python3 "$ROOT/scripts/cli-load.py" $files --min-clean "$MIN_CLEAN" >/dev/null; do
+  until (cd "$OUT" && python3 "$ROOT/scripts/cli-load.py" $files --min-clean "$MIN_CLEAN") >/dev/null; do
     if [ "$extra" -ge "$EXTRA_ROUNDS" ]; then
       echo "Still short of undisturbed runs after $EXTRA_ROUNDS extra rounds: the Mac isn't quiet (see load.txt)."
       break
@@ -163,26 +167,26 @@ base="${base%% *}"
 compared="$files"
 if [ "$QUIET" != off ]; then
   # shellcheck disable=SC2086
-  python3 "$ROOT/scripts/cli-load.py" $files --clean-dir "$OUT/clean" --min-clean "$MIN_CLEAN" --base "$base" --out "$OUT/load.txt" || true
+  (cd "$OUT" && python3 "$ROOT/scripts/cli-load.py" $files --clean-dir clean --min-clean "$MIN_CLEAN" --base "$base" --out load.txt) || true
   compared=""
-  for name in $names; do compared="$compared $OUT/clean/$name.jsonl"; done
+  for name in $names; do compared="$compared clean/$name.jsonl"; done
 fi
 if [ -f "$FORK/compare.py" ]; then
   if [ "$QUIET" != off ]; then
     # Every record, for the file; the undisturbed ones are the comparison to read.
     # shellcheck disable=SC2086
-    python3 "$FORK/compare.py" $files --base "$base" >"$OUT/compare-all.txt" 2>&1 || true
+    (cd "$OUT" && python3 "$FORK/compare.py" $files --base "$base") >"$OUT/compare-all.txt" 2>&1 || true
     echo
     echo "The comparison below is on the undisturbed records (every record: compare-all.txt)."
   fi
   # shellcheck disable=SC2086
-  python3 "$FORK/compare.py" $compared --base "$base" | tee "$OUT/compare.txt"
+  (cd "$OUT" && python3 "$FORK/compare.py" $compared --base "$base") | tee "$OUT/compare.txt"
 else
   echo "No fork checkout at ../LiteRT-LM: the comparison (compare.py) is skipped."
 fi
 if [ "${CHECKS:-on}" != off ]; then
   # shellcheck disable=SC2086
-  python3 "$ROOT/scripts/cli-report.py" $files --out "$OUT/report.md" || status=$?
+  (cd "$OUT" && python3 "$ROOT/scripts/cli-report.py" $files --out report.md) || status=$?
 fi
 echo
 echo "Records, traces and reports: $OUT"

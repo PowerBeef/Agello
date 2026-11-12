@@ -163,6 +163,11 @@ scripts/phone-bench.sh release again=release           # the noise: the shipped 
   A build that ran two runtimes is an install gone wrong, and the run says so.
 - It holds the harness lock for the whole run, so `bench-direct.sh`, `device-run.sh logs` and
   harness suites wait for it.
+- `--read build/phone/runs/<time>` reads a run again without the phone.
+- Heat isn't the thermal state: on 2026-11-12 the phone said "nominal" while a long case lost a
+  quarter of its decode speed on the GPU's side over the run. Short cases stay clean; for a long
+  one, read `load.txt` and the order the builds ran in before believing a difference.
+- Never edit `phone-bench.sh` while it runs: sh reads the script as it goes.
 
 ## On this Mac
 

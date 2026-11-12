@@ -293,10 +293,25 @@ scripts/phone-bench.sh release again=release           # the shipped build again
 - **What it needs:** the phone unlocked for the whole run with Auto-Lock set to Never (an
   install leaves it on the home screen), iPhone Mirroring closed, a Focus on, best plugged in.
   It takes the harness lock and waits up to ten minutes for an unlock before stopping.
-- **Checked so far without the phone:** the reading, on made-up traces (`--self-test`, run by
-  `scripts/cli-check.sh`) and on the bench's real traces of 2026-11-10, read through
-  `cli-load.py`, `compare.py` and `cli-report.py`; the app's part compiles. Its first run is
-  B3's speed run (ROADMAP, Next).
+- **Reading a run again:** `scripts/phone-bench.sh --read build/phone/runs/<time>` (no phone).
+- **The first run (2026-11-12, B3, iPhone 17 Pro, 3 rounds, about 40 minutes of measuring):**
+  every launch traced, each build ran its own runtime, and the 18 replies are identical. Speeds
+  on a cool phone: explain (Think, 1,666 tokens) 46 tok/s, email 48.6, file-report 50.5 with a
+  4,879-token prompt at 1,225 tok/s (first token 4.1 s). A decode step costs 41 to 43 ms on the
+  GPU and 9.5 on the host.
+- **Heat isn't the thermal state.** The phone said "nominal" for every reply but one, while
+  explain's decode fell from 46 to 37 tok/s over the run on both builds, all of it on the GPU's
+  side (+25 %). Cooling to nominal is enough for the short cases (5 of 6 runs undisturbed) but
+  not for a long one, where the build that runs first in a round wins. A long case needs a
+  longer rest, or the builds alternating case by case.
+- **What the first starts caught,** fixed before the run that counts: Think set without marking
+  the options changed, so each case ran with the previous launch's Think (the pill also calls
+  `scheduleApplyOptions()`); an app built for the shipped runtime carrying the pruned one,
+  twice (a build doesn't resolve the package again after `Vendor/LiteRT-LM` changes, and the
+  step that embeds the framework compares dates; each app's runtime is now checked, and the
+  vendoring scripts resolve explicitly); a round's last test ending the script under `set -e`;
+  record paths split at the space in this checkout's path (`cli-bench.sh` had the same bug when
+  its output folder was a full path).
 
 ## Decisions for the maintainer
 

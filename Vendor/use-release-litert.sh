@@ -37,6 +37,13 @@ if ! grep -q "checksum: \"$CHECKSUM\"" "$ROOT/Vendor/LiteRT-LM/Package.swift"; t
 fi
 # A different CLiteRTLM.framework under the same module name leaves a stale precompiled module
 # in DerivedData ("module.modulemap has been modified since the module file was built").
+# A build doesn't resolve the package again by itself and would keep the last framework (a
+# local one too, 2026-11-12), and the app's embedded copy is only replaced by a newer file:
+# the built frameworks go, the app's included, and the package is resolved now.
 rm -rf "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/CLiteRTLM-*.pcm \
-  "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Products/Debug-*/CLiteRTLM.framework
+  "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/*/CLiteRTLM-*.pcm \
+  "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Products/*-iphoneos/CLiteRTLM.framework \
+  "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Products/Debug-*/CLiteRTLM.framework \
+  "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Products/*/Agello.app/Frameworks/CLiteRTLM.framework
+xcodebuild -resolvePackageDependencies -project "$ROOT/Agello.xcodeproj" -scheme Agello >/dev/null 2>&1 || true
 echo "Vendored $REPO@$REF with release $TAG (checksum $CHECKSUM)."

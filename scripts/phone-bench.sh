@@ -19,6 +19,7 @@
 #
 #   scripts/phone-bench.sh release next
 #   ROUNDS=5 scripts/phone-bench.sh release next -- explain email
+#   scripts/phone-bench.sh --read build/phone/runs/<time>    read a run again; no phone needed
 #
 # Env: ROUNDS (default 3: each build runs every case that many times; the builds take turns, the
 #      order reversed every other round, so a reinstall comes once per round),
@@ -52,7 +53,6 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT/scripts/lib/device.sh"
 # shellcheck source=scripts/lib/harness-lock.sh
 . "$ROOT/scripts/lib/harness-lock.sh"
-resolve_device_id "$ROOT"
 ROUNDS="${ROUNDS:-3}"
 COOL="${COOL:-on}"
 EXTRA_ROUNDS="${EXTRA_ROUNDS:-2}"
@@ -66,6 +66,61 @@ CASES_FILE="$ROOT/AgelloUITests/BenchCases.swift"
 FORK="$ROOT/../LiteRT-LM/tools/agello-bench"
 BUNDLE_ID="com.patricedery.agello"
 DERIVED="$HOME/Library/Developer/Xcode/DerivedData"
+
+# The record files of the builds in $names, by name: the reading runs from inside OUT, whose path
+# may hold spaces (this checkout's does), which would split an unquoted list of full paths.
+record_files() {
+  labels="$(echo "$names" | sed 's/^ *//; s/ /,/g')"
+  files=""
+  compared=""
+  for name in $names; do
+    files="$files $name.jsonl"
+    compared="$compared clean/$name.jsonl"
+  done
+  base="${names# }"
+  base="${base%% *}"
+}
+read_records() {
+  python3 "$HELPER" records "$OUT" --hardware "$hardware" --labels "$labels" >"$OUT/records.txt" 2>&1
+}
+# 3. Read a run: the records, heat, the replies, the speeds.
+read_run() {
+  record_files
+  read_status=0
+  read_records || read_status=1
+  tee -a "$LOG" <"$OUT/records.txt"
+  echo
+  # shellcheck disable=SC2086 # file names without spaces, read from inside OUT
+  (cd "$OUT" && python3 "$ROOT/scripts/cli-load.py" $files --device iPhone --clean-dir clean \
+    --min-clean "$MIN_CLEAN" --base "$base" --out load.txt) | tee -a "$LOG" || true
+  if [ -f "$FORK/compare.py" ]; then
+    # shellcheck disable=SC2086
+    (cd "$OUT" && python3 "$FORK/compare.py" $files --base "$base" >compare-all.txt 2>&1) || true
+    echo
+    echo "The comparison below is on the undisturbed records (every record: compare-all.txt)."
+    # shellcheck disable=SC2086
+    (cd "$OUT" && python3 "$FORK/compare.py" $compared --base "$base" 2>&1 | tee compare.txt) | tee -a "$LOG"
+  else
+    echo "No fork checkout at ../LiteRT-LM: the comparison (compare.py) is skipped."
+  fi
+  if [ "${CHECKS:-on}" != off ]; then
+    # shellcheck disable=SC2086
+    (cd "$OUT" && python3 "$ROOT/scripts/cli-report.py" $files --out report.md) >>"$LOG" 2>&1 || true
+  fi
+  return $read_status
+}
+
+# --read DIR: read a run again (a run cut short, or after a change to the reading), no phone.
+if [ "${1:-}" = --read ]; then
+  OUT="$(cd "${2:?--read takes a run folder}" && pwd)"
+  LOG="$OUT/phone-bench.log"
+  names="$(python3 -c 'import json, sys; print(" ".join(dict.fromkeys(json.loads(l)["label"] for l in open(sys.argv[1]) if l.strip())))' "$OUT/manifest.jsonl")"
+  names=" $names"
+  hardware="$(head -1 "$OUT/$(echo "$names" | awk '{print $1}').jsonl" 2>/dev/null | python3 -c 'import json, sys; print(json.loads(sys.stdin.readline())["machine"]["hardware"])' 2>/dev/null || echo iPhone)"
+  read_run
+  exit $?
+fi
+resolve_device_id "$ROOT"
 
 arms=""
 while [ $# -gt 0 ]; do
@@ -101,6 +156,10 @@ done
 for case in $cases; do
   python3 "$HELPER" case "$CASES_FILE" "$case" >/dev/null || exit 2
 done
+if [ -e "$OUT/manifest.jsonl" ]; then
+  echo "$OUT holds an earlier run: delete it or choose another OUT." >&2
+  exit 2
+fi
 if [ -n "$(git -C "$ROOT" status --porcelain -- Vendor/LiteRT-LM)" ] || [ -e "$ROOT/Vendor/LiteRT-LM/dist" ]; then
   echo "Vendor/LiteRT-LM isn't as committed (a local runtime vendored?): put it back first." >&2
   echo "  git checkout -- Vendor/LiteRT-LM && git clean -fdq Vendor/LiteRT-LM && rm -rf Vendor/LiteRT-LM/dist" >&2
@@ -112,6 +171,8 @@ fi
 
 LOCK="$(harness_lock_dir "$ROOT")"
 mkdir -p "$(dirname "$LOCK")" "$OUT/traces" "$OUT/apps"
+# A full path: the reading runs from inside it.
+OUT="$(cd "$OUT" && pwd)"
 if ! mkdir "$LOCK" 2>/dev/null; then
   sleep 1
   if running="$(harness_lock_info "$LOCK")"; then
@@ -123,18 +184,35 @@ if ! mkdir "$LOCK" 2>/dev/null; then
   mkdir "$LOCK"
 fi
 VENDORED=""
-# The committed runtime back in Vendor/LiteRT-LM, and no precompiled module of another.
+# Xcode keeps the runtime it last built with (2026-11-12: an app built for the shipped runtime
+# carried the pruned one, twice). A build doesn't resolve the package again when
+# Vendor/LiteRT-LM changes, and the step that embeds the framework in the app compares dates:
+# the shipped framework is older than the pruned one already in the app, so it was never copied.
+# So after each switch the package is resolved explicitly, and the last runtime's precompiled
+# module and built frameworks go, the one inside the app included.
+forget_runtime() {
+  rm -rf "$DERIVED"/Agello-*/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/*/CLiteRTLM-*.pcm \
+    "$DERIVED"/Agello-*/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/CLiteRTLM-*.pcm \
+    "$DERIVED"/Agello-*/Build/Products/*-iphoneos/CLiteRTLM.framework \
+    "$DERIVED"/Agello-*/Build/Products/*-iphoneos/Agello.app/Frameworks/CLiteRTLM.framework
+  xcodebuild -resolvePackageDependencies -project "$ROOT/Agello.xcodeproj" -scheme Agello >>"$LOG" 2>&1
+}
+# The committed runtime back in Vendor/LiteRT-LM, and Xcode resolved to it.
 restore_vendor() {
   git -C "$ROOT" checkout -- Vendor/LiteRT-LM
   git -C "$ROOT" clean -fdq Vendor/LiteRT-LM
-  rm -rf "$ROOT/Vendor/LiteRT-LM/dist" \
-    "$DERIVED"/Agello-*/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/CLiteRTLM-*.pcm \
-    "$DERIVED"/Agello-*/Build/Products/*-iphoneos/CLiteRTLM.framework
+  rm -rf "$ROOT/Vendor/LiteRT-LM/dist"
+  forget_runtime || true
   VENDORED=""
 }
 cleanup() {
   [ -n "$VENDORED" ] && restore_vendor
   rm -rf "$LOCK"
+}
+# The runtime build id inside an app's framework (litert_lm_get_build_info's JSON).
+runtime_in() {
+  strings "$1/Frameworks/CLiteRTLM.framework/CLiteRTLM" 2>/dev/null |
+    grep -oE '"build_id":"[0-9a-f]+"' | head -1 | sed 's/.*:"//; s/"$//'
 }
 trap cleanup EXIT
 trap 'exit 130' HUP INT TERM
@@ -161,9 +239,8 @@ build_app() {
   else
     "$ROOT/Vendor/use-local-litert.sh" "$source" >>"$LOG" 2>&1
     VENDORED=1
+    forget_runtime
   fi
-  # Each runtime's framework is copied into the products again, never reused from the other's.
-  rm -rf "$DERIVED"/Agello-*/Build/Products/Release-iphoneos/CLiteRTLM.framework
   priority=""
   jobs=""
   if [ "$BUILD_PRIORITY" = background ]; then
@@ -191,7 +268,15 @@ build_app() {
   rm -rf "$OUT/apps/$name"
   mkdir -p "$OUT/apps/$name"
   ditto "$products/Agello.app" "$OUT/apps/$name/Agello.app"
-  say "  built in $(($(date +%s) - started)) s"
+  runtime="$(runtime_in "$OUT/apps/$name/Agello.app")"
+  expected=""
+  [ "$source" != release ] && expected="$(sed -n 's/^Build id: *//p' "$source/dist/BUILD-INFO.txt" | head -1)"
+  if [ -z "$runtime" ] || { [ -n "$expected" ] && [ "$runtime" != "$expected" ]; }; then
+    say "The app built for $name carries runtime ${runtime:-unknown}, not ${expected:-the shipped one}: stopping."
+    exit 1
+  fi
+  eval "runtime_$name=\"\$runtime\""
+  say "  built in $(($(date +%s) - started)) s, runtime $runtime"
 }
 built=""
 for name in $names; do
@@ -209,6 +294,17 @@ for name in $names; do
   eval "app_$name=\"\$OUT/apps/\$app_of/Agello.app\""
 done
 [ -n "$VENDORED" ] && restore_vendor
+# Builds from different runtimes must carry different runtimes.
+for name in $built; do
+  for other in $built; do
+    [ "$name" = "$other" ] && continue
+    eval "a=\"\$runtime_$name\"; b=\"\$runtime_$other\""
+    if [ "$a" = "$b" ]; then
+      say "The apps for $name and $other carry the same runtime ($a): stopping."
+      exit 1
+    fi
+  done
+done
 # The edit guard lets target edits through from here: both apps are built.
 echo "Test Suite 'phone-bench' started" >>"$LOG"
 
@@ -317,13 +413,10 @@ measure_round() {
       [ -n "$stopped" ] && return 0
     done
   done
+  # Not the test above as the last status: under set -e a round would end the script.
+  return 0
 }
-labels="$(echo "$names" | sed 's/^ *//; s/ /,/g')"
-files=""
-for name in $names; do files="$files $OUT/$name.jsonl"; done
-read_records() {
-  python3 "$HELPER" records "$OUT" --hardware "$hardware" --labels "$labels" >"$OUT/records.txt" 2>&1
-}
+record_files
 round=1
 while [ "$round" -le "$ROUNDS" ] && [ -z "$stopped" ]; do
   measure_round "$round"
@@ -335,40 +428,17 @@ while [ -z "$stopped" ] && [ "$extra" -lt "$EXTRA_ROUNDS" ]; do
   read_records || break
   short=0
   # shellcheck disable=SC2086
-  python3 "$ROOT/scripts/cli-load.py" $files --device iPhone --min-clean "$MIN_CLEAN" >/dev/null || short=$?
+  (cd "$OUT" && python3 "$ROOT/scripts/cli-load.py" $files --device iPhone --min-clean "$MIN_CLEAN") >/dev/null || short=$?
   [ "$short" -eq 3 ] || break
   extra=$((extra + 1))
   say "Some cases have fewer than $MIN_CLEAN undisturbed runs: one more round ($extra of at most $EXTRA_ROUNDS)."
   measure_round "$((ROUNDS + extra))"
 done
 
-# 3. Read the run: the records, heat, the replies, the speeds.
+# 3. Read the run.
 status=0
 echo
-read_records || status=1
-tee -a "$LOG" <"$OUT/records.txt"
-base="${names# }"
-base="${base%% *}"
-echo
-# shellcheck disable=SC2086
-python3 "$ROOT/scripts/cli-load.py" $files --device iPhone --clean-dir "$OUT/clean" --min-clean "$MIN_CLEAN" \
-  --base "$base" --out "$OUT/load.txt" | tee -a "$LOG" || true
-compared=""
-for name in $names; do compared="$compared $OUT/clean/$name.jsonl"; done
-if [ -f "$FORK/compare.py" ]; then
-  # shellcheck disable=SC2086
-  python3 "$FORK/compare.py" $files --base "$base" >"$OUT/compare-all.txt" 2>&1 || true
-  echo
-  echo "The comparison below is on the undisturbed records (every record: compare-all.txt)."
-  # shellcheck disable=SC2086
-  python3 "$FORK/compare.py" $compared --base "$base" 2>&1 | tee "$OUT/compare.txt" | tee -a "$LOG"
-else
-  echo "No fork checkout at ../LiteRT-LM: the comparison (compare.py) is skipped."
-fi
-if [ "${CHECKS:-on}" != off ]; then
-  # shellcheck disable=SC2086
-  python3 "$ROOT/scripts/cli-report.py" $files --out "$OUT/report.md" >>"$LOG" 2>&1 || true
-fi
+read_run || status=$?
 rm -rf "$OUT/apps"
 echo
 echo "Records, traces and reports: $OUT"

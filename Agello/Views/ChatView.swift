@@ -161,8 +161,13 @@ struct ChatView: View {
           Platform.keepScreenOn()
           Task { @MainActor in
             for _ in 0..<600 where appState.engineState != .ready { try? await Task.sleep(for: .milliseconds(500)) }
-            // What the driver's Think pill does: "1" on, "0" off.
-            if let think = environment["AGELLO_BENCH_THINK"] { appState.options.enableThinking = think == "1" }
+            // What the driver's Think pill does: "1" on, "0" off. Like the pill, it marks the
+            // options changed, so the send applies them first; the setting alone doesn't reach
+            // the conversation the launch loaded.
+            if let think = environment["AGELLO_BENCH_THINK"], appState.options.enableThinking != (think == "1") {
+              appState.options.enableThinking = think == "1"
+              appState.scheduleApplyOptions()
+            }
             // Heat slows decoding by up to a fifth (docs/HARNESS.md, H2): wait up to ten minutes
             // for the phone to cool, as the driver's BENCH_COOL does.
             if environment["AGELLO_BENCH_COOL"] == "1" {

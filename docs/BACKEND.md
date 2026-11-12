@@ -3,7 +3,8 @@
 A plan, from the maintainer's direction of 2026-11-10. Where it stands (2026-11-11, the Mac free
 again): B0 is done, B1 is written and passes on the Mac with its iPhone runs owed, the Mac's
 half of B4 is measured ("The ledger", below), B2 is done on a local branch (the runtime
-builds from one repository), and B3's pruning is done there too, with its speed run owed. B5
+builds from one repository), and B3's pruning is done there too: same replies on the Mac and the
+iPhone, and the same speed on the iPhone but for one long case heat decided (2026-11-12). B5
 and B6 aren't started. What's left to run, in
 order, is in [ROADMAP.md](ROADMAP.md#next), "When testing is available again".
 
@@ -274,11 +275,13 @@ What each change bought, from B4 on. Mac figures are the M6's, through the app's
 | --- | --- | --- | --- | --- | --- |
 | 2026-11-11 | B0: the probes (`agello-next` `3118b5d4`, build `d5ed12808214`), 3 rounds | 4 of 4 identical | −0.0 % | +1.2 % | Same output; no cost at the everyday levels. Not released. |
 | 2026-11-11 | B1: the app without the CPU backend and Google's-binary code (same runtime) | 4 of 4 identical to the app before it | inside the noise | inside the noise | Same output. The iPhone runs are owed. |
-| 2026-11-11 | B3: the pruning (`agello-one` `edb2c7db`, build `9128dc9c2055`) | 4 of 4 identical, four times | owed | owed | Same output. A five-round speed run was made that afternoon and doesn't count: another project was using the Mac, 27 of its 40 records were disturbed (the Mac swapped, the GPU was shared) and the run was stopped at the maintainer's request before its extra rounds. Its best runs read +0.8 % on decode and −0.4 % on prefill, with cases ±5 % apart, which says nothing either way. To run again on a quiet Mac. Not released. |
+| 2026-11-11, 12 | B3: the pruning (`agello-one` `edb2c7db`, build `9128dc9c2055`) | 4 of 4 identical on the Mac, four times; 18 of 18 on the iPhone | iPhone: +0.1 % (email) and +0.2 % (file-report) on undisturbed runs; explain set by heat | iPhone: +2.7 % (email, a 266-token prompt) and +0.2 % (file-report); first token −1.5 % and −0.2 % | Same output and, where the phone stayed cool, the same speed. On the iPhone (`scripts/phone-bench.sh`, 3 rounds, 2026-11-12) the host's side of a decode step is the same on both builds (9.5 and 9.6 ms); explain lost up to 25 % on the GPU's side to heat while the phone said nominal, so its −3.3 % is the order the builds ran in, not the build. The Mac's five-round run of 2026-11-11 doesn't count (another project had the Mac: 27 of 40 records disturbed; best runs +0.8 % decode, −0.4 % prefill). Explain is settled by the Mac's run on a quiet Mac, or a phone run with a longer rest. Not released. |
 | 2026-11-11 | B2: one repository (`agello-one` `e3c93749`, build `8998da09bac2`), 5 rounds | 4 of 4 identical | −0.1 % on the 21 undisturbed records of 40 (+0.9 % on all) | −1.9 %, on those as on all: inside prefill's band (2.9 % at most) | Same output and the same speed. Other work on the Mac disturbed the run (the GPU at 96 to 98 % before two records). Not released. |
 
 The iPhone's baseline is the bench's (`scripts/bench/baseline.json`); a new one is due once B1
-has passed there.
+has passed there. `scripts/phone-bench.sh` compares two runtime builds on the iPhone the way
+`cli-bench.sh` does on the Mac; its noise band needs four rounds or more (the shipped build against
+itself: `release again=release`).
 
 ## What it costs
 
