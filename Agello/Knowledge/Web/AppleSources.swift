@@ -8,43 +8,6 @@ import WeatherKit
 // Both run on the device through Apple's frameworks, with no key. The formatting is pure and
 // unit-tested; the lookups need the network (and WeatherKit its entitlement).
 
-// MARK: - Where the user is
-
-/// One location fix for "near me", asking permission (while in use) the first time. Nil when it's
-/// refused or takes longer than `timeout`, so a pending prompt never holds a search.
-enum CurrentLocation {
-  static func fetch(timeout: Duration = .seconds(10)) async -> CLLocation? {
-    let session = CLServiceSession(authorization: .whenInUse)
-    defer { session.invalidate() }
-    return await withTaskGroup(of: CLLocation?.self) { group in
-      group.addTask {
-        do {
-          for try await update in CLLocationUpdate.liveUpdates() {
-            if let location = update.location { return location }
-            if update.authorizationDenied || update.authorizationDeniedGlobally || update.authorizationRestricted {
-              return nil
-            }
-          }
-        } catch {}
-        return nil
-      }
-      group.addTask {
-        try? await Task.sleep(for: timeout)
-        return nil
-      }
-      let first = await group.next() ?? nil
-      group.cancelAll()
-      return first
-    }
-  }
-
-  /// Words that mean "where I am" in a planner's query ("gas station near me").
-  static func meansHere(_ place: String) -> Bool {
-    let words: Set = ["me", "here", "my location", "moi", "ici"]
-    return words.contains(place.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
-  }
-}
-
 // MARK: - Places (Apple Maps)
 
 enum PlaceSearch {
@@ -94,7 +57,16 @@ enum PlaceSearch {
     let request = MKLocalSearch.Request()
     request.resultTypes = [.pointOfInterest, .address]
     request.naturalLanguageQuery = query
-    return (try await MKLocalSearch(request: request).start().mapItems.prefix(limit).map(entry(from:)), nil)
+    let found = (try? await MKLocalSearch(request: request).start().mapItems) ?? []
+    if found.isEmpty, place == nil {
+      // "Walmart closing time November 12 2026" found nothing: the store, around the user.
+      let store = WeatherLookup.placeName(in: query).split(whereSeparator: \.isWhitespace)
+        .filter { !["closing", "close", "closes", "opening", "open", "hours", "time", "at", "what", "does"].contains($0.lowercased()) }
+        .joined(separator: " ")
+      if !store.isEmpty { return try await search("\(store) near me", limit: limit) }
+    }
+    if found.isEmpty { throw WebSearchError.noResults }
+    return (found.prefix(limit).map(entry(from:)), nil)
   }
 
   @MainActor
@@ -222,8 +194,13 @@ enum WeatherLookup {
       "weather", "forecast", "temperature", "today", "tomorrow", "tonight", "this", "week", "weekend",
       "rain", "snow", "will", "it", "météo", "prévisions", "demain", "aujourd'hui", "pluie", "neige", "ce",
     ]
+    let months = Set(Calendar(identifier: .gregorian).monthSymbols.map { $0.lowercased() })
     return query.split(whereSeparator: \.isWhitespace)
-      .filter { !noise.contains($0.lowercased().trimmingCharacters(in: .punctuationCharacters)) }
+      .filter { word in
+        let plain = word.lowercased().trimmingCharacters(in: .punctuationCharacters)
+        // "Montreal weather forecast November 13 2026": the date isn't the place either.
+        return !noise.contains(plain) && !months.contains(plain) && Int(plain) == nil
+      }
       .joined(separator: " ").trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
   }
 
