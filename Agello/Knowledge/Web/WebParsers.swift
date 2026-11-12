@@ -77,17 +77,9 @@ enum SearchParsers {
     }
   }
 
-  // MARK: SearXNG, Brave, Tavily (user-configured)
+  // MARK: SearXNG (the user's own server)
 
   static func searxng(json: Data) -> [WebResult] {
-    results(json, path: ["results"], title: "title", url: "url", snippet: "content")
-  }
-
-  static func brave(json: Data) -> [WebResult] {
-    results(json, path: ["web", "results"], title: "title", url: "url", snippet: "description")
-  }
-
-  static func tavily(json: Data) -> [WebResult] {
     results(json, path: ["results"], title: "title", url: "url", snippet: "content")
   }
 

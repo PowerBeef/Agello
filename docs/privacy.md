@@ -20,7 +20,6 @@ store or share any of your data. There are no accounts, analytics, advertising o
 - **Camera**: pictures and document scans are processed on the device.
 - **Memories** Agello saves about you (you can review and delete them in Settings → Memory), your
   personalization, and your settings.
-- **Search API keys** you enter (Brave, Tavily) are kept in the iPhone's Keychain.
 - **Spotlight**: chat titles and short snippets are added to the iPhone's on-device search index.
   You can turn this off in Settings, which clears them.
 - **Diagnostics**: iOS gives Agello its crash and performance reports, and Agello keeps a log of
@@ -39,7 +38,7 @@ Agello connects to other services only for the following, and only when you use 
   receives a standard download request, including your IP address.
 - **Web search.** When you turn on Search for a message, or allow automatic search in Settings,
   Agello sends search queries to the search service you choose: DuckDuckGo (the default),
-  Wikipedia, Brave Search or Tavily (with your own API key), or a SearXNG server you set up. The
+  Wikipedia, or a SearXNG server you set up. The
   queries are short phrases the on-device model writes from your question and the last few
   messages. Agello then downloads the top result pages from their websites to read them. Those
   services and websites receive the queries or page requests and your IP address. Your chats,

@@ -28,7 +28,6 @@ enum AppReset {
     }
     // Shared with the installed app; unit tests leave them alone.
     guard systemStores else { return }
-    for provider in [SearchProvider.brave, .tavily] { SearchKeys.setKey(nil, for: provider) }
     CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [SpotlightIndex.domain])
   }
 }

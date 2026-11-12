@@ -253,7 +253,7 @@ final class WebResearch {
     firstIndex: Int = 1, progress: @MainActor (String) -> Void
   ) async throws -> Findings {
     // 1. Search, every query at once (each through the provider chain), in query order.
-    let chain = settings.chain { SearchKeys.key(for: $0) != nil }
+    let chain = settings.chain()
     progress(String(localized: "Searching the web for “\(queries.first ?? question)”…"))
     let client = self.client
     var outcomes: [Int: (results: [WebResult], provider: SearchProvider?, error: Error?)] = [:]

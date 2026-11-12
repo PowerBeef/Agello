@@ -31,7 +31,7 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | --- | --- |
 | **Personalization** | Name · about you · how to respond · response style (Default, Concise, Detailed, Friendly, Professional). Added to the system prompt. |
 | **Memory** | On or off (off by default) · review, edit, add, or delete memories · delete all. A reply that saved a memory says so. |
-| **Web search** | Allow web search · search automatically (off by default) · provider: DuckDuckGo, Wikipedia, SearXNG (your instance), Brave or Tavily (your API key, kept in the Keychain) |
+| **Web search** | Allow web search · search automatically (off by default) · provider: DuckDuckGo, Wikipedia, SearXNG (your instance) |
 | **Spotlight** | Show chats in system search (on by default) |
 | **Models** | Download, pause, resume, or delete Gemma 4 E4B and EmbeddingGemma |
 | **On-device tools** | Turn the tools (date and time, calculator) on or off |
@@ -78,7 +78,7 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 - Up to 60 pages per file are read with text recognition; the 25 most recent memories are used in chats.
 - Search by meaning needs at least three chats; with fewer, search matches words only.
 - Web pages are read without running JavaScript, so pages that build their content with scripts contribute only their search snippet.
-- DuckDuckGo results come from its HTML page (an unofficial interface); if it asks for a bot check, searches fall back to Wikipedia, or use your own SearXNG, Brave, or Tavily.
+- DuckDuckGo results come from its HTML page (an unofficial interface); if it asks for a bot check, searches fall back to Wikipedia, or use your own SearXNG.
 - Only long document summaries keep running when you leave the app, and only on iPhones that support background GPU use (the iPhone 17 Pro on iOS 27 doesn't: there the summary stops with a notice, like any other reply).
 - Something shared to Agello is answered in a new chat the next time the app opens, not inside the share sheet.
 - Agello needs an iPhone with 12 GB of memory (iPhone 17 Pro and Pro Max, iPhone Air, or later). On an iPhone with less it opens on a screen that says so.

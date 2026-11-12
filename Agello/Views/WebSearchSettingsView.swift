@@ -1,11 +1,8 @@
 import SwiftUI
 
-/// Web search: on/off, automatic mode, provider, and the user's own keys.
+/// Web search: on/off, automatic mode, provider.
 struct WebSearchSettingsView: View {
   @Environment(AppState.self) private var appState
-  @State private var braveKey = ""
-  @State private var tavilyKey = ""
-  @State private var loaded = false
 
   var body: some View {
     @Bindable var appState = appState
@@ -30,19 +27,10 @@ struct WebSearchSettingsView: View {
           }
         }
         .accessibilityIdentifier("web.provider")
-        switch appState.webSettings.provider {
-        case .searxng:
+        if appState.webSettings.provider == .searxng {
           TextField("https://searx.example.org", text: $appState.webSettings.searxngURL)
             .accessibilityLabel("SearXNG server URL")
             .urlField()
-        case .brave:
-          SecureField("Brave Search API key", text: $braveKey)
-            .onSubmit { SearchKeys.setKey(braveKey, for: .brave) }
-        case .tavily:
-          SecureField("Tavily API key", text: $tavilyKey)
-            .onSubmit { SearchKeys.setKey(tavilyKey, for: .tavily) }
-        case .duckDuckGo, .wikipedia:
-          EmptyView()
         }
       } header: {
         Text("Provider")
@@ -54,16 +42,6 @@ struct WebSearchSettingsView: View {
     }
     .themedList(Theme.Brand.teal)
     .navigationTitle("Web search")
-    .onAppear {
-      guard !loaded else { return }
-      braveKey = SearchKeys.key(for: .brave) ?? ""
-      tavilyKey = SearchKeys.key(for: .tavily) ?? ""
-      loaded = true
-    }
-    .onDisappear {
-      SearchKeys.setKey(braveKey, for: .brave)
-      SearchKeys.setKey(tavilyKey, for: .tavily)
-    }
   }
 
   private var providerFooter: String {
@@ -74,8 +52,6 @@ struct WebSearchSettingsView: View {
       return String(localized: "Searches Wikipedia only (DuckDuckGo if it finds nothing).")
     case .searxng:
       return String(localized: "Your SearXNG instance must allow the JSON format. DuckDuckGo and Wikipedia are fallbacks.")
-    case .brave, .tavily:
-      return String(localized: "Uses your own API key, stored in this \(Platform.deviceName)'s Keychain. DuckDuckGo and Wikipedia are fallbacks.")
     }
   }
 }

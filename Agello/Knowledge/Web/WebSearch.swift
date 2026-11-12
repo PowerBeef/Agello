@@ -1,25 +1,22 @@
 import Foundation
 import NaturalLanguage
-import Security
 import Synchronization
 
 // MARK: - Settings
 
+/// Where searches go. Nothing here needs an API key, the user's or ours (the maintainer's
+/// choice, 2026-11-12): Brave Search and Tavily, which took the user's own key, are gone, and a
+/// saved choice of either decodes as the default.
 enum SearchProvider: String, Codable, CaseIterable, Sendable {
-  case duckDuckGo, wikipedia, searxng, brave, tavily
+  case duckDuckGo, wikipedia, searxng
 
   var displayName: String {
     switch self {
     case .duckDuckGo: return "DuckDuckGo"
     case .wikipedia: return "Wikipedia"
     case .searxng: return "SearXNG"
-    case .brave: return "Brave Search"
-    case .tavily: return "Tavily"
     }
   }
-
-  /// Providers that need the user's own API key (kept in the Keychain).
-  var needsKey: Bool { self == .brave || self == .tavily }
 }
 
 /// Web access settings. Search runs only when the user asks (the composer's
@@ -45,55 +42,16 @@ struct WebSearchSettings: Codable, Equatable, Sendable {
 
   /// Providers to try, in order: the chosen one, then DuckDuckGo, then
   /// Wikipedia (official API, rarely blocked).
-  func chain(hasKey: (SearchProvider) -> Bool) -> [SearchProvider] {
+  func chain() -> [SearchProvider] {
     var chain: [SearchProvider] = []
-    switch provider {
-    case .searxng where URL(string: searxngURL)?.scheme?.hasPrefix("http") == true:
+    if provider == .searxng, URL(string: searxngURL)?.scheme?.hasPrefix("http") == true {
       chain.append(.searxng)
-    case .brave, .tavily:
-      if hasKey(provider) { chain.append(provider) }
-    default:
-      break
     }
     for fallback in [SearchProvider.duckDuckGo, .wikipedia] where !chain.contains(fallback) {
       chain.append(fallback)
     }
     if provider == .wikipedia { chain = [.wikipedia, .duckDuckGo] }
     return chain
-  }
-}
-
-/// API keys for Brave / Tavily, stored in the Keychain (this device only).
-enum SearchKeys {
-  private static let service = "com.patricedery.agello.search"
-
-  static func key(for provider: SearchProvider) -> String? {
-    var result: AnyObject?
-    let query: [String: Any] = [
-      kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-      kSecAttrAccount as String: provider.rawValue, kSecReturnData as String: true,
-      kSecUseDataProtectionKeychain as String: true,
-    ]
-    guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-      let data = result as? Data
-    else { return nil }
-    let key = String(decoding: data, as: UTF8.self)
-    return key.isEmpty ? nil : key
-  }
-
-  static func setKey(_ key: String?, for provider: SearchProvider) {
-    // The data-protection keychain: iOS's only one, and on the Mac the one that keeps
-    // accessibility classes and no login-keychain prompts (it has no effect on iOS).
-    let base: [String: Any] = [
-      kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-      kSecAttrAccount as String: provider.rawValue, kSecUseDataProtectionKeychain as String: true,
-    ]
-    SecItemDelete(base as CFDictionary)
-    guard let key = key?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else { return }
-    var item = base
-    item[kSecValueData as String] = Data(key.utf8)
-    item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-    SecItemAdd(item as CFDictionary, nil)
   }
 }
 
@@ -158,20 +116,6 @@ struct WebClient: Sendable {
       components.path = (components.path.hasSuffix("/") ? components.path : components.path + "/") + "search"
       components.queryItems = [.init(name: "q", value: query), .init(name: "format", value: "json")]
       return SearchParsers.searxng(json: try await get(components.url!, agent: Self.appAgent))
-    case .brave:
-      guard let key = SearchKeys.key(for: .brave) else { return [] }
-      var components = URLComponents(string: "https://api.search.brave.com/res/v1/web/search")!
-      components.queryItems = [.init(name: "q", value: query), .init(name: "count", value: "8")]
-      return SearchParsers.brave(
-        json: try await get(components.url!, agent: Self.appAgent, headers: ["X-Subscription-Token": key]))
-    case .tavily:
-      guard let key = SearchKeys.key(for: .tavily) else { return [] }
-      var request = URLRequest(url: URL(string: "https://api.tavily.com/search")!)
-      request.httpMethod = "POST"
-      request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-      request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-      request.httpBody = try JSONSerialization.data(withJSONObject: ["query": query, "max_results": 8])
-      return SearchParsers.tavily(json: try await send(request))
     }
   }
 

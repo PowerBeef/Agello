@@ -46,26 +46,31 @@ final class WebTests: XCTestCase {
     XCTAssertFalse(results.first?.snippet.contains("<span") ?? true)
   }
 
-  func testKeyedAndSelfHostedProviders() {
-    let searx = Data(#"{"results":[{"title":"A &amp; B","url":"https://a.example","content":"x"}]}"#.utf8)
-    XCTAssertEqual(SearchParsers.searxng(json: searx).first?.title, "A & B")
-    let brave = Data(#"{"web":{"results":[{"title":"T","url":"https://b.example","description":"<b>d</b>"}]}}"#.utf8)
-    XCTAssertEqual(SearchParsers.brave(json: brave).first?.snippet, "d")
-    let tavily = Data(#"{"results":[{"title":"T","url":"ftp://bad","content":"c"},{"title":"U","url":"https://c.example","content":"c"}]}"#.utf8)
-    XCTAssertEqual(SearchParsers.tavily(json: tavily).map(\.title), ["U"])
+  func testSelfHostedProvider() {
+    let searx = Data(#"{"results":[{"title":"A &amp; B","url":"https://a.example","content":"x"},{"title":"C","url":"ftp://bad","content":"y"}]}"#.utf8)
+    XCTAssertEqual(SearchParsers.searxng(json: searx).map(\.title), ["A & B"])
   }
 
   func testProviderChain() {
     var settings = WebSearchSettings()
-    XCTAssertEqual(settings.chain { _ in false }, [.duckDuckGo, .wikipedia])
-    settings.provider = .brave
-    XCTAssertEqual(settings.chain { _ in false }, [.duckDuckGo, .wikipedia], "No key: skipped")
-    XCTAssertEqual(settings.chain { _ in true }, [.brave, .duckDuckGo, .wikipedia])
+    XCTAssertEqual(settings.chain(), [.duckDuckGo, .wikipedia])
     settings.provider = .searxng
+    XCTAssertEqual(settings.chain(), [.duckDuckGo, .wikipedia], "No server: skipped")
     settings.searxngURL = "https://searx.example.org"
-    XCTAssertEqual(settings.chain { _ in false }, [.searxng, .duckDuckGo, .wikipedia])
+    XCTAssertEqual(settings.chain(), [.searxng, .duckDuckGo, .wikipedia])
     settings.provider = .wikipedia
-    XCTAssertEqual(settings.chain { _ in false }, [.wikipedia, .duckDuckGo])
+    XCTAssertEqual(settings.chain(), [.wikipedia, .duckDuckGo])
+  }
+
+  /// Brave Search and Tavily took the user's own API key until 2026-11-12: a saved choice of
+  /// either reads as the default, and the rest of the settings stay.
+  func testSavedKeyedProviderFallsBackToTheDefault() throws {
+    for removed in ["brave", "tavily"] {
+      let saved = Data(#"{"allowed":true,"automatic":true,"provider":"\#(removed)","searxngURL":""}"#.utf8)
+      let settings = try JSONDecoder().decode(WebSearchSettings.self, from: saved)
+      XCTAssertEqual(settings.provider, .duckDuckGo)
+      XCTAssertTrue(settings.automatic)
+    }
   }
 
   // MARK: Pages
