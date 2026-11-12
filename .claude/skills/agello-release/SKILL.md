@@ -71,8 +71,11 @@ uploading, submitting) needs the user's go-ahead first.
    core pitch: on-device, no account, no cloud. Mention the 3.7 GB model
    download.
 11. **Review** (`asc:asc-submission-health`, `asc:asc-release-flow`).
-    - Before submitting, review DuckDuckGo's terms for scraping its HTML
-      results page; keep DuckDuckGo's attribution.
+    - Web search must be compliant first (App Review 5.2.2: the app must be
+      "specifically permitted" under each service's terms). DuckDuckGo's HTML
+      results page isn't: it has no permission to show Apple, and its
+      Acceptable Use Policy forbids displaying the service inside another
+      (2026-11-12, ROADMAP "Current status"). Wikipedia's API is fine.
     - Explain the large model download and the memory entitlements in the
       review notes.
 12. **After release** (`asc:asc-crash-triage`). TestFlight crashes may come from
