@@ -32,4 +32,11 @@ enum Platform {
   /// Reduce Motion, for animations started outside a view (views read the environment).
   @MainActor
   static var reduceMotion: Bool { UIAccessibility.isReduceMotionEnabled }
+
+  /// Keeps the screen from locking while the app is in front: for the driverless bench, where
+  /// no touch keeps the phone awake between cases.
+  @MainActor
+  static func keepScreenOn() {
+    UIApplication.shared.isIdleTimerDisabled = true
+  }
 }

@@ -256,6 +256,48 @@ phone; iPhone Mirroring is the user's own tool, for looking only, and the instru
 it and a harness run exclude each other (the preflight refuses a run while it's open). What was
 learned about driving the mirror is kept in one paragraph of the skill.
 
+## Runtime builds on the iPhone
+
+Built on 2026-11-12, when the Mac was too busy to measure on. `scripts/phone-bench.sh` is
+`scripts/cli-bench.sh` on the phone: it compares builds of our runtime, and the Mac only builds
+and installs.
+
+```sh
+scripts/phone-bench.sh release next                    # explain, email, file-report; 3 rounds
+ROUNDS=5 scripts/phone-bench.sh release next -- explain email
+scripts/phone-bench.sh release again=release           # the shipped build against itself: the noise
+```
+
+- **Two builds, then installs.** The app is built once per runtime (Release, at background
+  priority unless `BUILD_PRIORITY=normal`), kept, and installed in turns: the builds alternate
+  case by case within a round, the order reversed every other round, so each round costs one
+  reinstall. The first launch after an install is a warm-up (the engine writes that build's
+  cache and deletes the other's) and isn't measured. `Vendor/LiteRT-LM` is put back as committed
+  after the builds, and on any exit.
+- **No driver.** Each case is a launch with its prompt as the draft (`AGELLO_BENCH_DRAFT`,
+  `AGELLO_BENCH_AUTOSEND`): the app sets Think as the case says (`AGELLO_BENCH_THINK`), waits
+  for the phone to cool to nominal (`AGELLO_BENCH_COOL`, up to ten minutes), keeps the screen
+  on, sends and traces the reply. Memories are off for these launches (`-memoryEnabled NO`, the
+  launch's own setting), so the system prompt doesn't change between cases. No accessibility
+  session costs the 8 % H3 measured, and the phone needs no UI automation.
+- **Cases without Search** (the live web answers differently each time), first message only;
+  the default is the Mac's B3 set.
+- **The same reading as the Mac's.** `scripts/phone-bench.py` turns each trace into the record
+  `agello bench` writes (the engine's telemetry over the reply, the runtime's build id), so
+  `scripts/cli-load.py --device iPhone`, the fork's `compare.py` and `scripts/cli-report.py` read
+  them unchanged: which runs were disturbed and where (heat stretches the GPU's side), each
+  build's best run, the comparison on undisturbed runs, the answer checks. Every record says the
+  phone's thermal state at the send and at its hottest, and which runtime ran: an arm that ran
+  two builds is an error, not a result. Rounds are added (`EXTRA_ROUNDS`, default 2) while a
+  case lacks undisturbed runs.
+- **What it needs:** the phone unlocked for the whole run with Auto-Lock set to Never (an
+  install leaves it on the home screen), iPhone Mirroring closed, a Focus on, best plugged in.
+  It takes the harness lock and waits up to ten minutes for an unlock before stopping.
+- **Checked so far without the phone:** the reading, on made-up traces (`--self-test`, run by
+  `scripts/cli-check.sh`) and on the bench's real traces of 2026-11-10, read through
+  `cli-load.py`, `compare.py` and `cli-report.py`; the app's part compiles. Its first run is
+  B3's speed run (ROADMAP, Next).
+
 ## Decisions for the maintainer
 
 1. **Long prompts.** Typing 2,900 characters through XCUITest is slow and a newline may send

@@ -4,6 +4,7 @@
 Usage:
   scripts/cli-load.py RUN/release.jsonl RUN/next.jsonl [--clean-dir RUN/clean] [--min-clean 3]
                       [--base release] [--tolerance 3] [--prefill-tolerance 8] [--out RUN/load.txt]
+                      [--device iPhone]
 
 A build gives the same reply to the same case every time (greedy decoding), so its runs of a
 case do the same work: the same decode steps, the same prompt. Load only ever makes that work
@@ -19,6 +20,9 @@ scripted engine) are judged on their speeds alone.
 
 It also prints each build's best run of each case, against the base build's (--base, default
 the first file's): the speed on a quiet Mac, which holds even when most runs were disturbed.
+
+--device iPhone reads an iPhone run (scripts/phone-bench.sh) the same way, in the phone's words:
+there, heat is what stretches the GPU's side.
 
 --clean-dir writes each file again without its disturbed records, for the comparison.
 --self-test checks the reading on made-up records (scripts/cli-check.sh runs it).
@@ -127,7 +131,9 @@ def main():
     parser.add_argument("--clean-dir", help="write each file here without its disturbed records")
     parser.add_argument("--min-clean", type=int, default=0, help="exit 3 when a build has fewer undisturbed runs of a case")
     parser.add_argument("--out", help="also write the report here")
+    parser.add_argument("--device", default="Mac", help="where the records were made (Mac, the default, or iPhone)")
     args = parser.parse_args()
+    on_mac = args.device == "Mac"
 
     files = {path: load(path) for path in args.files}
     groups = defaultdict(list)  # (build, case) -> [(path, index, record, costs)]
@@ -202,7 +208,7 @@ def main():
     if causes:
         names = {
             "host": "the host's side of a step (a busy CPU, or the runtime's threads on efficiency cores)",
-            "GPU": "the GPU's side (something else on the GPU)",
+            "GPU": "the GPU's side (something else on the GPU)" if on_mac else "the GPU's side (heat, or something else on the GPU)",
             "host and GPU": "both sides", "decode": "decode (no span timings to say where)",
             "prefill": "prefill only",
         }
@@ -214,9 +220,11 @@ def main():
         worst = max(rates, key=lambda build: rates[build])
         lines.append(
             f"  ! {worst} was disturbed much more often than the others ({100 * rates[worst]:.0f} % of its runs). "
-            "The builds took turns, so if that repeats it's the build, not the Mac: read its slow runs.")
+            f"The builds took turns, so if that repeats it's the build, not the {args.device}: read its slow runs.")
     if total and total_clean / total < 0.5:
-        lines.append("  ! More than half the runs were disturbed: the Mac wasn't quiet. Run it again (scripts/mac-ready.sh).")
+        lines.append(
+            "  ! More than half the runs were disturbed: the Mac wasn't quiet. Run it again (scripts/mac-ready.sh)." if on_mac
+            else f"  ! More than half the runs were disturbed: the {args.device} was warm or busy. Run it again cool, plugged in, nothing else open.")
     for build, case, clean in short:
         lines.append(f"  ! {build} has {clean} undisturbed run(s) of {case}: fewer than {args.min_clean}.")
 
@@ -226,7 +234,8 @@ def main():
     cases = list(dict.fromkeys(case for _, case in groups))
     metrics = [("decode tok/s", "decodeTPS", max), ("prefill tok/s", "prefillTPS", max), ("first token s", "ttft", min)]
     lines.append("")
-    lines.append(f"== On a quiet Mac: each build's best run of each case (change against {base})")
+    quiet = "a quiet Mac" if on_mac else f"a cool {args.device}"
+    lines.append(f"== On {quiet}: each build's best run of each case (change against {base})")
     for title, key, pick in metrics:
         lines.append(f"  {title:<14} " + " ".join(f"{build:>22}" for build in builds))
         changes = defaultdict(list)

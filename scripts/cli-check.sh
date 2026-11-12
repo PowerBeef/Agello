@@ -15,6 +15,11 @@ if ! check="$(python3 "$ROOT/scripts/cli-load.py" --self-test 2>&1)"; then
   echo "- Mac command line: the load reading is BROKEN. $(echo "$check" | head -1)"
   exit 1
 fi
+# The reading of an iPhone comparison's traces (scripts/phone-bench.py), on made-up traces.
+if ! check="$(python3 "$ROOT/scripts/phone-bench.py" --self-test 2>&1)"; then
+  echo "- Mac command line: the iPhone comparison's reading is BROKEN. $(echo "$check" | head -1)"
+  exit 1
+fi
 if [ ! -d "$SCRATCH" ] && [ "${1:-}" != --build ]; then
   echo "- Mac command line: not built in this checkout (scripts/cli-check.sh --build)."
   exit 0

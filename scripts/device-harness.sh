@@ -118,34 +118,9 @@ write_lock_info() {
 # Keep this Mac awake until the script exits: an iPhone run needs it too.
 caffeinate -dims -w $$ &
 
-# Before an iPhone run builds anything: the one thing to fix, if there is one. A locked phone
-# otherwise stalls the run at "Unlock iPhone to Continue" after the whole build.
-preflight() {
-  if ! xcrun devicectl list devices 2>/dev/null | grep "$DEVICE_ID" | grep -q "available\|connected"; then
-    echo "Preflight: the iPhone ($DEVICE_ID) isn't reachable. Connect it, then run again." >&2
-    return 4
-  fi
-  if xcrun devicectl device info lockState --device "$DEVICE_ID" 2>/dev/null | grep -q "passcodeRequired: true"; then
-    if pgrep -f ScreenContinuity >/dev/null 2>&1; then
-      echo "Preflight: the iPhone is locked and iPhone Mirroring is open, which keeps it locked. Close iPhone Mirroring and unlock the iPhone, then run again." >&2
-    else
-      echo "Preflight: the iPhone is locked. Unlock it (and keep it unlocked for the run), then run again." >&2
-    fi
-    return 4
-  fi
-  if pgrep -f ScreenContinuity >/dev/null 2>&1; then
-    echo "Preflight: iPhone Mirroring is open. It connects when the phone locks and would stop the run: close it." >&2
-    return 4
-  fi
-  free_gb="$(df -g / | awk 'NR == 2 {print $4}')"
-  if [ "${free_gb:-99}" -lt 10 ]; then
-    echo "Preflight: only $free_gb GB free on this Mac; a build needs room. Run scripts/storage.sh." >&2
-    return 4
-  fi
-  return 0
-}
+# Before an iPhone run builds anything: the one thing to fix, if there is one (scripts/lib/device.sh).
 if [ "$PLATFORM" = iphone ] && [ "${PREFLIGHT:-on}" != off ]; then
-  preflight || exit 4
+  device_preflight || exit 4
 fi
 
 BUNDLE_ID="com.patricedery.agello"

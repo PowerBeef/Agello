@@ -17,8 +17,10 @@ fast as the hardware allows, at the quality the model has today.
   more, and neither is built, cached or kept on this Mac as a reference. Both are behind ours in
   speed at the same quality, and that question is closed.
 - **The harness judges performance.** A change is measured between two builds of our runtime:
-  `scripts/cli-bench.sh` on this Mac ([CLI.md](CLI.md)) for the lead, the bench on the iPhone
-  ([HARNESS.md](HARNESS.md)) for the confirmation.
+  `scripts/cli-bench.sh` on this Mac ([CLI.md](CLI.md)) for the lead, and on the iPhone
+  `scripts/phone-bench.sh` (the same comparison, the builds installed in turns) with the bench
+  ([HARNESS.md](HARNESS.md)) for the confirmation. When the Mac is busy, `phone-bench.sh` can
+  lead: the Mac only builds for it.
 - **Claude judges output quality, by reading.** Replies that are identical token for token need
   no judging. Where a change moves them, Claude reads both sides and gives the verdict: the same,
   better or worse. The answer checks (does the code run, did the reply end by itself) are
@@ -222,8 +224,11 @@ again on the baseline, since these figures come from a busy Mac.
    `scripts/cli-replies.py` shows where each parts, and Claude reads both sides, with the answer
    checks' results beside them. The verdict and its reasons go in the ledger. "Worse" stops the
    change.
-4. **Confirmation, on the iPhone:** the bench against its baseline, and the suites the change
-   touches. Mac numbers are a lead: the phone's speed, heat and memory decide.
+4. **Confirmation, on the iPhone:** `scripts/phone-bench.sh release next` (the same reading as
+   step 2, with heat where the Mac has load: [HARNESS.md](HARNESS.md), "Runtime builds on the
+   iPhone"), the bench against its baseline, and the suites the change touches. Mac numbers are
+   a lead: the phone's speed, heat and memory decide. With the Mac busy, the phone's comparison
+   can come first: the Mac only builds the two apps.
 
 ## The ledger
 

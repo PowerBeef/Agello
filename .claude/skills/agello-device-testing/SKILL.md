@@ -119,7 +119,7 @@ A full run is 13 turns and about 20 minutes; the phone warms up, so compare spee
   `BENCH_ACCEPT=1` makes a run the new baseline: only when the user accepts its results.
 - `BENCH_COOL=1` waits for the phone to cool before each case, for speeds.
 - `scripts/bench-direct.sh CASE` sends one case with no driver attached (the installed Release
-  build launches with the prompt and sends it itself). Use it for speed: XCUITest's
+  build launches with the prompt, sets the case's Think and sends it itself). Use it for speed: XCUITest's
   accessibility session costs about 8 % of decode speed and causes late frames (2026-11-10).
 - The phone reaches thermal state "fair" within three cases and decodes up to a fifth slower:
   the report's "Engine over time" line shows the state and the decode rate by thirds. Let the
@@ -133,6 +133,36 @@ A full run is 13 turns and about 20 minutes; the phone warms up, so compare spee
 - A device-test run that is killed leaves its options in the app's settings until the next
   device-test run restores them (`harnessSettingsSnapshot`). Don't kill one mid-test if a wait
   will do.
+
+## Runtime builds on the iPhone
+
+`scripts/phone-bench.sh` compares builds of our runtime on the phone, as `cli-bench.sh` does on
+this Mac ([HARNESS.md](../../../docs/HARNESS.md), "Runtime builds on the iPhone"). Use it to
+confirm a Mac result, or in place of the Mac's run when the Mac is busy: the Mac only builds.
+
+```sh
+scripts/phone-bench.sh release next                    # explain, email, file-report; 3 rounds
+ROUNDS=5 scripts/phone-bench.sh release next -- explain email
+scripts/phone-bench.sh release again=release           # the noise: the shipped build against itself
+```
+
+- Start it in the background and wait for the notification: about an hour to an hour and a
+  half for the default. Before it, ask the user for Auto-Lock set to Never, a Focus on, iPhone
+  Mirroring closed, and the phone plugged in.
+- It builds the app once per runtime (Release; background priority unless
+  `BUILD_PRIORITY=normal`), then installs the builds in turns, a warm-up after each install. It
+  vendors each runtime into `Vendor/LiteRT-LM` to build it and puts it back, so it refuses to
+  start when `Vendor/LiteRT-LM` isn't as committed. Leave the Agello* folders alone until both
+  builds are done (the edit guard holds them).
+- Each case is a driverless launch: the app sets the case's Think, waits for the phone to cool
+  to nominal (`COOL=off` sends at once), keeps the screen on, and runs with memories off.
+  Cases with Search are refused; only a case's first message is sent.
+- Results in `build/phone/runs/<time>/`: read `records.txt` first (each launch, the runtime it
+  ran, the heat at the send and at its hottest), then `load.txt` (which runs were disturbed,
+  each build's best run), `compare.txt` (undisturbed records), `replies.txt` and `replies/`.
+  A build that ran two runtimes is an install gone wrong, and the run says so.
+- It holds the harness lock for the whole run, so `bench-direct.sh`, `device-run.sh logs` and
+  harness suites wait for it.
 
 ## On this Mac
 
@@ -413,6 +443,8 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
 | `--uitest-sample-file`, `--uitest-sample-report` | Attach sample documents generated in code (`ChatView`) |
 | `--trace` | The app writes a trace of each reply to `Documents/traces/` (`ReplyTrace`); the bench passes it |
 | `AGELLO_BENCH_DRAFT`, `AGELLO_BENCH_AUTOSEND=1` (env) | Open on a new chat with this draft; with autosend, send it once the model is ready (the bench and `bench-direct.sh`) |
+| `AGELLO_BENCH_THINK` (1 or 0), `AGELLO_BENCH_COOL=1` (env, with autosend) | Set Think as the driver's pill would; wait up to ten minutes for the thermal state to be nominal before sending (`phone-bench.sh`, `bench-direct.sh`). Autosend also keeps the screen on |
+| `-memoryEnabled NO` | The argument domain's value for that launch: no memories in the system prompt, the saved setting untouched (`phone-bench.sh`, `bench-direct.sh`) |
 | `AGELLO_SIMULATE_MEMORY_GB` (env) | Stands in for the phone's memory at the hardware-floor check (`DeviceFloorUITests`) |
 | `TEST_RUNNER_HARNESS_THINKING`, `_MEMORY`, `_CALIBRATE`, `_PROBES`, `_SCREENSHOTS`, `_BENCH` | Enable the opt-in suites (the script sets them) |
 | `AGELLO_TELEMETRY=<0-4>` (to the script) | Engine telemetry level on our LiteRT-LM build, passed as `TEST_RUNNER_AGELLO_TELEMETRY` (default 2: span timings; 4 times each GPU kernel and slows the run) |

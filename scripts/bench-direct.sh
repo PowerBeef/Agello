@@ -5,7 +5,8 @@
 # `scripts/device-harness.sh bench`, which also installs the Release build this needs.
 #
 # Usage: scripts/bench-direct.sh CASE_ID      (an id of AgelloUITests/BenchCases.swift)
-# The app keeps the settings it has (Think, its budget): the bench sets them, so run it first.
+# It sets the case's Think, as the driver does (AGELLO_BENCH_THINK). The app must be a Release
+# build: run the bench first, or scripts/phone-bench.sh, which installs one per runtime.
 # The traces land in build/device-harness/bench-direct/.
 # It relaunches the app, so it refuses (exit 3) while a harness run holds the iPhone.
 set -eu
@@ -22,34 +23,27 @@ OUT="$ROOT/build/device-harness/bench-direct"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
-environment="$(python3 - "$ROOT/AgelloUITests/BenchCases.swift" "$CASE" <<'PY'
-import json, re, sys
-source, case = open(sys.argv[1]).read(), sys.argv[2]
-match = re.search(r'BenchCase\(\s*id: "' + re.escape(case) + r'",\s*prompt: (?:Prompts\.(\w+)|"((?:[^"\\]|\\.)*)")', source)
-if not match:
-    sys.exit(f"No bench case {case}")
-if match.group(1):
-    literal = re.search(r'static let ' + match.group(1) + r' = #"""\n(.*?)\n\s*"""#', source, re.S).group(1)
-    lines = literal.split("\n")
-    indent = min(len(line) - len(line.lstrip()) for line in lines if line.strip())
-    prompt = "\n".join(line[indent:] for line in lines)
-else:
-    prompt = match.group(2)
-print(json.dumps({"AGELLO_BENCH_DRAFT": prompt, "AGELLO_BENCH_AUTOSEND": "1"}))
-PY
-)"
+# The case's prompt and Think, as scripts/phone-bench.sh sends them (no cooling: this measures
+# the phone as it is).
+spec="$(python3 "$ROOT/scripts/phone-bench.py" case "$ROOT/AgelloUITests/BenchCases.swift" "$CASE" --cool off)"
+environment="$(echo "$spec" | sed -n 1p)"
+arguments="$(echo "$spec" | sed -n 2p)"
 started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-count() {
+# A trace is named by its send time; the app keeps the last 40, so wait for a name, not a count.
+launched="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
+newest() {
   xcrun devicectl device info files --device "$DEVICE_ID" --domain-type appDataContainer \
-    --domain-identifier "$BUNDLE_ID" --subdirectory Documents/traces 2>/dev/null | grep -c '\.json' || true
+    --domain-identifier "$BUNDLE_ID" --subdirectory Documents/traces 2>/dev/null |
+    grep -oE '20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}Z-[0-9A-Fa-f-]+\.json' |
+    awk -v s="$launched" '$0 >= s' | head -1
 }
-before="$(count)"
 caffeinate -dims -w $$ &
+# shellcheck disable=SC2086 # the app's arguments are words
 xcrun devicectl device process launch --device "$DEVICE_ID" --terminate-existing \
-  --environment-variables "$environment" "$BUNDLE_ID" --trace >/dev/null
+  --environment-variables "$environment" "$BUNDLE_ID" -- $arguments >/dev/null
 echo "Sent $CASE with no driver; waiting for its trace…"
 waited=0
-while [ "$(count)" -le "$before" ] && [ "$waited" -lt 600 ]; do
+while [ -z "$(newest)" ] && [ "$waited" -lt 600 ]; do
   sleep 10
   waited=$((waited + 10))
 done
