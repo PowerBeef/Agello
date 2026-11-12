@@ -953,6 +953,8 @@ final class AppState {
 
   /// Web search before a reply (cancelled by Stop).
   @ObservationIgnored private var webTask: Task<WebOutcome, Never>?
+  /// The last Search message's plan: its topic and queries (device tests read it).
+  @ObservationIgnored private(set) var lastWebPlan: WebContext.Plan?
   /// Sources already attached to the reply before the automatic tool runs.
   @ObservationIgnored private var toolSourceOffset = 0
 
@@ -973,6 +975,7 @@ final class AppState {
       return output
     }
     let plan = output.map(WebContext.parsePlan) ?? WebContext.Plan(queries: [], isRequest: false)
+    lastWebPlan = plan
     if !plan.needsSearch { return .notNeeded }
     let queries = plan.queries.isEmpty ? [WebContext.directQuery(question, history: history)] : plan.queries
     if Task.isCancelled { return .cancelled }
@@ -980,7 +983,8 @@ final class AppState {
     do {
       let findings = try await webResearch.research(
         queries: queries, question: question,
-        rankingQueries: [question] + plan.queries, settings: webSettings,
+        rankingQueries: [question] + plan.queries, topic: plan.topic,
+        language: WebClient.wikipediaLanguage(for: question), settings: webSettings,
         budgetTokens: WebContext.budget(
           window: window, question: question, alongsideFileTokens: fileTokens, forRequest: plan.isRequest),
         firstIndex: firstIndex
@@ -999,16 +1003,17 @@ final class AppState {
 
   /// The automatic `web_search` tool's work (runs during a reply).
   private func installWebSearchTool() {
-    WebSearchTool.handler = { [weak self] query, maxTokens in
-      await self?.toolSearch(query, maxTokens: maxTokens) ?? "Web search is unavailable."
+    WebSearchTool.handler = { [weak self] query, topic, maxTokens in
+      await self?.toolSearch(query, topic: topic, maxTokens: maxTokens) ?? "Web search is unavailable."
     }
   }
 
-  private func toolSearch(_ query: String, maxTokens: Int) async -> String {
+  private func toolSearch(_ query: String, topic: SearchTopic, maxTokens: Int) async -> String {
     guard webSettings.allowed else { return "Web search is turned off." }
     do {
       let findings = try await webResearch.research(
-        queries: [query], question: query, settings: webSettings,
+        queries: [query], question: query, topic: topic,
+        language: WebClient.wikipediaLanguage(for: query), settings: webSettings,
         // Room for the sources block's own lines.
         budgetTokens: max(200, maxTokens - 40),
         firstIndex: toolSourceOffset + WebSourcesRecorder.nextIndex

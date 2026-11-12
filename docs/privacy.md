@@ -37,10 +37,18 @@ Agello connects to other services only for the following, and only when you use 
 - **Model downloads.** The models are downloaded from Hugging Face (huggingface.co). Hugging Face
   receives a standard download request, including your IP address.
 - **Web search.** When you turn on Search for a message, or allow automatic search in Settings,
-  Agello sends search queries to the search service you choose: DuckDuckGo (the default),
-  Wikipedia, or a SearXNG server you set up. The
-  queries are short phrases the on-device model writes from your question and the last few
-  messages. Agello then downloads the top result pages from their websites to read them. Those
+  Agello looks your message up in the sources that fit it: Wikipedia and its sister projects
+  (Wikivoyage, Wiktionary, Wikiquote) and Wikidata; Apple Maps for places and Apple Weather for
+  weather; the European Central Bank's exchange rates; Crossref and PubMed for scientific and
+  medical papers; or a SearXNG server you set up. The queries are short phrases the on-device
+  model writes from your question and the last few messages; for weather, it's a place name, and
+  Apple Weather receives that place's coordinates.
+- **Your location.** Only when you ask about places or weather near you ("the nearest gas
+  station"), Agello asks for your location (while you use the app) and takes one reading. It's
+  used on the iPhone to search Apple Maps or Apple Weather around you, so Apple receives that area;
+  Agello doesn't store it or send it anywhere else. You can turn it off in Settings → Agello →
+  Location, and ask about a named place instead. Agello then downloads the pages it found to
+  read them, identifying itself as Agello. Those
   services and websites receive the queries or page requests and your IP address. Your chats,
   files and memories are not sent. You can turn web access off entirely in Settings → Web search.
 - **Shared links.** When you share a web page to Agello and web access is on, Agello downloads

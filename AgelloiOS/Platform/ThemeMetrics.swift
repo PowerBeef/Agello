@@ -12,5 +12,7 @@ extension Theme {
     /// Inline glyph buttons (message actions); the hit area stays 44.
     static let glyph: CGFloat = 32
     static let hero: CGFloat = 64
+    /// A data provider's mark under a reply that used its data (Apple Weather's).
+    static let attributionMark: CGFloat = 14
   }
 }

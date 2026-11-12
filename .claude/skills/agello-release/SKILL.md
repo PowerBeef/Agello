@@ -71,11 +71,10 @@ uploading, submitting) needs the user's go-ahead first.
    core pitch: on-device, no account, no cloud. Mention the 3.7 GB model
    download.
 11. **Review** (`asc:asc-submission-health`, `asc:asc-release-flow`).
-    - Web search must be compliant first (App Review 5.2.2: the app must be
-      "specifically permitted" under each service's terms). DuckDuckGo's HTML
-      results page isn't: it has no permission to show Apple, and its
-      Acceptable Use Policy forbids displaying the service inside another
-      (2026-11-12, ROADMAP "Current status"). Wikipedia's API is fine.
+    - Web search uses only sources whose terms permit the app (App Review
+      5.2.2: "specifically permitted" under each service's terms; ready to
+      show Apple). DuckDuckGo was removed for that on 2026-11-12. Check any
+      new source's terms before it ships (ROADMAP "Current status").
     - Explain the large model download and the memory entitlements in the
       review notes.
 12. **After release** (`asc:asc-crash-triage`). TestFlight crashes may come from

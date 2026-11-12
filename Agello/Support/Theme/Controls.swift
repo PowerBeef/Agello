@@ -185,7 +185,7 @@ struct RowLabel: View {
       Text(title).foregroundStyle(Theme.Text.primary).layoutPriority(1)
       if let value {
         // Fills the rest of the row, right-aligned: a Spacer would add two
-        // more stack gaps and cut short values like "DuckDuckGo".
+        // more stack gaps and cut short values like "Wikipedia".
         Text(value)
           .foregroundStyle(Theme.Text.tertiary)
           .lineLimit(1)

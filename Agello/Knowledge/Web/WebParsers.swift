@@ -1,10 +1,23 @@
 import Foundation
 
-/// One search result.
+/// One search result: a page to read, or a structured source's text (`content`).
 struct WebResult: Equatable, Sendable {
   var title: String
   var url: URL
   var snippet: String
+  /// What the model reads instead of the page (weather, exchange rates, a paper's abstract).
+  var content: String?
+  /// Read first and always kept: the answer itself (weather, a conversion, places), not one
+  /// passage among many.
+  var pinned = false
+
+  init(title: String, url: URL, snippet: String, content: String? = nil, pinned: Bool = false) {
+    self.title = title
+    self.url = url
+    self.snippet = snippet
+    self.content = content
+    self.pinned = pinned
+  }
 
   var domain: String {
     let host = url.host() ?? url.absoluteString
@@ -14,66 +27,25 @@ struct WebResult: Equatable, Sendable {
 
 /// Parsers for search providers' responses. Pure (fixture-tested).
 enum SearchParsers {
-  // MARK: DuckDuckGo (HTML results page, unofficial)
-
-  static func duckDuckGo(html: String) -> [WebResult] {
-    var results: [WebResult] = []
-    // Each result is a "result" container; ads carry "result--ad".
-    let blocks = html.components(separatedBy: "<div class=\"result ").dropFirst()
-    for block in blocks {
-      let head = block.prefix(200)
-      if head.contains("result--ad") { continue }
-      guard let anchor = HTMLText.firstMatch(#"class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#, in: block),
-        anchor.count == 2, let url = resolveDuckDuckGoLink(HTMLText.decodeEntities(anchor[0]))
-      else { continue }
-      let title = HTMLText.plain(anchor[1])
-      let snippet = HTMLText.firstMatch(#"class="result__snippet"[^>]*>(.*?)</a>"#, in: block)
-        .map { HTMLText.plain($0[0]) } ?? ""
-      guard !title.isEmpty else { continue }
-      results.append(WebResult(title: title, url: url, snippet: snippet))
-    }
-    return results
-  }
-
-  /// Result links are direct, or redirects like `//duckduckgo.com/l/?uddg=<url>`.
-  static func resolveDuckDuckGoLink(_ href: String) -> URL? {
-    var link = href
-    if link.hasPrefix("//") { link = "https:" + link }
-    guard let url = URL(string: link) else { return nil }
-    if url.host()?.hasSuffix("duckduckgo.com") == true,
-      let target = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-        .queryItems?.first(where: { $0.name == "uddg" })?.value,
-      let resolved = URL(string: target)
-    {
-      return resolved
-    }
-    guard url.host()?.hasSuffix("duckduckgo.com") != true, url.scheme?.hasPrefix("http") == true
-    else { return nil }
-    return url
-  }
-
-  /// DuckDuckGo shows a bot check instead of results when it rate-limits.
-  static func isDuckDuckGoChallenge(_ html: String) -> Bool {
-    html.contains("anomaly-modal") || html.contains("challenge-form")
-      || (html.contains("Unfortunately, bots use DuckDuckGo") && !html.contains("result__a"))
-  }
-
-  // MARK: Wikipedia (MediaWiki search API, official)
+  // MARK: Wikimedia projects (MediaWiki search API, official)
 
   static func wikipedia(json: Data, language: String) -> [WebResult] {
+    mediaWiki(json: json, site: .wikipedia, language: language)
+  }
+
+  /// A MediaWiki search's results on `site`; titles name the site when it isn't Wikipedia
+  /// ("Montreal — Wikivoyage"), so the reply's sources say where each came from.
+  static func mediaWiki(json: Data, site: WikimediaSite, language: String) -> [WebResult] {
     guard let object = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
       let query = object["query"] as? [String: Any],
       let search = query["search"] as? [[String: Any]]
     else { return [] }
     return search.compactMap { item in
-      guard let title = item["title"] as? String,
-        let url = URL(
-          string: "https://\(language).wikipedia.org/wiki/"
-            + (title.replacingOccurrences(of: " ", with: "_")
-              .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""))
+      guard let title = item["title"] as? String, let url = site.pageURL(title: title, language: language)
       else { return nil }
       return WebResult(
-        title: title, url: url, snippet: HTMLText.plain(item["snippet"] as? String ?? ""))
+        title: site == .wikipedia ? title : "\(title) — \(site.displayName)", url: url,
+        snippet: HTMLText.plain(item["snippet"] as? String ?? ""))
     }
   }
 

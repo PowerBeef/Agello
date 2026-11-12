@@ -130,6 +130,9 @@ struct MessageBubbleView: View {
         let parts = turn.parts
         if !parts.sources.isEmpty {
           sourcesCard(parts.sources)
+          if parts.sources.contains(where: { WeatherLookup.isAttribution($0.url) }) {
+            WeatherAttributionMark()
+          }
         }
         if let memory = parts.toolActivity.last(where: { $0.name == "memory" }) {
           Label("Memory updated", systemImage: "brain.head.profile")
@@ -481,5 +484,31 @@ private extension View {
         RoundedRectangle(cornerRadius: Theme.Radius.bubble, style: .continuous)
           .stroke(Theme.Surface.stroke, lineWidth: Theme.Stroke.hairline)
       }
+  }
+}
+
+/// Apple Weather's mark, linked to its legal page, under a reply that used its data: shown, not
+/// tucked in the collapsed sources, as WeatherKit's terms and App Review require.
+struct WeatherAttributionMark: View {
+  @State private var mark: WeatherLookup.Mark?
+  @ScaledMetric(relativeTo: .caption2) private var height = Theme.Size.attributionMark
+
+  var body: some View {
+    Group {
+      if let mark {
+        Link(destination: mark.legal) {
+          AsyncImage(url: mark.image) { image in
+            image.resizable().scaledToFit()
+          } placeholder: {
+            Text(mark.name).font(.caption2).foregroundStyle(Theme.Text.tertiary)
+          }
+          .frame(height: height)
+          .frame(minHeight: Theme.Size.target, alignment: .leading)
+        }
+        .accessibilityLabel("\(mark.name), legal attribution")
+        .accessibilityIdentifier("message.weatherAttribution")
+      }
+    }
+    .task { if mark == nil { mark = await WeatherLookup.mark() } }
   }
 }

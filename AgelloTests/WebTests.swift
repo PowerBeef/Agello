@@ -20,25 +20,6 @@ final class WebTests: XCTestCase {
 
   // MARK: Providers
 
-  func testDuckDuckGoResultsSkipAds() throws {
-    let page = try html("ddg")
-    let results = SearchParsers.duckDuckGo(html: page)
-    XCTAssertEqual(results.count, 3)
-    XCTAssertFalse(results.contains { $0.title.contains("Sponsored") })
-    XCTAssertEqual(results.first?.domain, "procyclinguk.com")
-    XCTAssertTrue(results.allSatisfy { !$0.snippet.isEmpty && $0.url.scheme == "https" })
-    XCTAssertFalse(SearchParsers.isDuckDuckGoChallenge(page))
-    XCTAssertTrue(SearchParsers.isDuckDuckGoChallenge(try html("ddg-challenge")))
-  }
-
-  func testDuckDuckGoRedirectLinksAreResolved() {
-    XCTAssertEqual(
-      SearchParsers.resolveDuckDuckGoLink(
-        "//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa%3Fb%3D1&rut=x")?.absoluteString,
-      "https://example.com/a?b=1")
-    XCTAssertNil(SearchParsers.resolveDuckDuckGoLink("https://duckduckgo.com/y.js?ad=1"))
-  }
-
   func testWikipediaResults() throws {
     let results = SearchParsers.wikipedia(json: try fixture("wikipedia", "json"), language: "en")
     XCTAssertEqual(results.count, 2)
@@ -53,22 +34,22 @@ final class WebTests: XCTestCase {
 
   func testProviderChain() {
     var settings = WebSearchSettings()
-    XCTAssertEqual(settings.chain(), [.duckDuckGo, .wikipedia])
+    XCTAssertEqual(settings.chain(), [.wikipedia])
     settings.provider = .searxng
-    XCTAssertEqual(settings.chain(), [.duckDuckGo, .wikipedia], "No server: skipped")
+    XCTAssertEqual(settings.chain(), [.wikipedia], "No server: skipped")
     settings.searxngURL = "https://searx.example.org"
-    XCTAssertEqual(settings.chain(), [.searxng, .duckDuckGo, .wikipedia])
+    XCTAssertEqual(settings.chain(), [.searxng, .wikipedia])
     settings.provider = .wikipedia
-    XCTAssertEqual(settings.chain(), [.wikipedia, .duckDuckGo])
+    XCTAssertEqual(settings.chain(), [.wikipedia])
   }
 
-  /// Brave Search and Tavily took the user's own API key until 2026-11-12: a saved choice of
-  /// either reads as the default, and the rest of the settings stay.
-  func testSavedKeyedProviderFallsBackToTheDefault() throws {
-    for removed in ["brave", "tavily"] {
+  /// Brave Search and Tavily (the user's own API key) and DuckDuckGo were removed on 2026-11-12:
+  /// a saved choice of any of them reads as the default, and the rest of the settings stay.
+  func testRemovedProviderFallsBackToTheDefault() throws {
+    for removed in ["brave", "tavily", "duckDuckGo"] {
       let saved = Data(#"{"allowed":true,"automatic":true,"provider":"\#(removed)","searxngURL":""}"#.utf8)
       let settings = try JSONDecoder().decode(WebSearchSettings.self, from: saved)
-      XCTAssertEqual(settings.provider, .duckDuckGo)
+      XCTAssertEqual(settings.provider, .wikipedia)
       XCTAssertTrue(settings.automatic)
     }
   }
@@ -235,7 +216,8 @@ final class WebTests: XCTestCase {
     XCTAssertTrue(WebContext.parsePlan(Data("not json".utf8)).needsSearch)
     XCTAssertTrue(WebContext.instructions().contains("don't bear on the message"))
     // The grammar asks queries of questions and requests only.
-    XCTAssertTrue(WebContext.querySchema.contains(#""enum":["question","request"]},"queries":{"type":"array","items":{"type":"string"},"minItems":1"#))
+    XCTAssertTrue(WebContext.querySchema.contains(#""enum":["question","request"]},"topic":"#))
+    XCTAssertTrue(WebContext.querySchema.contains(#""queries":{"type":"array","items":{"type":"string"},"minItems":1"#))
     // A follow-up planned without queries searches after the previous user message.
     XCTAssertEqual(
       WebContext.directQuery(
@@ -274,6 +256,6 @@ final class WebTests: XCTestCase {
       WebSearchSettings.self, from: Data(#"{"automatic":true,"provider":"bing"}"#.utf8))
     XCTAssertTrue(decoded.allowed)
     XCTAssertTrue(decoded.automatic)
-    XCTAssertEqual(decoded.provider, .duckDuckGo)
+    XCTAssertEqual(decoded.provider, .wikipedia)
   }
 }

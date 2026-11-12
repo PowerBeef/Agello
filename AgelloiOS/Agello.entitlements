@@ -15,6 +15,10 @@
 	     as continued processing tasks, where the device supports it. -->
 	<key>com.apple.developer.background-tasks.continued-processing.gpu</key>
 	<true/>
+	<!-- Apple Weather for Search's weather questions (500,000 calls a month come with the
+	     developer membership). The App ID needs WeatherKit under Capabilities and App Services. -->
+	<key>com.apple.developer.weatherkit</key>
+	<true/>
 	<!-- Shared with the share extension: items shared from other apps. -->
 	<key>com.apple.security.application-groups</key>
 	<array>

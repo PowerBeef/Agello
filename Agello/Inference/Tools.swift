@@ -43,14 +43,17 @@ struct CurrentDateTimeTool: Tool {
 struct WebSearchTool: Tool {
   static let name = "web_search"
   static let description =
-    "Search the web for current events, recent facts, prices, schedules, or anything you are unsure about. Returns numbered sources to cite like [1]."
+    "Look things up in Wikipedia and other reference sources: facts, recent events, travel, word meanings, quotations, weather, places, exchange rates, scientific and medical papers. Returns numbered sources to cite like [1]."
 
-  @ToolParam(description: "A short, self-contained web search query.")
+  @ToolParam(description: "A short, self-contained query naming the subject, like \"2026 Tour de France\". For weather, the place; for currency, like \"100 USD to EUR\".")
   var query: String = ""
+
+  @ToolParam(description: "What it's about: general, travel, word, quote, weather, place, currency, research, health or news.")
+  var topic: String = "general"
 
   /// Runs the search for the app (set by `AppState`) within a budget of tokens; returns the
   /// sources block for the model, or an error message.
-  nonisolated(unsafe) static var handler: (@Sendable (String, Int) async -> String)?
+  nonisolated(unsafe) static var handler: (@Sendable (String, SearchTopic, Int) async -> String)?
 
   func run() async throws -> Any {
     guard let limits = ToolBudget.claim() else { return ToolBudget.limitReachedResult }
@@ -59,7 +62,8 @@ struct WebSearchTool: Tool {
       return ["error": "Web search is unavailable."]
     }
     ToolActivity.record(Self.name, summary: "Searched the web for “\(trimmed)”")
-    let result = await handler(trimmed, limits.maxResultTokens)
+    let subject = SearchTopic(rawValue: topic.trimmingCharacters(in: .whitespaces).lowercased()) ?? .general
+    let result = await handler(trimmed, subject, limits.maxResultTokens)
     // Web pages can't close the tool response or open a turn.
     return ["sources": ToolBudget.fit(PromptText.neutralized(result), limits)]
   }

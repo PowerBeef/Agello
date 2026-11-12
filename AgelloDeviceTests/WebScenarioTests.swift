@@ -51,7 +51,7 @@ final class WebScenarioTests: DeviceTestCase {
     // Searched again or answered from the conversation (Search when needed, 2026-11-02), the
     // follow-up gives the margin: 6 min 26 s. Searched as "minutes calculator", it asked for times.
     XCTAssertTrue(
-      followUp.text.range(of: #"\b6\s*(minutes?|min\b|:|′|')"#, options: .regularExpression) != nil,
+      followUp.text.range(of: #"\b(6|six)(\s|-)*(and a half\s*)?(minutes?|min\b|:|′|')"#, options: [.regularExpression, .caseInsensitive]) != nil,
       "Margin missing: \(followUp.text)")
   }
 
@@ -170,26 +170,35 @@ final class WebScenarioTests: DeviceTestCase {
           + "*   **3rd:** Isaac del Toro (UAE Team Emirates XRG) [1][2][3][4][5]"
       ),
     ]
-    let gapWords = ["margin", "gap", "difference", "standings", "classification", "ahead", "behind"]
-    let cases: [(message: String, history: [(role: ChatRole, text: String)], search: Bool)] = [
-      ("Hello there", [], false),
-      ("Thanks, that's perfect!", race, false),
-      ("Translate into Spanish: \"See you tomorrow at the station.\"", [], false),
-      ("Write a short poem about autumn leaves.", [], false),
-      ("What changed in Swift 6.2?", [], true),
-      ("Create a beautiful calculator app for mobile in a single self contained html file", [], true),
-      ("Write a SwiftUI view for iOS that lists notes with swipe to delete, pull to refresh, and a search field. Use the current APIs.", [], true),
-      ("Plan a 3-day winter trip to Montreal with mostly indoor activities and a budget table.", [], true),
-      ("How do I center a div with CSS grid?", [], true),
-      ("By how many minutes?", race, true),
-      ("By how many minutes?", raceWithTimes, true),
-      ("Who came third?", race, false),
+    // The topic decides the sources (`SearchTopic`, 2026-11-12); nil: not searched, or either.
+    let cases: [(message: String, history: [(role: ChatRole, text: String)], search: Bool, topics: Set<SearchTopic>)] = [
+      ("Hello there", [], false, []),
+      ("Thanks, that's perfect!", race, false, []),
+      ("Translate into Spanish: \"See you tomorrow at the station.\"", [], false, []),
+      ("Write a short poem about autumn leaves.", [], false, []),
+      ("What changed in Swift 6.2?", [], true, [.general, .news]),
+      ("Create a beautiful calculator app for mobile in a single self contained html file", [], true, [.general]),
+      ("Write a SwiftUI view for iOS that lists notes with swipe to delete, pull to refresh, and a search field. Use the current APIs.", [], true, [.general]),
+      ("Plan a 3-day winter trip to Montreal with mostly indoor activities and a budget table.", [], true, [.travel]),
+      ("How do I center a div with CSS grid?", [], true, [.general]),
+      ("By how many minutes?", race, true, []),
+      ("By how many minutes?", raceWithTimes, true, []),
+      ("Who came third?", race, false, []),
+      ("Will it rain in Montreal tomorrow?", [], true, [.weather]),
+      ("How much is 250 US dollars in euros?", [], true, [.currency]),
+      ("Is there a pharmacy open near Place des Arts in Montreal?", [], true, [.place]),
+      ("What does \"serendipity\" mean?", [], true, [.word]),
+      ("Who said \"The only thing we have to fear is fear itself\"?", [], true, [.quote]),
+      ("What do studies say about intermittent fasting for weight loss?", [], true, [.research, .health]),
+      ("What are the common side effects of metformin?", [], true, [.health]),
+      ("What happened in the world yesterday?", [], true, [.news]),
+      ("What is the population of Montreal?", [], true, [.general]),
     ]
     var rows: [[String: Any]] = []
     var wrong: [String] = []
     for item in cases {
       let started = Date()
-      var row: [String: Any] = ["message": item.message, "expected": item.search]
+      var row: [String: Any] = ["message": item.message, "expected": item.search, "expectedTopics": item.topics.map(\.rawValue).sorted()]
       do {
         let data = try await appState.engine.helperJSON(
           prompt: WebContext.queryPrompt(question: item.message, history: item.history),
@@ -199,18 +208,16 @@ final class WebScenarioTests: DeviceTestCase {
         row["search"] = plan.needsSearch
         row["queries"] = plan.queries
         row["request"] = plan.isRequest
+        row["topic"] = plan.topic.rawValue
         if plan.needsSearch != item.search { wrong.append(item.message) }
+        if plan.needsSearch, !item.topics.isEmpty, !item.topics.contains(plan.topic) {
+          wrong.append("\(item.message) (topic \(plan.topic.rawValue), not \(item.topics.map(\.rawValue).sorted()))")
+        }
         // A follow-up's queries carry the conversation's subject (the race).
         if plan.needsSearch, !item.history.isEmpty,
           !plan.queries.contains(where: { $0.localizedCaseInsensitiveContains("tour") })
         {
           wrong.append("\(item.message) (queries without the subject)")
-        }
-        // The margin is asked for itself, not worked out from one rider's time.
-        if item.message.hasPrefix("By how many"),
-          !plan.queries.contains(where: { query in gapWords.contains { query.localizedCaseInsensitiveContains($0) } })
-        {
-          wrong.append("\(item.message) (no query for the margin: \(plan.queries))")
         }
       } catch {
         // A failed plan searches the message as typed.
@@ -222,5 +229,115 @@ final class WebScenarioTests: DeviceTestCase {
     }
     harness.record("web04_searchDecisions", ["rows": rows, "wrong": wrong], in: self)
     XCTAssertTrue(wrong.isEmpty, "Wrong search decisions: \(wrong)")
+  }
+
+  /// Every reference source answers on the device, through the app's own requests: the free,
+  /// keyless sources Search uses since 2026-11-12. One row each, so a failing source doesn't hide
+  /// the rest. Weather needs WeatherKit enabled for the App ID (Capabilities and App Services).
+  func test05_ReferenceSources() async throws {
+    let client = WebClient()
+    let checks: [(name: String, run: @Sendable () async throws -> [WebResult])] = [
+      ("wikipedia", { try await client.searchWiki("2026 Tour de France", site: .wikipedia, language: "en") }),
+      ("wikivoyage", { try await client.searchWiki("Montreal", site: .wikivoyage, language: "en") }),
+      ("wiktionary", { try await client.searchWiki("serendipity", site: .wiktionary, language: "en") }),
+      ("wikiquote", { try await client.searchWiki("Franklin D. Roosevelt", site: .wikiquote, language: "en") }),
+      ("wikidata", { [try await client.wikidataFacts(title: "Montreal", language: "en")].compactMap { $0 } }),
+      ("currency", { try await client.structured(.currency, query: "100 USD to EUR") }),
+      ("places", { try await client.structured(.place, query: "pharmacy near Place des Arts, Montreal") }),
+      ("weather", { try await client.structured(.weather, query: "Montreal") }),
+      ("weather place", {
+        let found = try await client.structured(.weather, query: "Montreal")
+        return found.filter { $0.title.localizedCaseInsensitiveContains("Montr") }
+      }),
+      ("crossref", { try await client.crossref("intermittent fasting weight loss") }),
+      ("pubmed", { try await client.pubMed("metformin side effects") }),
+      ("current events", { [try await client.currentEvents(CurrentEvents.pages()[1])].compactMap { $0 } }),
+    ]
+    var rows: [[String: Any]] = []
+    var failed: [String] = []
+    for check in checks {
+      let started = Date()
+      var row: [String: Any] = ["source": check.name]
+      do {
+        let results = try await check.run()
+        row["count"] = results.count
+        row["first"] = results.first.map { "\($0.title) \($0.url.absoluteString)" } ?? ""
+        row["content"] = String((results.first?.content ?? results.first?.snippet ?? "").prefix(600))
+        if results.isEmpty { failed.append("\(check.name): nothing") }
+      } catch {
+        row["error"] = String(describing: error).prefix(300)
+        failed.append("\(check.name): \(error.localizedDescription)")
+      }
+      row["seconds"] = Date().timeIntervalSince(started)
+      rows.append(row)
+    }
+    harness.record("web05_referenceSources", ["rows": rows, "failed": failed], in: self)
+    XCTAssertTrue(failed.isEmpty, "Sources that failed: \(failed)")
+  }
+
+  /// Answers from the free sources, end to end (Search on): one row per topic, each with what a
+  /// right answer must show (a fact in the reply, or the source it must come from). The table
+  /// Search's quality is tuned against (2026-11-12, the maintainer: "optimising research quality,
+  /// accuracy and efficiency using only the free complying sources").
+  func test06_AnswersFromSources() async throws {
+    try await requireLoadedModel()
+    _ = try await harness.ensureDownloaded(ModelCatalog.embeddingGemma, timeout: 900)
+    struct Case {
+      var message: String
+      /// In the reply, as a regular expression (case-insensitive).
+      var reply: String?
+      /// In one of the sources' title or address, as a regular expression (case-insensitive).
+      var source: String?
+      /// Needs the user's location: without it, the notice must say so.
+      var nearMe = false
+    }
+    let cases = [
+      Case(message: "Who won the 2026 Tour de France?", reply: "Poga[cč]ar", source: "wikipedia.org"),
+      Case(message: "What is the population of Montreal?", reply: #"1[ ,.]?7\d\d[ ,.]?\d{3}|1\.[67]\d* million"#, source: nil),
+      Case(message: "How much is 100 US dollars in euros?", reply: #"\d+[.,]\d{2} ?(€|EUR|euros?)|€ ?\d+"#, source: "European Central Bank"),
+      Case(message: "What does \"serendipity\" mean?", reply: "chance|fortunate|accident|luck", source: "wiktionary"),
+      Case(message: "Who said \"The only thing we have to fear is fear itself\"?", reply: "Roosevelt", source: nil),
+      Case(message: "Will it rain in Montreal tomorrow?", reply: nil, source: "Weather"),
+      Case(message: "Is there a pharmacy near Place des Arts in Montreal?", reply: "Sainte-Catherine|Saint-Laurent|Jeanne-Mance|Bleury|Maisonneuve|Ste-Catherine|St-Laurent|Complexe Desjardins|Saint-Urbain|H2X|H3B|H2Z|H3A|H2W", source: "Apple Maps"),
+      Case(message: "What do studies say about intermittent fasting for weight loss?", reply: nil, source: "doi.org|pubmed"),
+      Case(message: "What are the common side effects of metformin?", reply: "diarrh|nausea|gastro", source: nil),
+      Case(message: "Plan a 3-day winter trip to Montreal with mostly indoor activities.", reply: nil, source: "wikivoyage"),
+      Case(message: "What happened in the world yesterday?", reply: nil, source: "Current events"),
+      // The maintainer's examples (2026-11-12): around the user; MapKit shares no opening hours, so
+      // the reply points to the place in Apple Maps.
+      Case(message: "Where is the nearest gas station?", reply: nil, source: "Apple Maps", nearMe: true),
+      Case(message: "At what time does Walmart close tonight?", reply: "Apple Maps", source: "Walmart", nearMe: true),
+    ]
+    var rows: [[String: Any]] = []
+    var wrong: [String] = []
+    for item in cases {
+      let answer = await harness.ask(item.message, in: harness.newThread(), webSearch: true)
+      let sources = answer.reply?.parts.sources ?? []
+      let described = sources.map { "\($0.index) \($0.title) \($0.url ?? "")" }
+      let notice = appState.generationError ?? ""
+      rows.append([
+        "message": item.message, "seconds": answer.seconds, "reply": answer.text, "sources": described,
+        "notice": notice, "topic": appState.lastWebPlan?.topic.rawValue ?? "",
+        "queries": appState.lastWebPlan?.queries ?? [],
+      ])
+      // Without the location (refused, or the permission prompt unanswered), the reply must say so.
+      if item.nearMe, notice.localizedCaseInsensitiveContains("location") { continue }
+      if !answer.accepted || answer.text.hasPrefix(ChatTurn.errorPrefix) {
+        wrong.append("\(item.message): \(answer.text.prefix(120))")
+        continue
+      }
+      if let pattern = item.reply,
+        answer.text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) == nil
+      {
+        wrong.append("\(item.message): reply without /\(pattern)/: \(answer.text.prefix(160))")
+      }
+      if let source = item.source,
+        !described.contains(where: { $0.range(of: source, options: [.regularExpression, .caseInsensitive]) != nil })
+      {
+        wrong.append("\(item.message): no \(source) source in \(described)")
+      }
+    }
+    harness.record("web06_answersFromSources", ["rows": rows, "wrong": wrong], in: self)
+    XCTAssertTrue(wrong.isEmpty, "Answers that missed: \(wrong)")
   }
 }

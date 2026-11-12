@@ -46,12 +46,10 @@ struct WebSearchSettingsView: View {
 
   private var providerFooter: String {
     switch appState.webSettings.provider {
-    case .duckDuckGo:
-      return String(localized: "Results by DuckDuckGo, with Wikipedia as a fallback.")
     case .wikipedia:
-      return String(localized: "Searches Wikipedia only (DuckDuckGo if it finds nothing).")
+      return String(localized: "Searches Wikipedia.")
     case .searxng:
-      return String(localized: "Your SearXNG instance must allow the JSON format. DuckDuckGo and Wikipedia are fallbacks.")
+      return String(localized: "Your SearXNG instance must allow the JSON format. Wikipedia is the fallback.")
     }
   }
 }

@@ -4,15 +4,16 @@ import Synchronization
 
 // MARK: - Settings
 
-/// Where searches go. Nothing here needs an API key, the user's or ours (the maintainer's
-/// choice, 2026-11-12): Brave Search and Tavily, which took the user's own key, are gone, and a
-/// saved choice of either decodes as the default.
+/// Where searches go. Only sources whose terms permit an app like this one, with no API key,
+/// the user's or ours (the maintainer's choices, 2026-11-12; App Review 5.2.2 asks that the app
+/// be "specifically permitted" by each service's terms). Gone that day: Brave Search and Tavily
+/// (the user's own key) and DuckDuckGo (its HTML results page, read without permission). A saved
+/// choice of any of them decodes as the default.
 enum SearchProvider: String, Codable, CaseIterable, Sendable {
-  case duckDuckGo, wikipedia, searxng
+  case wikipedia, searxng
 
   var displayName: String {
     switch self {
-    case .duckDuckGo: return "DuckDuckGo"
     case .wikipedia: return "Wikipedia"
     case .searxng: return "SearXNG"
     }
@@ -26,7 +27,7 @@ struct WebSearchSettings: Codable, Equatable, Sendable {
   var allowed = true
   /// The model may search on its own when a question needs it.
   var automatic = false
-  var provider: SearchProvider = .duckDuckGo
+  var provider: SearchProvider = .wikipedia
   /// Base URL of the user's SearXNG instance (JSON format enabled).
   var searxngURL = ""
 
@@ -36,22 +37,17 @@ struct WebSearchSettings: Codable, Equatable, Sendable {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     allowed = try container.decodeIfPresent(Bool.self, forKey: .allowed) ?? true
     automatic = try container.decodeIfPresent(Bool.self, forKey: .automatic) ?? false
-    provider = (try? container.decodeIfPresent(SearchProvider.self, forKey: .provider)) ?? .duckDuckGo
+    provider = (try? container.decodeIfPresent(SearchProvider.self, forKey: .provider)) ?? .wikipedia
     searxngURL = try container.decodeIfPresent(String.self, forKey: .searxngURL) ?? ""
   }
 
-  /// Providers to try, in order: the chosen one, then DuckDuckGo, then
-  /// Wikipedia (official API, rarely blocked).
+  /// Providers to try, in order: the user's SearXNG server when one is set, then Wikipedia
+  /// (official API).
   func chain() -> [SearchProvider] {
-    var chain: [SearchProvider] = []
     if provider == .searxng, URL(string: searxngURL)?.scheme?.hasPrefix("http") == true {
-      chain.append(.searxng)
+      return [.searxng, .wikipedia]
     }
-    for fallback in [SearchProvider.duckDuckGo, .wikipedia] where !chain.contains(fallback) {
-      chain.append(fallback)
-    }
-    if provider == .wikipedia { chain = [.wikipedia, .duckDuckGo] }
-    return chain
+    return [.wikipedia]
   }
 }
 
@@ -61,12 +57,20 @@ enum WebSearchError: LocalizedError, Equatable {
   case offline
   case blocked(String)
   case noResults
+  /// A topic's own source failed (Apple Weather before WeatherKit is enabled, say): said plainly,
+  /// not answered from unrelated pages.
+  case unavailable(String)
+  /// "Near me" without the user's location (refused, or no fix in time).
+  case locationUnavailable
 
   var errorDescription: String? {
     switch self {
     case .offline: return "Web search needs an internet connection."
     case .blocked(let provider): return "\(provider) refused the search (rate limit)."
     case .noResults: return "The web search found nothing."
+    case .unavailable(let source): return "\(source) isn't available right now."
+    case .locationUnavailable:
+      return "Agello doesn't have your location. Allow it in Settings → Agello → Location, or name a place."
     }
   }
 }
@@ -74,8 +78,9 @@ enum WebSearchError: LocalizedError, Equatable {
 /// HTTP for search and page reading: no cookies or cache, strict timeouts,
 /// size caps. Only the queries and page requests leave the device.
 struct WebClient: Sendable {
-  static let browserAgent =
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 27_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.0 Mobile/15E148 Safari/604.1"
+  /// Every request says it's Agello, with a way to reach the project (Wikimedia's User-Agent
+  /// policy asks for one, and treats a browser's agent on automated requests as malicious). Until
+  /// 2026-11-12 searches and page reads presented themselves as Safari.
   static let appAgent = "Agello/1.0 (on-device assistant; https://github.com/PowerBeef/Agello)"
   static let maxPageBytes = 3_000_000
 
@@ -91,32 +96,131 @@ struct WebClient: Sendable {
     session = URLSession(configuration: config)
   }
 
-  func search(_ query: String, with provider: SearchProvider, settings: WebSearchSettings)
-    async throws -> [WebResult]
-  {
+  /// One query through `provider`; Wikipedia searches the edition of `language` (the user's
+  /// message's, not the query's: "2026 Tour de France winner" reads as French, and French
+  /// Wikipedia answered with footballers, 2026-11-12).
+  func search(
+    _ query: String, with provider: SearchProvider, settings: WebSearchSettings, language: String
+  ) async throws -> [WebResult] {
     switch provider {
-    case .duckDuckGo:
-      var components = URLComponents(string: "https://html.duckduckgo.com/html/")!
-      components.queryItems = [URLQueryItem(name: "q", value: query)]
-      let html = String(decoding: try await get(components.url!, agent: Self.browserAgent), as: UTF8.self)
-      if SearchParsers.isDuckDuckGoChallenge(html) { throw WebSearchError.blocked("DuckDuckGo") }
-      return SearchParsers.duckDuckGo(html: html)
     case .wikipedia:
-      let language = Self.wikipediaLanguage(for: query)
-      var components = URLComponents(string: "https://\(language).wikipedia.org/w/api.php")!
-      components.queryItems = [
-        .init(name: "action", value: "query"), .init(name: "list", value: "search"),
-        .init(name: "srsearch", value: query), .init(name: "format", value: "json"),
-        .init(name: "srlimit", value: "5"), .init(name: "utf8", value: "1"),
-      ]
-      return SearchParsers.wikipedia(
-        json: try await get(components.url!, agent: Self.appAgent), language: language)
+      return try await searchWiki(query, site: .wikipedia, language: language)
     case .searxng:
       guard var components = URLComponents(string: settings.searxngURL) else { return [] }
       components.path = (components.path.hasSuffix("/") ? components.path : components.path + "/") + "search"
       components.queryItems = [.init(name: "q", value: query), .init(name: "format", value: "json")]
       return SearchParsers.searxng(json: try await get(components.url!, agent: Self.appAgent))
     }
+  }
+
+  // MARK: Reference sources (SearchTopic)
+
+  /// A MediaWiki search on one of the Wikimedia projects, in `language`'s edition.
+  func searchWiki(_ query: String, site: WikimediaSite, language: String) async throws -> [WebResult] {
+    var components = URLComponents(string: "https://\(site.host(language: language))/w/api.php")!
+    // A quotation is found by its exact words: searched as loose words, "The only thing we have
+    // to fear is fear itself" found the Bene Gesserit (2026-11-12).
+    let phrase = site == .wikiquote && !query.contains("\"") ? "\"\(query)\"" : query
+    components.queryItems = [
+      .init(name: "action", value: "query"), .init(name: "list", value: "search"),
+      .init(name: "srsearch", value: phrase), .init(name: "format", value: "json"),
+      .init(name: "srlimit", value: "5"), .init(name: "utf8", value: "1"),
+    ]
+    return SearchParsers.mediaWiki(
+      json: try await get(components.url!, agent: Self.appAgent), site: site, language: language)
+  }
+
+  /// The answer of a structured topic's source (weather, places, exchange rates), pinned.
+  func structured(_ topic: SearchTopic, query: String) async throws -> [WebResult] {
+    switch topic {
+    case .weather:
+      guard let report = try await WeatherLookup.report(for: query) else { return [] }
+      let attribution = await WeatherLookup.attribution()
+      return [
+        WebResult(
+          title: "\(attribution.name) — \(report.place)", url: attribution.url, snippet: "",
+          content: WeatherLookup.describe(report), pinned: true)
+      ]
+    case .place:
+      let found = try await PlaceSearch.search(query)
+      return PlaceSearch.results(found.places, area: found.area)
+    case .currency:
+      let xml = String(decoding: try await get(ExchangeRates.dataURL, agent: Self.appAgent), as: UTF8.self)
+      guard let table = ExchangeRates.parse(xml: xml) else { return [] }
+      return [
+        WebResult(
+          title: "Euro reference rates — European Central Bank", url: ExchangeRates.sourceURL, snippet: "",
+          content: ExchangeRates.describe(table, request: ExchangeRates.request(query, known: Set(table.perEuro.keys))),
+          pinned: true)
+      ]
+    default:
+      return []
+    }
+  }
+
+  /// Scientific papers with their abstracts, from Crossref.
+  func crossref(_ query: String) async throws -> [WebResult] {
+    guard let url = Crossref.searchURL(query) else { return [] }
+    return Crossref.results(json: try await get(url, agent: Self.appAgent))
+  }
+
+  /// Medical papers with their abstracts, from PubMed (a search, then the abstracts).
+  func pubMed(_ query: String) async throws -> [WebResult] {
+    guard let reviewed = PubMed.searchURL(query) else { return [] }
+    var ids = PubMed.ids(json: try await get(reviewed, agent: Self.appAgent))
+    if ids.isEmpty, let any = PubMed.searchURL(query, reviewed: false) {
+      ids = PubMed.ids(json: try await get(any, agent: Self.appAgent))
+    }
+    guard !ids.isEmpty, let fetch = PubMed.fetchURL(ids: ids) else { return [] }
+    return PubMed.results(xml: String(decoding: try await get(fetch, agent: Self.appAgent), as: UTF8.self))
+  }
+
+  /// A day of Wikipedia's Current events, as text.
+  func currentEvents(_ page: WebResult) async throws -> WebResult? {
+    guard let url = CurrentEvents.sourceURL(of: page),
+      let wikitext = CurrentEvents.wikitext(json: try await get(url, agent: Self.appAgent))
+    else { return nil }
+    let text = CurrentEvents.text(wikitext: wikitext)
+    guard !text.isEmpty else { return nil }
+    return WebResult(title: page.title, url: page.url, snippet: "", content: "\(page.title):\n\(text)")
+  }
+
+  /// Wikidata's facts about a Wikipedia article's subject: its item, its statements, then the
+  /// labels of the items they name.
+  func wikidataFacts(title: String, language: String) async throws -> WebResult? {
+    var pageprops = URLComponents(string: "https://\(WikimediaSite.wikipedia.host(language: language))/w/api.php")!
+    pageprops.queryItems = [
+      .init(name: "action", value: "query"), .init(name: "prop", value: "pageprops"),
+      .init(name: "ppprop", value: "wikibase_item"), .init(name: "titles", value: title),
+      .init(name: "format", value: "json"),
+    ]
+    guard let id = WikidataFacts.itemID(pageprops: try await get(pageprops.url!, agent: Self.appAgent)) else {
+      return nil
+    }
+    let languages = language == "en" ? "en" : "\(language)|en"
+    func entities(_ ids: [String], props: String) -> URL {
+      var components = URLComponents(string: "https://www.wikidata.org/w/api.php")!
+      components.queryItems = [
+        .init(name: "action", value: "wbgetentities"), .init(name: "ids", value: ids.joined(separator: "|")),
+        .init(name: "props", value: props), .init(name: "languages", value: languages),
+        .init(name: "format", value: "json"),
+      ]
+      return components.url!
+    }
+    guard
+      let entity = WikidataFacts.entity(
+        json: try await get(entities([id], props: "labels|descriptions|claims"), agent: Self.appAgent),
+        id: id, language: language),
+      !entity.facts.isEmpty
+    else { return nil }
+    let needed = Array(entity.itemsToLabel.prefix(50))
+    let labels =
+      needed.isEmpty
+      ? [:] : WikidataFacts.labels(json: try await get(entities(needed, props: "labels"), agent: Self.appAgent), language: language)
+    let text = WikidataFacts.describe(entity, labels: labels)
+    guard let url = URL(string: "https://www.wikidata.org/wiki/\(id)") else { return nil }
+    return WebResult(
+      title: "\(entity.label ?? title) — Wikidata", url: url, snippet: entity.description ?? "", content: text)
   }
 
   /// The Wikipedia edition for `query`: its language when that's clear, else the device's.
@@ -129,7 +233,7 @@ struct WebClient: Sendable {
     let words = query.split(whereSeparator: \.isWhitespace).count
     let dense = query.unicodeScalars.contains { Chunker.isDense($0) }
     if words >= 3 || dense, let (language, confidence) = recognizer.languageHypotheses(withMaximum: 1).first,
-      confidence >= 0.8
+      confidence >= 0.6
     {
       return wikipediaCode(language.rawValue)
     }
@@ -146,7 +250,7 @@ struct WebClient: Sendable {
   /// size are checked before the body is read, which stops at ``maxPageBytes``.
   func readPage(_ url: URL) async -> ReadableText.Page? {
     var request = URLRequest(url: url, timeoutInterval: 7)
-    request.setValue(Self.browserAgent, forHTTPHeaderField: "User-Agent")
+    request.setValue(Self.appAgent, forHTTPHeaderField: "User-Agent")
     request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
     guard let (bytes, response) = try? await session.bytes(for: request) else { return nil }
     guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
