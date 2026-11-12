@@ -176,9 +176,7 @@ scripts/phone-bench.sh release again=release           # the noise: the shipped 
 `CLiteRTLM`. It's the development bed while the iPhone is away. Its speed and
 memory aren't the iPhone's, and a change still needs an iPhone run before it
 ships. **Ask the user before a Mac run:** they often keep the Mac busy, and
-the iPhone comes first. Not rechecked since the app declared
-`iphone-performance-gaming-tier` (2026-11-10): the next Mac run will show
-whether it still installs.
+the iPhone comes first.
 
 ```sh
 PLATFORM=mac scripts/device-harness.sh unit

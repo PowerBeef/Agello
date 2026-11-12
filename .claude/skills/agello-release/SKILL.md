@@ -57,10 +57,12 @@ uploading, submitting) needs the user's go-ahead first.
    build finishes processing.
 8. **TestFlight** (`asc:asc-testflight-orchestration`). Testers need an iPhone
    with 12 GB of memory (iPhone 17 Pro and Pro Max, iPhone Air, or later) on
-   iOS 27 and about 4.4 GB free. The App Store only enforces
-   `iphone-performance-gaming-tier` (iPhone 15 Pro and later): an 8 GB iPhone
-   can install the app and sees `UnsupportedDeviceView`. Say 12 GB in the
-   store text. Requirements can be relaxed in an update, never tightened.
+   iOS 27 and about 4.4 GB free. The App Store can't enforce that: there's no
+   capability key for memory, and `iphone-performance-gaming-tier` is for
+   games (dropped 2026-11-12). Any iPhone on iOS 27 can install the app; below
+   12 GB it opens on `UnsupportedDeviceView` and downloads nothing. Say 12 GB
+   in the store text and the review notes (a reviewer's iPhone may have 8 GB).
+   Requirements can be relaxed in an update, never tightened.
 9. **Screenshots** (`asc:asc-screenshot-resize`, then `asc screenshots upload`).
    Take them with `scripts/device-harness.sh screenshots`
    (`build/device-harness/attachments/screenshots/`), never the simulator. `asc:asc-shots-pipeline` is

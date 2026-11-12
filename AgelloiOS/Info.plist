@@ -12,7 +12,6 @@
 	<array>
 		<string>arm64</string>
 		<string>metal</string>
-		<string>iphone-performance-gaming-tier</string>
 	</array>
 	<key>CFBundleURLTypes</key>
 	<array>

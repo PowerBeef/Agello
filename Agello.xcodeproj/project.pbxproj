@@ -689,7 +689,6 @@
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone for voice messages, dictation and voice mode. The on-device model understands your voice; recordings stay on this iPhone.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Agello lets you attach photos for the on-device model to see.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "iphone-performance-gaming-tier";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.agello;
@@ -722,7 +721,6 @@
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone for voice messages, dictation and voice mode. The on-device model understands your voice; recordings stay on this iPhone.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Agello lets you attach photos for the on-device model to see.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIRequiredDeviceCapabilities = "iphone-performance-gaming-tier";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.agello;
