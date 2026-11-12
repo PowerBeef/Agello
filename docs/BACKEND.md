@@ -133,7 +133,7 @@ As built (2026-11-11):
   a local branch.
 
 As built, B2 (2026-11-11), on the local branch `agello-one` of the runtime's checkout
-(`../agello-arms/next/LiteRT-LM`, commit `e3c93749`; not on GitHub yet: Git LFS refuses the branch, ROADMAP "State left on this Mac"):
+(`../agello-arms/next/LiteRT-LM`, commit `e3c93749`; on GitHub since 2026-11-12, without the import's Google prebuilt LFS files, ROADMAP "State left on this Mac"):
 
 - LiteRT is in `agello/litert` (7,801 files) and ML Drift in `agello/ml_drift` (877), exported
   at the commits the release pinned and checked identical, file by file, to the two archives
