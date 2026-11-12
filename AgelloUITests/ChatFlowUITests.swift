@@ -377,7 +377,9 @@ final class ChatFlowUITests: XCTestCase {
   func testLongSummarySurvivesBackgrounding() throws {
     try XCTSkipIf(Self.isSimulator, "Needs real GPU generation")
     app.terminate()
-    app.launchArguments.append("--uitest-sample-report")
+    // Since 32K the sample report fits whole; at 8K, a load short of memory, it's read section by
+    // section, the long work this test sends to the background (2026-11-12).
+    app.launchArguments += ["--uitest-sample-report", "--uitest-window", "8192"]
     app.launch()
     try openNewChat()
     XCTAssertTrue(element("message.file").waitForExistence(timeout: 5), "No pending file chip")

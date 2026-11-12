@@ -449,6 +449,7 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
 | `--trace` | The app writes a trace of each reply to `Documents/traces/` (`ReplyTrace`); the bench passes it |
 | `AGELLO_BENCH_DRAFT`, `AGELLO_BENCH_AUTOSEND=1` (env) | Open on a new chat with this draft; with autosend, send it once the model is ready (the bench and `bench-direct.sh`) |
 | `AGELLO_BENCH_THINK` (1 or 0), `AGELLO_BENCH_COOL=1` (env, with autosend) | Set Think as the driver's pill would; wait up to ten minutes for the thermal state to be nominal before sending (`phone-bench.sh`, `bench-direct.sh`). Autosend also keeps the screen on |
+| `--uitest-window N` | Hold the window at N tokens, as a load short of memory does (`InferenceOptions.launch`): since 32K the sample report fits whole, and `testLongSummarySurvivesBackgrounding` holds 8192 to reach the section-by-section summary |
 | `-memoryEnabled NO` | The argument domain's value for that launch: no memories in the system prompt, the saved setting untouched (`phone-bench.sh`, `bench-direct.sh`) |
 | `AGELLO_SIMULATE_MEMORY_GB` (env) | Stands in for the phone's memory at the hardware-floor check (`DeviceFloorUITests`) |
 | `TEST_RUNNER_HARNESS_THINKING`, `_MEMORY`, `_CALIBRATE`, `_PROBES`, `_SCREENSHOTS`, `_BENCH` | Enable the opt-in suites (the script sets them) |

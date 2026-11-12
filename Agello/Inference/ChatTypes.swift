@@ -132,9 +132,18 @@ struct InferenceOptions: Codable, Sendable, Equatable {
   /// detail and the system prompt are no longer settings (2026-11-11, when Advanced was removed),
   /// so a value saved from that screen doesn't keep applying where nobody can see it. Tests,
   /// probes and the Mac command line still set any of them in memory.
-  static func launch(saved: InferenceOptions?) -> InferenceOptions {
+  ///
+  /// UI tests can hold the window with `--uitest-window N` in `arguments`, as a load short of
+  /// memory does: since 32K, the sample report fits whole and nothing else reaches the
+  /// section-by-section summary.
+  static func launch(saved: InferenceOptions?, arguments: [String] = []) -> InferenceOptions {
     var options = InferenceOptions()
     options.enableThinking = saved?.enableThinking ?? false
+    if let index = arguments.firstIndex(of: "--uitest-window"), index + 1 < arguments.count,
+      let tokens = Int(arguments[index + 1])
+    {
+      options.maxNumTokensOverride = tokens
+    }
     return options
   }
 }

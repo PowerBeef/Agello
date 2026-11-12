@@ -42,6 +42,14 @@ final class DeviceProfileTests: XCTestCase {
     XCTAssertEqual(InferenceOptions.launch(saved: saved), InferenceOptions())
   }
 
+  /// A UI test holds the window with `--uitest-window N`; nothing else in the arguments does.
+  func testUITestWindowArgument() {
+    XCTAssertEqual(InferenceOptions.launch(saved: nil, arguments: ["Agello", "--uitest-window", "8192"]).maxNumTokensOverride, 8_192)
+    XCTAssertNil(InferenceOptions.launch(saved: nil, arguments: ["Agello", "--uitest-reset"]).maxNumTokensOverride)
+    XCTAssertNil(InferenceOptions.launch(saved: nil, arguments: ["Agello", "--uitest-window"]).maxNumTokensOverride)
+    XCTAssertNil(InferenceOptions.launch(saved: nil, arguments: ["Agello", "--uitest-window", "big"]).maxNumTokensOverride)
+  }
+
   /// 32K by default where the device has 12 GB (2026-11-09), stepping down to 16K below 5.1 GB
   /// left at load and to 8K below 3.5 GB.
   func testLargeContextStepsDownWithTheRoomAtLoad() {

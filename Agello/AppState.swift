@@ -139,7 +139,7 @@ final class AppState {
       useMockEngine ? MockChatEngine() : LiteRTChatEngine()
     self.knowledge = KnowledgeBase(store: self.store, useHashingEmbedder: useMockEngine)
     let saved = UserDefaults.standard.decoded(InferenceOptions.self, forKey: "inferenceOptions")
-    let launched = InferenceOptions.launch(saved: saved)
+    let launched = InferenceOptions.launch(saved: saved, arguments: ProcessInfo.processInfo.arguments)
     self.options = launched
     if launched != saved { UserDefaults.standard.set(try? JSONEncoder().encode(launched), forKey: "inferenceOptions") }
     self.enableTools = UserDefaults.standard.object(forKey: "enableTools") as? Bool ?? true

@@ -12,7 +12,8 @@ enum SampleDocuments {
     ])
 
   /// A long report (`--uitest-sample-report`): 60 pages, about 8K tokens, so "Summarize this"
-  /// read it section by section when chat's window was 8K. Section 23 is about water quality,
+  /// reads it section by section in an 8K window. At 32K it's read whole: UI tests that need the
+  /// section-by-section summary hold the window with `--uitest-window 8192`. Section 23 is about water quality,
   /// inspected by district 4.
   static var coastalReport: ExtractedDocument {
     let topics = [
