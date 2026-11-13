@@ -305,4 +305,4 @@ itself: `release again=release`).
   error where it used to get a slow answer. On the 12 GB floor that should be rare; the load
   log will say if it isn't.
 - **Disk.** A runtime build needs about 8 GB of Bazel output while it's worked on; the project
-  budget (30 GB, 50 GB free) is tight around it.
+  budget (40 GB since 2026-11-13, 50 GB free) is tight around it.

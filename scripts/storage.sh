@@ -5,7 +5,7 @@
 #   scripts/storage.sh           the full report, largest first
 #   scripts/storage.sh brief     a summary (the session-start hook and every harness run print it)
 #   scripts/storage.sh clean     delete the scratch; never anything kept or to review
-# Budget: the project stays under STORAGE_BUDGET_GB (30) and / keeps STORAGE_MIN_FREE_GB (50)
+# Budget: the project stays under STORAGE_BUDGET_GB (40) and / keeps STORAGE_MIN_FREE_GB (50)
 # free. Model files in the app containers are APFS clones of ~/Models/agello and count once
 # (scripts/lib/clones.py checks their blocks). Ask the user before deleting a kept or reviewed item.
 # shellcheck disable=SC2088 # labels show ~ for the reader; paths use $HOME
@@ -23,7 +23,7 @@ BAZEL_BASE="/private/var/tmp/_bazel_$(id -un)"
 BAZEL_DISK="$HOME/.cache/bazel-disk"
 # The worktree's .bazelrc.user cap (6 GB), which Bazel enforces only while its server idles.
 BAZEL_DISK_CAP_KB=$((${STORAGE_BAZEL_DISK_CAP_MB:-6144} * 1024))
-BUDGET_GB="${STORAGE_BUDGET_GB:-30}"
+BUDGET_GB="${STORAGE_BUDGET_GB:-40}"
 MIN_FREE_GB="${STORAGE_MIN_FREE_GB:-50}"
 ROWS="$(mktemp)"
 trap 'rm -f "$ROWS" "$ROWS.sorted"' EXIT
