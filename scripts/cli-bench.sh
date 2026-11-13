@@ -9,6 +9,7 @@
 #           release            what the app ships (Vendor/LiteRT-LM)
 #           next               the fork's local build (../agello-arms/next/LiteRT-LM)
 #           NAME=/abs/path     any checkout whose folder is named LiteRT-LM
+#           NAME=rel/path      the same, relative to the project (no spaces: build/cli/arms/…)
 #           NAME=release|next  the same build under another name (to measure the noise)
 #         Default: release. The first arm is the base the others are compared with.
 #
@@ -65,7 +66,10 @@ package_of() {
     release) echo "$ROOT/Vendor/LiteRT-LM" ;;
     next) (cd "$ROOT/../agello-arms/next/LiteRT-LM" 2>/dev/null && pwd) || { echo "No checkout at ../agello-arms/next/LiteRT-LM" >&2; exit 2; } ;;
     /*) echo "$1" ;;
-    *) echo "An arm is release, next or NAME=/abs/path (got $1)." >&2; exit 2 ;;
+    # Relative to the project: this checkout's own path has a space, which splits the list of
+    # arms, so copies kept under build/ are named this way (b3=build/cli/arms/b3/LiteRT-LM).
+    */*) (cd "$ROOT/$1" 2>/dev/null && pwd) || { echo "No checkout at $ROOT/$1" >&2; exit 2; } ;;
+    *) echo "An arm is release, next, NAME=/abs/path or NAME=path/in/the/project (got $1)." >&2; exit 2 ;;
   esac
 }
 
