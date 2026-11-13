@@ -167,6 +167,11 @@ struct AgelloCommand {
       "sources": exchange.reply?.parts.sources.count ?? 0,
       "memoryPressureEvents": MemoryPressureMonitor.events.withLock { $0.warnings },
     ]
+    // The process's footprint when the reply ended, and its peak so far: what each turn of a
+    // chat holds (an image's encoder, for one), as the bench records give it.
+    let footprint = Machine.footprint()
+    summary["footprintMB"] = Double(footprint.bytes) / 1e6
+    summary["peakFootprintMB"] = Double(footprint.peakBytes) / 1e6
     if let stats {
       summary["outputTokens"] = stats.outputTokens ?? NSNull()
       summary["inputTokens"] = stats.inputTokens ?? NSNull()
