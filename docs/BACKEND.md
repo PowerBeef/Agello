@@ -53,7 +53,8 @@ fast as the hardware allows, at the quality the model has today.
 - What the Mac command line measured on the M6 (shipped runtime, 32K window): 90 to 115 tok/s;
   a decode run is 72 % `fc1x1_int4_weights`; a prefill run is 43 % the int8 convolution and
   28 % `weights_convert_uint4_to_int8`; a decode step is 86 % the GPU's MTP verify run, and speed
-  follows the share of drafts MTP keeps (58 to 71 %).
+  follows the share of drafts MTP keeps (58 to 71 % on the coding prompt, 44 to 60 % on the
+  bench's cases, and 45 to 57 % on the iPhone).
 - **The CPU still does real work in the app.** The image and audio encoders run on the CPU
   (`ChatEngine.makeEngine`), and so does everything around the GPU: the tokenizer, sampling, the
   grammar for JSON. "GPU only" means the language model and the embedder; the CPU kernels the
@@ -71,7 +72,7 @@ maintainer's go, as before.
 | **B2** (done 2026-11-11, local branch `agello-one`) | One repository: LiteRT and ML Drift imported at the pinned commits as folders, the build reading them in place of the archives. No source changes. | Replies identical to the build before the move, speed inside the noise, and a kernel edit rebuilds without a pin. |
 | **B3** (pruned 2026-11-11; the speed run is owed) | Prune to what the Apple build compiles: other platforms, other GPU APIs, vendor NPUs, converters, the other bindings and build systems, and the path that runs the language model on the CPU. | The same check as B2, with the file count before and after recorded. |
 | **B4** (the Mac's half done 2026-11-11) | The baseline: a noise run on a quiet Mac, the bench on the iPhone, and a ledger of what each later change bought. | Both baselines are committed with their noise bands. |
-| **B5** | The performance work (below), one thread at a time. | Each thread: a gain outside the noise on the Mac, confirmed on the iPhone, with a quality verdict. |
+| **B5** (planned 2026-11-13: [PERFORMANCE.md](PERFORMANCE.md)) | The performance work (below), one thread at a time. | Each thread: a gain outside the noise on the Mac, confirmed on the iPhone, with a quality verdict. |
 | **B6** | Releases and instructions from the one repository: the release and vendoring scripts, the fork's reference, the `agello-litert-update` skill, this repo's docs. | A release built from the one repository ships in the app after its iPhone gate. |
 
 B0 and B1 don't depend on each other. B2 comes before B3, and B4 before any B5 thread is judged.
@@ -180,6 +181,13 @@ As built, B3 (2026-11-11), three commits on `agello-one` (`7e4d9b8d`, `a9553bde`
   too disturbed to count (the ledger has it).
 
 ### B5. The performance work
+
+The detailed plan is [PERFORMANCE.md](PERFORMANCE.md) (approved 2026-11-13): what a reply costs on the
+iPhone 17 Pro, what the A19 Pro and A20 Pro offer, and eight phases over seven tracks, measuring
+first, up to the model's full 131,072-token window. The threads below were its starting list;
+each is one of its rows now (1: C1; 2: D1; 3: Tracks A and B; 4: B1, E2, F1; 5: G1 to G3;
+6: E1 to E9, G4; 7: left for later, E1 frees the image encoder's memory meanwhile; 8: Track H;
+9: A1 and measurement 0.2).
 
 Ordered by what the measurements say is largest. Each thread starts by measuring its own share
 again on the baseline, since these figures come from a busy Mac.
