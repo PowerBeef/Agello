@@ -404,6 +404,26 @@ with 1,024-token runs makes 64K fixed and the growth path unnecessary; 4.5–5.1
 adaptive; over 5.1 GB with 128-token runs, or 44K tokens taking over 90 s, means no 64K. The
 1.99 GB outside Metal at the end of the `web` suite is explained first (Track 0.4).
 
+**First pass on the iPhone 17 Pro (2026-11-14, probe 24, `AgelloDeviceTests/WindowCostProbe.swift`)**:
+the 128K file through the app's pipeline on build `190b8eb4f343`, crate records with three
+unique needles, then a 300-word follow-up in the same chat. Above 32,768 the interim rule holds,
+so 64K reads in 128-token runs; peaks are the engine alone (no helper, no image).
+
+| Window | Prompt | First token | Peak | Needles | Follow-up decode |
+| --- | --- | --- | --- | --- | --- |
+| 32K, 1,024-token runs | 5,843 tokens | 4.1 s | 1.95 GB | 3/3 | 34 tok/s |
+| 32K | 21,058 | 15.2 s (1,382 tok/s) | 2.02 GB | 3/3 | 32 tok/s |
+| 64K, 128-token runs | 5,843 | 5.6 s | 1.53 GB | 3/3 | 38 tok/s |
+| 64K | 24,730 | 28.6 s (865 tok/s) | 1.28 GB | 3/3 | 27 tok/s |
+| 64K | 45,273 | 59.5 s (761 tok/s) | 1.40 GB | 3/3 | 22 tok/s |
+
+Against the decision rule: 45K tokens in 59.5 s (under 90) and a 1.40 GB peak (far under 5.1)
+keep 64K in; the 1,024-token peak at 64K waits for the private pool. Memory isn't the cost at
+64K with 128-token runs, time is: those runs read 1.3–1.6× slower than 1,024-token ones, so the
+pool is worth 15–20 s on a 45K read, and decode falls about a third from 6K to 45K tokens filled
+(C3's case). Single runs in one order, the phone warm from an hour of suites: heat and fill are
+confounded, so the decode figures need an interleaved run before they decide anything.
+
 **Quality gates at 64K**: identity at ≤ 32K between the 64K and 32K engines; 48-digit copies at
 0–95 % of 57K and across position 32,767→32,768, all exact; positions 65,519–65,535; a needle
 table at 21K, 32K, 44K, 50K and 57K (at least 15 of 18 each; the whole-file cap goes where it
