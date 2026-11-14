@@ -5,6 +5,10 @@ milestone B5 of [BACKEND.md](BACKEND.md) ("The performance work"): faster replie
 Pro (A19 Pro) and the iPhone 18 Pro and iPhone Duo (A20 Pro), the least memory the app can hold,
 the same output quality, and Gemma 4 E4B's full trained window of 131,072 tokens.
 
+Changed on 2026-11-14 (the maintainer's choices): the work is tuned for the iPhone 17 Pro, the phone on
+the bench; the iPhone 18 Pro must run what ships, and its own optimizations wait as notes in Track G.
+The window is 32K growing to 64K, not 131,072 ("The window: 32K growing to 64K").
+
 It comes from a read of the runtime's code on `agello-one` (`edb2c7db`), the records already on
 disk (no new runs), the fork's reference, Apple's iOS 27.2 SDK headers, and published sources
 (listed at the end). Every figure is marked:
@@ -288,13 +292,39 @@ Quality gates for every window step:
 
 ### Track G. One hardware class, and the A20 Pro
 
+**The target is the iPhone 17 Pro** (the maintainer's choice, 2026-11-14: it's the phone on the
+bench, and there's no iPhone 18 Pro to measure). Every speed and tile choice is tuned and judged on
+the A19 Pro. The iPhone 18 Pro must run what ships, at least as well: G1 keeps an unknown chip
+from falling to the slowest kernels, and the memory rules carry over unchanged (both have 12 GB).
+What would make the 18 Pro faster is kept as notes, below the table, for when the maintainer
+upgrades.
+
 | # | Change | Why |
 | --- | --- | --- |
 | G1 | Detect the GPU family with `supportsFamily` instead of the device name | ML Drift matches names (`MD/common/gpu_info.cc:690-768`). The A20 Pro is listed, but any chip name it doesn't know falls to Apple1 with 4 units, which turns off `ConvAppleMPP` and takes prefill off the neural accelerators |
 | G2 | Compile at MSL 4.1 on iOS 27, and drop the Apple7–9 paths | Unlocks the int2, FP8 and FP4 operands and persistent kernels; less code to keep |
-| G3 | Tile shapes and work-group splits measured on the A19 Pro (6 cores), then the A20 Pro (7), never taken from the Mac | The phones are a different family with half the bandwidth or less |
+| G3 | Tile shapes and work-group splits measured on the A19 Pro (6 cores), never taken from the Mac | The phone is a different family with half the bandwidth or less |
 | G4 | Load time: deduplicate the per-node compiles and keep binary archives keyed by the runtime's build id; a cheaper `validate()` | Cold loads of 7.2–9.6 s; ~0.18 s off each warm load [E] |
-| G5 | The A20 Pro: on the bench as soon as one is available. Until then `AGELLO_SIMULATE_APPLE_GPU="Apple A20 Pro"` exercises its code paths on the 17 Pro | Apple claims twice the FP8 rate on its accelerators [A via press]; FP8 weights would mean re-quantizing, a quality question for later, not this plan |
+| G5 | The iPhone 18 Pro runs what ships: once before a release, the A20 Pro's code paths on the 17 Pro (`AGELLO_SIMULATE_APPLE_GPU="Apple A20 Pro"`: identical replies, the matrix-unit kernels on) | Correctness only; its speed is for the notes below |
+
+**Notes for the iPhone 18 Pro (A20 Pro), for later.** Not scheduled; they wait for the hardware.
+
+- Measure first: a day-one script (stream-read bandwidth, level-4 kernels, a System Trace, ten
+  minutes of sustained decode, a per-device baseline in `phone-bench.sh`), and its family with
+  `supportsFamily`. If it reports Apple11 like the M6, the Mac becomes its proxy, and the M6's
+  "int8 × int4 is no faster" (D1) may hold there while failing on the A19 Pro.
+- Bandwidth: Apple claims 50 % more [A], about +40 % decode from that alone [E]. The verify run
+  would fall from about 43 to 29 ms [E], so the 8 ms host gap grows from 14 % to about 20 % of a
+  speculative round: Track A (A3, A4) is worth more there than on the 17 Pro.
+- Tiles and splits from a table keyed by family and core count (7 GPU cores against 6), filled by
+  a short tuning run on the phone, instead of name or core-count constants (the 16 threadgroups
+  of decode attention, the ×V and Q·Kᵀ tiles, D1's per-shape kernel choice).
+- Heat: the 18 Pro reportedly sustains 63 % of peak and the 18 Pro Max 79 % [P]; tune sustained
+  decode (Track H) per model.
+- The accelerators' FP8 rate, twice the A19 Pro's by Apple's account [A via press]: FP8 weights
+  mean re-quantizing and a quality question; left alone.
+- The iPhone Duo shares the chip; its screens change the UI, not the runtime.
+
 
 ### Track H. Heat
 
@@ -436,10 +466,8 @@ emulation, positions past 98K); an energy figure beside tok/s; a rollback path f
 model-file pair; interaction tests (backgrounding mid-prefill with a pending pool release, a memory
 warning during a helper snapshot).
 
-**A20 Pro**: Track A matters more there (50 % more bandwidth makes the host gap a larger share of a
-round), so A3 and A4 should be written and exact before it arrives; tiles and splits from a table by
-family and core count; a day-one script (stream-read, level 4, System Trace, sustained run, a
-per-device baseline); check the family with `supportsFamily` first.
+**A20 Pro**: notes only, kept in Track G ("Notes for the iPhone 18 Pro") until the maintainer has
+one; the plan targets the iPhone 17 Pro.
 
 ## Order of work (original, 2026-11-13)
 
@@ -452,7 +480,7 @@ per-device baseline); check the family with `supportsFamily` first.
 | P4 | E2, E4, E5, E6 | The memory layout that 64K and 128K need |
 | P5 | F1, F2, F3, F4, C3, then the gates; 64K first, then 128K | The full window |
 | P6 | B2, B3, B4, B5, F5, G2 | Larger or quality-sensitive work |
-| P7 | G3, G5 on the A20 Pro | When the hardware is on the bench |
+| P7 | Track G's notes for the iPhone 18 Pro | When the maintainer has one |
 
 Each phase ends in releases only through the existing gate: replies identical or read and judged
 better, speed outside the noise band on the Mac and confirmed on the iPhone, the suites the change
