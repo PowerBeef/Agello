@@ -385,6 +385,25 @@ The helper keep rule counts filled bytes (`8,192 × used + 31.5 MB + 400 MB`: 0.
    after the fix. Still to do: the iPhone run, and a stop timed during a long read.
 2. The private pool for the 1,024-token prefill (the order below's item 4, now first), with
    `kLongWindow` lifted to 65,536. Gate: identical replies, the soak, peak ≤ 3.0 GB at 44K.
+   **Done on the Mac (2026-11-14, build `889dea2b6618`).** The pool's log (`AGELLO_LOG_POOL`) at
+   64K showed every graph borrowing: the large prefill took decode's buffers, and the 128-token
+   prefill and verify took its own, so after a long prompt only 512 MB of its 2.2 GB could be
+   freed. Now the graph whose positions input holds 512 or more positions (the 1,024-token
+   prefill, at every window) gets buffers of its own and lends none. The freed buffers' pages
+   are emptied first: three of its 89 buffers (both 256 MB ones and a 128 MB one) stay referenced
+   from outside the pool after the rebind (a retain count of 3, not 2) and had kept 640 MB
+   resident; who holds them is still open. `kLongWindow` is 65,536. The 128K file on the M6:
+
+   | | 64K, 44K tokens | 32K, 21K tokens |
+   | --- | --- | --- |
+   | First token | 19.1 s (24.1 with 128-token runs) | 7.6 s (unchanged) |
+   | Peak | 2.96 GB (1.68 with 128-token runs, 3.00 shared) | 1.91 GB (2.04 shared) |
+   | After the prompt | 1.79 GB (1.68 with 128-token runs, 2.46 shared) | 1.22–1.56 GB (1.65–1.92 shared) |
+
+   Replies identical to the shared pool's at both windows, with two long prompts in a row, so
+   the rebuild is exercised. Freeing the executor's 1,024-row input buffers too (two masks of
+   [1, 1, 1,024, window] floats) changed nothing: tried and dropped. Left: the phone's numbers
+   with 1,024-token runs at 64K (probe 24, then a helper and an image), and the soak.
 3. App groundwork: the window from the file (`ContextBudget.exportWindow` falls back to 32,003
    today), the reply reserve, the keep rule, a 64K rung with its own room threshold, and
    `DeviceProfile.maxContextTokens(model:appMemoryLimitBytes:)` (no caller) removed.
