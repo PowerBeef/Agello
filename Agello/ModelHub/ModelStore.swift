@@ -150,6 +150,9 @@ final class ModelStore: NSObject {
     guard let url = localURL(for: spec) else { return false }
     guard let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64
     else { return false }
+    // A models folder given from outside (development tools) may hold a variant of a catalog
+    // file, such as a model whose graph was edited: any file there counts.
+    if Self.externalModelsDirectory != nil { return size > 0 }
     return size == spec.sizeBytes
   }
 
