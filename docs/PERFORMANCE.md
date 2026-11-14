@@ -304,7 +304,68 @@ Quality gates for every window step:
 - Keep passive GPU waits (benchmark mode stays off, as `ChatEngine.swift:194` sets it).
 - Measure whether the chat's 60 frames per second while streaming take GPU time from the model.
 
-## Order of work
+## Order of work, revised (2026-11-14)
+
+Adopted by the maintainer on 2026-11-14 after this session's Mac measurements and an independent
+review (Claude Fable 5.2; the full text is in `build/drafts/roadmap-review-fable-2026-11-14.md`).
+It replaces the phase order below, which stays as the record of the original plan; the estimates
+there predate the measurements.
+
+**On the Mac, now**
+
+1. Two release candidates, built and gated, not published (release timing is the maintainer's
+   call): train 1, everything bit-identical on today's file (A1, E7, A2 and its fix, E1, D1's first
+   step, E4, E6, the pool's lending rule and the large prefill's free-and-rebuild, D2's slices);
+   train 2, the ring file, then the 128K file. Gate per train: identical replies and every suite.
+2. Tests for the pool's free-and-rebuild (`MD/metal/memory_manager.mm`): 1,024-token prefill →
+   decode → prefill with a stop mid-prefill, a helper snapshot, an image and an engine release in
+   between; a 200-turn soak asserting a flat footprint.
+3. The ×V tile (16×512: −2.8 % first token at 21K, replies identical) confirmed on the bench;
+   score slices chosen by the 128K peak (256 MB kept).
+4. A private pool for the 1,024-token prefill, freed whole after each long prompt, so a 64K window
+   can use 1,024-token chunks (the peak at 128K likely stays too high for them).
+5. B2, drafts copied from the context (prompt lookup), the largest decode gain the Mac can
+   measure: up to ~1.6× on summaries, edits and file answers.
+6. B4 (speculative decoding for JSON helpers, every Search message waits on one), then B3
+   (Regenerate with speculative decoding; changes seeded replies).
+7. G1 now: unknown chip names fall to Apple1 (`MD/common/gpu_info.cc`), which turns the matrix-unit
+   kernels off; families from `supportsFamily`, unknown chips to the newest family.
+8. App groundwork: `DeviceProfile` memory rules (KV per position with rings, the 6.44 GB limit,
+   E9), a smaller reply reserve for long windows, D4's chunking threshold re-fit, F4's design, A3
+   written (exact; measured on the phone).
+
+**On the iPhone**
+
+9. P0 in one session: level-4 kernels, a System Trace, stream-read bandwidth, the jetsam limit per
+   run, ABBA case order in `phone-bench.sh`.
+10. Train 1's gate, with A1's real test (does the 9.5 ms host side move?) and the `memory` suite at
+    6.44 GB.
+11. Sustained decode (Track H): ten minutes, tok/s per minute, the verify run's GPU time as the
+    thermometer; whether 60 fps streaming costs GPU time.
+12. A3, A4, A5 decided from the trace (the track capped at about +10 %; A5's ICB path is off for
+    graphs with external mutable tensors).
+13. D1's second step and the tile shapes re-tested on the A19 Pro.
+14. Train 2, then 64K with gates 2–5; C1 only with more than 15 % bandwidth headroom.
+
+**Dropped or deferred**: the head-size-512 fused attention kernel and D3 (attention runs near the
+M6's matrix-unit ceiling, D2 regime row), G2, F5, C2, B1, B5 (unless B2 shows long accepted runs),
+A6 (until the iPhone's kernel shares), C3 and F3 (unless 128K becomes a product window), 128K as a
+default window.
+
+**Missing until now**: F4 (the KV cache on flash) is a prerequisite for windows above 32K, since
+the phone has no GPU in the background and a long prefill dies when the user leaves; model-file
+migration (an on-device graph patch checked by sha256 instead of a new download, and the cold
+weight-cache rebuild measured); a stronger 128K quality attribution (INT8 KV, the rotary
+emulation, positions past 98K); an energy figure beside tok/s; a rollback path for a runtime and
+model-file pair; interaction tests (backgrounding mid-prefill with a pending pool release, a memory
+warning during a helper snapshot).
+
+**A20 Pro**: Track A matters more there (50 % more bandwidth makes the host gap a larger share of a
+round), so A3 and A4 should be written and exact before it arrives; tiles and splits from a table by
+family and core count; a day-one script (stream-read, level 4, System Trace, sustained run, a
+per-device baseline); check the family with `supportsFamily` first.
+
+## Order of work (original, 2026-11-13)
 
 | Phase | Contents | Why first |
 | --- | --- | --- |
