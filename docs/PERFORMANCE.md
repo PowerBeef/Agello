@@ -372,6 +372,17 @@ The helper keep rule counts filled bytes (`8,192 × used + 31.5 MB + 400 MB`: 0.
 1. Findings 1 and 2: shown, then fixed (a stop check between prefill runs; each ring's last 511
    slots, about 10.5 MB, kept at the checkpoint and written back on a long rewind). Gate: a Think
    reply over 1,100 tokens and a follow-up, the ring file against today's.
+   **Done on the Mac (2026-11-14, `agello-one` `6cfd1a28`).** Shown: a 3,096-position rewind found
+   98 % of the window's bytes overwritten. The fix copies the rings (31.5 MB) just before the first
+   run that would overwrite the point's window, not at the checkpoint: the prompt's last token is
+   written by the first decode, and the V caches' groups of four slots are rewritten as a group
+   fills (in full-length caches too), so a copy at the checkpoint would put stale values back.
+   Replies under 1,024 tokens copy nothing. Two more ring hazards closed: matching tokens after a
+   rewind are prefilled again (upstream skipped the reuse only for Artisan rings), and any other
+   rewind past the window fails instead of reading overwritten slots. The gate as written can't
+   judge it: the two files' replies part about 30 tokens into a long Think reply at the same
+   window, from summation order, before any rewind; the follow-up's facts were right before and
+   after the fix. Still to do: the iPhone run, and a stop timed during a long read.
 2. The private pool for the 1,024-token prefill (the order below's item 4, now first), with
    `kLongWindow` lifted to 65,536. Gate: identical replies, the soak, peak ≤ 3.0 GB at 44K.
 3. App groundwork: the window from the file (`ContextBudget.exportWindow` falls back to 32,003
