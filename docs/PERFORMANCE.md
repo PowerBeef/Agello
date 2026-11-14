@@ -460,6 +460,41 @@ in `calibrate` (`kLongWindow` stays as a guard above 64K). **Deferred**: F5, the
 G2, C2, B1, B5, A6, C1, a KV transplant across engines; F4 unless reads backgrounded on the phone
 fail.
 
+## The engine review, adopted (2026-11-14)
+
+The maintainer allowed tearing the engine down where that's the better path; an independent
+ground-up review and its follow-up (Claude Fable 5.2: `build/drafts/engine-rebuild-review-fable-2026-11-14.md`,
+`engine-rebuild-followup-fable-2026-11-14.md`) concluded not to: decode reads memory at about 59
+of 77 GB/s and prefill sits near the matrix units' ceiling, so a new engine would buy load time
+(7–9 s to 1–2 s [E]), not tokens per second. Rebuild how attention gets its masks; gate the
+speculative round on a replay test; patch the rest. Adopted, Mac first (the phone is available
+only now and then; no Mac step depends on P0):
+
+1. The buffer holder: three of the large prefill's freed buffers keep a third reference, most
+   likely the delegate's input converters (a task outside the graph's nodes keeps its destination
+   and source buffers, `converter.mm`); re-point or drop them at release. Gate the residency set's
+   adds on residency being enabled: it collects every bound input and output buffer, never
+   removed.
+2. The GPU options read and parsed on every Invoke (`delegate_metal.mm`): once, behind a switch.
+3. A GPU graph dump and the pool's tenants; the peak against fill (5K, 21K, 44K).
+4. Mask bounds: per-row `[rows, 4]` int32 `{ring_start, ring_len, lin_start, lin_end}` applied in
+   the Q·Kᵀ epilogue, replacing the CPU-filled float masks, the bool mask and the mask node's
+   second score tensor; ring wrap by a compare, linear loop bounds on global layers. Gate: identical
+   replies, a ring-wrap prompt and an image prompt. Estimated 0.5–0.75 GiB less pool and 0.27 GiB
+   less outside it at 64K; the phone's peak with a helper and an image under 4.5 GB [E].
+5. Writers bounded by the filled length (the peak follows fill, not window), tile skipping in the
+   ring files' local layers, padded rows skipped (time only).
+6. The drafter's global read windowed (exact: verify decides), acceptance measured.
+7. A replay harness: a reply's rounds replayed back to back with one wait, the ceiling of a
+   GPU-resident round; under about +8 % sustained on the phone, the resident round is dropped.
+
+On the iPhone when it's free: P0 with a System Trace, step 2's peak with a helper and an image,
+the emptied buffers' footprint drop, the replay ceiling cool and after ten minutes, identical
+replies for each switch. Decided there: the resident round, C3 and zero-skipping, a fused local
+kernel (only above 10 % of a chunk), fusion for memory (only above 4.5 GB). Withdrawn by the
+review: purgeable state as a trap (it works on buffers nothing runs on), decode's eight idle
+128 MB buffers as a memory item (never touched), the row bound as a memory item.
+
 ## Order of work, revised (2026-11-14)
 
 Adopted by the maintainer on 2026-11-14 after this session's Mac measurements and an independent
