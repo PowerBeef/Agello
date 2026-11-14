@@ -488,6 +488,29 @@ only now and then; no Mac step depends on P0):
 7. A replay harness: a reply's rounds replayed back to back with one wait, the ceiling of a
    GPU-resident round; under about +8 % sustained on the phone, the resident round is dropped.
 
+**Done on the Mac so far (2026-11-14, `agello-one` `1e2bc133` to `95b1bc88`):**
+
+- Step 1: the converters were the holder, as the review read it (their task kept src and dst
+  bound until the next encode); transfers of a megabyte or more are unbound after encoding, and
+  no freed buffer keeps a third reference. The residency set's adds are gated on residency.
+- Step 2: measured, not needed: the options are parsed 4 times in a 468-run reply (only some
+  Invokes carry run options). A counter remains.
+- Step 3: `AGELLO_LOG_POOL` names each big buffer's tenants. At 64K the large prefill's eight
+  16-bit global-cache inputs are never read by any kernel (never touched); the global mask chain
+  (a 16-bit cast, three copies, a [4,096 × window] bool, its row slices) and the per-slice cache
+  conversions are what grow with the window, ~25–35 ms of a 380 ms run.
+- Step 4, global masks as per-row bounds: an `agello_mask_bounds` node reads the runtime mask
+  once and writes one past each row's last kept key; the global epilogue keeps `key < bound`; the
+  copy chain is deleted. The cleanup had never deleted anything before (GraphFloat32's
+  `IsGraphOutput` counts every value with no reader), which is also why the shelved row-mask patch
+  cost memory. 64K, 44K tokens: first token 19.6 → 17.9 s, peak 2,920 → 2,364 MB; 32K, 21K
+  tokens: 7.53 → 7.28 s, peak 1,937 → 1,660 MB. Replies identical at both windows and on an
+  image prompt; unit, `inference`, `thinking`, `files` pass natively. `AGELLO_MASK_BOUNDS=0`
+  restores the masks.
+- Step 6, the drafter's global window: exact, but drafts accepted fall from 57.4 % to 50–52 %
+  at 2K–8K windows after a 44K prompt, which cancels the read it saves; left off
+  (`AGELLO_DRAFTER_WINDOW`).
+
 On the iPhone when it's free: P0 with a System Trace, step 2's peak with a helper and an image,
 the emptied buffers' footprint drop, the replay ceiling cool and after ten minutes, identical
 replies for each switch. Decided there: the resident round, C3 and zero-skipping, a fused local
