@@ -507,6 +507,15 @@ only now and then; no Mac step depends on P0):
   tokens: 7.53 → 7.28 s, peak 1,937 → 1,660 MB. Replies identical at both windows and on an
   image prompt; unit, `inference`, `thinking`, `files` pass natively. `AGELLO_MASK_BOUNDS=0`
   restores the masks.
+- Step 4b, the row-valid flag from the bounds (`3a0ea85a`): the graph's "row keeps any key"
+  flag held a 16-bit copy of the whole mask for most of the run (128 MB at 64K); an
+  `agello_bounds_flag` node writes bound > 0 instead. 64K, 44K tokens: 17.7 s, peak 2,212 MB
+  (2,920 before step 4); 32K, 21K tokens: 7.18 s, peak 1,560 MB. Replies identical; the suites
+  pass natively.
+- Step 4c, one cache conversion per layer: tried and reverted for now. The conversions do go
+  through `GpuModelBuilder::WeightsConversion`, but the attention kernel makes a new constant
+  for each slice's INT8 scale, so no two slices' keys match; sharing needs those constants
+  deduplicated first, for 1–2 % of a run on the phone [E].
 - Step 6, the drafter's global window: exact, but drafts accepted fall from 57.4 % to 50–52 %
   at 2K–8K windows after a 44K prompt, which cancels the read it saves; left off
   (`AGELLO_DRAFTER_WINDOW`).
