@@ -488,7 +488,7 @@ only now and then; no Mac step depends on P0):
 7. A replay harness: a reply's rounds replayed back to back with one wait, the ceiling of a
    GPU-resident round; under about +8 % sustained on the phone, the resident round is dropped.
 
-**Done on the Mac so far (2026-11-14, `agello-one` `1e2bc133` to `95b1bc88`):**
+**Done on the Mac so far (2026-11-14, `agello-one` `1e2bc133` to `c0994a6a`):**
 
 - Step 1: the converters were the holder, as the review read it (their task kept src and dst
   bound until the next encode); transfers of a megabyte or more are unbound after encoding, and
@@ -519,8 +519,21 @@ only now and then; no Mac step depends on P0):
 - Step 6, the drafter's global window: exact, but drafts accepted fall from 57.4 % to 50–52 %
   at 2K–8K windows after a 44K prompt, which cancels the read it saves; left off
   (`AGELLO_DRAFTER_WINDOW`).
+- Step 7, the replay test (`c0994a6a`): `AGELLO_MTP_REPLAY=1` runs every round twice, the real
+  round and then the same round with its inputs written as before and its four GPU runs committed
+  back to back, one wait, no logits read and no picks (the Metal backend commits instead of
+  waiting while the telemetry library defers waits; one queue runs them in order). The replay
+  writes what the real round wrote, so replies are unchanged: identical on a short reply and on a
+  44K prompt at 64K. On the M6, real and replayed rounds interleaved in one run (the GPU was
+  14–16 % busy with other work, so the ratio, not the times, is the result): short context
+  26.4 ms a round against 23.5 replayed, **+12 %**; 44K filled at 64K, 36.9 against 32.6,
+  **+13 %**. The replay's summed GPU time exceeds its wall time (26.5 ms in 23.5): back to back,
+  the runs' command buffers overlap, which the host loop never lets them do. Above the +8 % bar
+  on the Mac; the phone decides, cool and hot: probe 25 (`ReplayCeilingProbe.swift`) replies for
+  ten minutes and records the ceiling per reply with the thermal state, and probe 24 with the same
+  switch gives it at 45K filled.
 
-On the iPhone when it's free: P0 with a System Trace, step 2's peak with a helper and an image,
+On the iPhone when it's free (with `Vendor/use-local-litert.sh`; probe 25 is `TEST_RUNNER_AGELLO_MTP_REPLAY=1 ONLY=AgelloDeviceTests/ProbeScenarioTests/test25_ReplayCeiling scripts/device-harness.sh probes`): P0 with a System Trace, step 2's peak with a helper and an image,
 the emptied buffers' footprint drop, the replay ceiling cool and after ten minutes, identical
 replies for each switch. Decided there: the resident round, C3 and zero-skipping, a fused local
 kernel (only above 10 % of a chunk), fusion for memory (only above 4.5 GB). Withdrawn by the
