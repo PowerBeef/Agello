@@ -305,6 +305,81 @@ Quality gates for every window step:
 - Keep passive GPU waits (benchmark mode stays off, as `ChatEngine.swift:194` sets it).
 - Measure whether the chat's 60 frames per second while streaming take GPU time from the model.
 
+## The window: 32K growing to 64K (adopted 2026-11-14)
+
+The maintainer's choice, on an independent plan (Claude Fable 5.2; the full text is in
+`build/drafts/adaptive-window-plan-fable-2026-11-14.md`, the window review before it in
+`window-review-fable-2026-11-14.md`). Chats start at 32K and grow to 64K (65,536 positions) when an
+input needs it; the app moves to a fixed 64K if the phone's peak allows (the decision below).
+128K isn't a default. This section changes the order of work below where they differ.
+
+**Three findings in the code** (read, not yet shown by a run):
+
+1. Rewinds and ring caches. After a Think reply the conversation rewinds to its checkpoint
+   (`SessionAdvanced::RewindToCheckpoint` → `SetCurrentStep`, which only moves the step). With
+   1,536-slot rings, a rewind of more than 1,025 positions leaves the local layers reading slots
+   later positions overwrote. Upstream turns rewinding off for rings, but only on its Artisan
+   backend (`c/conversation.cc:543-553`); ours runs rings on the compiled-model executor with
+   rewinding on. A blocker for train 2 at any window.
+2. Prefill can't be stopped between its runs (`llm_litert_compiled_model_executor.cc`, the
+   work-group loop): Stop and backgrounding wait out a long read.
+3. Files are sent again with every message (`AppState.generate`, the file context is rebuilt per
+   send; history keeps only the turns' text): about 13 s per follow-up for a 16K document on the
+   phone today [E], 45–75 s at 44K.
+
+**The growth.** Budgets: 24,512 input tokens at 32,768 (21,782 with Think), 57,280 at 65,536
+with the reply reserve `min(window/4, 8,192) + Think budget`, capped at `window/3` (unchanged at
+32K and below). It grows for a message that doesn't fit the 32K room (instead of
+`messageTooLong`) and for a whole-document question over the 32K file budget (instead of the
+section summaries); never for web results or history. It's a reload and a reseed inside the
+prepare step ("Making room…" for 1–2 s, then the reading progress, Stop live), falling back to
+today's behavior when the room isn't there. It shrinks only when a chat that fits 32K is opened.
+The helper keep rule counts filled bytes (`8,192 × used + 31.5 MB + 400 MB`: 0.97 GB at a full
+64K, not 2.28), and above 16K used a helper that can't keep the chat waits instead of wiping it.
+
+**Order on the Mac**
+
+1. Findings 1 and 2: shown, then fixed (a stop check between prefill runs; each ring's last 511
+   slots, about 10.5 MB, kept at the checkpoint and written back on a long rewind). Gate: a Think
+   reply over 1,100 tokens and a follow-up, the ring file against today's.
+2. The private pool for the 1,024-token prefill (the order below's item 4, now first), with
+   `kLongWindow` lifted to 65,536. Gate: identical replies, the soak, peak ≤ 3.0 GB at 44K.
+3. App groundwork: the window from the file (`ContextBudget.exportWindow` falls back to 32,003
+   today), the reply reserve, the keep rule, a 64K rung with its own room threshold, and
+   `DeviceProfile.maxContextTokens(model:appMemoryLimitBytes:)` (no caller) removed.
+4. A file sent once: follow-ups send only the question while the conversation holds it.
+5. The growth path, with scripted-engine tests (`growsWhenMessageAloneExceeds32K`,
+   `historyAndWebNeverGrow`, `failedLoadAt64KRestores32K`, `chatSwitchQueuesBehindGrowth`,
+   `keepRuleCountsFilledBytes`, and the rest of the plan's list).
+6. Reading progress, stop and resume at a run boundary, `BackgroundWork` for long reads.
+7. Rewind to the checkpoint on cancel; then B2; a level-4 run at 44K and 57K filled (C3 back in
+   only if decode attention passes 20 % of a round; E6's second half for the 8.4 MB masks);
+   D4 after the pool; the 64K quality gates.
+
+**On the iPhone**: P0 and the gates of trains 1 and 2 at 32K; then the 64K numbers (first token
+at 5K, 21K, 44K and 57K, cool and hot; the peak at 6.44 GB with a 44K prompt, a helper and an
+image; sustained decode at 44K and 57K; the first 64K load). The decision: a peak under 4.5 GB
+with 1,024-token runs makes 64K fixed and the growth path unnecessary; 4.5–5.1 GB keeps it
+adaptive; over 5.1 GB with 128-token runs, or 44K tokens taking over 90 s, means no 64K. The
+1.99 GB outside Metal at the end of the `web` suite is explained first (Track 0.4).
+
+**Quality gates at 64K**: identity at ≤ 32K between the 64K and 32K engines; 48-digit copies at
+0–95 % of 57K and across position 32,767→32,768, all exact; positions 65,519–65,535; a needle
+table at 21K, 32K, 44K, 50K and 57K (at least 15 of 18 each; the whole-file cap goes where it
+holds); the FP32-sums build within 1 of 18 at 57K; twenty real documents read whole against
+section summaries (at least as good in 16, none worse on facts); a 10-fact history probe after
+growth.
+
+**Releases** (timing stays the maintainer's call): R1, train 1 with files sent once and the stop
+check; R2, the ring/128K file at a true 32,768 with the rewind fix, the old file kept until the
+new one validates; R3, the growth behind a build flag (the private pool may ride dormant); R4,
+fixed 64K if the phone allows. R2 and R3 never ship together.
+
+**Dropped**: the 96K and 130K probes and the reserve override, 128K budgets, windows above 65,536
+in `calibrate` (`kLongWindow` stays as a guard above 64K). **Deferred**: F5, the fused kernel, D3,
+G2, C2, B1, B5, A6, C1, a KV transplant across engines; F4 unless reads backgrounded on the phone
+fail.
+
 ## Order of work, revised (2026-11-14)
 
 Adopted by the maintainer on 2026-11-14 after this session's Mac measurements and an independent
