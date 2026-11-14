@@ -66,17 +66,29 @@ enum ContextBudget {
   /// Audio input token rate (conservative).
   static let audioTokensPerSecond = 25.0
 
-  /// The most positions LiteRT-LM allocates for the Gemma 4 E2B/E4B files: a
-  /// `maxNumTokens` of 32,003 (their export window) or more gets 32,000, the
-  /// largest multiple of 256 below it, so a "32K" request of 32,768 has 768
-  /// fewer positions than it asks for.
-  static let maxAllocatedPositions = 32_000
+  /// The model file's export window, the context size LiteRT-LM reads from it: 32,003 for the
+  /// Gemma 4 E2B/E4B files as published. A file opened to the trained 131,072-token window
+  /// (the fork's `tools/model-surgery/window_128k.py`) exports 131,101; development tools that
+  /// load one say so with `AGELLO_EXPORT_WINDOW`.
+  static let exportWindow: Int = {
+    if let value = ProcessInfo.processInfo.environment["AGELLO_EXPORT_WINDOW"],
+      let window = Int(value), window > 256
+    {
+      return window
+    }
+    return 32_003
+  }()
+
+  /// The most positions LiteRT-LM allocates: a `maxNumTokens` of the export window or more gets
+  /// the largest multiple of 256 below it (32,000 for 32,003, 131,072 for 131,101), so a "32K"
+  /// request of 32,768 has 768 fewer positions than it asks for.
+  static let maxAllocatedPositions = (exportWindow - 1) / 256 * 256
 
   /// Positions the runtime allocates for a requested `maxNumTokens`. Budgets
   /// must use this, never the request: the margins that keep a reply (and an
   /// MTP verify round) inside the cache are only a few dozen positions.
   static func allocatedPositions(requested: Int) -> Int {
-    requested >= 32_003 ? maxAllocatedPositions : requested
+    requested >= exportWindow ? maxAllocatedPositions : requested
   }
 
   /// Tokens `text` takes, estimated without the model's tokenizer: 3 bytes a token, or about a
@@ -214,10 +226,10 @@ enum ContextBudget {
 
 enum InferencePlanner {
   static let minTokens = 256
-  /// Gemma 4 E2B/E4B are trained for 128K, but the phone files export a 32K
-  /// window and LiteRT-LM allocates at most 32,000 positions; within that the
-  /// practical ceiling is device memory (see DeviceProfile and the
-  /// calibration scenario).
+  /// Gemma 4 E2B/E4B are trained for 128K, but the published files export a 32K
+  /// window and LiteRT-LM allocates at most 32,000 positions (131,072 with a file
+  /// opened to 128K, ``ContextBudget/exportWindow``); within that the practical
+  /// ceiling is device memory (see DeviceProfile and the calibration scenario).
   static let maxTokens = ContextBudget.maxAllocatedPositions
 
   /// Resolve user options + model + device into concrete engine settings. `contextTokens` is the
