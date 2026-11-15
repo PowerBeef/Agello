@@ -1,7 +1,7 @@
 # Vendored LiteRT-LM (Swift package surface only)
 
 `Vendor/LiteRT-LM` is a pruned copy of our LiteRT-LM fork,
-https://github.com/PowerBeef/agello-litert-lm, branch `agello-one`, at commit
+https://github.com/PowerBeef/agello-litert-lm (one branch, `main`), at commit
 **6da75396** (Google's LiteRT-LM 0.19.0-nightly.20261013 plus our commits, with LiteRT and
 ML Drift as folders of the same repository). It contains only what the Xcode build needs:
 
@@ -77,11 +77,11 @@ sidesteps it.
 ## Updating
 
 A new runtime: publish a release from the fork (`agello/release-xcframework.sh
-<tag> --publish` on `agello-next`; the fork's `docs/agello/BUILD.md` has the
+<tag> --publish` on `main`; the fork's `docs/agello/BUILD.md` has the
 steps), then vendor it:
 
 ```sh
-REF=<agello-next commit> TAG=<tag> ./Vendor/use-release-litert.sh
+REF=<commit> TAG=<tag> ./Vendor/use-release-litert.sh
 ```
 
 Then update this file and `NOTICE` (from the release's

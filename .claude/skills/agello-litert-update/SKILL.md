@@ -12,16 +12,24 @@ Google's binary (the WebGPU arm; the app's code for it left on 2026-11-11), and 
 and its re-pin steps below as what B2 replaces. The build, release and vendoring commands for
 `agello-next` still hold.
 
-**Since 2026-11-11 the one repository exists locally:** the worktree
-`../agello-arms/next/LiteRT-LM` is on the branch `agello-one` (pushed from `../LiteRT-LM`), where LiteRT
-is the folder `agello/litert` and ML Drift `agello/ml_drift`, read by the `WORKSPACE` as
-`local_repository`. There, edit the two in place and run `agello/build-xcframework.sh`: no
-override, no push, no re-pin. The branch is pruned to what the Apple build reads (3,548 files of
-10,348): after deleting anything more, check with `bazelisk clean` and
-`agello/build-xcframework.sh --disk_cache=`, since the cache hides a missing header. The `../LiteRT` and `../ml-drift` checkouts and the "Changing
-LiteRT or ML Drift" steps below apply only to `agello-next`, which the app's releases were built
-from until 2026-11-15; since then the app vendors `agello-one`'s. Never export LiteRT with a plain `git archive`: it downloads Google's prebuilt
-libraries through Git LFS (`docs/BACKEND.md`, "As built, B2").
+**Since 2026-11-15 there is one repository, one branch and one checkout:**
+`PowerBeef/agello-litert-lm`, branch `main`, checked out at `../LiteRT-LM`. LiteRT is the folder
+`agello/litert` and ML Drift `agello/ml_drift`, read by the `WORKSPACE` as `local_repository`:
+edit the two in place and run `agello/build-xcframework.sh` (it writes `dist/`), with no override,
+no re-pin and no second push. `main` also holds `docs/agello/`, `tools/agello-bench`,
+`tools/agello-docs` and `tools/model-surgery`. The tree is pruned to what the Apple build reads:
+after deleting anything more, check with `bazelisk clean` and
+`agello/build-xcframework.sh --disk_cache=`, since the cache hides a missing header. Never export
+LiteRT with a plain `git archive`: it downloads Google's prebuilt libraries through Git LFS
+(`docs/BACKEND.md`, "As built, B2").
+
+What that replaced, so older notes read right: the branches `agello` (v0.18.0 plus the Swift
+patches, the docs and tools; renamed to `main`, so links to it redirect), `agello-next` and
+`agello-one` (the source build; both in `main`'s history, deleted), Google's copy of `main`
+(deleted), the worktree `../agello-arms/next/LiteRT-LM` and the clones `../LiteRT` and
+`../ml-drift` (removed; `PowerBeef/LiteRT` and `PowerBeef/ml-drift` keep our changes as `main` and
+are archived). Wherever the sections below say `agello`, `agello-next`, `agello-one`, the worktree
+or "re-pin", read `main` in `../LiteRT-LM`; the three-repository steps no longer apply.
 
 `Vendor/LiteRT-LM` holds only the Swift package surface of our fork's
 `agello-one` branch: `Package.swift` (with the checksummed
@@ -41,18 +49,13 @@ project (its own CLAUDE.md and skills don't load):
 | --- | --- |
 | `origin` | `PowerBeef/agello-litert-lm` (push here) |
 | `upstream` | `google-ai-edge/LiteRT-LM` (fetch only; push is disabled) |
-| `agello` branch | Tag `v0.18.0` plus Agello's Swift patches (see below), for Google's prebuilt binary; `Vendor/LiteRT-LM` came from it until 2026-10-28. Also holds `docs/agello/` and `tools/agello-bench`. |
-| `agello-next` branch | The source build (below): upstream's 0.19.0 nightly source (tag `agello-base-20261013`) plus our patches. Worktree at `../agello-arms/next/LiteRT-LM`. The app vendors its releases: `agello-next-20261024` (`f1b88286`) since 2026-10-28. |
+| `main` branch | The only branch: the runtime (upstream's 0.19.0 nightly source, tag `agello-base-20261013`, plus our commits, LiteRT and ML Drift in tree), `docs/agello/`, `tools/`. The app vendors its releases: `agello-one-20261115` (`6da75396`) since 2026-11-15. |
 | `research/3913` tag | The #3913 research (below); a branch until 2026-10-15, so links to `tree/research/3913` still resolve |
-| Release tags | Live on upstream's `release/vX.Y.Z` branches (fetch from `upstream`), not on `main` |
+| Release tags | `agello-next-20261024`, `agello-one-20261115`; Google's are on upstream's `release/vX.Y.Z` branches (fetch from `upstream`) |
 
-Branch policy (decided 2026-10-15): each fork (this one, `PowerBeef/LiteRT`,
-`PowerBeef/ml-drift`) keeps `main`, an upstream mirror, plus our branches; the
-branches Google's repos had when the forks were made don't belong there.
-`agello` and `agello-next` are due to merge into one `agello`: the iPhone
-validated our build on 2026-11-02 and the app has shipped it since 2026-10-28.
-Still to do, on the user's go (tag the old `agello` tip first: the commit of
-Google's-binary wrapper must stay reachable).
+Branch policy (the user's choice, 2026-11-15): one branch per repository, ours. Don't recreate
+an upstream mirror or side branches on GitHub, and don't create a branch named `agello`: it would
+break the redirect that keeps the #3913 comments' and the model card's links working.
 
 Set it up on a new machine. The partial clone keeps full history but fetches
 file contents on demand, and LFS stays skipped: upstream's LFS holds GBs of
@@ -66,10 +69,10 @@ git lfs install --local --skip-smudge
 git remote add upstream https://github.com/google-ai-edge/LiteRT-LM.git
 git remote set-url --push upstream DISABLED
 git fetch upstream --tags
-git switch agello   # tracks origin/agello
+git switch main   # the default branch
 ```
 
-Sync the fork's `main`: `git fetch upstream && git push origin upstream/main:main`.
+Google's upstream is a read-only source (`git fetch upstream`): nothing of it is pushed to the fork.
 
 ### Contributing upstream
 
@@ -258,8 +261,10 @@ nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
   Then re-verify the reference: `reference/maintenance.md`, "After a re-pin or
   rebase" (`tools/agello-docs/check_refs.py --repin` lists the claims whose
   cited code moved).
-- **Pushing `agello-next`:** from `../LiteRT-LM` (`git push origin
-  agello-next`); from the worktree, Git LFS's pre-push lock check fails.
+- **Pushing:** `git push origin main` from `../LiteRT-LM`. The tree's `.lfsconfig` points Git LFS
+  at Google's repository, so its pre-push lock check fails ("You must have push access to verify
+  locks"): this clone has `lfs.https://github.com/google-ai-edge/LiteRT-LM.git/info/lfs.locksverify`
+  set to `false`; set it again in a new clone.
 - **In Agello:** `Vendor/use-local-litert.sh` vendors the worktree's build
   (its header says how to switch back). It *copies* the framework: rerun it
   after every rebuild, and check the build id in the harness report's device

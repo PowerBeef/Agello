@@ -207,7 +207,7 @@ EOF
 done
 
 # Bazel: the output base (incremental fork builds), its disk cache (capped) and downloads.
-row keep "$(kb "$BAZEL_BASE")" "Bazel's output base for the fork (bazelisk clean --expunge in ../agello-arms/next/LiteRT-LM frees it)"
+row keep "$(kb "$BAZEL_BASE")" "Bazel's output base for the fork (bazelisk clean --expunge in ../LiteRT-LM frees it)"
 disk="$(kb "$BAZEL_DISK")"
 if [ "${disk:-0}" -gt "$BAZEL_DISK_CAP_KB" ]; then
   row keep "$BAZEL_DISK_CAP_KB" "~/.cache/bazel-disk: Bazel's disk cache, up to its cap"
@@ -239,16 +239,13 @@ for b in "$bench"/.build-*; do
   esac
 done
 releases=0
-for r in "$PROJECTS"/agello-arms/next/LiteRT-LM/dist/release/*; do
+for r in "$PROJECTS"/LiteRT-LM/dist/release/*; do
   [ -d "$r" ] || continue
   size="$(kb "$r")"
   releases=$((releases + ${size:-0}))
-  row review "$size" "release files for $(basename "$r") in the fork's worktree (delete once published)"
+  row review "$size" "release files for $(basename "$r") in the fork's checkout (delete once published)"
 done
-row keep $(($(kb "$PROJECTS/LiteRT-LM") - benches)) "../LiteRT-LM: the fork's checkout"
-row keep "$(kb "$PROJECTS/LiteRT")" "../LiteRT: the LiteRT fork"
-row keep "$(kb "$PROJECTS/ml-drift")" "../ml-drift: the ML Drift fork"
-row keep $(($(kb "$PROJECTS/agello-arms") - releases)) "../agello-arms: the fork's agello-next worktree and its build"
+row keep $(($(kb "$PROJECTS/LiteRT-LM") - benches - releases)) "../LiteRT-LM: the runtime's checkout (branch main) and its build"
 # The repository itself, without build/ and the worktrees (both counted above).
 row keep $(($(kb "$MAIN") - ${repo_build:-0} - $(kb "$MAIN/.claude/worktrees"))) "this repository"
 

@@ -21,7 +21,7 @@ disk (no new runs), the fork's reference, Apple's iOS 27.2 SDK headers, and publ
 - **[E]** an estimate: arithmetic from the measured figures, to be confirmed by the measuring
   step each change starts with.
 
-Paths: `RT` is the runtime's checkout (`../agello-arms/next/LiteRT-LM`, branch `agello-one`),
+Paths: `RT` is the runtime's checkout (`../LiteRT-LM`, branch `main`; `../agello-arms/next/LiteRT-LM` on `agello-one` until 2026-11-15),
 `MD` its ML Drift (`RT/agello/ml_drift/ml_drift`), `LD` its Metal delegate
 (`RT/agello/litert/ml_drift_delegate/delegate`), `REF` the fork's reference
 (`../LiteRT-LM/docs/agello/reference`).

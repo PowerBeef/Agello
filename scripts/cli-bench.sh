@@ -7,7 +7,7 @@
 #
 #   ARM   NAME or NAME=PACKAGE. A build of the command line against one LiteRT-LM checkout:
 #           release            what the app ships (Vendor/LiteRT-LM)
-#           next               the fork's local build (../agello-arms/next/LiteRT-LM)
+#           next               the fork's local build (../LiteRT-LM)
 #           NAME=/abs/path     any checkout whose folder is named LiteRT-LM
 #           NAME=rel/path      the same, relative to the project (no spaces: build/cli/arms/…)
 #           NAME=release|next  the same build under another name (to measure the noise)
@@ -66,7 +66,7 @@ done
 package_of() {
   case "$1" in
     release) echo "$ROOT/Vendor/LiteRT-LM" ;;
-    next) (cd "$ROOT/../agello-arms/next/LiteRT-LM" 2>/dev/null && pwd) || { echo "No checkout at ../agello-arms/next/LiteRT-LM" >&2; exit 2; } ;;
+    next) (cd "$ROOT/../LiteRT-LM" 2>/dev/null && pwd) || { echo "No checkout at ../LiteRT-LM" >&2; exit 2; } ;;
     /*) echo "$1" ;;
     # Relative to the project: this checkout's own path has a space, which splits the list of
     # arms, so copies kept under build/ are named this way (b3=build/cli/arms/b3/LiteRT-LM).

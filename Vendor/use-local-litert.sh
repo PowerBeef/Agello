@@ -1,10 +1,10 @@
 #!/bin/sh
 # Build Agello against a local LiteRT-LM build, for testing on this Mac or the iPhone.
-# Vendors Package.swift, swift/ and LICENSE from a checkout of the fork's agello-next line,
+# Vendors Package.swift, swift/ and LICENSE from the runtime's checkout (../LiteRT-LM, branch main),
 # plus the CLiteRTLM.xcframework its agello/build-xcframework.sh wrote to dist/
 # (copied to Vendor/LiteRT-LM/dist/, which git ignores).
 # Usage:
-#   Vendor/use-local-litert.sh [path/to/LiteRT-LM]   # default: ../agello-arms/next/LiteRT-LM
+#   Vendor/use-local-litert.sh [path/to/LiteRT-LM]   # default: ../LiteRT-LM
 # Back to the committed (released) package:
 #   git checkout -- Vendor/LiteRT-LM && git clean -fdq Vendor/LiteRT-LM && rm -rf Vendor/LiteRT-LM/dist
 #   then delete what this script deletes in DerivedData (below) and resolve the package again
@@ -15,7 +15,7 @@
 # Don't commit Vendor/LiteRT-LM while it points at dist/: nobody else has that build.
 set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="${1:-$ROOT/../agello-arms/next/LiteRT-LM}"
+SRC="${1:-$ROOT/../LiteRT-LM}"
 SRC="$(cd "$SRC" && pwd)"
 if [ ! -d "$SRC/dist/CLiteRTLM.xcframework" ]; then
   echo "No $SRC/dist/CLiteRTLM.xcframework: run agello/build-xcframework.sh there first." >&2
@@ -31,7 +31,7 @@ cp -R "$SRC/dist/CLiteRTLM.xcframework" "$SRC/dist/BUILD-INFO.txt" "$DEST/dist/"
 # The Mac slice is a versioned framework (the fork's M0.1, 78e7edc4); older builds' isn't.
 MAC="$DEST/dist/CLiteRTLM.xcframework/macos-arm64/CLiteRTLM.framework"
 if [ ! -f "$MAC/Versions/A/CLiteRTLM" ] || [ ! -L "$MAC/Versions/Current" ] || [ ! -L "$MAC/CLiteRTLM" ]; then
-  echo "$MAC isn't a versioned framework: rebuild it with the fork's agello-next (78e7edc4 or later)." >&2
+  echo "$MAC isn't a versioned framework: rebuild it with the runtime's main (78e7edc4 or later)." >&2
   exit 2
 fi
 # A different CLiteRTLM.framework under the same module name leaves a stale precompiled module

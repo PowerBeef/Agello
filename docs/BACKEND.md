@@ -129,12 +129,15 @@ As built (2026-11-11):
   resolving, so nothing is deleted on GitHub without checking the links.
 - **Licence.** Everything stays under Apache 2.0, with Google's notices kept and our changes
   stated (section 4), as today.
-- **On GitHub, on the maintainer's go only:** which repository carries the one code base and
-  under what name, its default branch, and archiving the other two. Until then the work lives on
-  a local branch.
+- **On GitHub (the maintainer's go, 2026-11-15):** `PowerBeef/agello-litert-lm` carries the one
+  code base on one branch, `main`: the runtime (`agello-one`) with the docs, bench and model tools
+  of the old `agello` branch merged in. Google's copy of `main` and the branches `agello-next`
+  and `agello-one` are deleted; `agello` was renamed, so GitHub redirects links to it; the
+  releases keep their tags. `PowerBeef/LiteRT` and `PowerBeef/ml-drift` keep our changes as their
+  one branch, `main`, and are archived. On this Mac the one checkout is `../LiteRT-LM`.
 
 As built, B2 (2026-11-11), on the local branch `agello-one` of the runtime's checkout
-(`../agello-arms/next/LiteRT-LM`, commit `e3c93749`; on GitHub since 2026-11-12, without the import's Google prebuilt LFS files, ROADMAP "State left on this Mac"):
+(`../agello-arms/next/LiteRT-LM` then, `../LiteRT-LM` since 2026-11-15; commit `e3c93749`; on GitHub since 2026-11-12, without the import's Google prebuilt LFS files, ROADMAP "State left on this Mac"):
 
 - LiteRT is in `agello/litert` (7,801 files) and ML Drift in `agello/ml_drift` (877), exported
   at the commits the release pinned and checked identical, file by file, to the two archives

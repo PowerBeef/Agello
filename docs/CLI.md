@@ -47,7 +47,7 @@ The maintainer's correction of 2026-11-10 ([BACKEND.md](BACKEND.md) has the whol
 
   ```sh
   swift build -c release --scratch-path build/cli/release      # what the app ships
-  LITERTLM_PACKAGE="$PWD/../agello-arms/next/LiteRT-LM" swift build -c release --scratch-path build/cli/next
+  LITERTLM_PACKAGE="$PWD/../LiteRT-LM" swift build -c release --scratch-path build/cli/next
   build/cli/release/release/agello env
   ```
 

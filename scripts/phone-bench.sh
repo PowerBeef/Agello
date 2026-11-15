@@ -10,7 +10,7 @@
 #
 #   ARM   NAME or NAME=SOURCE:
 #           release            what the app ships (Vendor/LiteRT-LM as committed)
-#           next               the fork's local build (../agello-arms/next/LiteRT-LM, its dist/)
+#           next               the fork's local build (../LiteRT-LM, its dist/)
 #           NAME=/abs/path     any checkout of the fork with a built dist/
 #           NAME=release|next  the same build under another name (to measure the noise)
 #         Default: release next. The first arm is the base the others are compared with.
@@ -137,7 +137,7 @@ cases="$*"
 source_of() {
   case "$1" in
     release) echo release ;;
-    next) (cd "$ROOT/../agello-arms/next/LiteRT-LM" 2>/dev/null && pwd) || { echo "No checkout at ../agello-arms/next/LiteRT-LM" >&2; exit 2; } ;;
+    next) (cd "$ROOT/../LiteRT-LM" 2>/dev/null && pwd) || { echo "No checkout at ../LiteRT-LM" >&2; exit 2; } ;;
     /*) echo "$1" ;;
     *) echo "An arm is release, next or NAME=/abs/path (got $1)." >&2; exit 2 ;;
   esac
