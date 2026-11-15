@@ -335,7 +335,31 @@ upgrades.
 - Keep passive GPU waits (benchmark mode stays off, as `ChatEngine.swift:194` sets it).
 - Measure whether the chat's 60 frames per second while streaming take GPU time from the model.
 
-## The window: 32K growing to 64K (adopted 2026-11-14)
+## The window: a fixed 64K with sparse KV caches (adopted 2026-11-14)
+
+The maintainer's go, 2026-11-14, on the advisor's review (`build/drafts/sparse-kv-review-fable-2026-11-14.md`).
+It replaces the growth from 32K to 64K below: chats open at a fixed 64K window whose KV costs
+only its fill. On Apple GPUs a buffer that any kernel uses is wholly resident
+(`build/drafts/metal-residency-2026-11-14.md`), so today a short chat at 64K costs 1.64 GB on the
+Mac against 1.09 at 32K. Metal 4's placement sparse buffers cost only their mapped tiles; the
+eight global KV buffers become sparse, mapped ahead of the fill, and a fixed 64K beats today's 32K
+on a short chat (~0.92 GB on the Mac with step 4 [E]) with no reload, reseed or growth code. The
+long-prompt peak (the 4.5 GB rule) barely moves: it's the floor that goes.
+
+| Step | Gate |
+| --- | --- |
+| 0. Mac tests: 16 KB tiles, reused tiles, blits; the poison test | Done 2026-11-14: replies identical with 0x7F past the fill, so no reader needs zeros |
+| 1. Lock guards; KV snapshots and restores as GPU blits bounded by fill, still on ordinary buffers | Helper suites pass, replies identical |
+| 2. The global KV as private placement sparse buffers, fully mapped at creation | Replies identical, times ±1 %, footprint unchanged |
+| 3. Mapping that follows the fill (16 KB tiles, 4,096-position steps; one placement heap per step shared by the buffers; never unmapped on a rewind; trimmed at the next chat's prefill) | A short chat at 64K ≤ 1.2 GB on the Mac; Think rewind, helper, image, a stop mid-prefill; a 200-turn soak flat |
+| 4. The prefill's two converted copies of the global cache as dedicated sparse buffers, the conversion bounded by fill | A short chat ≤ 0.95 GB |
+| 5. Optional: the helper's snapshot as a mapping move | Helper peak −0.37 GB at 45K |
+
+On the iPhone: probe 26 (placement sparse support, in seconds), then each step's gates. If the
+A19 Pro has no sparse buffers, the window stays a fixed 64K with ordinary buffers
+(+0.4–0.55 GB a chat) or goes back to the growth below.
+
+## The window: 32K growing to 64K (adopted 2026-11-14, replaced the same day)
 
 The maintainer's choice, on an independent plan (Claude Fable 5.2; the full text is in
 `build/drafts/adaptive-window-plan-fable-2026-11-14.md`, the window review before it in
