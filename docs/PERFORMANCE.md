@@ -551,7 +551,7 @@ only now and then; no Mac step depends on P0):
   return zero, writes there are dropped), but must be private, and the KV snapshots and ring copies
   are CPU copies today: a "virtual window" is a design question, taken to the advisor.
 
-On the iPhone when it's free (with `Vendor/use-local-litert.sh`; probe 25 is `TEST_RUNNER_AGELLO_MTP_REPLAY=1 ONLY=AgelloDeviceTests/ProbeScenarioTests/test25_ReplayCeiling scripts/device-harness.sh probes`): P0 with a System Trace, step 2's peak with a helper and an image,
+On the iPhone when it's free (with `Vendor/use-local-litert.sh`; probe 25 is `TEST_RUNNER_AGELLO_MTP_REPLAY=1 ONLY=AgelloDeviceTests/ProbeScenarioTests/test25_ReplayCeiling scripts/device-harness.sh probes`; probe 26, `test26_SparseBufferSupport`, says in seconds whether the A19 Pro has placement sparse buffers, no model needed): P0 with a System Trace, step 2's peak with a helper and an image,
 the emptied buffers' footprint drop, the replay ceiling cool and after ten minutes, identical
 replies for each switch. Decided there: the resident round, C3 and zero-skipping, a fused local
 kernel (only above 10 % of a chunk), fusion for memory (only above 4.5 GB). Withdrawn by the
