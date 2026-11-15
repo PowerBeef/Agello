@@ -80,6 +80,7 @@ extension ProbeScenarioTests {
             "accepted": followUp.accepted, "peakGB": Self.gigabytes(followUpPeak),
             "words": followUp.text.split(separator: " ").count,
           ]) { a, _ in a }
+          entry["extras"] = await windowCostExtras(in: thread)
         }
         prompts.append(entry)
         windowEntry["prompts"] = prompts
@@ -94,6 +95,27 @@ extension ProbeScenarioTests {
   }
 
   static func gigabytes(_ bytes: UInt64) -> Double { (Double(bytes) / 1e7).rounded() / 100 }
+
+  /// After a prompt and its follow-up, the rest of the fixed-64K rule (PERFORMANCE.md, "The window:
+  /// a fixed 64K with sparse KV caches"): the title helper, which snapshots the filled chat beside
+  /// its own conversation, then an image in the same chat, each with its footprint's peak.
+  func windowCostExtras(in thread: ChatThread) async -> [String: Any] {
+    let helperSampler = PeakSampler()
+    helperSampler.start()
+    await appState.runPendingHelpers()
+    let helperPeak = helperSampler.stop()
+    let imageSampler = PeakSampler()
+    imageSampler.start()
+    let image = await harness.ask(
+      "Describe this image in one sentence.", in: thread, image: TestMedia.solidColorJPEG(.red))
+    let imagePeak = imageSampler.stop()
+    return [
+      "title": thread.title, "helperPeakGB": Self.gigabytes(helperPeak),
+      "imageAccepted": image.accepted, "imagePeakGB": Self.gigabytes(imagePeak),
+      "imageReply": String(image.text.prefix(160)), "imageError": appState.generationError ?? "",
+      "afterGB": Self.gigabytes(MemoryProbe.footprintBytes()),
+    ]
+  }
 
   /// About `tokens` tokens of crate records (about 21 tokens each, measured), with three records of unique
   /// names at 10, 50 and 90 % depth, and a question about them. Returns the prompt and the three
