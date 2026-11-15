@@ -488,7 +488,7 @@ only now and then; no Mac step depends on P0):
 7. A replay harness: a reply's rounds replayed back to back with one wait, the ceiling of a
    GPU-resident round; under about +8 % sustained on the phone, the resident round is dropped.
 
-**Done on the Mac so far (2026-11-14, `agello-one` `1e2bc133` to `a5db0fc4`):**
+**Done on the Mac so far (2026-11-14, `agello-one` `1e2bc133` to `ff862efb`):**
 
 - Step 1: the converters were the holder, as the review read it (their task kept src and dst
   bound until the next encode); transfers of a megabyte or more are unbound after encoding, and
@@ -550,8 +550,26 @@ only now and then; no Mac step depends on P0):
   Metal 4's placement sparse buffers do cost only what's mapped (tier 1 on the M6: unmapped reads
   return zero, writes there are dropped), but must be private, and the KV snapshots and ring copies
   are CPU copies today: a "virtual window" is a design question, taken to the advisor.
+- Where the resident round's gain is (`ff862efb`, the replay's wait placements, M6, the replayed
+  round against the real one in the same run): the whole round chained +12.3 % short and +13.1 %
+  at 44K; a drafter chain with one wait before verify +2.9 % and +2.3 %; the same with verify's
+  inputs written in that gap +2.9 % and +2.4 %; waits after each drafter run +1.6 % and +1.5 %;
+  verify encoded and committed during the chain behind an event the host signals: no better than
+  the drafter chain (24.7 against 24.8 ms; 36.0 against 35.8). Any GPU-to-host-to-GPU dependency
+  inside a round costs 2–3.5 ms, so only a round with no host step between its runs clears the
+  +8 % bar: verify's token and per-layer embeddings gathered on the GPU too. That was ruled out for
+  the tables' memory, but a no-copy Metal buffer over a mapped file stays out of the footprint when
+  a kernel reads rows of it (a test program: 512 MB mapped, rows read correctly, footprint flat),
+  as the weights do: the tables would cost no memory. Replies identical in every mode.
+- The sparse KV (the advisor's review, `build/drafts/sparse-kv-review-fable-2026-11-14.md`):
+  build it in gated steps, a fixed 64K window that costs its fill (a short chat ~0.92 GB on the
+  Mac against 1.64 today and 1.09 at 32K [E]), in place of growing from 32K to 64K with a reload.
+  Step 0 done on the M6: 16 KB tiles (K grows in 4,096-position steps), blits to and from sparse
+  buffers on the classic queue, bounded blits; reused tiles keep their old bytes, and the poison
+  test (`AGELLO_KV_POISON=1`, the KV data filled with 0x7F past the fill) leaves replies identical,
+  so no reader needs zeros. Not yet adopted: it replaces the growth design, the maintainer's call.
 
-On the iPhone when it's free (with `Vendor/use-local-litert.sh`; probe 25 is `TEST_RUNNER_AGELLO_MTP_REPLAY=1 ONLY=AgelloDeviceTests/ProbeScenarioTests/test25_ReplayCeiling scripts/device-harness.sh probes`; probe 26, `test26_SparseBufferSupport`, says in seconds whether the A19 Pro has placement sparse buffers, no model needed): P0 with a System Trace, step 2's peak with a helper and an image,
+On the iPhone when it's free (with `Vendor/use-local-litert.sh`; probe 25 is `TEST_RUNNER_AGELLO_MTP_REPLAY=1 ONLY=AgelloDeviceTests/ProbeScenarioTests/test25_ReplayCeiling scripts/device-harness.sh probes`; probe 26, `test26_SparseBufferSupport`, says in seconds whether the A19 Pro has placement sparse buffers, no model needed; probe 25 decides the resident round only if its ceiling is the whole chained round's): P0 with a System Trace, step 2's peak with a helper and an image,
 the emptied buffers' footprint drop, the replay ceiling cool and after ten minutes, identical
 replies for each switch. Decided there: the resident round, C3 and zero-skipping, a fused local
 kernel (only above 10 % of a chunk), fusion for memory (only above 4.5 GB). Withdrawn by the
