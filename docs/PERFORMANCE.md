@@ -352,10 +352,24 @@ long-prompt peak (the 4.5 GB rule) barely moves: it's the floor that goes.
 | 1. KV snapshots and restores as GPU blits bounded by fill, still on ordinary buffers | Done 2026-11-14 (`agello-one` `12623257`): replies identical with the helpers between turns, 34.7 ms against 36.2 for a 205 MB snapshot and its restore |
 | 2. The global KV as private placement sparse buffers, fully mapped at creation (`AGELLO_SPARSE_KV=full`) | Done: replies identical, same times and footprint |
 | 3. Mapping that follows the fill (`AGELLO_SPARSE_KV=grow`: 16 KB tiles, 4,096-position steps, one placement heap per step shared by the caches; mapped before each run that writes past it; trimmed at a conversation's first prefill, a restored snapshot mapping its own back) | Done on the Mac: a short chat at 64K 1,132 MB (1,635 before); replies identical on a short chat, a 21K prompt with the helpers between turns, a 44K prompt and an image; `inference` 23/23, `thinking` 3/3, `files` 5/5 natively; a 100-turn chat with the helpers identical to ordinary caches turn for turn |
-| 4. The prefill's two converted copies of the global cache as dedicated sparse buffers, the conversion bounded by fill | A short chat ≤ 0.95 GB |
+| 4. The prefill's two converted copies of the global cache as dedicated sparse buffers, the conversion bounded by fill | Done another way (`agello-one` `d0b392a2`): the copies share pool buffers with the 128-token prefill's scores, so every prefill graph got a pool of its own, released after each prompt; a short chat at 64K 858 MB (the gate was 0.95 GB) |
 | 5. Optional: the helper's snapshot as a mapping move | Helper peak −0.37 GB at 45K |
 
-Measured on the M6 at 64K with the 128K file (`grow` against ordinary caches, same speed):
+Since `d0b392a2` both are the runtime's defaults (`AGELLO_SPARSE_KV=0` and
+`AGELLO_PRIVATE_POOLS=none` restore the old configuration); a GPU without placement sparse
+buffers keeps ordinary caches. M6, 64K, the 128K file, the defaults against the old
+configuration, replies identical and the same speed; `inference` 23/23, `thinking` 3/3 and
+`files` 5/5 natively on the defaults:
+
+| | Before | Sparse caches and prefill pools released: after, peak |
+| --- | --- | --- |
+| A short chat, three turns | 1,637 MB | 858, 1,139 MB |
+| A 21K prompt, the helpers between turns | 1,701, 2,205 MB | 1,092, 1,597 MB |
+| A 44K prompt | 1,765, 2,212 MB | 1,323, 1,770 MB |
+| A 21K prompt and an image | 2,536, 2,986 MB | 1,896, 2,346 MB |
+
+At 32K with ordinary caches a short chat was 1,090 MB: a fixed 64K now costs less than 32K did.
+Step 3 alone (`grow` against ordinary caches, same speed):
 
 | | Ordinary caches | Sparse, mapped as they fill |
 | --- | --- | --- |
