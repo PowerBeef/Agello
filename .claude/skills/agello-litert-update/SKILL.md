@@ -6,11 +6,9 @@ description: Update the vendored LiteRT-LM package (Vendor/LiteRT-LM), work in t
 # Updating LiteRT-LM
 
 **Direction changed on 2026-11-10** (`docs/BACKEND.md`): the backend becomes a hard fork in one
-repository, and Google's upstream is a read-only source. Until milestone B6 rewrites this skill,
-read it with that in mind: don't sync, merge or rebase onto upstream, don't vendor or measure
-Google's binary (the WebGPU arm; the app's code for it left on 2026-11-11), and treat the three-repository layout
-and its re-pin steps below as what B2 replaces. The build, release and vendoring commands for
-`agello-next` still hold.
+repository, and Google's upstream is a read-only source: don't sync, merge or rebase onto
+upstream, and don't vendor or measure Google's binary (the WebGPU arm; the app's code for it left
+on 2026-11-11).
 
 **Since 2026-11-15 there is one repository, one branch and one checkout:**
 `PowerBeef/agello-litert-lm`, branch `main`, checked out at `../LiteRT-LM`. LiteRT is the folder
@@ -28,11 +26,10 @@ patches, the docs and tools; renamed to `main`, so links to it redirect), `agell
 `agello-one` (the source build; both in `main`'s history, deleted), Google's copy of `main`
 (deleted), the worktree `../agello-arms/next/LiteRT-LM` and the clones `../LiteRT` and
 `../ml-drift` (removed; `PowerBeef/LiteRT` and `PowerBeef/ml-drift` keep our changes as `main` and
-are archived). Wherever the sections below say `agello`, `agello-next`, `agello-one`, the worktree
-or "re-pin", read `main` in `../LiteRT-LM`; the three-repository steps no longer apply.
+are archived). Older notes and the #3913 section below name those branches as history.
 
 `Vendor/LiteRT-LM` holds only the Swift package surface of our fork's
-`agello-one` branch: `Package.swift` (with the checksummed
+`main`: `Package.swift` (with the checksummed
 `CLiteRTLM.xcframework` download of our release, `agello-one-20261115` (`6da75396`, build
 `0c749789100a`) since 2026-11-15; `agello-next-20261024` from 2026-10-28), `swift/`, and `LICENSE`. It's vendored because upstream Git LFS
 breaks Swift Package Manager resolution.
@@ -83,12 +80,12 @@ requests are rarely merged (30 of 2,497 by 2026-10-15). The fork's
 `docs/agello/reference/contributing.md` has each upstream's rules, issue and
 commit templates, and the evidence checklist. So:
 
-1. Reproduce the bug on the iPhone (harness probes) and fix it on a branch
-   off `upstream/main` (or off `agello` when it only matters here).
-2. Push the branch to the fork and open an **issue** upstream with the
-   reproduction, measurements, and a link to the branch or commit.
-3. Open a pull request only after re-reading CONTRIBUTING.md on
-   `upstream/main`, in case the policy has changed.
+1. Reproduce the bug on the iPhone (harness probes) and fix it on our `main`.
+2. Open an **issue** upstream with the reproduction, measurements, and a link
+   to the commit on our `main` (no side branches on the fork: the branch
+   policy above).
+3. Since 2026-11-10 Google's repositories are a read-only source: we report,
+   we don't open pull requests or merge anything back.
 
 Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
 
@@ -207,11 +204,11 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
 
 ### Using patches in Agello
 
-- **Swift wrapper patches** (`swift/`) are commits on the fork's `agello-next`
-  branch, and the app vendors that branch at the release's commit
-  (`Vendor/use-release-litert.sh`, below). `Vendor/README.md`, "Swift patches",
-  lists the four of them with the probe or test that checks each: keep the list
-  there. The `agello` branch carries the same patches on Google's v0.18.0.
+- **Swift wrapper patches** (`swift/`) are commits on the fork's `main`, and
+  the app vendors it at the release's commit (`Vendor/use-release-litert.sh`,
+  below). `Vendor/README.md`, "Swift patches", lists the four of them with the
+  probe or test that checks each: keep the list there. (The same patches on
+  Google's v0.18.0 are in `main`'s history, from the old `agello` branch.)
   - Two are worth offering upstream as issues, with the user's go-ahead: the
     failed tool call answered with an `error` response instead of ending the
     reply, and the stream holding its conversation weakly (held strongly, the
@@ -224,48 +221,50 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   vendored here ("Shipping it"). `Vendor/README.md`, "The runtime", lists what
   ours carries.
 
-### The source build (`agello-next`)
+### The source build
 
 The Apple-only re-engineering of LiteRT-LM builds the whole runtime from
-source, Metal accelerator included, in three forks. Its docs are in the fork's
-`docs/agello/` on `agello`: `reference/` (the verified reference for the
+source, Metal accelerator included, in one repository: `../LiteRT-LM`, branch
+`main`, with LiteRT in `agello/litert` and ML Drift in `agello/ml_drift`. Its
+docs are in `docs/agello/`: `reference/` (the verified reference for the
 runtime, the models and our changes; Agello's `docs/LITERT-LM.md` maps topics
-to its pages), `AUDIT.md` (dated, v0.18.0), `PARITY.md` (against Google's
-nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
+to its pages), `BUILD.md`, `AUDIT.md` (dated, v0.18.0), `PARITY.md` (against
+Google's nightly), `TELEMETRY.md`, and `tracks/` (one note per track). Some
+`reference/` pages (the build and maintenance pages) still describe the
+three-repository layout of before 2026-11-11: pins, overrides, re-pins. None of
+that applies now.
 
-| Checkout | Repository, branch |
-| --- | --- |
-| `../agello-arms/next/LiteRT-LM` | `PowerBeef/agello-litert-lm`, `agello-next` (a worktree of `../LiteRT-LM`) |
-| `../LiteRT` | `PowerBeef/LiteRT`, `agello-next`: the Metal delegate and buffer handler, telemetry probes |
-| `../ml-drift` | `PowerBeef/ml-drift`, `agello-next`: the GPU engine, kernel names and timing |
-
-- **Build:** `agello/build-xcframework.sh` in the worktree writes
+- **Build:** `agello/build-xcframework.sh` in `../LiteRT-LM` writes
   `dist/CLiteRTLM.xcframework` and `dist/BUILD-INFO.txt` (commits, SHA-256s).
-  Its `WORKSPACE` pins LiteRT and ML Drift by commit and archive sha256.
+  The `WORKSPACE` reads `agello/litert` and `agello/ml_drift` as
+  `local_repository`: edit them in place and rebuild. A first build after
+  `bazelisk clean --expunge` takes about 9 minutes; later ones reuse Bazel's
+  output base and `~/.cache/bazel-disk`.
   - After an Xcode update the build fails at once in `xcode-locator`: run
     `bazelisk sync --configure --repo_env=HERMETIC_PYTHON_VERSION=3.13`
     (without the variable it picks Homebrew's newest Python). The new
     compiler then rebuilds everything, about 8 minutes on the M6.
-  - Never edit the worktree's sources while Bazel builds: it can store
-    objects compiled from the edited files under the old files' digests, in
-    the local action cache and the disk cache, and a later build of the old
-    sources gets them back (2026-10-24: an A/B "control" arm carried the fix).
-    If it happens, delete `~/.cache/bazel-disk`, run `bazelisk clean` and
-    rebuild; check an arm with `strings` on a symbol only the change adds.
-- **Changing LiteRT or ML Drift:** uncomment the `--override_repository`
-  lines in the worktree's `.bazelrc.user` to build from the local checkouts.
-  After pushing, re-pin: the new commit and `shasum -a 256` of
-  `https://github.com/PowerBeef/<repo>/archive/<commit>.tar.gz`. Comment the
-  overrides out and rebuild: the framework gets a new build id (it isn't
-  byte-identical), so compare replies (agello-bench `short`), not bytes.
-  Then re-verify the reference: `reference/maintenance.md`, "After a re-pin or
-  rebase" (`tools/agello-docs/check_refs.py --repin` lists the claims whose
-  cited code moved).
+  - Never edit the sources while Bazel builds: it can store objects compiled
+    from the edited files under the old files' digests, in the local action
+    cache and the disk cache, and a later build of the old sources gets them
+    back (2026-10-24: an A/B "control" arm carried the fix). If it happens,
+    delete `~/.cache/bazel-disk`, run `bazelisk clean` and rebuild; check an
+    arm with `strings` on a symbol only the change adds.
+  - A build isn't byte-identical to the last one (the build info compiled into
+    it names the build), so compare replies, not bytes
+    (`scripts/cli-bench.sh`, `scripts/phone-bench.sh`).
+  - After changing what the reference cites, re-verify it:
+    `reference/maintenance.md` (`tools/agello-docs/check_refs.py` lists the
+    claims whose cited code moved).
+- **Comparing builds:** `scripts/cli-bench.sh release next` (this Mac) and
+  `scripts/phone-bench.sh release next` (the iPhone) take `next` from
+  `../LiteRT-LM/dist/`. To keep a build as an arm while you change the tree,
+  copy its `dist/` aside and pass `NAME=/abs/path` (the scripts' headers).
 - **Pushing:** `git push origin main` from `../LiteRT-LM`. The tree's `.lfsconfig` points Git LFS
   at Google's repository, so its pre-push lock check fails ("You must have push access to verify
   locks"): this clone has `lfs.https://github.com/google-ai-edge/LiteRT-LM.git/info/lfs.locksverify`
   set to `false`; set it again in a new clone.
-- **In Agello:** `Vendor/use-local-litert.sh` vendors the worktree's build
+- **In Agello:** `Vendor/use-local-litert.sh` vendors `../LiteRT-LM`'s build
   (its header says how to switch back). It *copies* the framework: rerun it
   after every rebuild, and check the build id in the harness report's device
   record (`runtimeBuild`) before trusting a run. Never commit `Vendor/LiteRT-LM`
@@ -276,7 +275,9 @@ nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
   without `--publish`; publishing needs the user's OK). `--publish` rebuilds
   first: to publish the dry run's files you tested, run the script's
   `gh release create` line on `dist/release/<tag>/` instead (done for
-  `agello-next-20261024`; check the zip's slices against `BUILD-INFO.txt`). Then
+  `agello-next-20261024` and `agello-one-20261115`; check the zip's slices
+  against `BUILD-INFO.txt`), and delete `dist/release/<tag>/` once it's
+  published. Then
   `REF=<commit> TAG=<tag> Vendor/use-release-litert.sh` here. `BUILD.md` on the
   fork covers the release, the third-party notices (for `NOTICE`) and the
   privacy manifest check (no new required-reason categories as of 2026-10-15).
@@ -284,7 +285,7 @@ nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
   and a build id; `EngineCache` keys its folders by that id, so switching
   between two builds of ours needs no cache juggling (the other build's
   folders are deleted at the next load).
-- **Measuring:** `tools/agello-bench` on `agello` (build it against an arm
+- **Measuring:** `tools/agello-bench` (build it against an arm
   with `LITERTLM_PACKAGE=<checkout> swift build -c release --scratch-path
   .build-<arm>`), ABAB runs, `compare.py` for changes with confidence
   intervals, `telemetry.py` for the engine's own breakdown.
@@ -296,23 +297,23 @@ nightly), `TELEMETRY.md`, and `tracks/` (one note per track).
 ## 1. Check upstream
 
 - Latest release: `gh release view --repo google-ai-edge/LiteRT-LM`. What the
-  app runs is in `Vendor/README.md`: our build of `agello-next`, which follows
-  upstream's source (base tag `agello-base-20261013`, a 0.19.0 nightly), not
-  Google's release binaries.
+  app runs is in `Vendor/README.md`: our build of the fork's `main`, which
+  started from upstream's source (base tag `agello-base-20261013`, a 0.19.0
+  nightly), not Google's release binaries.
 - Read the release notes, and check issues the app works around, especially
   #3913 (GPU float16 digit duplication).
 - Note any Swift API changes in `swift/` (Engine, Conversation, Config,
   ResponseFormat, Tool, EmbeddingEngine, ExperimentalFlags). In the fork:
   `git fetch upstream --tags && git diff agello-base-20261013 <new base> -- swift/`.
-- Taking a new upstream version means rebasing `agello-next` onto the new
-  base, rebuilding and releasing ("The source build", above), then re-verifying
-  the fork's reference (`reference/maintenance.md`, "After a re-pin or
-  rebase"). It's days of work across three forks: decide with the user first.
+- We don't take new upstream versions (CLAUDE.md: no merges or rebases). A
+  fix or a new model's support worth having is ported by hand into `main`,
+  with the user's go, then built, compared and released ("The source build",
+  above).
 
 ## 2. Vendor the release
 
 ```sh
-REF=<agello-next commit> TAG=<release tag> ./Vendor/use-release-litert.sh
+REF=<commit on main> TAG=<release tag> ./Vendor/use-release-litert.sh
 ```
 
 Then update the release and build id in `Vendor/README.md`, the README's

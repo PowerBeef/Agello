@@ -25,7 +25,9 @@
 #      MIN_CLEAN (undisturbed runs wanted of each case and build, default 3 or ROUNDS if less),
 #      EXTRA_ROUNDS (the most rounds added to get them, default 3).
 #      ARMOPTS_<name>: options for that arm's agello bench only, such as another models folder
-#      (ARMOPTS_ring="--models $HOME/Models/agello/lab/ring --cache …"; paths without spaces).
+#      (for an arm w128k=release, the file opened to 128K: ARMOPTS_w128k="--models
+#      $HOME/Models/agello/lab/w128k --cache …"; paths without spaces). The runtime reads that
+#      file's window itself since fork cc97925b, so it needs no AGELLO_EXPORT_WINDOW.
 #
 # One measuring run at a time on this Mac: it takes the harness lock (exit 3 while an iPhone
 # run or another of these holds it) and keeps the Mac awake. Builds happen before any

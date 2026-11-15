@@ -55,8 +55,9 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   `runSend` caps output with `ContextBudget.outputCap` and throws
   `contextFull` when there's no room.
 - Budgets use the positions LiteRT-LM allocates, not the request:
-  `ContextBudget.allocatedPositions` (a 32K request gets 32,000, both
-  runtimes). The 64-token margin is what keeps an MTP verify round inside.
+  `ContextBudget.allocatedPositions` (the app's 64K request gets 32,000
+  with the published model file). The 64-token margin is what keeps an
+  MTP verify round inside.
 - With tools offered, the room is split (`ToolBudget.plan`): an eighth per
   tool result (budgeted in estimated tokens), at most two calls; the first
   round, where nearly every reply is answered, gets half the room plus Think's

@@ -47,7 +47,7 @@ swift build -c release --scratch-path build/cli/release   # the Mac command line
 scripts/cli-bench.sh release next -- --only explain       # two runtime builds through the app's engine on this Mac (ask first)
 scripts/mac-ready.sh                                       # is this Mac quiet enough to measure? cli-bench.sh asks it, and refuses a busy Mac (exit 4)
 scripts/phone-bench.sh release next                        # the same comparison on the iPhone (docs/HARNESS.md); the Mac only builds, at background priority
-scripts/cli-test.sh unit                                   # 261 unit tests natively on this Mac, about a minute, no phone
+scripts/cli-test.sh unit                                   # 275 unit tests natively on this Mac, about a minute, no phone
 scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-model scenarios natively (a Mac run: ask first)
 ```
 

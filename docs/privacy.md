@@ -4,7 +4,7 @@ title: Agello privacy policy
 
 # Agello privacy policy
 
-*Effective October 16, 2026*
+*Effective November 15, 2026*
 
 Agello runs Google's Gemma models entirely on your iPhone. Your conversations, files, photos,
 recordings and memories stay on your device. The developer of Agello doesn't collect, receive,
@@ -42,15 +42,15 @@ Agello connects to other services only for the following, and only when you use 
   weather; the European Central Bank's exchange rates; Crossref and PubMed for scientific and
   medical papers; or a SearXNG server you set up. The queries are short phrases the on-device
   model writes from your question and the last few messages; for weather, it's a place name, and
-  Apple Weather receives that place's coordinates.
+  Apple Weather receives that place's coordinates. Agello then downloads the pages it found to
+  read them, identifying itself as Agello. Those services and websites receive the queries or page
+  requests and your IP address. Your chats, files and memories are not sent. You can turn web
+  access off entirely in Settings → Web search.
 - **Your location.** Only when you ask about places or weather near you ("the nearest gas
   station"), Agello asks for your location (while you use the app) and takes one reading. It's
   used on the iPhone to search Apple Maps or Apple Weather around you, so Apple receives that area;
   Agello doesn't store it or send it anywhere else. You can turn it off in Settings → Agello →
-  Location, and ask about a named place instead. Agello then downloads the pages it found to
-  read them, identifying itself as Agello. Those
-  services and websites receive the queries or page requests and your IP address. Your chats,
-  files and memories are not sent. You can turn web access off entirely in Settings → Web search.
+  Location, and ask about a named place instead.
 - **Shared links.** When you share a web page to Agello and web access is on, Agello downloads
   that page to read it.
 
@@ -63,6 +63,9 @@ anything to the developer.
 - **Camera**: taking photos and scanning documents, and showing the model what your camera sees
   in voice mode.
 - **Photos**: attaching photos you pick.
+- **Location** (while you use the app): only when you ask about places or weather near you, to
+  search Apple Maps and Apple Weather around you. It isn't stored or sent anywhere else. You can
+  turn it off in Settings → Agello → Location.
 
 Each is used only when you start the matching feature, and you can change them in the iPhone's
 Settings at any time.

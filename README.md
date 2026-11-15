@@ -29,7 +29,7 @@ Agello is a full AI assistant that lives on your iPhone. It runs Google's **Gemm
 <img src="docs/images/readme/icons/private.svg" width="40" height="40" alt="">
 
 **Private by design**<br>
-Chats, photos, files and recordings stay on the phone. The network is used only to download the models and for the web searches you ask for, which send only the search terms. [Privacy policy](https://powerbeef.github.io/Agello/privacy)
+Chats, photos, files and recordings stay on the phone. The network is used only to download the models and for the web searches you ask for: the sources receive the search terms (Apple Weather a place's coordinates, Apple Maps your area for "near me" questions), and Agello downloads the pages it found to read them. [Privacy policy](https://powerbeef.github.io/Agello/privacy)
 
 </td>
 <td width="33%" valign="top">
@@ -83,14 +83,14 @@ Agello's color follows what you're doing. Each mode has its own accent, and it l
 
 <br>
 
-The image above and the table below show Google's runtime in October 2026. Since 2026-10-28 the app runs our own build of the runtime (release `agello-next-20261024`, build `99b8f5f6ea49`, until 2026-11-15; now `agello-one-20261115`, build `0c749789100a`: prefill +13.8 %, the first token −16.6 %, decode the same, replies identical), and since 2026-11-09 chat uses a 32K window. On an iPhone 17 Pro with the first build:
+The image above and the table below show Google's runtime in October 2026. Since 2026-10-28 the app runs our own build of the runtime (release `agello-next-20261024`, build `99b8f5f6ea49`, until 2026-11-15; now `agello-one-20261115`, build `0c749789100a`: prefill +13.8 %, the first token −16.6 %, decode the same, replies identical), and since 2026-11-09 chat uses a 32K window. Since 2026-11-14, 12 GB iPhones ask for a 64K window, and the published model file caps it at 32,000 positions, so chats get 32K today; a 128K model file (not yet published) gives the full 64K. On an iPhone 17 Pro with the first build:
 
 - On 2026-11-10, in a Release build with the 32K window, a 4,517-token reply decoded at 43.3 tok/s with the phone's thermal state at "fair". A hand run on a cool phone the day before gave about 49 ([harness notes](docs/HARNESS.md#h3-done-on-2026-11-10)).
 - The calibration of 2026-11-02 (a Debug build, thermal state nominal throughout) decoded a one-sentence reply at 39 / 42 / 42 tok/s with 8K / 16K / 32K windows, so the window hardly changes the speed any more. A 32K engine peaks at about 3.5 GB ([roadmap](docs/ROADMAP.md#next)).
 - In the bench of 2026-11-10 (Think on, the UI driver attached), plain replies started after 0.6 s ([harness notes](docs/HARNESS.md#h4-done-on-2026-11-10)).
 - The table's other rows haven't been measured again on this build.
 
-**History: Google's LiteRT-LM v0.18.0, before 2026-10-14.** Gemma 4 E4B on an iPhone 17 Pro (12 GB, iOS 27), GPU, with speculative decoding (MTP), on Google's LiteRT-LM v0.18.0 runtime (the one the app used until 2026-10-28), with the 8K window that was then the default. Decode speed drops as the phone warms: a cooled calibration on 2026-10-15 measured 37 / 39 / 31 / 20 tok/s.
+**History: Google's LiteRT-LM v0.18.0, October 2026.** Gemma 4 E4B on an iPhone 17 Pro (12 GB, iOS 27), GPU, with speculative decoding (MTP), on Google's LiteRT-LM v0.18.0 runtime (the one the app used until 2026-10-28), with the 8K window that was then the default. Decode speed drops as the phone warms: a cooled calibration on 2026-10-15 measured 37 / 39 / 31 / 20 tok/s.
 
 | | |
 | --- | --- |
@@ -223,7 +223,7 @@ Unit tests, scenarios and runtime probes with the real models in-process, and re
 
 ### Get started
 
-**You'll need** an iPhone with 12 GB of memory (iPhone 17 Pro and Pro Max, iPhone Air, or later) on iOS 27 with about 7 GB free, and a Mac with Xcode 27. The Apple Developer account needs the **Extended Virtual Addressing**, **Increased Memory Limit**, **Background GPU Access** and **App Groups** capabilities. Agello runs on a physical iPhone only: its LiteRT-LM path is untested in the simulator, and the failures that matter only show on hardware.
+**You'll need** an iPhone with 12 GB of memory (iPhone 17 Pro and Pro Max, iPhone Air, or later) on iOS 27 with about 7 GB free, and a Mac with Xcode 27. The Apple Developer account needs the **Extended Virtual Addressing**, **Increased Memory Limit**, **Background GPU Access**, **App Groups** and **WeatherKit** capabilities. Agello runs on a physical iPhone only: the runtime's XCFramework has only iOS and macOS slices for arm64, so the app doesn't build for the simulator, and the failures that matter only show on hardware.
 
 1. Open `Agello.xcodeproj`. Swift Package Manager resolves `swift-markdown` and `SwiftMath`; LiteRT-LM is vendored.
 2. The project is set up for team `FK2D8X36G2` and bundle IDs `com.patricedery.agello` (plus `.widgets` and `.share`), sharing the App Group `group.com.patricedery.agello`. On another account, change the team and bundle IDs under **Signing & Capabilities**.
@@ -294,7 +294,7 @@ The README art comes from the same tokens: `scripts/readme-art/render.sh` redraw
 
 ### Vendored LiteRT-LM
 
-`Vendor/LiteRT-LM` holds the Swift package surface of [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) from our fork's [`main` branch](https://github.com/PowerBeef/agello-litert-lm/tree/main), and the app runs our own build of the runtime, release [`agello-one-20261115`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-one-20261115): LiteRT-LM with LiteRT and ML Drift in the same repository, on Metal on the iPhone and the Mac. Over Google's v0.18.0 binary, speculative decoding stays within the cache, each message ends with one final event, a chat's sampler settings apply, and reply stats come from the runtime's telemetry instead of its benchmark mode. The global KV caches are Metal sparse buffers mapped as the chat fills them, so a short chat in a 64K window costs less memory than one in a 32K window did, and the window comes from the model file. The Swift wrapper has four patches:
+`Vendor/LiteRT-LM` holds the Swift package surface of [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) from our fork's [`main` branch](https://github.com/PowerBeef/agello-litert-lm/tree/main), and the app runs our own build of the runtime, release [`agello-one-20261115`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-one-20261115): LiteRT-LM with LiteRT and ML Drift in the same repository, on Metal on the iPhone and the Mac. Over Google's v0.18.0 binary, speculative decoding stays within the cache, each message ends with one final event, a chat's sampler settings apply, and reply stats come from the runtime's telemetry instead of its benchmark mode. The global KV caches are Metal sparse buffers mapped as the chat fills them, so a short chat in a 64K window costs less memory than one in a 32K window did, and the window comes from the model file: 12 GB iPhones ask for 64K, the published model file caps it at 32,000 positions, so chats get 32K today, and a 128K model file (not yet published) gives the full 64K. The Swift wrapper has four patches:
 
 1. A tool call that fails is answered with an error the model can read, instead of ending the reply.
 2. A stream holds its conversation weakly, which fixed a 10-minute engine stall when a conversation was dropped while its stream was finishing.

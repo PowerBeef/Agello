@@ -14,9 +14,10 @@ ML Drift as folders of the same repository). It contains only what the Xcode bui
 ## The runtime
 
 The release's `CLiteRTLM.xcframework` has an iPhone slice and a Mac slice (a
-versioned framework), both on Metal. It's built from the same commit, LiteRT and ML Drift
-(imported from our forks `PowerBeef/LiteRT` and `PowerBeef/ml-drift`) linked statically:
-build id `0c749789100a`, whose `BUILD-INFO.txt` in the release names every commit. Its
+versioned framework), both on Metal. It's built from the same commit, with LiteRT and ML Drift
+linked statically (folders of the same repository since 2026-11-11, `agello/litert` and
+`agello/ml_drift`; our earlier forks `PowerBeef/LiteRT` and `PowerBeef/ml-drift` were archived
+on 2026-11-15): build id `0c749789100a`, whose `BUILD-INFO.txt` in the release names every commit. Its
 third-party notices are in `NOTICE`. Besides the Swift patches below, it carries our runtime
 fixes:
 
@@ -62,9 +63,6 @@ fixes:
    (`litert_lm_engine_tokenize`); `swift/EmbeddingEngineConfig.swift`:
    `EmbeddingOptions.inputOverflowStrategy` (truncate long inputs instead of
    failing the batch).
-
-The fork's `agello` branch keeps the same Swift patches on Google's v0.18.0,
-for Google's prebuilt binary.
 
 ## Why vendored instead of a remote SPM dependency?
 

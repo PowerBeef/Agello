@@ -1,6 +1,6 @@
 # The Mac command line
 
-A plan, approved by the maintainer on 2026-11-10 and corrected by them the same day ("Direction", below). C1 to C8 are built; of C7's probes inside the runtime, two wait for the one repository ([BACKEND.md](BACKEND.md), B2).
+A plan, approved by the maintainer on 2026-11-10 and corrected by them the same day ("Direction", below). C1 to C8 are built; of C7's probes inside the runtime, two aren't written yet (shader compile time, GPU time without the gaps): the one repository they waited for exists since 2026-11-11 ([BACKEND.md](BACKEND.md), B2), with one branch, `main`, since 2026-11-15.
 
 `agello` runs Agello's engine on a Mac from a command line: the app's own code, on the runtime
 build of your choice, with the runtime's telemetry and the app's trace of every reply. It's a
@@ -52,9 +52,10 @@ The maintainer's correction of 2026-11-10 ([BACKEND.md](BACKEND.md) has the whol
   ```
 
 - **Memory decisions follow the iPhone, not this Mac.** The engine sees a simulated app limit
-  (8 GiB by default, the iPhone 17 Pro's), so it takes the 32K window as on the phone, whatever
-  else the Mac is running. `--memory-limit 5.0` gives the 16K step and `3.4` the 8K step. Nothing
-  is enforced: the memory suite stays on the iPhone.
+  (8 GiB by default, the iPhone 17 Pro's), so it takes the phone's window whatever else the Mac
+  is running: it requests 65,536 positions, which the published model file caps at 32,000 (a
+  file opened to 128K gets all 65,536). `--memory-limit 5.0` gives the 16K step and `3.4` the
+  8K step. Nothing is enforced: the memory suite stays on the iPhone.
 
 ## What it reads and writes
 
@@ -152,7 +153,8 @@ QUIET=off scripts/cli-bench.sh release next -- --only email   # a run read only 
 - **Still: start it and leave the Mac alone,** the Claude session that started it included. A
   session streaming text takes the GPU. The harness now notices; it can't give the time back.
 
-What it changed on 2026-11-11's runs, read again:
+What it changed on 2026-11-11's runs, read again (their records, `build/cli/runs/noise` and
+`b2`, were deleted on 2026-11-15: the numbers here are the record):
 
 | Run | Every record | Undisturbed records |
 | --- | --- | --- |
@@ -191,7 +193,7 @@ scripts/cli-report.py build/cli/runs/quality.jsonl
 ## The tests, natively
 
 ```sh
-scripts/cli-test.sh unit                         # 261 unit tests on the scripted engine, about a minute
+scripts/cli-test.sh unit                         # 275 unit tests on the scripted engine, about a minute
 scripts/cli-test.sh unit AppStateTests           # one class, or Class/method
 scripts/cli-test.sh inference                    # the real-model scenarios on this Mac's GPU (also files, web, thinking, probes, calibrate)
 ```
@@ -221,11 +223,12 @@ agello bench --only email --telemetry 3 --out build/cli/runs/trace.jsonl       #
 - **Level 4** times each GPU kernel in its own encoder. It halves the speed, so it's a pass of
   its own, read for shares (`telemetry.py --kernels`).
 - **Level 3** writes the runtime's events as a Chrome/Perfetto trace beside the app's trace
-  (`*.engine.json`). A runtime with C7's probes keeps the last 262,144 events per thread and
-  leaves LiteRT's own trace sites out of them, so a 1,500-token reply fits whole; the shipped
-  build (`agello-next-20261024`) keeps 65,536 with those sites in, about three seconds of decoding.
-- **A runtime with C7's probes** (`next`, below) adds to the timeline and the trace: each token
-  with its id, the two halves of an MTP round (`mtp.draft`, `mtp.verify`), the bytes each KV
+  (`*.engine.json`). A runtime with C7's probes (the shipped `agello-one-20261115` among them)
+  keeps the last 262,144 events per thread and leaves LiteRT's own trace sites out of them, so a
+  1,500-token reply fits whole; the previous release (`agello-next-20261024`, shipped until
+  2026-11-15) keeps 65,536 with those sites in, about three seconds of decoding.
+- **A runtime with C7's probes** (the shipped release since 2026-11-15, and `next`; below) adds
+  to the timeline and the trace: each token with its id, the two halves of an MTP round (`mtp.draft`, `mtp.verify`), the bytes each KV
   copy moves, and what the GPU has allocated. `AGELLO_TELEMETRY_LOGITS_OUT=<file>` in the
   environment writes the eight best logits of every row the sampler reads, for comparing two
   builds where their replies part.
@@ -315,16 +318,16 @@ agello bench --only email --telemetry 3 --out build/cli/runs/trace.jsonl       #
 
 ### C7, built on 2026-11-10 and checked on 2026-11-11
 
-Probes in the runtime (`agello-next` `3118b5d4`, built as `d5ed12808214`, local: not pushed,
-not released, and the app still ships `agello-next-20261024`):
+Probes in the runtime (`agello-next` `3118b5d4`, built as `d5ed12808214`; local at first, now on
+the fork's `main` and in release `agello-one-20261115`, which the app ships since 2026-11-15):
 
 - **What they record:** a `token` event per token with its id; `mtp.draft` and `mtp.verify`;
   `engine.init` and `session.create`; `kv_copy_bytes`; the GPU's allocated memory
   (`MTLDevice.currentAllocatedSize`) with the thermal state and low power; a trace ring four
   times larger without LiteRT's own sites; the logits dump. `EngineTimeline.swift` and
   `cli-timeline.py` read them, and the fork's `telemetry.py` and `TELEMETRY.md` cover them.
-- **Unchanged at the everyday levels** (`build/cli/runs/c7`, 3 rounds, `explain`, `email`,
-  `file-report`): every reply identical to the shipped build's (4 of 4), decode −0.2 to +0.2 %,
+- **Unchanged at the everyday levels** (`build/cli/runs/c7`, deleted 2026-11-15; 3 rounds,
+  `explain`, `email`, `file-report`): every reply identical to the shipped build's (4 of 4), decode −0.2 to +0.2 %,
   prefill +0.3 to +2.0 % inside its intervals, first token −0.3 to −3.5 % inside them.
 - **First readings** (M6, 32,000-token window):
   - An MTP round is 4.8 ms of drafting and 24.8 ms of verifying: verify is 81 % of the decode
@@ -334,11 +337,13 @@ not released, and the app still ships `agello-next-20261024`):
   - Metal reports 6.8 GB allocated while the footprint is 3.9 GB: a lead for the memory work.
   - A level 3 trace of the 1,503-token `explain` reply holds all of it: 50,699 events over 21.7 s.
 - **Not written:** shader and pipeline compile time, and GPU time without the gaps between
-  dispatches. Both live in LiteRT and ML Drift, and wait for the one repository.
+  dispatches. Both live in LiteRT and ML Drift, which are folders of the runtime's repository
+  since 2026-11-11 (B2); neither probe is written yet.
 
 ### C8, built on 2026-11-10
 
-- **269 unit tests pass natively** in 73 s (of the iPhone's 333: the rest test the interface).
+- **269 unit tests passed natively** in 73 s on 2026-11-10 (of the iPhone's 333 then: the rest
+  test the interface). Today the package compiles 275 of the iPhone's 340 (2026-11-15).
 - **The `inference` suite passes natively, 23 of 23, in 105 s**: load, text, chat isolation,
   stop, tools, Think, image, audio, vision toggles, the context limit, exact token counts,
   titles, memory, dictation, voice turns, digits past 2,048 and 4,096 tokens, the benchmark.
@@ -358,5 +363,9 @@ not released, and the app still ships `agello-next-20261024`):
   for parity (C2).
 - **Anything on a busy Mac, cleanly.** Runs alternate builds and report a noise band; a change
   inside it isn't a change.
-- **Search providers with keys.** An unsigned command-line binary can't read the app's keychain,
-  so Search uses DuckDuckGo, then Wikipedia.
+- **Search as the phone has it.** Search uses the app's own sources, chosen by topic as on the
+  phone (Wikimedia projects and Wikidata, Apple Weather and Maps, the ECB, Crossref, PubMed; no
+  API keys, and DuckDuckGo was removed on 2026-11-12), but with no location: "near me" finds
+  none (`AgelloCLI/Sources/Platform/CurrentLocation.swift`). Apple Weather is enabled for the
+  app's App ID, which an unsigned binary doesn't have, so weather answers are the phone's to
+  check.

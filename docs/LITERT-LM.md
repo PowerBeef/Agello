@@ -5,7 +5,7 @@ LiteRT-LM the app ships, what it sets, what the runtime does that matters to the
 read the rest.
 
 The rest is the **LiteRT-LM reference** in our fork: [`docs/agello/reference/`](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/README.md) on
-the `agello` branch of `PowerBeef/agello-litert-lm`, cloned at `../LiteRT-LM/docs/agello/reference/`.
+`main`, the one branch of `PowerBeef/agello-litert-lm`, cloned at `../LiteRT-LM/docs/agello/reference/`.
 It covers LiteRT-LM, LiteRT, ML Drift and the Gemma 4 models, Apple paths in depth. Every statement
 in it is a claim with sources, checked by an independent verifier, and every number to quote is a
 row in [`facts.md`](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md) with its conditions and a safe wording. It documents our source
@@ -21,7 +21,7 @@ build (the fork's `main`); where the shipped runtime differs, it says so.
 | Chat model | `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` at `a1693e22` (3,660,726,272 bytes): the litert-community file with its rotary positions split into 512-token blocks, the #3913 fix. | [F-020](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-020), [models/gemma4-e4b.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/models/gemma4-e4b.md) |
 | Embedding model | `litert-community/embeddinggemma-2-text-270m-litert-lm` (164,626,432 bytes), pinned to revision `9be6e8b9` with a SHA-256. | [F-029](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-029), [models/embeddinggemma.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/models/embeddinggemma.md) |
 
-The fork's reference was last verified on 2026-10-16, before the app moved to our build on
+The fork's reference was last verified on 2026-10-15, before the app moved to our build on
 2026-10-28: F-003 and F-018 still describe Google's v0.18.0 as what ships, and F-029 an
 EmbeddingGemma download that isn't pinned.
 
@@ -46,8 +46,8 @@ full table, with what's left at defaults, is in
 ## Words to get right
 
 - **Context length** means four things: the *trained* context (128K for E2B and E4B), the file's
-  *export window* (32K), the *allocated* context (`maxNumTokens`; a 32K setting gets 32,000
-  positions) and the *filled* length (tokens in the cache). Say which.
+  *export window* (32K), the *allocated* context (`maxNumTokens`; the app asks for 65,536 and the
+  published file allocates 32,000 positions) and the *filled* length (tokens in the cache). Say which.
   ([F-048 to F-050](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-048))
 - **Which runtime.** A speed or memory figure names its build (Google's v0.18.0 binary or ours, with
   its build id) and its date.
@@ -62,7 +62,7 @@ The rest is in [glossary.md](https://github.com/PowerBeef/agello-litert-lm/blob/
 | --- | --- | --- | --- |
 | `enableBenchmark` makes LiteRT-LM request active (busy-wait) GPU waits, in both builds | A CPU core spins during every GPU wait; our passive-wait commit never applied in the app | with our build the app now leaves it off: 7.5–8.7 ms of CPU per decoded token on the M6, 0.7 ms without (2026-10-24) | [F-019](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-019) |
 | The engine's sampler takes its parameters from the first session that samples, and `validate()` samples first | The chat's temperature, top-k and top-p didn't reach plain decode steps, and Regenerate's seeds didn't vary replies | seen in probe 18 on our build; fixed there by `agello-next` `f1b88286` (each session's own sampler settings and random state). Google's binary applies them | [configuration.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/configuration.md#what-agello-sets) |
-| The E4B file exports at most 280 visual tokens per image | Settings offers Fast (140) and Balanced (280) only; a saved "Detailed (560)" sends 280 | from the file and the code | [F-066](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-066) |
+| The E4B file exports at most 280 visual tokens per image | There's no image-detail setting (since 2026-11-11): the app sends 280 per image (`VisualDetail.balanced`), the file's most | from the file and the code | [F-066](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-066) |
 | With tools declared, a tool-call block the parser rejects sends up to three final error chunks; the wrapper releases its stream context on each | A use-after-free in the shipped wrapper | from the code; not reproduced. Our wrapper keeps streams by ID, and our build sends one final chunk per send at the C boundary (`agello-next` `8acc748c`) | [swift-api.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/litert-lm/swift-api.md#error-chunks-and-the-retained-context) |
 | MTP and a JSON or regex constraint share one grammar matcher across drafts | Constrained output can break the schema, in Google's binary and ours; JSON helpers keep MTP off | from the code, matches what Agello saw on device | [troubleshooting.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/troubleshooting.md#json-constrained-replies-break-with-mtp-on) |
 | EmbeddingGemma loads up to 1,024 tokens by default and runs at FP16 on the GPU | A passage plus its prefix must fit in 1,022 tokens; the model card advises against float16, and no FP32 comparison exists | from the file and the code; FP16 effect open | [F-056](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-056), [F-123](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-123) |
@@ -102,9 +102,10 @@ The rest is in [glossary.md](https://github.com/PowerBeef/agello-litert-lm/blob/
 
 1. Engine changes follow the `agello-inference-rules` skill; LiteRT-LM updates, the fork and
    upstream work follow `agello-litert-update`.
-2. After a re-pin, a rebase or a model update, re-verify the reference as
+2. After changing `agello/litert` or `agello/ml_drift`, vendoring a new release, or a model update,
+   re-verify the reference as
    [maintenance.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/maintenance.md) describes: `tools/agello-docs/check_refs.py --repin` lists
    the claims whose cited code moved; they are re-verified and the pages fixed before anyone quotes
    them.
-3. After a runtime re-pin, update this page's "What ships" table, the README's performance
+3. After vendoring a new release, update this page's "What ships" table, the README's performance
    numbers (from a fresh measurement with its build id) and `CLAUDE.md`.

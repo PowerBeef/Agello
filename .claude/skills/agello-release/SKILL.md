@@ -22,7 +22,7 @@ uploading, submitting) needs the user's go-ahead first.
 | Widgets extension | `com.patricedery.agello.widgets` |
 | Share extension | `com.patricedery.agello.share` |
 | App Group | `group.com.patricedery.agello` (app and share extension) |
-| App capabilities | Extended Virtual Addressing, Increased Memory Limit, Background GPU (continued processing), App Groups |
+| App capabilities | Extended Virtual Addressing, Increased Memory Limit, Background GPU (continued processing), App Groups, WeatherKit (the App ID needs it under Capabilities and App Services) |
 
 ## Checklist
 
@@ -38,8 +38,11 @@ uploading, submitting) needs the user's go-ahead first.
 3. **Privacy.** `Agello/PrivacyInfo.xcprivacy` declares no tracking, no data
    collected, and the required-reason APIs (see `agello-litert-update` for
    the LiteRT-LM part). The App Store privacy answers must match: "Data Not
-   Collected". Web search sends only the query to the chosen provider, at the
-   user's request; confirm the user agrees with that classification.
+   Collected". At the user's request, web search sends its queries to the
+   sources the planner picks, Apple Weather a place's coordinates and Apple
+   Maps the user's area for "near me" questions, and it downloads the pages it
+   found (`docs/privacy.md`); nothing goes to the developer. Confirm the user
+   agrees with that classification.
 4. **Model hosting.** The chat model downloads from
    `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` (our patched copy of
    litert-community's file, Apache 2.0, with a NOTICE). Keep that repo public,
@@ -57,11 +60,15 @@ uploading, submitting) needs the user's go-ahead first.
    build finishes processing.
 8. **TestFlight** (`asc:asc-testflight-orchestration`). Testers need an iPhone
    with 12 GB of memory (iPhone 17 Pro and Pro Max, iPhone Air, or later) on
-   iOS 27 and about 4.4 GB free. The App Store can't enforce that: there's no
-   capability key for memory, and `iphone-performance-gaming-tier` is for
-   games (dropped 2026-11-12). Any iPhone on iOS 27 can install the app; below
-   12 GB it opens on `UnsupportedDeviceView` and downloads nothing. Say 12 GB
-   in the store text and the review notes (a reviewer's iPhone may have 8 GB).
+   iOS 27 and about 6.9 GB free: the app starts a download only when the file,
+   the engine cache its first load writes and a 0.5 GB margin fit
+   (`ModelStore.requiredBytes`), 6.7 GB for E4B (3.66 + 2.5 + 0.5), and
+   EmbeddingGemma, which follows, needs its file and cache (0.26 GB) on top.
+   The App Store can't enforce the memory: there's no capability key for it,
+   and `iphone-performance-gaming-tier` is for games (dropped 2026-11-12).
+   Any iPhone on iOS 27 can install the app; below 12 GB it opens on
+   `UnsupportedDeviceView` and downloads nothing. Say 12 GB in the store text
+   and the review notes (a reviewer's iPhone may have 8 GB).
    Requirements can be relaxed in an update, never tightened.
 9. **Screenshots** (`asc:asc-screenshot-resize`, then `asc screenshots upload`).
    Take them with `scripts/device-harness.sh screenshots`
