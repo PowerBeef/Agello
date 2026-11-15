@@ -83,7 +83,7 @@ Agello's color follows what you're doing. Each mode has its own accent, and it l
 
 <br>
 
-The image above and the table below show Google's runtime in October 2026. Since 2026-10-28 the app runs our own build of the runtime (release `agello-next-20261024`, build `99b8f5f6ea49`), and since 2026-11-09 chat uses a 32K window. On an iPhone 17 Pro with that build:
+The image above and the table below show Google's runtime in October 2026. Since 2026-10-28 the app runs our own build of the runtime (release `agello-next-20261024`, build `99b8f5f6ea49`, until 2026-11-15; now `agello-one-20261115`, build `0c749789100a`: prefill +13.8 %, the first token −16.6 %, decode the same, replies identical), and since 2026-11-09 chat uses a 32K window. On an iPhone 17 Pro with the first build:
 
 - On 2026-11-10, in a Release build with the 32K window, a 4,517-token reply decoded at 43.3 tok/s with the phone's thermal state at "fair". A hand run on a cool phone the day before gave about 49 ([harness notes](docs/HARNESS.md#h3-done-on-2026-11-10)).
 - The calibration of 2026-11-02 (a Debug build, thermal state nominal throughout) decoded a one-sentence reply at 39 / 42 / 42 tok/s with 8K / 16K / 32K windows, so the window hardly changes the speed any more. A 32K engine peaks at about 3.5 GB ([roadmap](docs/ROADMAP.md#next)).
@@ -294,7 +294,7 @@ The README art comes from the same tokens: `scripts/readme-art/render.sh` redraw
 
 ### Vendored LiteRT-LM
 
-`Vendor/LiteRT-LM` holds the Swift package surface of [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) from our fork's [`agello-next` branch](https://github.com/PowerBeef/agello-litert-lm/tree/agello-next), and the app runs our own build of the runtime, release [`agello-next-20261024`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-next-20261024): LiteRT-LM with our forks of LiteRT and ML Drift, on Metal on the iPhone and the Mac. Over Google's v0.18.0 binary, speculative decoding stays within the cache, each message ends with one final event, a chat's sampler settings apply, and reply stats come from the runtime's telemetry instead of its benchmark mode. The Swift wrapper has four patches:
+`Vendor/LiteRT-LM` holds the Swift package surface of [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) from our fork's [`agello-one` branch](https://github.com/PowerBeef/agello-litert-lm/tree/agello-one), and the app runs our own build of the runtime, release [`agello-one-20261115`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-one-20261115): LiteRT-LM with LiteRT and ML Drift in the same repository, on Metal on the iPhone and the Mac. Over Google's v0.18.0 binary, speculative decoding stays within the cache, each message ends with one final event, a chat's sampler settings apply, and reply stats come from the runtime's telemetry instead of its benchmark mode. The global KV caches are Metal sparse buffers mapped as the chat fills them, so a short chat in a 64K window costs less memory than one in a 32K window did, and the window comes from the model file. The Swift wrapper has four patches:
 
 1. A tool call that fails is answered with an error the model can read, instead of ending the reply.
 2. A stream holds its conversation weakly, which fixed a 10-minute engine stall when a conversation was dropped while its stream was finishing.

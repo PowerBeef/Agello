@@ -47,8 +47,8 @@ fast as the hardware allows, at the quality the model has today.
 - Most of those files serve other platforms: Android, Windows, Linux and the web, OpenCL, OpenGL
   and WebGPU beside Metal (ML Drift's Metal folder is 38 files of 877), vendor NPUs, converters,
   the Kotlin, JavaScript and Python bindings, a CMake build beside Bazel.
-- The app ships release `agello-next-20261024` (build `99b8f5f6ea49`) with our patched model
-  file, `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`. The runtime serves that file, its MTP
+- The app ships release `agello-one-20261115` (build `0c749789100a`, since 2026-11-15; before it
+  `agello-next-20261024`, build `99b8f5f6ea49`) with our patched model file, `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`. The runtime serves that file, its MTP
   drafter and EmbeddingGemma, and nothing else.
 - What the Mac command line measured on the M6 (shipped runtime, 32K window): 90 to 115 tok/s;
   a decode run is 72 % `fc1x1_int4_weights`; a prefill run is 43 % the int8 convolution and

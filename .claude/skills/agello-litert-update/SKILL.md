@@ -13,20 +13,20 @@ and its re-pin steps below as what B2 replaces. The build, release and vendoring
 `agello-next` still hold.
 
 **Since 2026-11-11 the one repository exists locally:** the worktree
-`../agello-arms/next/LiteRT-LM` is on the local branch `agello-one` (not pushed), where LiteRT
+`../agello-arms/next/LiteRT-LM` is on the branch `agello-one` (pushed from `../LiteRT-LM`), where LiteRT
 is the folder `agello/litert` and ML Drift `agello/ml_drift`, read by the `WORKSPACE` as
 `local_repository`. There, edit the two in place and run `agello/build-xcframework.sh`: no
 override, no push, no re-pin. The branch is pruned to what the Apple build reads (3,548 files of
 10,348): after deleting anything more, check with `bazelisk clean` and
 `agello/build-xcframework.sh --disk_cache=`, since the cache hides a missing header. The `../LiteRT` and `../ml-drift` checkouts and the "Changing
-LiteRT or ML Drift" steps below apply only to `agello-next`, which is what the shipped release
-was built from. Never export LiteRT with a plain `git archive`: it downloads Google's prebuilt
+LiteRT or ML Drift" steps below apply only to `agello-next`, which the app's releases were built
+from until 2026-11-15; since then the app vendors `agello-one`'s. Never export LiteRT with a plain `git archive`: it downloads Google's prebuilt
 libraries through Git LFS (`docs/BACKEND.md`, "As built, B2").
 
 `Vendor/LiteRT-LM` holds only the Swift package surface of our fork's
-`agello-next` branch: `Package.swift` (with the checksummed
-`CLiteRTLM.xcframework` download of our release, `agello-next-20261024` since
-2026-10-28), `swift/`, and `LICENSE`. It's vendored because upstream Git LFS
+`agello-one` branch: `Package.swift` (with the checksummed
+`CLiteRTLM.xcframework` download of our release, `agello-one-20261115` (`6da75396`, build
+`0c749789100a`) since 2026-11-15; `agello-next-20261024` from 2026-10-28), `swift/`, and `LICENSE`. It's vendored because upstream Git LFS
 breaks Swift Package Manager resolution.
 
 ## The fork
