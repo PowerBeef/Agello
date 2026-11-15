@@ -349,11 +349,25 @@ long-prompt peak (the 4.5 GB rule) barely moves: it's the floor that goes.
 | Step | Gate |
 | --- | --- |
 | 0. Mac tests: 16 KB tiles, reused tiles, blits; the poison test | Done 2026-11-14: replies identical with 0x7F past the fill, so no reader needs zeros |
-| 1. Lock guards; KV snapshots and restores as GPU blits bounded by fill, still on ordinary buffers | Helper suites pass, replies identical |
-| 2. The global KV as private placement sparse buffers, fully mapped at creation | Replies identical, times ±1 %, footprint unchanged |
-| 3. Mapping that follows the fill (16 KB tiles, 4,096-position steps; one placement heap per step shared by the buffers; never unmapped on a rewind; trimmed at the next chat's prefill) | A short chat at 64K ≤ 1.2 GB on the Mac; Think rewind, helper, image, a stop mid-prefill; a 200-turn soak flat |
+| 1. KV snapshots and restores as GPU blits bounded by fill, still on ordinary buffers | Done 2026-11-14 (`agello-one` `12623257`): replies identical with the helpers between turns, 34.7 ms against 36.2 for a 205 MB snapshot and its restore |
+| 2. The global KV as private placement sparse buffers, fully mapped at creation (`AGELLO_SPARSE_KV=full`) | Done: replies identical, same times and footprint |
+| 3. Mapping that follows the fill (`AGELLO_SPARSE_KV=grow`: 16 KB tiles, 4,096-position steps, one placement heap per step shared by the caches; mapped before each run that writes past it; trimmed at a conversation's first prefill, a restored snapshot mapping its own back) | Done on the Mac: a short chat at 64K 1,132 MB (1,635 before); replies identical on a short chat, a 21K prompt with the helpers between turns, a 44K prompt and an image; `inference` 23/23, `thinking` 3/3, `files` 5/5 natively; a 100-turn chat with the helpers identical to ordinary caches turn for turn |
 | 4. The prefill's two converted copies of the global cache as dedicated sparse buffers, the conversion bounded by fill | A short chat ≤ 0.95 GB |
 | 5. Optional: the helper's snapshot as a mapping move | Helper peak −0.37 GB at 45K |
+
+Measured on the M6 at 64K with the 128K file (`grow` against ordinary caches, same speed):
+
+| | Ordinary caches | Sparse, mapped as they fill |
+| --- | --- | --- |
+| A short chat | 1,635 MB | 1,132 MB (1.09 GB at 32K with ordinary caches) |
+| A 21K prompt, the helpers between turns: after, peak | 1,703, 2,206 MB | 1,368, 1,871 MB |
+| A 44K prompt: after, peak | 1,763, 2,210 MB | 1,598, 2,045 MB |
+| A 21K prompt and an image: after, peak | 2,535, 2,984 MB | 2,167, 2,616 MB |
+| A 100-turn chat with the helpers, turns 1–60 | ~1,580 MB | 980–1,080 MB |
+
+The 100-turn chat also showed the model's own failure: at turn 62 (about 33K tokens in, greedy) a
+reply repeats `\text{/` for 60,703 tokens until the window is full, the same with ordinary caches;
+the reply after it reseeds 32,761 tokens of history.
 
 On the iPhone: probe 26 (placement sparse support, in seconds), then each step's gates. If the
 A19 Pro has no sparse buffers, the window stays a fixed 64K with ordinary buffers
