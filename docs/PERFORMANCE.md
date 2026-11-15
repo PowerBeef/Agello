@@ -488,7 +488,7 @@ only now and then; no Mac step depends on P0):
 7. A replay harness: a reply's rounds replayed back to back with one wait, the ceiling of a
    GPU-resident round; under about +8 % sustained on the phone, the resident round is dropped.
 
-**Done on the Mac so far (2026-11-14, `agello-one` `1e2bc133` to `c0994a6a`):**
+**Done on the Mac so far (2026-11-14, `agello-one` `1e2bc133` to `a5db0fc4`):**
 
 - Step 1: the converters were the holder, as the review read it (their task kept src and dst
   bound until the next encode); transfers of a megabyte or more are unbound after encoding, and
@@ -531,7 +531,25 @@ only now and then; no Mac step depends on P0):
   the runs' command buffers overlap, which the host loop never lets them do. Above the +8 % bar
   on the Mac; the phone decides, cool and hot: probe 25 (`ReplayCeilingProbe.swift`) replies for
   ten minutes and records the ceiling per reply with the thermal state, and probe 24 with the same
-  switch gives it at 45K filled.
+  switch gives it at 45K filled. The real round costs only ~2.5 ms more than its own GPU time
+  (host preparation, samplers and embeddings ~1.3 ms; encoding and wait latency ~1.3 ms): most of
+  the ceiling is the GPU not draining between runs, which shapes the resident round's design.
+- Step 5's value, by kernel shape (`a5db0fc4`, `AGELLO_KERNEL_SHAPES=1` keys level-4 times by
+  shape; `build/drafts/prefill-kernels-by-shape-21k-at-65536.txt`): at 64K, 21K tokens in
+  1,024-token runs, the global layers' attention is 1,390 ms of 7,639 ms of prefill kernel time and
+  the local layers' ring attention 555 ms. The global products already stop at the fill (the T4
+  rewrite reads the run's end index; the same cost at 32K and 64K); what still scales with the
+  window is small: the global-cache conversions (~7 ms a run) and the bounds kernel (3.9 ms a run).
+  Tile skipping in the rings is worth at most ~4 % on the Mac. The rest of the run: the INT8 weight
+  products 47 %, the INT4-to-INT8 weight conversions 8 %, the activations' quantization 5 %.
+- Memory follows each buffer's size, not the fill (`build/drafts/metal-residency-2026-11-14.md`):
+  a short chat is 1.09 GB at 32K and 1.64 GB at 64K, the eight global KV buffers and the prefill's
+  two converted copies wholly resident after 700 tokens. Not the creation-time clear (skipping it
+  changed nothing): once a kernel uses a Metal buffer at all, the whole buffer is resident (a test
+  program: 4 KB written of 256 MB costs 256 MB). So bounding writers by fill can't lower the peak.
+  Metal 4's placement sparse buffers do cost only what's mapped (tier 1 on the M6: unmapped reads
+  return zero, writes there are dropped), but must be private, and the KV snapshots and ring copies
+  are CPU copies today: a "virtual window" is a design question, taken to the advisor.
 
 On the iPhone when it's free (with `Vendor/use-local-litert.sh`; probe 25 is `TEST_RUNNER_AGELLO_MTP_REPLAY=1 ONLY=AgelloDeviceTests/ProbeScenarioTests/test25_ReplayCeiling scripts/device-harness.sh probes`): P0 with a System Trace, step 2's peak with a helper and an image,
 the emptied buffers' footprint drop, the replay ceiling cool and after ten minutes, identical
