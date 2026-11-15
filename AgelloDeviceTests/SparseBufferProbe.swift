@@ -31,11 +31,12 @@ extension ProbeScenarioTests {
     func note(_ step: String, _ extra: [String: Any] = [:]) {
       steps.append(["step": step, "footprintMB": Double(MemoryProbe.footprintBytes()) / 1_048_576].merging(extra) { a, _ in a })
     }
-    note("start")
-    guard let sparse = device.makeBuffer(length: size, options: .storageModePrivate, placementSparsePageSize: .size64)
+    note("start", ["supportsPlacementSparse": device.supportsPlacementSparse, "gpu": device.name])
+    guard device.supportsPlacementSparse,
+      let sparse = device.makeBuffer(length: size, options: .storageModePrivate, placementSparsePageSize: .size64)
     else {
       harness.record("probe26_sparseBuffer", ["supported": false, "steps": steps], in: self)
-      XCTFail("No placement sparse buffer on this GPU")
+      XCTFail("No placement sparse resources on this GPU")
       return
     }
     note("sparse buffer created", ["tier": sparse.sparseBufferTier.rawValue])

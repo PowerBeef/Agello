@@ -99,6 +99,21 @@ for f in "$MODELS"/*; do
         case "$(basename "$g")" in
           *_cache.bin | *.xnnpack_cache)
             row scratch "$(kb "$g")" "~/Models/agello/lab/$(basename "$g"): an engine cache written beside a lab model" "$g" ;;
+          *-cache)
+            # A lab model's engine caches (`agello ask --cache ~/Models/agello/lab/<model>-cache`):
+            # one folder per runtime build, about 2.3 GB each. As for the command line's caches,
+            # the two loaded last stay; an older build's folder is scratch.
+            count=0
+            # shellcheck disable=SC2012,SC2045 # newest first; the folders are named by build ids
+            for h in $(ls -td "$g"/*/ 2>/dev/null); do
+              h="${h%/}"
+              count=$((count + 1))
+              if [ "$count" -le 2 ]; then
+                lab=$((lab + $(kb "$h")))
+              else
+                row scratch "$(kb "$h")" "~/Models/agello/lab/$(basename "$g")/$(basename "$h"): a lab model's GPU cache for an older runtime build" "$h"
+              fi
+            done ;;
           *) lab=$((lab + $(kb "$g"))) ;;
         esac
       done
