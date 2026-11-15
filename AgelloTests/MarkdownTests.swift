@@ -213,9 +213,32 @@ final class MarkdownTests: XCTestCase {
     let code = "let x = 42 // answer"
     let first = CodeHighlightCache.highlighted(code, language: "swift")
     XCTAssertEqual(CodeHighlightCache.highlighted(code, language: "swift"), first)
-    XCTAssertNotEqual(first, AttributedString(code))
+    XCTAssertNotEqual(first, [AttributedString(code)])
     let long = String(repeating: "x = 1\n", count: CodeHighlighter.maxHighlightedCharacters / 6 + 1)
-    XCTAssertEqual(CodeHighlightCache.highlighted(long, language: "python"), AttributedString(long))
+    XCTAssertEqual(
+      CodeHighlightCache.highlighted(long, language: "python"), CodeHighlighter.pieces(AttributedString(long)))
+  }
+
+  /// A block taller than the GPU's largest texture drew nothing (a 656-line reply on the iPhone,
+  /// 2026-11-15): it's drawn in pieces of at most 80 lines, with the text and colors unchanged.
+  @MainActor
+  func testLongBlocksAreDrawnInPieces() {
+    let lines = (1...200).map { "let value\($0) = \($0) // line \($0)" }
+    let code = lines.joined(separator: "\n")
+    let pieces = CodeHighlightCache.highlighted(code, language: "swift")
+    XCTAssertEqual(pieces.count, 3)
+    XCTAssertEqual(pieces.map { String($0.characters).components(separatedBy: "\n").count }, [80, 80, 40])
+    XCTAssertEqual(pieces.map { String($0.characters) }.joined(separator: "\n"), code)
+    // The second piece starts with a highlighted keyword, as the whole block had it.
+    let whole = CodeHighlighter.highlight(code, language: "swift")
+    let start = pieces[1].runs.first?.attributes
+    XCTAssertNotNil(start?.foregroundColor)
+    XCTAssertEqual(start?.foregroundColor, whole.runs.first?.attributes.foregroundColor)
+
+    XCTAssertEqual(CodeHighlighter.pieces(AttributedString("a\r\nb"), maxLines: 1).map { String($0.characters) }, ["a", "b"])
+    XCTAssertEqual(CodeHighlighter.pieces(AttributedString(String(repeating: "x\n", count: 80))).count, 1)
+    XCTAssertEqual(CodeHighlighter.pieces(AttributedString("")).map { String($0.characters) }, [""])
+    XCTAssertEqual(CodeHighlighter.pieces(AttributedString("one line")).count, 1)
   }
 
   func testHighlighterTokens() {

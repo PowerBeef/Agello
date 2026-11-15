@@ -14,6 +14,38 @@ enum CodeHighlighter {
   /// Blocks longer than this stay plain: a bound on the one-time cost of a finished block.
   static let maxHighlightedCharacters = 30_000
 
+  /// Lines per drawn piece of a code block. One `Text` taller than the GPU's largest texture
+  /// (16,384 pixels on Apple GPUs) draws nothing: a 656-line block showed as an empty box, and
+  /// the chat, following the reply's end, looked empty (iPhone 17 Pro, 2026-11-15). A callout
+  /// line is about 21 points at the default text size and about 64 at the largest accessibility
+  /// size, 192 pixels at 3x, so 80 lines stay under the limit at every size.
+  static let linesPerPiece = 80
+
+  /// `code` cut at line breaks into pieces of at most `maxLines` lines, attributes kept; the
+  /// breaks between pieces are dropped (each piece is drawn on its own line).
+  static func pieces(_ code: AttributedString, maxLines: Int = linesPerPiece) -> [AttributedString] {
+    var pieces: [AttributedString] = []
+    var start = code.startIndex
+    var lines = 0
+    var index = code.startIndex
+    while index < code.endIndex {
+      let next = code.characters.index(after: index)
+      if code.characters[index].isNewline {
+        lines += 1
+        if lines == maxLines {
+          pieces.append(AttributedString(code[start..<index]))
+          start = next
+          lines = 0
+        }
+      }
+      index = next
+    }
+    if start < code.endIndex || pieces.isEmpty {
+      pieces.append(AttributedString(code[start..<code.endIndex]))
+    }
+    return pieces
+  }
+
   static func highlight(_ code: String, language: String?) -> AttributedString {
     var result = AttributedString()
     for token in tokens(code, language: language) {
@@ -212,8 +244,8 @@ enum CodeHighlighter {
 @MainActor
 enum CodeHighlightCache {
   private final class Box {
-    let value: AttributedString
-    init(_ value: AttributedString) { self.value = value }
+    let value: [AttributedString]
+    init(_ value: [AttributedString]) { self.value = value }
   }
   private static let cache: NSCache<NSString, Box> = {
     let cache = NSCache<NSString, Box>()
@@ -221,12 +253,14 @@ enum CodeHighlightCache {
     return cache
   }()
 
-  static func highlighted(_ code: String, language: String?) -> AttributedString {
+  /// The block highlighted and cut into drawable pieces (``CodeHighlighter/pieces(_:maxLines:)``).
+  static func highlighted(_ code: String, language: String?) -> [AttributedString] {
     let key = "\(language ?? "")\u{1}\(code)" as NSString
     if let hit = cache.object(forKey: key) { return hit.value }
-    let value =
+    let highlighted =
       code.count > CodeHighlighter.maxHighlightedCharacters
       ? AttributedString(code) : CodeHighlighter.highlight(code, language: language)
+    let value = CodeHighlighter.pieces(highlighted)
     cache.setObject(Box(value), forKey: key)
     return value
   }

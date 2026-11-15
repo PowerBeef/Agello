@@ -192,13 +192,20 @@ struct CodeBlockView: View {
       .padding(.vertical, Theme.Spacing.xxs)
       Rectangle().fill(Theme.Surface.hairline).frame(height: Theme.Stroke.hairline)
       ScrollView(.horizontal, showsIndicators: false) {
-        Text(CodeHighlightCache.highlighted(code, language: language))
-          .font(.callout.monospaced())
-          .textSelection(.enabled)
-          // Ideal size in both axes: inside a horizontal scroll view the
-          // text would otherwise be clipped to a single line.
-          .fixedSize()
-          .padding(Theme.Spacing.md)
+        // A long block is drawn in pieces: one Text past the GPU's largest texture draws nothing
+        // (CodeHighlighter.linesPerPiece).
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(CodeHighlightCache.highlighted(code, language: language).enumerated()), id: \.offset) {
+            _, piece in
+            Text(piece)
+              .font(.callout.monospaced())
+              .textSelection(.enabled)
+              // Ideal size in both axes: inside a horizontal scroll view the
+              // text would otherwise be clipped to a single line.
+              .fixedSize()
+          }
+        }
+        .padding(Theme.Spacing.md)
       }
     }
     .surfaceCard(radius: Theme.Radius.card, fill: Theme.Surface.card)

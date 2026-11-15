@@ -90,9 +90,42 @@ enum HTMLText {
     }
   }
 
+  /// Start tags whose quoted attribute values hold a `>` get those values emptied. Every tag
+  /// pattern here ends a tag at its first `>`, and Wikipedia's pages carry JSON attributes
+  /// (`data-mw`, about 400 on a long table page) full of them: their tails reached the model as
+  /// text (`",{"template":{"target":…`, 2026-11-15). A quoted value may hold `>` but not `<`,
+  /// which keeps a stray quote from running past the next tag.
+  static func emptyingAttributesWithAngles(_ html: String) -> String {
+    guard html.contains("\"") || html.contains("'") else { return html }
+    let string = html as NSString
+    var output = ""
+    output.reserveCapacity(string.length)
+    var last = 0
+    for match in startTag.matches(in: html, range: NSRange(location: 0, length: string.length)) {
+      let tag = string.substring(with: match.range)
+      guard tag.dropFirst().dropLast().contains(">") else { continue }
+      output += string.substring(with: NSRange(location: last, length: match.range.location - last))
+      output += angledValue.stringByReplacingMatches(
+        in: tag, range: NSRange(location: 0, length: (tag as NSString).length), withTemplate: "$1$1")
+      last = match.range.location + match.range.length
+    }
+    guard last > 0 else { return html }
+    output += string.substring(from: last)
+    return output
+  }
+
+  /// A start tag, its quoted attribute values allowed to hold `>`.
+  // swiftlint:disable:next force_try - a constant pattern
+  private static let startTag = try! NSRegularExpression(
+    pattern: #"<[A-Za-z][^>"'<]*(?:(?:"[^"<]*"|'[^'<]*')[^>"'<]*)*>"#)
+  /// A quoted value holding a `>` (the quote captured).
+  // swiftlint:disable:next force_try - a constant pattern
+  private static let angledValue = try! NSRegularExpression(
+    pattern: #"(["'])(?:(?!\1)[^<])*?>(?:(?!\1)[^<])*\1"#)
+
   /// Tags removed, entities decoded, whitespace collapsed.
   static func plain(_ html: String) -> String {
-    let stripped = html.replacingOccurrences(
+    let stripped = emptyingAttributesWithAngles(html).replacingOccurrences(
       of: "<[^>]+>", with: " ", options: .regularExpression)
     return decodeEntities(stripped)
       .components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }

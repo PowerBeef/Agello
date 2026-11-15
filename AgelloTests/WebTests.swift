@@ -89,6 +89,29 @@ final class WebTests: XCTestCase {
     XCTAssertTrue(page.text.contains("Readable article sentence"))
   }
 
+  /// Wikipedia's pages carry JSON attributes holding `>` (Parsoid's `data-mw`): a tag ends at its
+  /// real end, not at the first `>` inside a quoted value (2026-11-15: their tails reached the
+  /// model as `",{"template":…`).
+  func testAttributeValuesWithAnglesStayOutOfTheText() {
+    let cell = """
+      <td about="#mwt12" typeof="mw:Transclusion" style="background:#9f9" \
+      data-mw='{"parts":[{"template":{"target":{"wt":"yes","href":"./Template:Yes"},"params":{},"i":0}},"\\n| style=\\"x\\" >"]}'>Yes</td>
+      """
+    let html = """
+      <html><body><article><p>\(String(repeating: "A framework comparison sentence. ", count: 8))</p>
+      <table><tr><td title="1 > 0">Angular</td>\(cell)<td data-x="a>b" data-y='c>d'>MIT</td></tr></table>
+      <p>It's a page with an apostrophe <b>outside</b> any tag, and 2 > 1 in the text.</p>
+      </article></body></html>
+      """
+    let page = ReadableText.extract(html: html)
+    for leak in ["template", "\"wt\"", "Template:Yes", "mw:Transclusion", "data-", "1 > 0", "a>b"] {
+      XCTAssertFalse(page.text.contains(leak), "Kept '\(leak)': \(page.text)")
+    }
+    XCTAssertTrue(page.text.contains("Angular | Yes | MIT"), page.text)
+    XCTAssertTrue(page.text.contains("It's a page with an apostrophe outside any tag, and 2 > 1 in the text."), page.text)
+    XCTAssertEqual(HTMLText.plain(cell), "Yes")
+  }
+
   /// Wikipedia answers in the question's language when it's clear, else the device's.
   func testWikipediaEditionFollowsTheQuestion() {
     let english = ["en-CA"]

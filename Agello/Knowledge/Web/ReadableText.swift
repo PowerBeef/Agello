@@ -13,6 +13,7 @@ enum ReadableText {
   static let maxCharacters = 60_000
 
   static func extract(html: String, maxCharacters: Int = maxCharacters) -> Page {
+    let html = HTMLText.emptyingAttributesWithAngles(html)
     let title = HTMLText.firstMatch(
       #"<meta[^>]+property="og:title"[^>]+content="([^"]*)""#, in: html
     )?.first.map(HTMLText.plain)
