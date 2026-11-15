@@ -399,7 +399,36 @@ identical. `unit` 275, `inference` 23/23, `thinking` 3/3, `files` 5/5 natively. 
 needs our runtime released (the app vendors `agello-next-20261024`, which reads no window: the
 32,003 fallback) and, for 64K, the file opened to 128K published (the maintainer's call).
 
-On the iPhone: probe 26 (placement sparse support, in seconds), then each step's gates. If the
+**On the iPhone 17 Pro (2026-11-15, runtime `1b3e7a17630e`, the defaults: sparse caches,
+prefill pools released, the window read from the file):**
+
+- Probe 26: the A19 Pro has placement sparse buffers (tier 1); a 256 MB sparse buffer with 16 MB
+  mapped costs 16 MB, writes past the mapping are dropped, reads there return zero.
+- `unit` 340 (1 skipped), `inference` 23/23, `thinking` 3/3, `files` 5/5, `memory` 4/4, the
+  caches sparse throughout (48 caches of 8K, 16K and 32K slots). The memory suite's 6.0 GB envelope
+  (the published file at 32K, 0.46 GB of it the test's ballast): 1.23 GB after load (2.34 before
+  today), 1.26 GB after an image (3.60), 1.38 GB after a 4K prompt, no memory warning.
+- Probe 24, the file opened to 128K at a fixed 64K (65,536 allocated from the file's own window),
+  each prompt followed by a 300-word reply, the title helper and an image in the same chat; the
+  phone warm from 40 minutes of suites:
+
+  | Prompt | First token | Peak reading | Helper peak | Image peak | Follow-up decode |
+  | --- | --- | --- | --- | --- | --- |
+  | 5,020 tokens | 3.2 s | 1.29 GB | 1.26 GB | 2.20 GB | 34 tok/s |
+  | 21,058 | 16.1 s | 2.36 GB | 1.26 GB | 2.29 GB | 26 tok/s |
+  | 45,273 | 50.5 s (897 tok/s) | 2.29 GB | 1.47 GB | 2.49 GB | 21 tok/s |
+
+  0.73 GB after load. Needles 3/3 each time. The rule was a 44K prompt, a helper and an image
+  under 4.5 GB: the worst is 2.49 GB, so the fixed 64K stands. The 45K read is 15 % faster than
+  probe 24's first pass (59.5 s), short of the Mac's estimate (38–47 s); this run was warm and
+  single, so the read speed wants a cool, interleaved run before it's a number.
+- Probe 25, the replay ceiling (published file, short replies, ten minutes back to back, thermal
+  state 1 from the first minute): the real round 63–68 ms, the replayed 55–58 ms, **+13 % to
+  +17 % sustained** (the bar was +8 %). The GPU-resident round is in: a round with no host step
+  between its runs (the drafter's and verify's embeddings gathered on the GPU from the mapped
+  file, which costs no footprint on the M6; still to be checked on the iPhone).
+
+If the
 A19 Pro has no sparse buffers, the window stays a fixed 64K with ordinary buffers
 (+0.4–0.55 GB a chat) or goes back to the growth below.
 
