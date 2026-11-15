@@ -7,7 +7,7 @@ import Foundation
 ///
 /// A helper runs in a conversation of its own. The chat's conversation is kept beside it when
 /// memory allows, and released and rebuilt from history when it doesn't
-/// (``DeviceProfile/keepsConversationAcrossHelpers(maxNumTokens:availableBytes:)``).
+/// (``DeviceProfile/keepsConversationAcrossHelpers(usedTokens:availableBytes:)``).
 enum HelperTasks {
   // MARK: Scheduling
 

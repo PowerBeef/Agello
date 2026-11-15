@@ -46,7 +46,9 @@ struct DeviceProfile: Sendable, Equatable {
     availableBytes > 0 && availableBytes < lowMemoryStopBytes
   }
 
-  /// E4B's KV cache per token of context (24 INT8 caches): 0.47 GB at 16K.
+  /// E4B's KV cache per position (24 INT8 caches of the published file): 0.47 GB at 16K. The
+  /// file opened to 128K holds less per position (its global caches, 8,192 bytes, and 31.5 MB of
+  /// local rings), so this bounds both.
   static let kvBytesPerToken: UInt64 = 28_672
 
   /// Whether a helper (title, memory, search planning, summary, dictation)
@@ -54,16 +56,16 @@ struct DeviceProfile: Sendable, Equatable {
   ///
   /// The runtime copies the chat's KV cache aside while the helper runs and
   /// restores it in about 0.1 s (2.9 s to reseed 8K tokens of history on the
-  /// Mac). The copy (0.47 GB at 16K, 0.92 GB at 32K) lives while the helper
-  /// runs (the engine restores the chat as soon as the helper ends), so it
-  /// needs that much memory above ``lowMemoryStopBytes``. Short of it, the
+  /// Mac). The copy holds only the positions the chat has filled (`usedTokens`; 0.47 GB for 16K
+  /// of them) and lives while the helper runs (the engine restores the chat as soon as the
+  /// helper ends), so it needs that much memory above ``lowMemoryStopBytes``. Short of it, the
   /// chat's conversation is released before the helper and reseeded after.
   /// `availableBytes` 0 means not reported: keep. (The iPhone app on a Mac
   /// reports its physical memory.)
-  static func keepsConversationAcrossHelpers(maxNumTokens: Int, availableBytes: UInt64) -> Bool {
+  static func keepsConversationAcrossHelpers(usedTokens: Int, availableBytes: UInt64) -> Bool {
     guard availableBytes > 0 else { return true }
-    let peak = kvBytesPerToken * UInt64(max(0, maxNumTokens))
-    return availableBytes >= peak + lowMemoryStopBytes
+    let copy = kvBytesPerToken * UInt64(max(0, usedTokens))
+    return availableBytes >= copy + lowMemoryStopBytes
   }
 
   /// The chat context, no longer a setting (2026-11-02). On our runtime decode hardly depends on
@@ -73,11 +75,14 @@ struct DeviceProfile: Sendable, Equatable {
   /// down (``contextTokens(standard:roomBytes:)``).
   static let standardContextTokens = 16_384
 
-  /// The window of devices with ``memoryForLargeContextBytes`` (the maintainer's choice,
-  /// 2026-11-09): 32,768 requested, 32,000 allocated, the most the model file holds
-  /// (``ContextBudget/allocatedPositions(requested:)``). It peaks at about 3.5 GB, 1.6 GB more
-  /// than 16K.
-  static let largeContextTokens = 32_768
+  /// The window of devices with ``memoryForLargeContextBytes``: a fixed 64K (the maintainer's
+  /// choice, 2026-11-14; PERFORMANCE.md, "The window: a fixed 64K with sparse KV caches"; 32K
+  /// from 2026-11-09). The model file caps it: the published file allocates 32,000 positions
+  /// (``ContextBudget/allocatedPositions(requested:exportWindow:)``), a file opened to 128K all
+  /// 65,536. Our runtime's caches cost only what a chat fills (sparse KV), so a short chat at 64K
+  /// holds less than one at 32K did (0.86 against 1.09 GB on the M6) and a 44K prompt peaks at
+  /// 1.8 GB there.
+  static let largeContextTokens = 65_536
 
   /// Physical memory that takes ``largeContextTokens``: the 12 GB iPhones (iPhone 17 Pro) and
   /// Macs with 16 GB. 8 GB devices keep ``standardContextTokens``.
@@ -90,9 +95,11 @@ struct DeviceProfile: Sendable, Equatable {
   static let defaultThinkingBudget = 4_096
 
   /// Room the app needs left as it loads to take ``largeContextTokens``:
-  /// ``roomForStandardContextBytes`` plus the 1.6 GB more a 32K engine peaks at. The memory
+  /// ``roomForStandardContextBytes`` plus the 1.6 GB more a 32K engine peaked at. The memory
   /// suite's 6.0 GB envelope (5.98 GB left at load) passed every step with 1.3 GB to spare
-  /// (iPhone 17 Pro, 2026-11-10); nothing between 5.1 and 6.0 GB is measured.
+  /// (iPhone 17 Pro, 2026-11-10, 32K); nothing between 5.1 and 6.0 GB is measured. Kept for 64K
+  /// until the memory suite measures it on the iPhone (a 64K engine peaks lower than 32K did on
+  /// the M6).
   static let roomForLargeContextBytes: UInt64 = 5_100_000_000
 
   /// The window of a load with less than ``roomForStandardContextBytes`` left.
@@ -120,18 +127,6 @@ struct DeviceProfile: Sendable, Equatable {
   static func defaultMaxTokens(model: ModelID, memoryBytes: UInt64) -> Int {
     if memoryBytes >= memoryForLargeContextBytes { return largeContextTokens }
     return memoryBytes >= 7_000_000_000 ? standardContextTokens : 4_096
-  }
-
-  /// Largest context worth loading for long inputs (files, web passages).
-  /// Measured E4B peak at 32K with a third of it filled: 3.6 GB; 16K stays
-  /// within the ~3.5 GB worst case simulated under memory pressure.
-  static func maxContextTokens(model: ModelID, appMemoryLimitBytes: UInt64?) -> Int {
-    guard let limit = appMemoryLimitBytes else { return 16_384 }
-    return limit >= 6_500_000_000 ? ContextBudget.maxAllocatedPositions : 16_384
-  }
-
-  func maxContextTokens(model: ModelID) -> Int {
-    Self.maxContextTokens(model: model, appMemoryLimitBytes: appMemoryLimitBytes)
   }
 
   func defaultMaxTokens(model: ModelID) -> Int {

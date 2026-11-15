@@ -4,9 +4,9 @@ import XCTest
 
 final class DeviceProfileTests: XCTestCase {
   func testDefaultMaxTokens() {
-    // No longer a setting: 32K with 12 GB (the iPhone floor). The smaller values only serve the
-    // iPhone app run on a Mac with less memory.
-    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 12_291_719_168), 32_768)
+    // No longer a setting: a fixed 64K with 12 GB (the iPhone floor; 2026-11-14), which the model
+    // file caps. The smaller values only serve the iPhone app run on a Mac with less memory.
+    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 12_291_719_168), 65_536)
     XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 8_000_000_000), 16_384)
     XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 6_000_000_000), 4096)
   }
@@ -50,9 +50,13 @@ final class DeviceProfileTests: XCTestCase {
     XCTAssertNil(InferenceOptions.launch(saved: nil, arguments: ["Agello", "--uitest-window", "big"]).maxNumTokensOverride)
   }
 
-  /// 32K by default where the device has 12 GB (2026-11-09), stepping down to 16K below 5.1 GB
-  /// left at load and to 8K below 3.5 GB.
+  /// 64K by default where the device has 12 GB (2026-11-14; 32K from 2026-11-09), stepping down to
+  /// 16K below 5.1 GB left at load and to 8K below 3.5 GB.
   func testLargeContextStepsDownWithTheRoomAtLoad() {
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 65_536, roomBytes: 8_000_000_000), 65_536)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 65_536, roomBytes: 5_100_000_000), 65_536)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 65_536, roomBytes: 5_000_000_000), 16_384)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 65_536, roomBytes: 3_380_000_000), 8_192)
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: 8_000_000_000), 32_768)
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: 5_100_000_000), 32_768)
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: 5_000_000_000), 16_384)
@@ -74,14 +78,6 @@ final class DeviceProfileTests: XCTestCase {
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 4_096, roomBytes: 1_000_000_000), 4_096)
   }
 
-  func testLongContextCeilingFollowsAppMemoryLimit() {
-    // 32,000: the most positions LiteRT-LM allocates for these files.
-    XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 8_600_000_000), 32_000)
-    XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 6_500_000_000), 32_000)
-    XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 5_000_000_000), 16_384)
-    XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: nil), 16_384)
-  }
-
   /// Device finding: iOS sends memory warnings long before it terminates the
   /// app (E4B kept working with ~0.8 GB left), so replies stop only when
   /// memory is nearly exhausted.
@@ -93,28 +89,30 @@ final class DeviceProfileTests: XCTestCase {
     XCTAssertFalse(DeviceProfile.shouldStopForMemory(availableBytes: 0))
   }
 
-  /// Mac finding (T3): the runtime keeps the chat's conversation across a helper at a peak cost
-  /// of one copy of its KV cache (917.5 MB at a 32,000-token window, the runtime's own count).
+  /// Mac findings (T3, E4): the runtime keeps the chat's conversation across a helper at a peak
+  /// cost of one copy of the positions it has filled (917.5 MB for 32,000 of them, the runtime's
+  /// own count), so the rule counts the filled positions, not the window (a fixed 64K window).
   func testHelpersKeepTheConversationWhenMemoryAllows() {
-    func keeps(_ tokens: Int, _ available: UInt64) -> Bool {
-      DeviceProfile.keepsConversationAcrossHelpers(maxNumTokens: tokens, availableBytes: available)
+    func keeps(_ used: Int, _ available: UInt64) -> Bool {
+      DeviceProfile.keepsConversationAcrossHelpers(usedTokens: used, availableBytes: available)
     }
-    // 8K: 28,672 × 8,192 = 0.23 GB, plus the 0.4 GB stop threshold.
+    // 8K filled: 28,672 × 8,192 = 0.23 GB, plus the 0.4 GB stop threshold.
     XCTAssertTrue(keeps(8_192, 634_881_024))
     XCTAssertFalse(keeps(8_192, 634_881_023))
     XCTAssertTrue(keeps(32_768, 1_400_000_000))
     XCTAssertFalse(keeps(32_768, 1_300_000_000))
+    // A short chat in a 64K window needs little; a full one about 2.3 GB.
+    XCTAssertTrue(keeps(500, 500_000_000))
+    XCTAssertFalse(keeps(65_536, 2_200_000_000))
     // Not reported: keep.
     XCTAssertTrue(keeps(32_768, 0))
     XCTAssertEqual(DeviceProfile.kvBytesPerToken * 32_000, 917_504_000)
   }
 
-  /// The largest window worth loading follows the app's memory limit (32,000 at 6.5 GB or more).
-  func testLargestWindowByMemoryLimit() {
-    XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 5_500_000_000), 16_384)
-    XCTAssertEqual(DeviceProfile.maxContextTokens(model: .e4b, appMemoryLimitBytes: 8_590_000_000), 32_000)
+  /// The window by physical memory: 64K with 12 GB, 16K with 8 GB.
+  func testWindowByPhysicalMemory() {
     XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 8_589_934_592), 16_384)
-    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 12_291_719_168), 32_768)
+    XCTAssertEqual(DeviceProfile.defaultMaxTokens(model: .e4b, memoryBytes: 12_291_719_168), 65_536)
   }
 
   /// A warning stops a reply only near exhaustion and releases the embedder; the chat model stays.

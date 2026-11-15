@@ -27,8 +27,11 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   back right away (the chat's `getTokenCount()` does it), so the copy, one KV
   cache, lives only while the helper runs; otherwise it would wait for the
   next message.
-- The engine keeps the chat only when one cache fits above
-  `lowMemoryStopBytes` (`DeviceProfile.keepsConversationAcrossHelpers`).
+- The engine keeps the chat only when a copy of the positions it has filled
+  fits above `lowMemoryStopBytes`
+  (`DeviceProfile.keepsConversationAcrossHelpers(usedTokens:)`: 28,672 bytes
+  a position, the published file's; the snapshot holds only the filled
+  positions, so in a 64K window a short chat keeps it cheaply).
   Otherwise it releases the main conversation *before* the helper and leaves
   an **empty** one, and the caller must reseed history before the next send.
   Callers ask `lastHelperKeptConversation` (`AppState.afterHelper`) and
@@ -93,18 +96,26 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   filter, 536 with it explicitly off; `ThinkingScenarioTests/test02`
   guards it with `cachedTokenCount()`.
 - Chat's cache isn't a setting (since 2026-11-02; a saved custom window is
-  dropped at launch): 32K (32,000 allocated, the model file's most) on
-  the 12 GB iPhones (the floor, 11 GB or more of physical memory; the
-  maintainer's choice, 2026-11-09). `DeviceProfile.defaultMaxTokens`' smaller
-  values only serve the iPhone app run on a Mac with less. On our runtime
-  decode hardly depends on the window (iPhone 17 Pro: 39 / 42 / 42 tok/s at
-  8K / 16K / 32K); 16K peaks at 1.9 GB and 32K at 3.5 GB. Each load measures
+  dropped at launch): a fixed 64K (65,536 requested) on the 12 GB iPhones
+  (the floor, 11 GB or more of physical memory; the maintainer's choice,
+  2026-11-14, 32K from 2026-11-09), capped by the model file: a load reads
+  the file's export window (`ContextBudget.exportWindow(reported:)` from
+  ModelInfo; the published file allocates 32,000 positions, the file opened
+  to 128K 65,536) and every plan uses it (`InferencePlanner.resolve(...,
+  exportWindow:)`, in `load` and `plan(for:)` alike, or a settings change
+  would reload). `DeviceProfile.defaultMaxTokens`' smaller values only serve
+  the iPhone app run on a Mac with less. On our runtime decode hardly depends
+  on the window (iPhone 17 Pro: 39 / 42 / 42 tok/s at 8K / 16K / 32K), and the
+  KV caches cost only what a chat fills (sparse KV, the runtime's default):
+  on the M6 a short chat at 64K holds 0.86 GB (1.09 at 32K before), a 44K
+  prompt peaks at 1.8 GB; the iPhone's numbers are pending. Each load measures
   the room left (`MemoryProbe.roomBytes`: the app's memory limit less its
   footprint, nil where no limit is reported) after the old engine is gone, and
   steps down
-  (`DeviceProfile.contextTokens`): 16K below 5.1 GB (an estimate: 3.5 GB
-  plus 32K's extra 1.6 GB; the memory suite's 6.0 GB envelope passed with
-  1.3 GB to spare on 2026-11-10, nothing lower is measured), 8K below
+  (`DeviceProfile.contextTokens`): 16K below 5.1 GB (an estimate made for
+  32K, kept for 64K until the memory suite measures it: 3.5 GB plus 32K's
+  extra 1.6 GB; the memory suite's 6.0 GB envelope passed with 1.3 GB to
+  spare on 2026-11-10, nothing lower is measured), 8K below
   3.5 GB (at 3.38 GB a 16K load, an image and a 2K-token prompt were killed,
   memory suite at 3.5 GB usable). Physical memory decides, not the reported
   limit, which has read 6.44 GB on the iPhone 17 Pro before rising to

@@ -383,6 +383,22 @@ The 100-turn chat also showed the model's own failure: at turn 62 (about 33K tok
 reply repeats `\text{/` for 60,703 tokens until the window is full, the same with ordinary caches;
 the reply after it reseeds 32,761 tokens of history.
 
+**The app's side (2026-11-14, on the Mac):** 12 GB devices request a fixed 65,536 positions
+(`DeviceProfile.largeContextTokens`; the room thresholds below it unchanged until the memory
+suite measures 64K on the iPhone), capped by the model file: a load reads the file's window
+(`ContextBudget.exportWindow(reported:)`, through every plan, or a settings change would reload).
+ModelInfo couldn't read it for E4B (its 2.26 GB main section is past the 2 GB a read allows, and
+it took the first prefill mask, a ring file's local one); fixed in `agello-one` `cc97925b`, which
+reads a verified prefix and the largest mask: the published file loads at 32,000 positions, the
+file opened to 128K at 65,536 with no `AGELLO_EXPORT_WINDOW`. The helper's keep rule counts the
+positions a chat has filled (`keepsConversationAcrossHelpers(usedTokens:)`), not the window.
+The same commit makes caches of any length sparse (a tile map per buffer), so the published file
+gains today: at 32K a short chat 1,045 MB against 1,789 with ordinary caches (peak 1,232 against
+1,976), a 21K prompt with the helpers 1,603 against 1,754 (peak 2,371 against 2,543), replies
+identical. `unit` 275, `inference` 23/23, `thinking` 3/3, `files` 5/5 natively. What ships
+needs our runtime released (the app vendors `agello-next-20261024`, which reads no window: the
+32,003 fallback) and, for 64K, the file opened to 128K published (the maintainer's call).
+
 On the iPhone: probe 26 (placement sparse support, in seconds), then each step's gates. If the
 A19 Pro has no sparse buffers, the window stays a fixed 64K with ordinary buffers
 (+0.4–0.55 GB a chat) or goes back to the growth below.

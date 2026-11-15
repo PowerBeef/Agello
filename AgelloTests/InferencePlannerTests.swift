@@ -57,6 +57,31 @@ final class InferencePlannerTests: XCTestCase {
       32_000)
   }
 
+  /// The fixed 64K window (2026-11-14) on a 12 GB device: the published file allocates 32,000
+  /// positions, the file opened to 128K all 65,536; an override is clamped to the file.
+  func testSixtyFourKFollowsTheFile() {
+    var options = InferenceOptions()
+    let twelve: UInt64 = 12_291_719_168
+    XCTAssertEqual(
+      InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: twelve, exportWindow: 32_003)
+        .maxNumTokens,
+      32_000)
+    XCTAssertEqual(
+      InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: twelve, exportWindow: 131_101)
+        .maxNumTokens,
+      65_536)
+    XCTAssertEqual(
+      InferencePlanner.resolve(
+        options: options, model: .e4b, memoryBytes: twelve, contextTokens: 16_384, exportWindow: 131_101
+      ).maxNumTokens,
+      16_384)
+    options.maxNumTokensOverride = 200_000
+    XCTAssertEqual(
+      InferencePlanner.resolve(options: options, model: .e4b, memoryBytes: twelve, exportWindow: 131_101)
+        .maxNumTokens,
+      131_072)
+  }
+
   /// A 32K request allocates 32,000 positions; budgets must use what exists.
   func testThirtyTwoKMeansTheAllocatedThirtyTwoThousand() {
     var options = InferenceOptions()

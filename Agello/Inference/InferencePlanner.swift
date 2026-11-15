@@ -66,10 +66,10 @@ enum ContextBudget {
   /// Audio input token rate (conservative).
   static let audioTokensPerSecond = 25.0
 
-  /// The model file's export window, the context size LiteRT-LM reads from it: 32,003 for the
-  /// Gemma 4 E2B/E4B files as published. A file opened to the trained 131,072-token window
-  /// (the fork's `tools/model-surgery/window_128k.py`) exports 131,101; development tools that
-  /// load one say so with `AGELLO_EXPORT_WINDOW`.
+  /// The export window assumed when a model file can't be inspected: 32,003, the Gemma 4 E2B/E4B
+  /// files' as published, or `AGELLO_EXPORT_WINDOW`. A load reads the file's own
+  /// (``exportWindow(reported:)``): a file opened to the trained 131,072-token window (the fork's
+  /// `tools/model-surgery/window_128k.py`) exports 131,101.
   static let exportWindow: Int = {
     if let value = ProcessInfo.processInfo.environment["AGELLO_EXPORT_WINDOW"],
       let window = Int(value), window > 256
@@ -82,13 +82,23 @@ enum ContextBudget {
   /// The most positions LiteRT-LM allocates: a `maxNumTokens` of the export window or more gets
   /// the largest multiple of 256 below it (32,000 for 32,003, 131,072 for 131,101), so a "32K"
   /// request of 32,768 has 768 fewer positions than it asks for.
-  static let maxAllocatedPositions = (exportWindow - 1) / 256 * 256
+  static let maxAllocatedPositions = maxAllocatedPositions(exportWindow: exportWindow)
+
+  /// The export window of a file that reports `reported` (ModelInfo's maxContextTokens), or
+  /// ``exportWindow`` when it reports nothing usable.
+  static func exportWindow(reported: Int?) -> Int {
+    if let reported, reported > 256 { return reported }
+    return exportWindow
+  }
+
+  /// The most positions LiteRT-LM allocates for a file of `exportWindow`.
+  static func maxAllocatedPositions(exportWindow: Int) -> Int { (exportWindow - 1) / 256 * 256 }
 
   /// Positions the runtime allocates for a requested `maxNumTokens`. Budgets
   /// must use this, never the request: the margins that keep a reply (and an
   /// MTP verify round) inside the cache are only a few dozen positions.
-  static func allocatedPositions(requested: Int) -> Int {
-    requested >= exportWindow ? maxAllocatedPositions : requested
+  static func allocatedPositions(requested: Int, exportWindow: Int = exportWindow) -> Int {
+    requested >= exportWindow ? maxAllocatedPositions(exportWindow: exportWindow) : requested
   }
 
   /// Tokens `text` takes, estimated without the model's tokenizer: 3 bytes a token, or about a
@@ -234,20 +244,24 @@ enum InferencePlanner {
 
   /// Resolve user options + model + device into concrete engine settings. `contextTokens` is the
   /// window chosen for this load from the memory left (``DeviceProfile/contextTokens(standard:roomBytes:)``);
-  /// nil takes the device's default. An override (tests, probes) wins over both.
+  /// nil takes the device's default. An override (tests, probes) wins over both. `exportWindow` is
+  /// the model file's (``ContextBudget/exportWindow(reported:)``): what the runtime can allocate.
   static func resolve(
     options: InferenceOptions,
     model: ModelID,
     memoryBytes: UInt64,
-    contextTokens: Int? = nil
+    contextTokens: Int? = nil,
+    exportWindow: Int = ContextBudget.exportWindow
   ) -> ResolvedInference {
     let maxNumTokens: Int
     if let override = options.maxNumTokensOverride {
       maxNumTokens = ContextBudget.allocatedPositions(
-        requested: min(max(minTokens, override), maxTokens))
+        requested: min(max(minTokens, override), ContextBudget.maxAllocatedPositions(exportWindow: exportWindow)),
+        exportWindow: exportWindow)
     } else {
       maxNumTokens = ContextBudget.allocatedPositions(
-        requested: contextTokens ?? DeviceProfile.defaultMaxTokens(model: model, memoryBytes: memoryBytes))
+        requested: contextTokens ?? DeviceProfile.defaultMaxTokens(model: model, memoryBytes: memoryBytes),
+        exportWindow: exportWindow)
     }
 
     return ResolvedInference(

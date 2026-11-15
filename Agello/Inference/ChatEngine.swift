@@ -204,23 +204,24 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
 
     unloadAndRecord()
-    // 32K or 16K as memory allows: measured after the old engine is gone.
+    // 64K (as the file allows) or less as memory allows: measured after the old engine is gone.
     let room = MemoryProbe.roomBytes()
-    let contextTokens = DeviceProfile.contextTokens(
+    loadedContextTokens = DeviceProfile.contextTokens(
       standard: DeviceProfile.defaultMaxTokens(model: spec.id, memoryBytes: memoryBytes), roomBytes: room)
-    loadedContextTokens = contextTokens
+    // Introspect the model file (cheap, no engine needed): its export window caps the plan, and
+    // the plan is intersected with its capabilities (MTP support, thinking, modalities, the
+    // model's context and visual-token limits).
+    let inspected = Self.inspect(modelURL: modelURL)
+    let exportWindow = ContextBudget.exportWindow(reported: inspected?.maxContextTokens)
     var plan = InferencePlanner.resolve(
-      options: options, model: spec.id, memoryBytes: memoryBytes, contextTokens: contextTokens)
-
-    // Introspect the model file (cheap, no engine needed) and intersect the
-    // plan with real capabilities: MTP support, thinking, modalities, and
-    // the model's context / visual-token limits.
+      options: options, model: spec.id, memoryBytes: memoryBytes, contextTokens: loadedContextTokens,
+      exportWindow: exportWindow)
     loadLog = lastUnload.map { [$0] } ?? []
     loadLog.append(
       String(
-        format: "window: %d tokens with %@ left", plan.maxNumTokens,
+        format: "window: %d tokens (the file's %d) with %@ left", plan.maxNumTokens, exportWindow,
         room.map { String(format: "%.2f GB", Double($0) / 1e9) } ?? "no limit"))
-    if let caps = Self.inspect(modelURL: modelURL) {
+    if let caps = inspected {
       capabilities = caps
       plan = InferencePlanner.applyCapabilities(caps, to: plan)
       loadLog.append(
@@ -520,7 +521,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   private func plan(for options: InferenceOptions, model: ModelID) -> ResolvedInference {
     let plan = InferencePlanner.resolve(
       options: options, model: model, memoryBytes: DeviceProfile.current.physicalMemoryBytes,
-      contextTokens: loadedContextTokens)
+      contextTokens: loadedContextTokens,
+      exportWindow: ContextBudget.exportWindow(reported: capabilities?.maxContextTokens))
     return InferencePlanner.applyCapabilities(capabilities ?? .full, to: plan)
   }
 
@@ -552,7 +554,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   // MARK: Helpers
 
   /// Before a helper: whether the main conversation stays
-  /// (``DeviceProfile/keepsConversationAcrossHelpers(maxNumTokens:availableBytes:)``). If not,
+  /// (``DeviceProfile/keepsConversationAcrossHelpers(usedTokens:availableBytes:)``). If not,
   /// it's released first, so the runtime doesn't copy its KV cache aside.
   private func beginHelper() -> Bool {
     lastHelperKeptConversation = false
@@ -561,7 +563,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     let keep =
       conversation != nil
       && DeviceProfile.keepsConversationAcrossHelpers(
-        maxNumTokens: resolved?.maxNumTokens ?? 0, availableBytes: MemoryProbe.availableBytes())
+        usedTokens: usedTokens(), availableBytes: MemoryProbe.availableBytes())
     if !keep { conversation = nil }
     return keep
   }

@@ -12,6 +12,19 @@ final class ContextBudgetTests: XCTestCase {
     XCTAssertEqual(ContextBudget.allocatedPositions(requested: 32_002), 32_002)
     XCTAssertEqual(ContextBudget.allocatedPositions(requested: 32_003), 32_000)
     XCTAssertEqual(ContextBudget.allocatedPositions(requested: 32_768), 32_000)
+    XCTAssertEqual(ContextBudget.allocatedPositions(requested: 65_536), 32_000)
+  }
+
+  /// A load reads the file's export window: the file opened to 128K (131,101) allocates a 64K
+  /// request whole and 131,072 at most; a file that reports nothing usable falls back.
+  func testAllocatedPositionsFollowTheFile() {
+    XCTAssertEqual(ContextBudget.exportWindow(reported: 131_101), 131_101)
+    XCTAssertEqual(ContextBudget.exportWindow(reported: 0), ContextBudget.exportWindow)
+    XCTAssertEqual(ContextBudget.exportWindow(reported: nil), ContextBudget.exportWindow)
+    XCTAssertEqual(ContextBudget.allocatedPositions(requested: 65_536, exportWindow: 131_101), 65_536)
+    XCTAssertEqual(ContextBudget.allocatedPositions(requested: 200_000, exportWindow: 131_101), 131_072)
+    XCTAssertEqual(ContextBudget.allocatedPositions(requested: 65_536, exportWindow: 32_003), 32_000)
+    XCTAssertEqual(ContextBudget.maxAllocatedPositions(exportWindow: 32_003), 32_000)
   }
 
   private func turns(_ count: Int, length: Int = 300) -> [(role: ChatRole, text: String)] {
