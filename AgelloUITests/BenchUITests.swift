@@ -83,6 +83,8 @@ final class BenchUITests: XCTestCase {
         let input = element("chat.input")
         input.tap()
         input.typeText(message)
+        // Search is for one message at a time: a user who keeps searching turns it on again.
+        if bench.searchFollowUps { setToggle("composer.search", to: true) }
       }
       let turn = sendAndWait(bench, turn: index + 1, isLastAttempt: isLastAttempt)
       turns.append(turn)
@@ -113,15 +115,23 @@ final class BenchUITests: XCTestCase {
     var turn: [String: Any] = ["turn": number]
     let name = "bench-\(bench.id)-\(number)"
     let send = element("chat.send")
-    guard send.waitForExistence(timeout: 10), send.isHittable else {
+    guard send.waitForExistence(timeout: 10) else {
       attachScreenshot("\(name)-no-send")
-      XCTFail("\(bench.id) turn \(number): no Send button (the draft didn't arrive, or it's off screen)")
+      XCTFail("\(bench.id) turn \(number): no Send button (the draft didn't arrive)")
       return turn
     }
+    // A six-line draft left Send on screen but not hittable to XCUITest (2026-11-15, the coding
+    // chat's follow-up; a finger sends it): tap its center then, and say so in the record.
+    let hittable = wait(upTo: 3, every: 0.5, until: { send.isHittable })
+    turn["sendHittable"] = hittable
     let bubbles = app.descendants(matching: .any).matching(identifier: "message.model")
     let before = bubbles.count
     let sent = Date()
-    send.tap()
+    if hittable {
+      send.tap()
+    } else {
+      send.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
     turn["sentAt"] = ISO8601DateFormatter().string(from: sent)
 
     // Started: Stop shows. First text: a new reply bubble. Search and file reading come first.

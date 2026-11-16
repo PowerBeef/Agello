@@ -259,6 +259,8 @@ struct ChatView: View {
                 actions: actions(for: turn))
             }
           }
+          // The rows are scroll targets: a new message is scrolled to by its id (below).
+          .scrollTargetLayout()
           .padding(.horizontal, Theme.Spacing.xl)
           .padding(.top, Theme.Spacing.lg)
           .padding(.bottom, Theme.Spacing.sm)
@@ -280,10 +282,13 @@ struct ChatView: View {
           followsLatest = atBottom
         }
         .onChange(of: turns.count) { old, new in
-          // A new message brings the list back to the latest.
-          guard new > old else { return }
+          // A new message brings the list back to the latest, by its id rather than the list's
+          // edge: the lazy list only estimates the rows it hasn't laid out, and after a long
+          // reply (hundreds of lines of code) the edge's estimate left the view past the real
+          // end, an empty screen while the next reply streamed (iPhone 17 Pro, 2026-11-15).
+          guard new > old, let latest = turns.last?.id else { return }
           followsLatest = true
-          withAppAnimation(Theme.Motion.easeOut) { scrollPosition.scrollTo(edge: .bottom) }
+          withAppAnimation(Theme.Motion.easeOut) { scrollPosition.scrollTo(id: latest, anchor: .bottom) }
         }
       }
     }

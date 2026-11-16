@@ -162,6 +162,7 @@ CHECKS = {
     "ttl-cache": [[check_ttl_cache]],
     "followup-search": [[expect(r"Poga[cč]ar", r"\[\d+\]")], [expect(r"\b6\s*(minutes?|min\b|:|′|')")]],
     "file-report": [[], [expect(r"(?i)water quality", r"(?i)district\s*4|\b4\b")]],
+    "mockup-os-search": [[expect(r"(?i)<html")], [expect(r"(?i)calculator", r"(?i)</html>")]],
 }
 
 

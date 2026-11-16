@@ -14,6 +14,8 @@ struct BenchCase {
 
   /// Sent after the first reply, one at a time, typed into the composer.
   var followUps: [String] = []
+  /// Turns Search on again for each follow-up (Search applies to one message).
+  var searchFollowUps = false
   /// Extra launch arguments, for what the driver can't do by hand (a file from the system picker).
   var launchArguments: [String] = []
 
@@ -50,6 +52,16 @@ struct BenchCase {
     BenchCase(
       id: "followup-search", prompt: "Who won the 2026 Tour de France?", think: false, search: true,
       followUps: ["By how many minutes?"]),
+    // A coding chat from the iPhone (2026-11-15), word for word: its replies' code blocks drew
+    // nothing (too tall for one Text) and the follow-up's reply stopped mid-code with no stats.
+    BenchCase(
+      id: "mockup-os-search",
+      prompt: "Create a fully interactive mockup mobile os that is fully self contained within a single html file.",
+      search: true, timeout: 900,
+      followUps: [
+        "The design makes no sense and you should include only fonctionnal apps in the mockup like a calculator and other apps that can actually work. Also can you replicate iOS design for the mockup os UI"
+      ],
+      searchFollowUps: true),
     // A 60-page report from the app's sample (`--uitest-sample-report`): section 23 is about water
     // quality, inspected by district 4.
     BenchCase(
