@@ -68,13 +68,28 @@ enum HelperTasks {
   /// Only messages about the user can hold facts worth remembering; skips
   /// the helper (and the conversation rebuild it causes) for the rest.
   static func shouldLookForMemories(_ message: String) -> Bool {
-    let text = " " + message.lowercased().folding(options: .diacriticInsensitive, locale: nil) + " "
-    let cues = [
-      " i ", " i'm ", " im ", " i've ", " i'd ", " i'll ", " my ", " me ", " mine ", " myself ",
-      "remember", " je ", " j'", " mon ", " ma ", " mes ", " moi ", "souviens", "rappelle",
-    ]
-    return cues.contains { text.contains($0) }
+    let folded = message.lowercased().folding(options: .diacriticInsensitive, locale: nil)
+    // Words, with punctuation as spaces ("Ich heiße Anna." ends on " anna ").
+    let text = " " + folded.map { $0.isLetter || $0 == "'" ? $0 : " " }.reduce(into: "") { $0.append($1) } + " "
+    return memoryCues.contains { text.contains($0) } || memoryCharacters.contains { folded.contains($0) }
   }
+
+  /// First-person words and "remember" in the languages the app reads; English and French only
+  /// until 2026-11-16, so a German or Spanish user never got a memory.
+  private static let memoryCues = [
+    " i ", " i'm ", " im ", " i've ", " i'd ", " i'll ", " my ", " me ", " mine ", " myself ", "remember",
+    " je ", " j'", " mon ", " ma ", " mes ", " moi ", "souviens", "rappelle",
+    " ich ", " mein ", " meine ", " meinen ", " meinem ", " meiner ", " mich ", " mir ", "merk dir", "erinnere",
+    // Italian, Spanish and Portuguese often drop the pronoun: "I am" and "I live" too.
+    " io ", " mio ", " mia ", " miei ", " mie ", " mi ", " sono ", " vivo ", " abito ", "ricorda",
+    " yo ", " mis ", " soy ", " estoy ", " tengo ", "recuerda", "acuerdate",
+    " eu ", " meu ", " minha ", " meus ", " minhas ", " sou ", " moro ", "lembra",
+    " ik ", " mijn ", " mij ", "onthoud",
+    " ja ", " moj ", " moja ", " moje ", " mnie ", " mam ", "zapamietaj", "pamietaj",
+  ]
+
+  /// Japanese, Chinese and Korean: no spaces between words, matched anywhere.
+  private static let memoryCharacters = ["私", "僕", "俺", "覚えて", "我", "记住", "記住", "저는", "제가", "나는", "내가", "기억해"]
 
   /// Instructions first, with examples: measured on device, Gemma otherwise
   /// tends to return an empty list for messages full of facts.
@@ -105,7 +120,9 @@ enum HelperTasks {
     return raw.compactMap { item in
       var text = item.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
         .joined(separator: " ")
-        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”-•* ").union(.whitespaces))
+        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”").union(.whitespaces))
+        // A list marker, not a minus sign: "- Lives in Montreal", but "-5 °C" stays.
+        .replacingOccurrences(of: #"^(?:[-•*]|\d+[.)])\s+"#, with: "", options: .regularExpression)
       while let last = text.last, ".;,".contains(last) { text.removeLast() }
       guard text.count >= 3 else { return nil }
       return String(text.prefix(maxMemoryLength))

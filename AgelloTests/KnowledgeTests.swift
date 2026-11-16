@@ -56,6 +56,17 @@ final class KnowledgeTests: XCTestCase {
 
   /// Chinese has no spaces between words: its runs become character pairs, so keywords still
   /// match. Other text is unchanged.
+  /// Two-letter words count, and common acronyms aren't stopwords: "AI in the UK" used to have no
+  /// terms at all and score 0 everywhere (2026-11-16).
+  func testKeywordTermsKeepTwoLetterWords() {
+    XCTAssertEqual(KeywordScorer.terms("AI in the UK"), ["ai", "uk"])
+    XCTAssertEqual(KeywordScorer.terms("Is it on the US or EU list?"), ["us", "eu", "list"])
+    let scores = KeywordScorer.scores(
+      query: "AI in the UK", documents: ["Rules for AI developers in the UK.", "A recipe for bread."])
+    XCTAssertGreaterThan(scores[0], 0)
+    XCTAssertEqual(scores[1], 0)
+  }
+
   func testKeywordTermsSplitCJKIntoCharacterPairs() {
     XCTAssertEqual(KeywordScorer.terms("The lighthouse keeper"), ["lighthouse", "keeper"])
     let terms = KeywordScorer.terms("北京大学的历史 and history")

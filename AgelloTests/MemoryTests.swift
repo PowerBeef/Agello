@@ -16,9 +16,28 @@ final class MemoryHelperTests: XCTestCase {
     }
   }
 
+  /// The languages the app reads, each with a message about the user and one that isn't
+  /// (English and French only until 2026-11-16).
+  func testMemoryCuesInEachLanguage() {
+    let aboutTheUser = [
+      "Ich heiße Anna und wohne in Berlin.", "Mein Sohn ist 8.", "Sono vegetariana, consigliami una cena.",
+      "Mi figlia ha sei anni.", "Yo trabajo como enfermera.", "Recuerda que mi código es 4521.",
+      "Eu moro em Lisboa.", "A minha filha tem 5 anos.", "Ik woon in Utrecht.", "Mijn hond heet Max.",
+      "Mam dwoje dzieci.", "Moja córka ma 5 lat.", "私は東京に住んでいます。", "我住在上海。", "저는 서울에 살아요.",
+    ]
+    for message in aboutTheUser { XCTAssertTrue(HelperTasks.shouldLookForMemories(message), message) }
+    let impersonal = [
+      "Wie hoch ist der Eiffelturm?", "Qual è la capitale del Canada?", "¿Qué es la fotosíntesis?",
+      "Quanto custa um bilhete de comboio?", "Hoe laat is het in Tokio?", "Jaka jest stolica Francji?",
+      "東京の人口は？", "上海的天气怎么样？", "서울의 인구는?",
+    ]
+    for message in impersonal { XCTAssertFalse(HelperTasks.shouldLookForMemories(message), message) }
+  }
+
   func testParseCleansFacts() {
-    let json = Data(#"{"memories":["  Is vegetarian. ", "", "x", "- Lives in Montreal"]}"#.utf8)
-    XCTAssertEqual(HelperTasks.parseMemories(json), ["Is vegetarian", "Lives in Montreal"])
+    let json = Data(#"{"memories":["  Is vegetarian. ", "", "x", "- Lives in Montreal", "-5 °C is the coldest they'll run in"]}"#.utf8)
+    XCTAssertEqual(
+      HelperTasks.parseMemories(json), ["Is vegetarian", "Lives in Montreal", "-5 °C is the coldest they'll run in"])
     XCTAssertEqual(HelperTasks.parseMemories(Data("not json".utf8)), [])
   }
 
@@ -27,6 +46,11 @@ final class MemoryHelperTests: XCTestCase {
       ["is Vegetarian", "Has a dog named Rex", "Has a dog named Rex", "Works as a nurse"],
       existing: ["Is vegetarian", "Works as a nurse in Montreal"])
     XCTAssertEqual(kept, ["Has a dog named Rex"])
+  }
+
+  /// Two-letter words count: a new city isn't taken for a vaguer copy of the old one (2026-11-16).
+  func testShortWordsKeepAFactApart() {
+    XCTAssertEqual(HelperTasks.newMemories(["Lives in NY"], existing: ["Lives in Montreal"]), ["Lives in NY"])
   }
 
   func testMemoriesJoinTheSystemPrompt() {

@@ -252,9 +252,21 @@ enum KeywordScorer {
     "our", "out", "has", "his", "how", "its", "who", "what", "when", "where", "which", "why",
     "with", "this", "that", "from", "they", "them", "have", "will", "your", "about", "into",
     "les", "des", "une", "est", "que", "qui", "pour", "dans", "par", "sur", "avec", "pas",
+    // Two-letter function words of the languages the app reads (English, French, Spanish,
+    // German, Italian, Portuguese, Dutch, Polish). Words that are also common acronyms (AI, US,
+    // EU, UN) stay terms.
+    "an", "as", "at", "be", "by", "do", "if", "in", "is", "it", "me", "my", "no", "of", "on", "or",
+    "so", "to", "up", "we", "au", "ce", "de", "du", "en", "et", "il", "je", "la", "le", "ma", "ne",
+    "sa", "se", "si", "ta", "te", "tu", "ou", "al", "el", "es", "lo", "mi", "su", "ya", "yo", "am",
+    "da", "er", "im", "ja", "ob", "um", "wo", "zu", "di", "ti", "ao", "em", "na", "os", "ik", "om",
+    "op", "ze", "go", "od", "po", "ty", "za",
   ]
 
-  /// Lowercased, accent-folded words of 3+ characters, minus stopwords. Chinese, Japanese and
+  /// Words that count: 2+ characters (3+ dropped "AI", "UK" and "NY" until 2026-11-16, and a
+  /// question made only of them matched nothing), minus stopwords.
+  private static func isTerm(_ word: String) -> Bool { word.count >= 2 && !stopwords.contains(word) }
+
+  /// Lowercased, accent-folded words of 2+ characters, minus stopwords. Chinese, Japanese and
   /// Korean aren't written with spaces between words: their runs become overlapping character
   /// pairs, which carry most of a CJK word's meaning.
   static func terms(_ text: String) -> [String] {
@@ -262,7 +274,7 @@ enum KeywordScorer {
       .components(separatedBy: CharacterSet.alphanumerics.inverted)
       .flatMap { word -> [String] in
         guard word.unicodeScalars.contains(where: Chunker.isDense) else {
-          return word.count >= 3 && !stopwords.contains(word) ? [word] : []
+          return isTerm(word) ? [word] : []
         }
         return denseTerms(word)
       }
@@ -279,7 +291,7 @@ enum KeywordScorer {
       run = []
     }
     func flushPlain() {
-      if plain.count >= 3, !stopwords.contains(plain) { terms.append(plain) }
+      if isTerm(plain) { terms.append(plain) }
       plain = ""
     }
     for character in word {
