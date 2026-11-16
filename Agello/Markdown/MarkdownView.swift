@@ -197,12 +197,9 @@ struct CodeBlockView: View {
         VStack(alignment: .leading, spacing: 0) {
           ForEach(Array(CodeHighlightCache.highlighted(code, language: language).enumerated()), id: \.offset) {
             _, piece in
-            Text(piece)
-              .font(.callout.monospaced())
-              .textSelection(.enabled)
-              // Ideal size in both axes: inside a horizontal scroll view the
-              // text would otherwise be clipped to a single line.
-              .fixedSize()
+            // While a block streams only its last piece changes: the others keep their layout
+            // and drawing instead of being laid out and drawn again ten times a second.
+            CodePieceView(piece: piece).equatable()
           }
         }
         .padding(Theme.Spacing.md)
@@ -212,6 +209,20 @@ struct CodeBlockView: View {
     // A container keeps the Copy button's own identifier.
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("message.code")
+  }
+}
+
+/// One drawn piece of a code block (``CodeHighlighter/pieces(_:maxLines:)``).
+private struct CodePieceView: View, Equatable {
+  let piece: AttributedString
+
+  var body: some View {
+    Text(piece)
+      .font(.callout.monospaced())
+      .textSelection(.enabled)
+      // Ideal size in both axes: inside a horizontal scroll view the
+      // text would otherwise be clipped to a single line.
+      .fixedSize()
   }
 }
 
