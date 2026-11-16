@@ -11,7 +11,7 @@ enum ToolActivity {
 
   static func record(_ name: String, summary: String) {
     log.withLock { $0.append(ToolActivityRecord(name: name, summary: summary)) }
-    Log.generation.info("tool \(name, privacy: .public): \(summary, privacy: .public)")
+    Log.generation.info("tool \(name, privacy: .public): \(summary, privacy: .private)")
   }
 
   /// Cursor for ``records(since:)``.

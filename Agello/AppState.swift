@@ -738,7 +738,7 @@ final class AppState {
       } catch ChatError.generationCancelled {
         outcome = .cancelled
       } catch {
-        Log.engine.error("helper failed: \(String(describing: error), privacy: .public)")
+        Log.engine.error("helper failed: \(LogText.errorKind(error), privacy: .public)")
         outcome = (error as? ChatError) == GPUGate.closedError ? .cancelled : .finished(nil)
       }
       await self.afterHelper()
@@ -777,7 +777,7 @@ final class AppState {
     guard let output, let title = HelperTasks.parseTitle(output), thread.title == provisional
     else {
       Log.engine.error(
-        "title helper unusable: \(output.map { String(decoding: $0, as: UTF8.self) } ?? "nil", privacy: .public)")
+        "title helper unusable: \(output.map { String(decoding: $0, as: UTF8.self) } ?? "nil", privacy: .private)")
       return true
     }
     thread.title = title
@@ -1214,6 +1214,8 @@ final class AppState {
         if reply.text.isEmpty {
           reply.thread?.removeLeaf(reply)
           context.delete(reply)
+        } else if generationError != nil {
+          reply.markIncomplete()  // cut short by the context or low memory, not by Stop
         }
         try? context.save()
         // LiteRT-LM leaves a cancelled conversation unusable: rebuild it from
@@ -1225,7 +1227,7 @@ final class AppState {
         try? context.save()
         Haptics.error()
       default:
-        reply.text = reply.text.isEmpty ? ChatTurn.errorPrefix + error.displayMessage : reply.text
+        replyFailed(reply, error: error, message: error.displayMessage)
         try? context.save()
         Haptics.error()
         // The engine stopped a stream that failed mid-way: rebuild before the next send.
@@ -1233,11 +1235,19 @@ final class AppState {
       }
     } catch {
       flush(final: true)
-      reply.text = reply.text.isEmpty ? ChatTurn.errorPrefix + error.localizedDescription : reply.text
+      replyFailed(reply, error: error, message: error.localizedDescription)
       try? context.save()
       Haptics.error()
       conversationThreadID = nil
     }
+  }
+
+  /// A failed reply keeps its text, marked incomplete and said so; with none, the error replaces it.
+  private func replyFailed(_ reply: ChatTurn, error: any Error, message: String) {
+    Log.generation.error("reply failed: \(LogText.errorKind(error), privacy: .public)")
+    guard !reply.text.isEmpty else { return reply.text = ChatTurn.errorPrefix + message }
+    generationError = ChatError.stoppedEarly.displayMessage
+    reply.markIncomplete()
   }
 
   func stop() {
@@ -1353,13 +1363,14 @@ final class AppState {
     return thread
   }
 
-  /// Delete saved chats without messages (left behind when a first message
-  /// was rejected), except the open one.
+  /// Delete saved chats without messages (a rejected first message), except the open one and
+  /// a busy one: a new chat has no turns until its first message is prepared (2026-11-16).
   func pruneEmptyThreads() {
     guard let context = modelContext,
       let threads = try? context.fetch(FetchDescriptor<ChatThread>())
     else { return }
-    let empty = threads.filter { $0.turns.isEmpty && $0.id != selectedThreadID }
+    let busy: Set<UUID> = Set([selectedThreadID, preparingThreadID, generatingThreadID].compactMap { $0 })
+    let empty = threads.filter { $0.turns.isEmpty && !busy.contains($0.id) }
     guard !empty.isEmpty else { return }
     for thread in empty {
       if conversationThreadID == thread.id { conversationThreadID = nil }
@@ -1460,7 +1471,7 @@ final class AppState {
       FetchDescriptor<ChatThread>(predicate: #Predicate { $0.projectID == projectID }))) ?? []
     for thread in chats {
       // The chat replying now stays, out of the project, rather than pointing at nothing.
-      if generatingThreadID == thread.id {
+      if generatingThreadID == thread.id || preparingThreadID == thread.id {
         thread.projectID = nil
       } else {
         deleteThread(thread, in: context)
@@ -1477,6 +1488,8 @@ final class AppState {
   }
 
   func deleteThread(_ thread: ChatThread, in context: ModelContext) {
+    // As in the interface: a busy chat's message would land in a deleted chat.
+    guard thread.id != preparingThreadID, thread.id != generatingThreadID else { return }
     if selectedThreadID == thread.id { selectedThreadID = nil }
     if conversationThreadID == thread.id { conversationThreadID = nil }
     knowledge.deleteDocuments(threadID: thread.id)

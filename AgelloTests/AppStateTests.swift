@@ -76,6 +76,31 @@ final class AppStateTests: XCTestCase {
     XCTAssertEqual(thread.orderedTurns.last?.text, "Hello from the mock engine!")
   }
 
+  /// A reply that fails after some text arrived keeps the text, marked incomplete, and says so;
+  /// the next reply clears the message (2026-11-16: it used to read like a finished answer).
+  func testAReplyThatFailsMidStreamIsMarkedIncomplete() async throws {
+    let thread = appState.newThread(in: context)
+    await mock.failNextSend(afterChunks: 1, with: .underlying(message: "INVALID_ARGUMENT"))
+    await appState.send(text: "Hi", imageData: nil, audioFileURL: nil, in: thread)
+    let reply = try XCTUnwrap(thread.orderedTurns.last)
+    XCTAssertEqual(reply.text, "Hello")
+    XCTAssertTrue(reply.parts.incomplete)
+    XCTAssertEqual(appState.generationError, ChatError.stoppedEarly.displayMessage)
+    await appState.send(text: "Again", imageData: nil, audioFileURL: nil, in: thread)
+    XCTAssertNil(appState.generationError)
+    XCTAssertFalse(try XCTUnwrap(thread.orderedTurns.last).parts.incomplete)
+  }
+
+  /// The incomplete mark survives a save, and parts saved before it existed read as complete.
+  func testIncompleteMarkDecodesAndDefaultsToFalse() throws {
+    let marked = MessageParts(incomplete: true)
+    let decoded = try JSONDecoder().decode(MessageParts.self, from: JSONEncoder().encode(marked))
+    XCTAssertTrue(decoded.incomplete)
+    let old = try JSONDecoder().decode(MessageParts.self, from: Data(#"{"webSearch":true}"#.utf8))
+    XCTAssertFalse(old.incomplete)
+    XCTAssertTrue(old.webSearch)
+  }
+
   /// A reply whose task is cancelled (voice mode closed) cancels the native conversation,
   /// which then rejects messages until rebuilt: the next message must still be answered.
   func testAnAbandonedReplyIsRebuiltBeforeTheNextSend() async {
@@ -104,6 +129,28 @@ final class AppStateTests: XCTestCase {
     XCTAssertTrue(thread.orderedTurns.isEmpty)
     let sends = await mock.sendLog
     XCTAssertTrue(sends.isEmpty)
+  }
+
+  /// A new chat holds no turns until its first message is prepared (the model loading, files
+  /// read, a web search): opening another chat then must not prune it as empty (2026-11-16).
+  func testOpeningAnotherChatWhileTheFirstMessagePreparesKeepsTheNewChat() async throws {
+    await mock.setLoadDelay(.milliseconds(400))
+    let other = appState.newThread(in: context)
+    let fresh = appState.newThread(in: context)
+    let freshID = fresh.id
+    let state: AppState = appState
+    let sending = Task { await state.send(text: "Hi", imageData: nil, audioFileURL: nil, in: fresh) }
+    while !(appState.isPreparing && appState.selectedThreadID == freshID) {
+      try? await Task.sleep(for: .milliseconds(5))
+    }
+    appState.selectedThreadID = other.id
+    appState.pruneEmptyThreads()
+    let ids = try context.fetch(FetchDescriptor<ChatThread>()).map(\.id)
+    XCTAssertTrue(ids.contains(freshID), "The chat being prepared was pruned")
+    guard ids.contains(freshID) else { return }
+    let accepted = await sending.value
+    XCTAssertTrue(accepted)
+    XCTAssertEqual(fresh.orderedTurns.map(\.text), ["Hi", "Hello from the mock engine!"])
   }
 
   func testConcurrentLoadsCoalesceIntoOne() async {

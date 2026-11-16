@@ -111,7 +111,7 @@ actor LiteRTEmbedder: TextEmbedder {
         return candidate
       } catch {
         lastError = error
-        Log.engine.error("embedder: load failed (try \(trial)): \(String(describing: error), privacy: .public)")
+        Log.engine.error("embedder: load failed (try \(trial)): \(LogText.errorKind(error), privacy: .public)")
         if trial == 1 { try? await Task.sleep(for: .milliseconds(750)) }
       }
     }

@@ -607,7 +607,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     do {
       try await endHelper(keep: keep, engine: engine, resolved: resolved, options: options)
     } catch {
-      Log.engine.error("helper: couldn't restore a conversation: \(String(describing: error), privacy: .public)")
+      Log.engine.error("helper: couldn't restore a conversation: \(LogText.errorKind(error), privacy: .public)")
     }
     // A failed helper reports the conversation as not kept, so the caller reseeds.
     lastHelperKeptConversation = false
@@ -942,7 +942,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       continuation.finish()
     } catch {
       if cancelRequested || Task.isCancelled || error is CancellationError {
-        Log.generation.info("cancelled: \(String(describing: error), privacy: .public)")
+        Log.generation.info("cancelled: \(LogText.errorKind(error), privacy: .public)")
         continuation.finish(throwing: ChatError.generationCancelled)
         return
       }
@@ -953,7 +953,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         continuation.finish(throwing: ChatError.replyTruncated)
         return
       }
-      Log.generation.error("stream error: \(String(describing: error), privacy: .public)")
+      Log.generation.error("stream error: \(LogText.errorKind(error), privacy: .public)")
       // The native side may still be decoding (an unreadable chunk) or hold a half-written
       // turn: stop it; the caller rebuilds the conversation before the next send.
       try? conversation.cancel()

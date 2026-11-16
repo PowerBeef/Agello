@@ -134,6 +134,12 @@ struct MessageBubbleView: View {
             WeatherAttributionMark()
           }
         }
+        if parts.incomplete {
+          Label("Incomplete reply", systemImage: "exclamationmark.circle")
+            .font(.footnote)
+            .foregroundStyle(Theme.Text.tertiary)
+            .accessibilityIdentifier("message.incomplete")
+        }
         if let memory = parts.toolActivity.last(where: { $0.name == "memory" }) {
           Label("Memory updated", systemImage: "brain.head.profile")
             .font(.footnote)

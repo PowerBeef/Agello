@@ -169,7 +169,7 @@ final class KnowledgeBase {
       } catch is CancellationError {
         // Stopped (deleted, backgrounded): indexed again later.
       } catch {
-        Log.engine.error("knowledge: indexing failed: \(String(describing: error), privacy: .public)")
+        Log.engine.error("knowledge: indexing failed: \(LogText.errorKind(error), privacy: .public)")
         // In the background the GPU is off limits: that's not this document's fault.
         guard !Task.isCancelled, GPUGate.isOpen, document.modelContext != nil else { return }
         document.indexedWith = Self.failedMarker(embedder.identifier)

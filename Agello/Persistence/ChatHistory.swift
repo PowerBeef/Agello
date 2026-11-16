@@ -146,6 +146,15 @@ extension SchemaV3.ChatTurn {
 // MARK: - Message parts
 
 /// Structured, non-text content of a turn.
+extension ChatTurn {
+  /// The reply stopped before it ended (``MessageParts/incomplete``).
+  func markIncomplete() {
+    var parts = self.parts
+    parts.incomplete = true
+    self.parts = parts
+  }
+}
+
 struct MessageParts: Codable, Equatable, Sendable {
   /// Tools that ran while producing this reply, in order.
   var toolActivity: [ToolActivityRecord] = []
@@ -155,17 +164,21 @@ struct MessageParts: Codable, Equatable, Sendable {
   var files: [FileRecord] = []
   /// The user asked for a web search with this message.
   var webSearch = false
+  /// The reply stopped before it ended (an error mid-stream, the context filling, low memory):
+  /// its text is partial. A user's Stop doesn't set it.
+  var incomplete = false
 
-  var isEmpty: Bool { toolActivity.isEmpty && sources.isEmpty && files.isEmpty && !webSearch }
+  var isEmpty: Bool { toolActivity.isEmpty && sources.isEmpty && files.isEmpty && !webSearch && !incomplete }
 
   init(
     toolActivity: [ToolActivityRecord] = [], sources: [SourceRecord] = [], files: [FileRecord] = [],
-    webSearch: Bool = false
+    webSearch: Bool = false, incomplete: Bool = false
   ) {
     self.toolActivity = toolActivity
     self.sources = sources
     self.files = files
     self.webSearch = webSearch
+    self.incomplete = incomplete
   }
 
   /// Tolerates missing keys: parts saved before a field existed still decode.
@@ -175,6 +188,7 @@ struct MessageParts: Codable, Equatable, Sendable {
     sources = try container.decodeIfPresent([SourceRecord].self, forKey: .sources) ?? []
     files = try container.decodeIfPresent([FileRecord].self, forKey: .files) ?? []
     webSearch = try container.decodeIfPresent(Bool.self, forKey: .webSearch) ?? false
+    incomplete = try container.decodeIfPresent(Bool.self, forKey: .incomplete) ?? false
   }
 }
 

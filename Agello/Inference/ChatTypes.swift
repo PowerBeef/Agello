@@ -233,6 +233,8 @@ enum ChatError: Error, Sendable, Equatable {
   case messageTooLong
   /// The reply was stopped before it could overflow the context window.
   case replyTruncated
+  /// The reply failed after some of its text arrived (the text is kept, marked incomplete).
+  case stoppedEarly
   case underlying(message: String)
 
   var displayMessage: String {
@@ -242,6 +244,8 @@ enum ChatError: Error, Sendable, Equatable {
     case .generationCancelled: return "Generation stopped."
     case .contextFull:
       return "This conversation is too long for the model's memory. Start a new chat."
+    case .stoppedEarly:
+      return "The reply stopped early because of an error. Regenerate to try again."
     case .replyTruncated:
       return "The reply was cut short because the model's memory filled up. Start a new chat for long answers."
     case .messageTooLong:
