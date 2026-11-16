@@ -196,12 +196,7 @@ extension ProbeScenarioTests {
     let speculative = ExperimentalFlags.enableSpeculativeDecoding
     ExperimentalFlags.enableSpeculativeDecoding = env["WINDOW_MTP"] != "0"
     defer { ExperimentalFlags.enableSpeculativeDecoding = speculative }
-    let prompts = [
-      "Explain how a heat pump works, in three short paragraphs.",
-      Self.filler(sentences: 120) + "\n\nSummarize the notes above in five bullet points.",
-      Self.filler(sentences: 640) + "\n\nWhat do the notes above say about fog? Answer in two sentences.",
-      Self.filler(sentences: 1_500) + "\n\nList three things the volunteers did, according to the notes.",
-    ]
+    let prompts = Self.identityPrompts
     let atSmall = try await Self.greedyReplies(model: model, kv: small, prompts: prompts)
     let atLarge = try await Self.greedyReplies(model: model, kv: kv, prompts: prompts)
     let rows = zip(atSmall, atLarge).enumerated().map { index, pair in
@@ -217,11 +212,55 @@ extension ProbeScenarioTests {
     }
   }
 
+  /// Probe 30's prompts: short, and about 2K, 10K and 24K tokens.
+  nonisolated static var identityPrompts: [String] {
+    [
+      "Explain how a heat pump works, in three short paragraphs.",
+      filler(sentences: 120) + "\n\nSummarize the notes above in five bullet points.",
+      filler(sentences: 640) + "\n\nWhat do the notes above say about fog? Answer in two sentences.",
+      filler(sentences: 1_500) + "\n\nList three things the volunteers did, according to the notes.",
+    ]
+  }
+
+  /// Probe 31: probe 30's prompts at one window per process, so the runtime's dumps
+  /// (`AGELLO_TELEMETRY_GRAPH_DIR`, `AGELLO_TELEMETRY_LOGITS_OUT`) belong to that window alone.
+  /// The replies go to the report and, with `WINDOW_REPLIES_OUT`, to a JSON file.
+  ///
+  /// - `WINDOW_PROMPTS`: which prompts, by index (default all).
+  /// - `WINDOW_MTP=0`: without speculative decoding.
+  /// - `WINDOW_FP32=1`: float32 activations, the reference for rounding.
+  func test31_WindowReplies() async throws {
+    let env = ProcessInfo.processInfo.environment
+    let (model, kv) = try Self.windowModel(env)
+    let all = Self.identityPrompts
+    let indices = env["WINDOW_PROMPTS"]?.split(separator: ",").compactMap { Int($0) } ?? Array(all.indices)
+    await appState.engine.unload()
+    ExperimentalFlags.optIntoExperimentalAPIs()
+    let speculative = ExperimentalFlags.enableSpeculativeDecoding
+    ExperimentalFlags.enableSpeculativeDecoding = env["WINDOW_MTP"] != "0"
+    defer { ExperimentalFlags.enableSpeculativeDecoding = speculative }
+    let fp32 = env["WINDOW_FP32"] == "1"
+    let replies = try await Self.greedyReplies(
+      model: model, kv: kv, prompts: indices.map { all[$0] }, fp32: fp32)
+    let record: [String: Any] = [
+      "model": model.lastPathComponent, "kv": kv, "mtp": env["WINDOW_MTP"] != "0", "fp32": fp32, "prompts": indices,
+      "replies": replies,
+    ]
+    harness.record("probe31_windowReplies", record, in: self)
+    if let path = env["WINDOW_REPLIES_OUT"] {
+      try JSONSerialization.data(withJSONObject: record, options: [.prettyPrinted, .sortedKeys])
+        .write(to: URL(fileURLWithPath: path))
+    }
+  }
+
   /// Each prompt in a conversation of its own on a new engine of `kv` positions, released after.
-  nonisolated static func greedyReplies(model: URL, kv: Int, prompts: [String]) async throws -> [String] {
+  nonisolated static func greedyReplies(model: URL, kv: Int, prompts: [String], fp32: Bool = false)
+    async throws -> [String]
+  {
     let engine = Engine(
       engineConfig: try EngineConfig(
-        modelPath: model.path, backend: .gpu, maxNumTokens: kv, cacheDir: EngineCache.disabled))
+        modelPath: model.path, backend: .gpu, maxNumTokens: kv, cacheDir: EngineCache.disabled,
+        activationDataType: fp32 ? .float32 : nil))
     try await engine.initialize()
     var replies: [String] = []
     for prompt in prompts { replies.append(try await greedyWhole(engine: engine, prompt: prompt, maxOutputTokens: 200)) }

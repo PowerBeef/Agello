@@ -581,12 +581,20 @@ growth.
 
 | Gate | Result |
 | --- | --- |
-| Identity at ≤ 32K | **Not met for prose.** The xl32k digit suite (12 cases, 12K–30K) gives the same text and token count on three engines: the published file at 32K, and the 128K file at 32K and at 64K. Prose (probe 30, the 128K file at 32,768 against 65,536, greedy): 2 of 4 prompts part with speculative decoding on (after about 60 tokens of a 2K-token summary, and at the last two words of a 10K-token answer); with it off, 2 of 4 part too (the 2K summary after about 15 tokens, a 24K-token list after about 35). So the difference isn't speculative decoding: something in the engine's arithmetic depends on the allocated window, and greedy picks part at near-ties. On my read both sides are equally right in every case: the same facts in other words, and other items the notes do list. Next: find the kernel whose reduction follows the window (a level-4 run at both windows, comparing kernels and their work sizes). |
+| Identity at ≤ 32K | **Met with the iPhone's kernels; the M6 differs, and why is known.** The xl32k digit suite (12 cases, 12K–30K) gives the same text and token count on three engines: the published file at 32K, and the 128K file at 32K and at 64K. Prose (probe 30, the 128K file at 32,768 against 65,536, greedy) is identical in 4 of 4 with the A19 Pro's kernels (`AGELLO_SIMULATE_APPLE_GPU="Apple A19 Pro"` on the M6). With the M6's own kernels, 2 of 4 part at near-ties, with speculative decoding on or off; both sides read equally right. The cause is below the table. |
 | 48-digit copies | All exact (probe 28): the reference at 0, 10, 25, 50, 75, 90 and 95 % of 57,000 tokens; the reference's digits at 32,744–32,791; the reply's digits across 32,768 with the reference late and 32K back. Also 4 xl64k copies at 40K and 50K, early and late. |
 | Positions 65,519–65,535 | Exact: a 65,487-token prompt whose 48 digits and end token fill the window to 65,536 cached, with the reference late and 65K back. |
 | Needle table | 18, 18, 17, 18 and 18 of 18 at 21K, 32K, 44K, 50K and 57K (21,379 to 59,290 tokens prefilled); the miss dropped a crate's last digit (8487 for 84873, at 7 % depth). |
 | History probe | 10 of 10 facts recalled (probe 29): each told in its own turn after about 5,200 tokens of prose, asked once the history held 51,895 tokens. |
 | FP32-sums build, 20 documents | Not run: the first needs a runtime build; the second needs twenty real long documents and a read of the replies. |
+
+**Why the M6 parts at 64K** (2026-11-16; probe 31 at one window per process, with the runtime's graph and logits dumps):
+- The 1,024-token prefill cuts each global layer's 4,096 query rows into slices that keep the score tensors one size: two slices of 2,048 rows at 32K, four of 1,024 at 64K.
+- ML Drift's softmax (`softmax.cc`) reduces each row's maximum and sum serially, unless the tensor has fewer than 256 rows per compute unit. Then four threads each take every fourth slice of the row and combine their partials: another summation order.
+- On the M6 (10 units) the 32K slices have about 410 rows per unit and stay serial; the 64K slices have about 205 and switch (work group `[8,4,1]` to `[32,1,4]`). That is the only kernel whose work group changes with the window: the others differ only in their FLOPs, from longer rows.
+- The A19 Pro (6 units) has about 683 and 341 rows per unit: serial at both windows, so the iPhone 17 Pro's replies shouldn't depend on the window. Probe 30 on the phone is the check.
+- The logits already differ by 0.5–1.0 at the first decoded token. That's the engine's ordinary sensitivity: float32 activations against float16 at one window move them as much. The int8 quantization of activations between layers turns a last-bit change into another rounding step.
+- Making the Mac match would take a window-independent rule for the sliced attention's softmax, in a runtime release. It isn't needed for the iPhone.
 
 **Releases** (timing stays the maintainer's call): R1, train 1 with files sent once and the stop
 check; R2, the ring/128K file at a true 32,768 with the rewind fix, the old file kept until the
