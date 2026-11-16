@@ -41,7 +41,8 @@ let package = Package(
       // Whole folders where every file is engine code, so a new file there joins by itself; a
       // new file elsewhere that the engine needs breaks this build, which is the signal.
       sources: [
-        "Agello/AppState.swift",
+        "Agello/AppState.swift", "Agello/AppState+Benchmark.swift", "Agello/AppState+Chats.swift",
+        "Agello/AppState+Reply.swift", "Agello/AppState+Web.swift",
         "Agello/Inference", "Agello/Knowledge", "Agello/ModelHub", "Agello/Persistence",
         "Agello/Support/Diagnostics.swift", "Agello/Support/ImagePreparer.swift",
         "Agello/Support/ReplyTrace.swift",

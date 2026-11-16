@@ -1,8 +1,10 @@
 import Foundation
-import LiteRTLM
 import SwiftData
 
-/// Main-actor UI state: engine lifecycle, generation pipeline, options.
+/// Main-actor UI state: engine lifecycle, generation pipeline, options. Split by area across
+/// `AppState+Reply.swift` (files, a reply's stream, Stop, background), `AppState+Web.swift`,
+/// `AppState+Chats.swift` (chats, memory, projects) and `AppState+Benchmark.swift`; the members
+/// those files share are internal, for AppState's own use (2026-11-16, at SwiftLint's 1,500 lines).
 @Observable
 @MainActor
 final class AppState {
@@ -63,7 +65,7 @@ final class AppState {
   }
 
   /// The project of the chat the engine's conversation belongs to.
-  @ObservationIgnored private(set) var activeProject: ProjectContext?
+  @ObservationIgnored var activeProject: ProjectContext?
   /// A new chat started from a project page joins that project on its
   /// first message.
   var newChatProjectID: UUID?
@@ -115,10 +117,10 @@ final class AppState {
     }
   }
   /// Reading files before a reply (cancelled by Stop).
-  @ObservationIgnored private var preparationTask: Task<FileContextResult?, Never>?
+  @ObservationIgnored var preparationTask: Task<FileContextResult?, Never>?
 
   /// Thread whose text history the native conversation currently holds.
-  @ObservationIgnored private var conversationThreadID: UUID?
+  @ObservationIgnored var conversationThreadID: UUID?
   /// True while the native conversation holds no turns (fresh load / empty reseed).
   @ObservationIgnored private var conversationIsEmpty = true
   /// Tail of the engine-lifecycle queue (see ``serialized(_:)``).
@@ -129,7 +131,7 @@ final class AppState {
   /// A settings change is waiting for its debounced apply.
   @ObservationIgnored private var optionsDirty = false
   /// Bumped by Stop: a reply still being prepared checks it before each step.
-  @ObservationIgnored private var stopCount = 0
+  @ObservationIgnored var stopCount = 0
 
   @ObservationIgnored private var memoryPressure: MemoryPressureMonitor?
 
@@ -185,7 +187,7 @@ final class AppState {
 
   /// Stop a running reply (keeping its text) if the app is about to run out
   /// of memory.
-  private func stopIfMemoryIsExhausted() {
+  func stopIfMemoryIsExhausted() {
     guard isGenerating, DeviceProfile.shouldStopForMemory(availableBytes: MemoryProbe.availableBytes())
     else { return }
     Log.lifecycle.error("low memory: stopping reply (\(MemoryProbe.summary, privacy: .public))")
@@ -205,7 +207,7 @@ final class AppState {
   /// at a time. The engine actor is reentrant across its long awaits, so
   /// without this two loads could interleave and briefly hold two engines.
   /// Never call from inside an operation that is already serialized.
-  private func serialized<T: Sendable>(
+  func serialized<T: Sendable>(
     _ operation: @escaping @MainActor @Sendable () async -> T
   ) async -> T {
     let previous = lifecycleTail
@@ -220,7 +222,7 @@ final class AppState {
   /// After a helper: unless it kept the engine's conversation (our runtime,
   /// memory allowing), it left an empty one, so the chat is rebuilt from
   /// history on its next message.
-  private func afterHelper() async {
+  func afterHelper() async {
     guard await !engine.lastHelperKeptConversation else { return }
     conversationThreadID = nil
     conversationIsEmpty = true
@@ -280,7 +282,7 @@ final class AppState {
     }
   }
 
-  private func unloadEngine() async {
+  func unloadEngine() async {
     await engine.unload()
     resolved = nil
     conversationThreadID = nil
@@ -716,7 +718,7 @@ final class AppState {
   }
 
   /// What became of a helper the scheduler ran.
-  private enum HelperOutcome<Value: Sendable>: Sendable {
+  enum HelperOutcome<Value: Sendable>: Sendable {
     /// Something else needed the engine (a send, a load): try again later.
     case skipped
     /// Stopped (Stop, the app moved to the background): try again later.
@@ -726,7 +728,7 @@ final class AppState {
 
   /// Runs one helper on the engine unless a send owns it, then marks the chat for a rebuild if
   /// the helper didn't keep its conversation.
-  private func runHelper<Value: Sendable>(
+  func runHelper<Value: Sendable>(
     _ work: @escaping @Sendable (any ChatEngineProtocol) async throws -> Value
   ) async -> HelperOutcome<Value> {
     await serialized {
@@ -808,9 +810,9 @@ final class AppState {
   /// foreground, outside voice mode, and never while a send is pending.
   @ObservationIgnored private var pendingTitles: [UUID] = []
   @ObservationIgnored private var pendingMemories: [PendingMemory] = []
-  @ObservationIgnored private var helperTimer: Task<Void, Never>?
+  @ObservationIgnored var helperTimer: Task<Void, Never>?
   /// The app is active; GPU work waits for it (see ``GPUGate``).
-  @ObservationIgnored private var isInForeground = true
+  @ObservationIgnored var isInForeground = true
 
   var hasPendingHelpers: Bool { !pendingTitles.isEmpty || !pendingMemories.isEmpty }
 
@@ -952,549 +954,9 @@ final class AppState {
   }
 
   /// Web search before a reply (cancelled by Stop).
-  @ObservationIgnored private var webTask: Task<WebOutcome, Never>?
+  @ObservationIgnored var webTask: Task<WebOutcome, Never>?
   /// The last Search message's plan: its topic and queries (device tests read it).
-  @ObservationIgnored private(set) var lastWebPlan: WebContext.Plan?
+  @ObservationIgnored var lastWebPlan: WebContext.Plan?
   /// Sources already attached to the reply before the automatic tool runs.
-  @ObservationIgnored private var toolSourceOffset = 0
-
-  /// Plan queries (what the message needs, follow-ups resolved from the conversation), then
-  /// research them: passages rank by their best match to the message or a planned need, and a
-  /// request leaves more room for the work.
-  private func searchWeb(
-    question: String, history: [(role: ChatRole, text: String)], firstIndex: Int,
-    fileTokens: Int = 0
-  ) async -> WebOutcome {
-    preparingStatus = String(localized: "Planning the search…")
-    let prompt = WebContext.queryPrompt(question: question, history: history)
-    let output: Data? = await serialized {
-      let output = try? await self.engine.helperJSON(
-        prompt: prompt, schemaJSON: WebContext.querySchema,
-        maxOutputTokens: WebContext.queryMaxOutputTokens)
-      await self.afterHelper()
-      return output
-    }
-    let plan = output.map(WebContext.parsePlan) ?? WebContext.Plan(queries: [], isRequest: false)
-    lastWebPlan = plan
-    if !plan.needsSearch { return .notNeeded }
-    let queries = plan.queries.isEmpty ? [WebContext.directQuery(question, history: history)] : plan.queries
-    if Task.isCancelled { return .cancelled }
-    let window = resolved?.maxNumTokens ?? 8_192
-    do {
-      let findings = try await webResearch.research(
-        queries: queries, question: question,
-        rankingQueries: [question] + plan.queries, topic: plan.topic,
-        language: WebClient.wikipediaLanguage(for: question), settings: webSettings,
-        budgetTokens: WebContext.budget(
-          window: window, question: question, alongsideFileTokens: fileTokens, forRequest: plan.isRequest),
-        firstIndex: firstIndex
-      ) { status in self.preparingStatus = status }
-      return findings.sources.isEmpty
-        ? .failed(String(localized: "The web search found nothing useful. Answered without it."))
-        : .found(findings)
-    } catch is CancellationError {
-      return .cancelled
-    } catch {
-      if Task.isCancelled { return .cancelled }
-      return .failed(
-        String(localized: "Web search failed: \(error.localizedDescription) Answered without it."))
-    }
-  }
-
-  /// The automatic `web_search` tool's work (runs during a reply).
-  private func installWebSearchTool() {
-    WebSearchTool.handler = { [weak self] query, topic, maxTokens in
-      await self?.toolSearch(query, topic: topic, maxTokens: maxTokens) ?? "Web search is unavailable."
-    }
-  }
-
-  private func toolSearch(_ query: String, topic: SearchTopic, maxTokens: Int) async -> String {
-    guard webSettings.allowed else { return "Web search is turned off." }
-    do {
-      let findings = try await webResearch.research(
-        queries: [query], question: query, topic: topic,
-        language: WebClient.wikipediaLanguage(for: query), settings: webSettings,
-        // Room for the sources block's own lines.
-        budgetTokens: max(200, maxTokens - 40),
-        firstIndex: toolSourceOffset + WebSourcesRecorder.nextIndex
-      ) { _ in }
-      WebSourcesRecorder.record(findings.sources.map(\.record))
-      return findings.sources.isEmpty ? "No results." : WebContext.sourcesBlock(findings.sources)
-    } catch {
-      return "Web search failed: \(error.localizedDescription)"
-    }
-  }
-
-  // MARK: - Files
-
-  struct FileContextResult {
-    var prompt: String
-    var sources: [SourceRecord]
-  }
-
-  /// The chat's own files, then its project's.
-  func documents(for thread: ChatThread) -> [ChatDocument] {
-    var documents = knowledge.documents(threadID: thread.id)
-    if let projectID = thread.projectID { documents += knowledge.documents(projectID: projectID) }
-    return documents
-  }
-
-  /// What the model reads for `question`: whole files when they fit half
-  /// the context window; otherwise a section summary of long files (for
-  /// "summarize"-style questions, cached on the document) or the most
-  /// relevant excerpts with page labels. nil when stopped.
-  private func assembleFileContext(question: String, documents: [ChatDocument]) async
-    -> FileContextResult?
-  {
-    let window = resolved?.maxNumTokens ?? 8_192
-    let budget = FileContext.budget(window: window, question: question)
-    var materials: [FileContext.Material] = []
-    var sources: [SourceRecord] = []
-    func cite(_ title: String, _ snippet: String? = nil) {
-      sources.append(
-        SourceRecord(index: sources.count + 1, title: title, url: nil, snippet: snippet))
-    }
-
-    let total = documents.reduce(0) { $0 + ContextBudget.estimateTokens($1.text) }
-    if total <= budget {
-      for document in documents {
-        materials.append(.full(name: document.name, pageCount: document.pageCount, text: document.text))
-        cite(document.name)
-      }
-    } else if FileContext.wantsSummary(question) {
-      let share = budget / documents.count
-      for document in documents {
-        if ContextBudget.estimateTokens(document.text) <= share {
-          materials.append(.full(name: document.name, pageCount: document.pageCount, text: document.text))
-        } else {
-          guard let summary = await summary(of: document) else { return nil }
-          materials.append(
-            .summary(
-              name: document.name, pageCount: document.pageCount,
-              text: FileContext.truncate(summary, tokens: share)))
-        }
-        cite(document.name)
-      }
-    } else {
-      preparingStatus = "Searching your files…"
-      let passages = FileContext.fit(
-        await knowledge.search(question, in: documents, limit: 24), budget: budget)
-      if Task.isCancelled { return nil }
-      materials.append(.excerpts(passages.map { (label: $0.citation, text: $0.text) }))
-      for passage in passages { cite(passage.citation, String(passage.text.prefix(240))) }
-    }
-    return FileContextResult(
-      prompt: FileContext.prompt(question: question, materials: materials), sources: sources)
-  }
-
-  /// A long document's section-by-section summary, written once and cached.
-  private func summary(of document: ChatDocument) async -> String? {
-    if let summary = document.summary { return summary }
-    let chunks = document.chunks.sorted { $0.index < $1.index }.map {
-      ChunkDraft(index: $0.index, text: $0.text, pageStart: $0.pageStart, pageEnd: $0.pageEnd)
-    }
-    let sections = FileContext.sections(chunks)
-    let prompts = sections.map { FileContext.sectionPrompt($0, of: document.name) }
-    let name = document.name
-    let count = sections.count
-    // Only long, user-requested file summaries request background GPU time.
-    BackgroundWork.shared.onExpire = { [weak self] in self?.stop() }
-    BackgroundWork.shared.begin(
-      title: String(localized: "Summarizing \(name)"),
-      subtitle: String(localized: "Reading \(count) sections"))
-    preparingStatus = "Reading \(name)…"
-    let result: Result<[String], Error> = await serialized {
-      let result: Result<[String], Error>
-      do {
-        result = .success(
-          try await self.engine.helperTexts(
-            prompts, maxOutputTokens: FileContext.sectionSummaryTokens
-          ) { done in
-            await MainActor.run {
-              self.preparingStatus = "Reading \(name) · part \(min(done + 1, count)) of \(count)"
-              BackgroundWork.shared.sectionProgress(completed: done, total: count)
-            }
-          })
-      } catch {
-        result = .failure(error)
-      }
-      await self.afterHelper()
-      return result
-    }
-    let outputs: [String]
-    switch result {
-    case .success(let value):
-      outputs = value
-    case .failure(let error):
-      // Stopped: nothing to explain. Otherwise say why the files weren't read.
-      if !Task.isCancelled, !(error is CancellationError), error as? ChatError != .generationCancelled {
-        let reason = (error as? ChatError)?.displayMessage ?? error.localizedDescription
-        generationError = String(localized: "Couldn't summarize \(name): \(reason)")
-      }
-      return nil
-    }
-    guard !Task.isCancelled, outputs.count == sections.count else { return nil }
-    let summary = FileContext.joinSummaries(outputs, sections: sections)
-    document.summary = summary
-    try? modelContext?.save()
-    return summary
-  }
-
-  private func consume(
-    _ stream: AsyncThrowingStream<ChatEvent, Error>, into reply: ChatTurn, context: ModelContext,
-    voiceTurn: ChatTurn? = nil
-  ) async {
-    // Stream into a plain accumulator and publish to the SwiftData model at
-    // ~10 Hz: per-token model writes re-render (and re-parse markdown for)
-    // the whole bubble 40-100 times a second.
-    var accumulator = StreamAccumulator()
-    var lastFlush = ContinuousClock.now
-    func flush(final: Bool = false) {
-      let flushStarted = ContinuousClock.now
-      defer { ReplyTrace.measure("chat write", since: flushStarted) }
-      if let voiceTurn {
-        // "⟦what the user said⟧ answer": the transcript becomes the user's
-        // message; the answer is shown and spoken.
-        let split = VoiceText.split(accumulator.text)
-        if let heard = split.heard, voiceTurn.text != heard {
-          voiceTurn.text = heard
-          if let thread = voiceTurn.thread, thread.title == Self.title(prompt: "", hasImage: voiceTurn.imageData != nil),
-            thread.orderedTurns.first?.id == voiceTurn.id
-          {
-            thread.title = Self.title(prompt: heard, hasImage: false)
-          }
-        }
-        reply.text = split.answer
-        onVoiceReply?(split.answer, final)
-      } else {
-        reply.text = accumulator.text
-      }
-      reply.thought = accumulator.thought
-      if reply.toolNames != accumulator.toolNames { reply.toolNames = accumulator.toolNames }
-      if reply.parts.toolActivity != accumulator.toolActivity {
-        var parts = reply.parts
-        parts.toolActivity = accumulator.toolActivity
-        reply.parts = parts
-      }
-      lastFlush = .now
-      BackgroundWork.shared.replyProgress(characters: reply.text.count)
-    }
-    toolStatus = nil
-    defer { toolStatus = nil }
-    var finished = false
-    do {
-      for try await event in stream {
-        switch event {
-        case .chunk(let chunk):
-          accumulator.append(chunk)
-          if let latest = chunk.toolActivity.last { toolStatus = latest.summary }
-          if ContinuousClock.now - lastFlush >= .milliseconds(100) {
-            flush()
-            stopIfMemoryIsExhausted()
-          }
-        case .finished(let stats):
-          reply.stats = stats
-          if stats.reachedLimit == true { notice = GenerationStats.reachedLimitNotice }
-          finished = true
-        }
-      }
-      guard finished else {
-        // The stream ended without finishing: this task was cancelled (voice mode closed,
-        // the reply abandoned), which cancels the native conversation too.
-        throw ChatError.generationCancelled
-      }
-      flush(final: true)
-      try? context.save()
-      Haptics.replyFinished(spoken: !voiceModeActive)
-    } catch let error as ChatError {
-      flush(final: true)
-      switch error {
-      case .generationCancelled, .replyTruncated:
-        if case .replyTruncated = error { generationError = error.displayMessage }
-        if reply.text.isEmpty {
-          reply.thread?.removeLeaf(reply)
-          context.delete(reply)
-        } else if generationError != nil {
-          reply.markIncomplete()  // cut short by the context or low memory, not by Stop
-        }
-        try? context.save()
-        // LiteRT-LM leaves a cancelled conversation unusable: rebuild it from
-        // the thread's history (incl. the partial reply) before the next send.
-        conversationThreadID = nil
-      case .contextFull, .messageTooLong:
-        // Refused before any native work: the conversation is as it was.
-        reply.text = reply.text.isEmpty ? ChatTurn.errorPrefix + error.displayMessage : reply.text
-        try? context.save()
-        Haptics.error()
-      default:
-        replyFailed(reply, error: error, message: error.displayMessage)
-        try? context.save()
-        Haptics.error()
-        // The engine stopped a stream that failed mid-way: rebuild before the next send.
-        conversationThreadID = nil
-      }
-    } catch {
-      flush(final: true)
-      replyFailed(reply, error: error, message: error.localizedDescription)
-      try? context.save()
-      Haptics.error()
-      conversationThreadID = nil
-    }
-  }
-
-  /// A failed reply keeps its text, marked incomplete and said so; with none, the error replaces it.
-  private func replyFailed(_ reply: ChatTurn, error: any Error, message: String) {
-    Log.generation.error("reply failed: \(LogText.errorKind(error), privacy: .public)")
-    guard !reply.text.isEmpty else { return reply.text = ChatTurn.errorPrefix + message }
-    generationError = ChatError.stoppedEarly.displayMessage
-    reply.markIncomplete()
-  }
-
-  func stop() {
-    stopCount &+= 1
-    BackgroundWork.shared.end(success: false)
-    preparationTask?.cancel()
-    webTask?.cancel()
-    Task { await engine.cancel() }
-  }
-
-  /// iOS doesn't allow GPU work in the background: stop a running reply
-  /// deliberately (keeping the partial text) instead of letting Metal
-  /// command buffers fail or the app be terminated.
-  func enterBackground() {
-    isInForeground = false
-    // A continued task with background GPU access lets the reply finish.
-    let continuing = BackgroundWork.shared.isActive
-    GPUGate.set(continuing)
-    if continuing {
-      Log.lifecycle.info("background: work continues as a continued processing task")
-      return
-    }
-    helperTimer?.cancel()
-    knowledge.cancelIndexing()
-    if isBusy {
-      Log.lifecycle.info("background: stopping generation")
-      stop()
-      notice = String(localized: "Reply stopped because Agello moved to the background.")
-    } else {
-      // A title, memory or dictation helper: stopped, and queued work runs again on return.
-      Task { await engine.cancel() }
-    }
-  }
-
-  /// Back in the foreground: GPU work may start again.
-  func enterForeground() {
-    isInForeground = true
-    GPUGate.set(true)
-    knowledge.indexPendingIfAvailable()
-    scheduleHelpers()
-  }
-
-  // MARK: - Benchmark
-
-  /// Run a text benchmark (1024 prefill / 256 decode, without MTP) on the
-  /// active model. Unloads the chat engine first so the benchmark has full
-  /// memory; the engine reloads lazily on the next chat.
-  func runBenchmark() async {
-    await serialized { await self.runBenchmarkLocked() }
-  }
-
-  private func runBenchmarkLocked() async {
-    guard !isBenchmarking, !isGenerating else { return }
-    let spec = store.activeSpec
-    guard store.isDownloaded(spec), let url = store.localURL(for: spec) else {
-      generationError = "\(spec.displayName) is not downloaded."
-      return
-    }
-    isBenchmarking = true
-    await unloadEngine()
-    engineState = .loading(progress: "Benchmarking \(spec.displayName)…")
-    defer {
-      isBenchmarking = false
-      engineState = .idle
-    }
-    do {
-      // A one-off 1,312-token engine: caching it would keep another 2.2 GB
-      // copy of the weights (see EngineCache).
-      let cacheDir = EngineCache.disabled
-      // A new engine reads the global MTP flag, which still holds the last
-      // chat load's value: measure without MTP every time (its drafts don't
-      // fit synthetic tokens), then put the flag back.
-      ExperimentalFlags.optIntoExperimentalAPIs()
-      let chatMTP = ExperimentalFlags.enableSpeculativeDecoding
-      ExperimentalFlags.enableSpeculativeDecoding = false
-      defer { ExperimentalFlags.enableSpeculativeDecoding = chatMTP }
-      // Extract Sendable scalars inside the task: BenchmarkInfo itself is not Sendable.
-      let result = try await Task.detached(priority: .userInitiated) {
-        () -> (prefill: Double, decode: Double, ttft: Double) in
-        let info = try await LiteRTLM.benchmark(
-          modelPath: url.path,
-          backend: .gpu,
-          prefillTokens: 1024,
-          decodeTokens: 256,
-          cacheDir: cacheDir
-        )
-        return (
-          info.lastPrefillTokensPerSecond, info.lastDecodeTokensPerSecond,
-          info.timeToFirstTokenInSecond)
-      }.value
-      benchmarkReport = BenchmarkReport(
-        modelID: spec.id,
-        backend: "GPU",
-        prefillTokensPerSecond: result.prefill,
-        decodeTokensPerSecond: result.decode,
-        timeToFirstToken: result.ttft,
-        date: Date()
-      )
-    } catch {
-      generationError =
-        "Benchmark failed: \((error as? ChatError)?.displayMessage ?? error.localizedDescription)"
-    }
-  }
-
-  // MARK: - Threads
-
-  func newThread(in context: ModelContext) -> ChatThread {
-    let thread = ChatThread(modelID: store.activeModelID)
-    context.insert(thread)
-    try? context.save()
-    // The native conversation is re-pointed when the chat is opened
-    // (``activate(_:)``), not here.
-    return thread
-  }
-
-  /// Delete saved chats without messages (a rejected first message), except the open one and
-  /// a busy one: a new chat has no turns until its first message is prepared (2026-11-16).
-  func pruneEmptyThreads() {
-    guard let context = modelContext,
-      let threads = try? context.fetch(FetchDescriptor<ChatThread>())
-    else { return }
-    let busy: Set<UUID> = Set([selectedThreadID, preparingThreadID, generatingThreadID].compactMap { $0 })
-    let empty = threads.filter { $0.turns.isEmpty && !busy.contains($0.id) }
-    guard !empty.isEmpty else { return }
-    for thread in empty {
-      if conversationThreadID == thread.id { conversationThreadID = nil }
-      knowledge.deleteDocuments(threadID: thread.id)
-      context.delete(thread)
-    }
-    try? context.save()
-  }
-
-  // MARK: - Memory
-
-  /// Saved memories, most recent first, as added to the system prompt.
-  func memoryTexts() -> [String] {
-    var descriptor = FetchDescriptor<MemoryItem>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
-    descriptor.fetchLimit = SystemPrompt.memoryLimit
-    return ((try? modelContext?.fetch(descriptor)) ?? []).map(\.text)
-  }
-
-  /// Memories were added, edited or deleted (or memory was switched): the
-  /// open conversation picks them up before the next message.
-  func memoriesChanged() {
-    conversationThreadID = nil
-  }
-
-  /// Save lasting facts from the user's message (memory on, and only when the message is
-  /// about the user). Returns false when it must be tried again later.
-  @discardableResult
-  private func learnMemories(from message: String, reply: ChatTurn, in thread: ChatThread) async -> Bool {
-    guard memoryEnabled, HelperTasks.shouldLookForMemories(message), !reply.text.isEmpty,
-      !reply.text.hasPrefix(ChatTurn.errorPrefix), let context = modelContext
-    else { return true }
-    let all = ((try? context.fetch(FetchDescriptor<MemoryItem>())) ?? []).map(\.text)
-    let prompt = HelperTasks.memoryPrompt(user: message, existing: all)
-    let outcome: HelperOutcome<Data> = await runHelper { engine in
-      try await engine.helperJSON(
-        prompt: prompt, schemaJSON: HelperTasks.memorySchema,
-        maxOutputTokens: HelperTasks.memoryMaxOutputTokens)
-    }
-    guard case .finished(let output) = outcome else { return false }
-    guard let output else { return true }
-    let learned = HelperTasks.newMemories(HelperTasks.parseMemories(output), existing: all)
-    guard !learned.isEmpty else { return true }
-    for text in learned { context.insert(MemoryItem(text: text, sourceThreadID: thread.id)) }
-    var parts = reply.parts
-    parts.toolActivity.append(
-      ToolActivityRecord(name: "memory", summary: learned.joined(separator: " · ")))
-    reply.parts = parts
-    try? context.save()
-    Log.engine.info("memory: saved \(learned.count)")
-    memoriesChanged()
-    return true
-  }
-
-  // MARK: - Projects
-
-  private func projectContext(for threadID: UUID) -> ProjectContext? {
-    guard let context = modelContext else { return nil }
-    let thread = try? context.fetch(
-      FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == threadID })
-    ).first
-    // A new chat started from a project page isn't saved yet.
-    guard let projectID = thread?.projectID ?? (thread == nil ? newChatProjectID : nil) else {
-      return nil
-    }
-    guard
-      let project = try? context.fetch(
-        FetchDescriptor<Project>(predicate: #Predicate { $0.id == projectID })
-      ).first
-    else { return nil }
-    return ProjectContext(id: project.id, name: project.name, instructions: project.instructions)
-  }
-
-  /// A project's instructions or name changed: its open chat picks them up
-  /// before the next message.
-  func projectInstructionsChanged(_ projectID: UUID) {
-    if activeProject?.id == projectID { conversationThreadID = nil }
-  }
-
-  @discardableResult
-  func newProject(named name: String, in context: ModelContext) -> Project {
-    let project = Project(name: name)
-    context.insert(project)
-    try? context.save()
-    return project
-  }
-
-  /// Move a chat into a project (or out, with nil).
-  func move(_ thread: ChatThread, toProject projectID: UUID?) {
-    thread.projectID = projectID
-    try? modelContext?.save()
-    if conversationThreadID == thread.id { conversationThreadID = nil }
-  }
-
-  /// Delete a project with its chats and files.
-  func deleteProject(_ project: Project, in context: ModelContext) {
-    let projectID = project.id
-    let chats = (try? context.fetch(
-      FetchDescriptor<ChatThread>(predicate: #Predicate { $0.projectID == projectID }))) ?? []
-    for thread in chats {
-      // The chat replying now stays, out of the project, rather than pointing at nothing.
-      if generatingThreadID == thread.id || preparingThreadID == thread.id {
-        thread.projectID = nil
-      } else {
-        deleteThread(thread, in: context)
-      }
-    }
-    for document in knowledge.documents(projectID: projectID) { knowledge.delete(document) }
-    if newChatProjectID == projectID { newChatProjectID = nil }
-    if activeProject?.id == projectID {
-      activeProject = nil
-      conversationThreadID = nil
-    }
-    context.delete(project)
-    try? context.save()
-  }
-
-  func deleteThread(_ thread: ChatThread, in context: ModelContext) {
-    // As in the interface: a busy chat's message would land in a deleted chat.
-    guard thread.id != preparingThreadID, thread.id != generatingThreadID else { return }
-    if selectedThreadID == thread.id { selectedThreadID = nil }
-    if conversationThreadID == thread.id { conversationThreadID = nil }
-    knowledge.deleteDocuments(threadID: thread.id)
-    SpotlightIndex.remove([thread.id])
-    context.delete(thread)
-    try? context.save()
-  }
+  @ObservationIgnored var toolSourceOffset = 0
 }
