@@ -157,8 +157,10 @@ reply as Markdown.
 
 ### H2, done on 2026-11-10
 
-The bench holds eleven cases (`AgelloUITests/BenchCases.swift`): the quality bench's eight
-requests, the three-part coding prompt, a Search follow-up and a file with a follow-up.
+The bench holds twelve cases (`AgelloUITests/BenchCases.swift`): the quality bench's eight
+requests, the three-part coding prompt, a Search follow-up, a file with a follow-up, and since
+2026-11-15 `mockup-os-search`, a coding chat from the iPhone word for word (Search on for both
+messages: `searchFollowUps` turns it on again for follow-ups).
 `QualityBenchProbe` and `scripts/quality-codecheck.sh` are gone.
 
 - **The driver** types follow-ups into the composer and attaches the app's sample report at
