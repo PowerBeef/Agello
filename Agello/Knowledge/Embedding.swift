@@ -33,6 +33,10 @@ actor LiteRTEmbedder: TextEmbedder {
   /// The load in progress: a question asked while files are being indexed waits for it
   /// instead of loading a second engine (the actor is reentrant across `initialize`).
   private var loading: Task<EmbeddingEngine, Error>?
+  /// Bumped by each unload: a load that finishes after one closes its engine instead of keeping
+  /// it. The native load doesn't see cancellation, so it used to bring back the GPU engine a
+  /// memory-pressure release had just let go (an external review, 2026-11-16).
+  private var generation = 0
   /// Truncate, never fail: an input longer than the loaded signatures (1,024 tokens) used to
   /// fail its whole batch and the document with it.
   private let options = EmbeddingOptions(
@@ -69,6 +73,7 @@ actor LiteRTEmbedder: TextEmbedder {
   }
 
   func unload() async {
+    generation += 1
     loading?.cancel()
     loading = nil
     await engine?.close()
@@ -86,11 +91,20 @@ actor LiteRTEmbedder: TextEmbedder {
 
   private func loaded() async throws -> EmbeddingEngine {
     if let engine { return engine }
-    if let loading { return try await loading.value }
+    let started = generation
+    if let loading {
+      let shared = try await loading.value
+      guard generation == started else { throw CancellationError() }
+      return shared
+    }
     let task = Task { try await self.load() }
     loading = task
-    defer { loading = nil }
+    defer { if loading == task { loading = nil } }
     let loaded = try await task.value
+    guard generation == started else {
+      await loaded.close()
+      throw CancellationError()
+    }
     engine = loaded
     return loaded
   }

@@ -19,6 +19,7 @@ struct MessageBubbleView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let turn: ChatTurn
   var isStreaming: Bool = false
+  @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
   /// What a tool is doing right now (live reply only).
   var toolStatus: String? = nil
   /// All versions of this turn (edits / regenerations), oldest first.
@@ -117,7 +118,9 @@ struct MessageBubbleView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text(Self.spokenText(turn.text)))
+        // While a reply streams, the spoken form (five passes over the whole text each update)
+        // only when VoiceOver reads it.
+        .accessibilityLabel(Text(isStreaming && !voiceOverEnabled ? turn.text : Self.spokenText(turn.text)))
         .accessibilityIdentifier("message.model")
         .onAppear { ReplyTrace.onScreen(turn.id) }
       } else if isStreaming {

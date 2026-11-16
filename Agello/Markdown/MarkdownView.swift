@@ -4,6 +4,8 @@ import SwiftUI
 /// code blocks with highlighting and copy, quotes, tables, display math.
 struct MarkdownView: View {
   let document: MarkdownDocument
+  /// Blocks from this index on are still streaming (the unfinished tail).
+  private var openFrom = Int.max
 
   /// While `streaming`, each update parses only what it added: the finished blocks extend those
   /// of the update before (``MarkdownCache/finishedBlocks(of:)``), and the unfinished rest is
@@ -14,13 +16,13 @@ struct MarkdownView: View {
       return
     }
     let (prefix, tail) = MarkdownStream.stableSplit(text)
-    document = MarkdownDocument(
-      blocks: MarkdownCache.finishedBlocks(of: String(prefix))
-        + MarkdownDocument(parsing: String(tail)).blocks)
+    let finished = MarkdownCache.finishedBlocks(of: String(prefix))
+    document = MarkdownDocument(blocks: finished + MarkdownDocument(parsing: String(tail)).blocks)
+    openFrom = finished.count
   }
 
   var body: some View {
-    BlocksView(blocks: document.blocks)
+    BlocksView(blocks: document.blocks, openFrom: openFrom)
       .foregroundStyle(Theme.Text.primary)
       .tint(Theme.Brand.glacier)
   }
@@ -70,12 +72,14 @@ enum MarkdownCache {
 
 private struct BlocksView: View {
   let blocks: [MarkdownDocument.Block]
+  /// Blocks from this index on are still streaming.
+  var openFrom = Int.max
 
   var body: some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-      ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+      ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
         // Unchanged blocks (all but the last while a reply streams) skip their bodies.
-        BlockView(block: block).equatable()
+        BlockView(block: block, isOpen: index >= openFrom).equatable()
       }
     }
   }
@@ -83,6 +87,7 @@ private struct BlocksView: View {
 
 private struct BlockView: View, Equatable {
   let block: MarkdownDocument.Block
+  var isOpen = false
 
   var body: some View {
     switch block {
@@ -96,7 +101,7 @@ private struct BlockView: View, Equatable {
     case .list(let ordered, let start, let items):
       ListBlockView(ordered: ordered, start: start, items: items)
     case .code(let language, let code):
-      CodeBlockView(language: language, code: code)
+      CodeBlockView(language: language, code: code, isOpen: isOpen)
     case .quote(let blocks):
       HStack(alignment: .top, spacing: Theme.Spacing.md) {
         Capsule()
@@ -161,6 +166,8 @@ private struct ListBlockView: View {
 struct CodeBlockView: View {
   let language: String?
   let code: String
+  /// Still streaming: highlighted without being cached.
+  var isOpen = false
   @State private var copied = false
 
   var body: some View {
@@ -195,7 +202,7 @@ struct CodeBlockView: View {
         // A long block is drawn in pieces: one Text past the GPU's largest texture draws nothing
         // (CodeHighlighter.linesPerPiece).
         VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(CodeHighlightCache.highlighted(code, language: language).enumerated()), id: \.offset) {
+          ForEach(Array(CodeHighlightCache.highlighted(code, language: language, keep: !isOpen).enumerated()), id: \.offset) {
             _, piece in
             // While a block streams only its last piece changes: the others keep their layout
             // and drawing instead of being laid out and drawn again ten times a second.

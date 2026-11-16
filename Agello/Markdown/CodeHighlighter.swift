@@ -250,18 +250,23 @@ enum CodeHighlightCache {
   private static let cache: NSCache<NSString, Box> = {
     let cache = NSCache<NSString, Box>()
     cache.countLimit = 100
+    // Characters: a few long replies' blocks, not a hundred of them.
+    cache.totalCostLimit = 2_000_000
     return cache
   }()
 
   /// The block highlighted and cut into drawable pieces (``CodeHighlighter/pieces(_:maxLines:)``).
-  static func highlighted(_ code: String, language: String?) -> [AttributedString] {
+  /// A block still streaming isn't kept (`keep` false): every update changes it, and each update
+  /// stored a near-copy of the growing block, up to 100 of them (an external review, 2026-11-16).
+  static func highlighted(_ code: String, language: String?, keep: Bool = true) -> [AttributedString] {
     let key = "\(language ?? "")\u{1}\(code)" as NSString
     if let hit = cache.object(forKey: key) { return hit.value }
     let highlighted =
       code.count > CodeHighlighter.maxHighlightedCharacters
       ? AttributedString(code) : CodeHighlighter.highlight(code, language: language)
     let value = CodeHighlighter.pieces(highlighted)
-    cache.setObject(Box(value), forKey: key)
+    guard keep else { return value }
+    cache.setObject(Box(value), forKey: key, cost: key.length)
     return value
   }
 }
