@@ -440,6 +440,20 @@ prefill pools released, the window read from the file):**
   +17 % sustained** (the bar was +8 %). The GPU-resident round is in: a round with no host step
   between its runs (the drafter's and verify's embeddings gathered on the GPU from the mapped
   file, which costs no footprint on the M6; still to be checked on the iPhone).
+- The resident round's design (`build/drafts/gpu-resident-round-design-2026-11-16.md`), stages 0
+  and 1 done on the M6 as checks outside the runtime (fork `ffc639ef`, 2026-11-16).
+  - Both embedders are dequantized gathers: INT2 tables with a float32 scale per row, zero
+    points all 0, low bits first in each byte. The main one is multiplied by √2560; the per-layer
+    one is 42 tables concatenated. Rows read from the mapped file that way match the LiteRT
+    interpreter bit for bit for 1,006 ids, on both model files (`embedder_tables.py`).
+  - The round's GPU kernels are compiled with fast math off: the gather, an argmax with the CPU
+    sampler's rule (the lowest index among equal maxima) and the concatenation.
+    - Both gathers are bit-identical to the host for all 262,144 tokens.
+    - The argmax gives the CPU sampler's pick in 96 of 96 rows, in f32 and f16, with ties and
+      signed zeros.
+    - A round's gathers take 2–9 µs of GPU (`tools/agello-gpu-round`).
+  - Next, in the runtime: the drafter chain (stage 2), verify's inputs (stage 3), behind
+    `AGELLO_RESIDENT_ROUND`.
 
 The A19 Pro has sparse buffers (probe 26). Had it none, the window would have stayed a fixed 64K
 with ordinary buffers (+0.4–0.55 GB a chat) or gone back to the growth below.
@@ -517,6 +531,10 @@ The helper keep rule counts filled bytes (`8,192 × used + 31.5 MB + 400 MB`: 0.
    today), the reply reserve, the keep rule, a 64K rung with its own room threshold, and
    `DeviceProfile.maxContextTokens(model:appMemoryLimitBytes:)` (no caller) removed.
 4. A file sent once: follow-ups send only the question while the conversation holds it.
+   **Done (2026-11-16, `bd6f5e9`).** Whole files and summaries are tracked by
+   `AppState.heldFiles`. Any change of conversation forgets them, and a trimmed fit sends the full
+   prompt again. Excerpts still go with each question. Unit-tested; it needs a phone run, a 16K
+   file and a follow-up, for the time saved.
 5. The growth path, with scripted-engine tests (`growsWhenMessageAloneExceeds32K`,
    `historyAndWebNeverGrow`, `failedLoadAt64KRestores32K`, `chatSwitchQueuesBehindGrowth`,
    `keepRuleCountsFilledBytes`, and the rest of the plan's list).
@@ -558,6 +576,17 @@ table at 21K, 32K, 44K, 50K and 57K (at least 15 of 18 each; the whole-file cap 
 holds); the FP32-sums build within 1 of 18 at 57K; twenty real documents read whole against
 section summaries (at least as good in 16, none worse on facts); a 10-fact history probe after
 growth.
+
+**Results on the M6, the 128K file at 65,536** (2026-11-16, natively, `scripts/cli-test.sh probes`; probes 27–30 in `AgelloDeviceTests/WindowQualityProbes.swift`, the copies on probe 20):
+
+| Gate | Result |
+| --- | --- |
+| Identity at ≤ 32K | **Not met for prose.** The xl32k digit suite (12 cases, 12K–30K) gives the same text and token count on three engines: the published file at 32K, and the 128K file at 32K and at 64K. Prose (probe 30, the 128K file at 32,768 against 65,536, greedy): 2 of 4 prompts part with speculative decoding on (after about 60 tokens of a 2K-token summary, and at the last two words of a 10K-token answer); with it off, 2 of 4 part too (the 2K summary after about 15 tokens, a 24K-token list after about 35). So the difference isn't speculative decoding: something in the engine's arithmetic depends on the allocated window, and greedy picks part at near-ties. On my read both sides are equally right in every case: the same facts in other words, and other items the notes do list. Next: find the kernel whose reduction follows the window (a level-4 run at both windows, comparing kernels and their work sizes). |
+| 48-digit copies | All exact (probe 28): the reference at 0, 10, 25, 50, 75, 90 and 95 % of 57,000 tokens; the reference's digits at 32,744–32,791; the reply's digits across 32,768 with the reference late and 32K back. Also 4 xl64k copies at 40K and 50K, early and late. |
+| Positions 65,519–65,535 | Exact: a 65,487-token prompt whose 48 digits and end token fill the window to 65,536 cached, with the reference late and 65K back. |
+| Needle table | 18, 18, 17, 18 and 18 of 18 at 21K, 32K, 44K, 50K and 57K (21,379 to 59,290 tokens prefilled); the miss dropped a crate's last digit (8487 for 84873, at 7 % depth). |
+| History probe | 10 of 10 facts recalled (probe 29): each told in its own turn after about 5,200 tokens of prose, asked once the history held 51,895 tokens. |
+| FP32-sums build, 20 documents | Not run: the first needs a runtime build; the second needs twenty real long documents and a read of the replies. |
 
 **Releases** (timing stays the maintainer's call): R1, train 1 with files sent once and the stop
 check; R2, the ring/128K file at a true 32,768 with the rewind fix, the old file kept until the

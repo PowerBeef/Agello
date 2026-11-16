@@ -63,6 +63,11 @@ fixes:
    (`litert_lm_engine_tokenize`); `swift/EmbeddingEngineConfig.swift`:
    `EmbeddingOptions.inputOverflowStrategy` (truncate long inputs instead of
    failing the batch).
+5. Swift 6 language mode (`Package.swift` at tools 6.0, fork `24f35f81`): `ExperimentalFlags`
+   keeps its values behind one `Mutex` instead of unprotected static vars (same public API);
+   the immutable native handles of `Conversation`, `Engine` and `EmbeddingEngine` and
+   `ToolManager`'s registry are `nonisolated(unsafe)`, each with why; a stream's `yield` takes
+   its message as `sending`.
 
 ## Why vendored instead of a remote SPM dependency?
 
