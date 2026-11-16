@@ -11,15 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
+// the flags are kept behind one lock (Swift 6 language mode).
 import Foundation
 import OSLog
+import Synchronization
 
 /// A struct to manage flags for APIs that are not yet considered mature.
 ///
 /// These flags guard experimental APIs that may still undergo significant changes.
 /// To use any experimental flags, first call `ExperimentalFlags.optIntoExperimentalAPIs()`.
 public struct ExperimentalFlags {
-  public private(set) static var optedIn = false
+  /// The flags' values, behind one lock: they're set and read from any thread (Swift 6 language
+  /// mode; Agello, 2026-11-16).
+  private struct Values: Sendable {
+    var optedIn = false
+    var enableBenchmark: Bool = false
+    var convertCamelToSnakeCaseInToolDescription: Bool = true
+    var enableConversationConstrainedDecoding: Bool = false
+    var enableConversationToolCallStreaming: Bool = false
+    var conversationToolCallStreamingChannelName: String = "tool_call"
+    var enableSpeculativeDecoding: Bool? = nil
+    var visualTokenBudget: Int32? = nil
+    var filterChannelContentFromKvCache: Bool? = nil
+    var gpuEnableMetalResidencySet: Bool? = nil
+    var enableYnnpack: Bool? = nil
+  }
+
+  private static let values = Mutex(Values())
+
+  /// Whether ``optIntoExperimentalAPIs()`` has been called.
+  public static var optedIn: Bool { values.withLock { $0.optedIn } }
 
   private static let logger = Logger(
     subsystem: "com.google.odml.litertlm.swift",
@@ -27,25 +50,28 @@ public struct ExperimentalFlags {
   )
 
   public static func optIntoExperimentalAPIs() {
-    guard !optedIn else { return }
+    let first = values.withLock { values in
+      defer { values.optedIn = true }
+      return !values.optedIn
+    }
+    guard first else { return }
     logger.info("EXPERIMENTAL: LiteRTLM: Opting into experimental APIs....")
-    optedIn = true
   }
 
-  private static var _enableBenchmark: Bool = false
+  /// Sets a flag once the caller has opted in.
+  private static func set<Value: Sendable>(_ flag: WritableKeyPath<Values, Value>, to value: Value) {
+    let allowed = values.withLock { values in
+      guard values.optedIn else { return false }
+      values[keyPath: flag] = value
+      return true
+    }
+    if !allowed { logger.error("LiteRTLM: Must opt into experimental APIs before setting this flag.") }
+  }
 
   public static var enableBenchmark: Bool {
-    get { return _enableBenchmark }
-    set {
-      guard optedIn else {
-        logger.error("LiteRTLM: Must opt into experimental APIs before setting this flag.")
-        return
-      }
-      _enableBenchmark = newValue
-    }
+    get { values.withLock { $0.enableBenchmark } }
+    set { set(\.enableBenchmark, to: newValue) }
   }
-
-  private static var _convertCamelToSnakeCaseInToolDescription: Bool = true
 
   /// Whether to convert the function and parameter names in to snake case for
   /// tool calling.
@@ -65,17 +91,9 @@ public struct ExperimentalFlags {
   /// Note: This flag is read only when a new [Conversation] is created.
   /// Changing this value will not affect any existing [Conversation] instances.
   public static var convertCamelToSnakeCaseInToolDescription: Bool {
-    get { return _convertCamelToSnakeCaseInToolDescription }
-    set {
-      guard optedIn else {
-        logger.error("LiteRTLM: Must opt into experimental APIs before setting this flag.")
-        return
-      }
-      _convertCamelToSnakeCaseInToolDescription = newValue
-    }
+    get { values.withLock { $0.convertCamelToSnakeCaseInToolDescription } }
+    set { set(\.convertCamelToSnakeCaseInToolDescription, to: newValue) }
   }
-
-  private static var _enableConversationConstrainedDecoding: Bool = false
 
   /// Whether to enable conversation constrained decoding. This is primarily
   /// used for function calling.
@@ -83,48 +101,24 @@ public struct ExperimentalFlags {
   /// Note: This flag is read only when a new [Conversation] is created.
   /// Changing this value will not affect any existing [Conversation] instances.
   public static var enableConversationConstrainedDecoding: Bool {
-    get { return _enableConversationConstrainedDecoding }
-    set {
-      guard optedIn else {
-        logger.error("LiteRTLM: Must opt into experimental APIs before setting this flag.")
-        return
-      }
-      _enableConversationConstrainedDecoding = newValue
-    }
+    get { values.withLock { $0.enableConversationConstrainedDecoding } }
+    set { set(\.enableConversationConstrainedDecoding, to: newValue) }
   }
-
-  private static var _enableConversationToolCallStreaming: Bool = false
 
   /// Whether to enable conversation tool call streaming.
   ///
   /// Note: This flag is read only when a new [Conversation] is created.
   /// Changing this value will not affect any existing [Conversation] instances.
   public static var enableConversationToolCallStreaming: Bool {
-    get { return _enableConversationToolCallStreaming }
-    set {
-      guard optedIn else {
-        logger.error("LiteRTLM: Must opt into experimental APIs before setting this flag.")
-        return
-      }
-      _enableConversationToolCallStreaming = newValue
-    }
+    get { values.withLock { $0.enableConversationToolCallStreaming } }
+    set { set(\.enableConversationToolCallStreaming, to: newValue) }
   }
-
-  private static var _conversationToolCallStreamingChannelName: String = "tool_call"
 
   /// The channel name used for tool call tokens when streaming tool calls is enabled.
   public static var conversationToolCallStreamingChannelName: String {
-    get { return _conversationToolCallStreamingChannelName }
-    set {
-      guard optedIn else {
-        logger.error("LiteRTLM: Must opt into experimental APIs before setting this flag.")
-        return
-      }
-      _conversationToolCallStreamingChannelName = newValue
-    }
+    get { values.withLock { $0.conversationToolCallStreamingChannelName } }
+    set { set(\.conversationToolCallStreamingChannelName, to: newValue) }
   }
-
-  private static var _enableSpeculativeDecoding: Bool? = nil
 
   /// Whether to enable speculative decoding.
   ///
@@ -134,17 +128,9 @@ public struct ExperimentalFlags {
   /// Note: This flag is read only when a new [Engine] is created. Changing this value will not
   /// affect any existing [Engine] or [Conversation] instances.
   public static var enableSpeculativeDecoding: Bool? {
-    get { return _enableSpeculativeDecoding }
-    set {
-      guard optedIn else {
-        logger.error("LiteRTLM: Must opt into experimental APIs before setting this flag.")
-        return
-      }
-      _enableSpeculativeDecoding = newValue
-    }
+    get { values.withLock { $0.enableSpeculativeDecoding } }
+    set { set(\.enableSpeculativeDecoding, to: newValue) }
   }
-
-  private static var _visualTokenBudget: Int32? = nil
 
   /// The visual token budget.
   ///
@@ -162,47 +148,23 @@ public struct ExperimentalFlags {
   ///    after the [Conversation] is created, the value should not be set to a value that exceeds
   ///    the engine's max visual tokens per image.
   public static var visualTokenBudget: Int32? {
-    get { return _visualTokenBudget }
-    set {
-      guard optedIn else {
-        logger.error("LiteRTLM: Must opt into experimental APIs before setting this flag.")
-        return
-      }
-      _visualTokenBudget = newValue
-    }
+    get { values.withLock { $0.visualTokenBudget } }
+    set { set(\.visualTokenBudget, to: newValue) }
   }
-
-  private static var _filterChannelContentFromKvCache: Bool? = nil
 
   /// Whether to filter channel content from the KV cache.
   public static var filterChannelContentFromKvCache: Bool? {
-    get { return _filterChannelContentFromKvCache }
-    set {
-      guard optedIn else {
-        logger.error("LiteRTLM: Must opt into experimental APIs before setting this flag.")
-        return
-      }
-      _filterChannelContentFromKvCache = newValue
-    }
+    get { values.withLock { $0.filterChannelContentFromKvCache } }
+    set { set(\.filterChannelContentFromKvCache, to: newValue) }
   }
-
-  private static var _gpuEnableMetalResidencySet: Bool? = nil
 
   /// Whether to enable Metal residency set on GPU.
   ///
   /// If true, the GPU backend will use MTLResidencySet to prevent memory swapping on macOS.
   public static var gpuEnableMetalResidencySet: Bool? {
-    get { return _gpuEnableMetalResidencySet }
-    set {
-      guard optedIn else {
-        logger.error("LiteRTLM: Must opt into experimental APIs before setting this flag.")
-        return
-      }
-      _gpuEnableMetalResidencySet = newValue
-    }
+    get { values.withLock { $0.gpuEnableMetalResidencySet } }
+    set { set(\.gpuEnableMetalResidencySet, to: newValue) }
   }
-
-  private static var _enableYnnpack: Bool? = nil
 
   /// Whether YNNPACK should delegate supported CPU operations before XNNPACK.
   ///
@@ -216,7 +178,7 @@ public struct ExperimentalFlags {
   /// version might not have it.
   public static var enableYnnpack: Bool? {
     get {
-      if let ynnpack = _enableYnnpack {
+      if let ynnpack = values.withLock({ $0.enableYnnpack }) {
         return ynnpack
       }
       let env = ProcessInfo.processInfo.environment
@@ -228,13 +190,7 @@ public struct ExperimentalFlags {
       }
       return nil
     }
-    set {
-      guard optedIn else {
-        logger.error("LiteRTLM: Must opt into experimental APIs before setting this flag.")
-        return
-      }
-      _enableYnnpack = newValue
-    }
+    set { set(\.enableYnnpack, to: newValue) }
   }
 
   // Prevent initializing the struct

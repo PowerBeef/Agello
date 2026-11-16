@@ -1,4 +1,5 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
+// Agello: Swift 6 language mode (2026-11-16).
 // Copyright 2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");

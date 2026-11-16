@@ -11,6 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
+// the tool registry declared for Swift 6 language mode.
 
 import Foundation
 
@@ -19,7 +22,8 @@ public final class ToolManager: Sendable {
 
   /// A map of tool names to their corresponding Swift Types.
   /// We store the `Type` so we can instantiate new copies via Codable.
-  private let toolRegistry: [String: Tool.Type]
+  /// Never changed after init (Agello: declared for Swift 6 language mode, 2026-11-16).
+  nonisolated(unsafe) private let toolRegistry: [String: Tool.Type]
 
   /// The JSON schema string representing all registered tools.
   /// This is computed once during initialization.

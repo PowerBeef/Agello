@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// Part of Agello's fork of LiteRT-LM (PowerBeef/agello-litert-lm, branch agello): the state
+// Part of Agello's fork of LiteRT-LM (PowerBeef/agello-litert-lm, branch main): the state
 // behind `Conversation.sendMessageStream`, kept apart from LiteRT-LM's callbacks.
 
 import CLiteRTLM
@@ -158,7 +158,7 @@ final class StreamContext: @unchecked Sendable {
     return true
   }
 
-  func yield(_ message: Message) {
+  func yield(_ message: sending Message) {
     guard !isFinished else { return }
     continuation.yield(message)
   }

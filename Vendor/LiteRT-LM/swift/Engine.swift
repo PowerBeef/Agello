@@ -11,6 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
+// a tokenizer API (tokenize, countTokens), and the native handle declared
+// for Swift 6 language mode.
 
 import Foundation
 import OSLog
@@ -35,7 +39,9 @@ public actor Engine {
   public let engineConfig: EngineConfig
 
   /// The native handle to the LiteRT-LM engine. A non-nil value indicates an initialized engine.
-  private var handle: OpaquePointer? = nil
+  /// Used only inside the actor and by `deinit`, when nothing else holds the engine (Agello:
+  /// declared for Swift 6 language mode, 2026-11-16).
+  nonisolated(unsafe) private var handle: OpaquePointer? = nil
 
   /// - Parameter engineConfig: The configuration for the engine.
   public init(engineConfig: EngineConfig) {

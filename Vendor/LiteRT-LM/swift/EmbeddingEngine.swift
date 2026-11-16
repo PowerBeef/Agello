@@ -11,6 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
+// an input-overflow option, and the native handle declared for Swift 6
+// language mode.
 
 import Foundation
 import OSLog
@@ -37,7 +41,9 @@ public actor EmbeddingEngine {
   public let config: EmbeddingEngineConfig
 
   /// The native handle to the LiteRT-LM embedding engine. A non-nil value indicates an initialized engine.
-  private var handle: OpaquePointer? = nil
+  /// Used only inside the actor and by `deinit`, when nothing else holds the engine (Agello:
+  /// declared for Swift 6 language mode, 2026-11-16).
+  nonisolated(unsafe) private var handle: OpaquePointer? = nil
 
   /// - Parameter config: The configuration for the embedding engine.
   public init(config: EmbeddingEngineConfig) {
