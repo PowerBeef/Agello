@@ -119,8 +119,15 @@ final class AppState {
   /// Reading files before a reply (cancelled by Stop).
   @ObservationIgnored var preparationTask: Task<FileContextResult?, Never>?
 
-  /// Thread whose text history the native conversation currently holds.
-  @ObservationIgnored var conversationThreadID: UUID?
+  /// Thread whose text history the native conversation currently holds. Any assignment means the
+  /// conversation was rebuilt or let go, so the files it had read are forgotten.
+  @ObservationIgnored var conversationThreadID: UUID? {
+    didSet { heldFiles = nil }
+  }
+  /// The files (whole or summarized) the native conversation read with an earlier message of
+  /// this chat: follow-ups send only the question while it holds them (``FileContext/heldKey(_:)``).
+  /// A reseed replays the turns' text without them, so it ends with any change of conversation.
+  @ObservationIgnored var heldFiles: (threadID: UUID, key: String)?
   /// True while the native conversation holds no turns (fresh load / empty reseed).
   @ObservationIgnored private var conversationIsEmpty = true
   /// Tail of the engine-lifecycle queue (see ``serialized(_:)``).
@@ -558,6 +565,7 @@ final class AppState {
     // A voice turn is the recording; the model reads how to answer it with it.
     if voiceModeActive, audioFileURL != nil, prompt.isEmpty { enginePrompt = VoiceText.instruction }
     var sources: [SourceRecord] = []
+    var filesFollowUp: (key: String, prompt: String)?
     let documents = documents(for: thread)
     if !documents.isEmpty {
       guard await ensureEngineLoaded() else { return false }
@@ -569,6 +577,7 @@ final class AppState {
       guard let assembled else { return false }  // stopped while reading
       enginePrompt = assembled.prompt
       sources = assembled.sources
+      filesFollowUp = assembled.followUp
     }
 
     let history = rewound ?? thread.textHistory
@@ -598,6 +607,9 @@ final class AppState {
       case .found(let findings):
         enginePrompt = WebContext.prompt(
           question: prompt, sources: findings.sources, filePrompt: filePrompt)
+        filesFollowUp = filesFollowUp.map {
+          ($0.key, WebContext.prompt(question: prompt, sources: findings.sources, filePrompt: $0.prompt))
+        }
         sources += findings.sources.map(\.record)
       }
     }
@@ -605,6 +617,7 @@ final class AppState {
     // One step, so no helper or settings change can empty the conversation between preparing
     // it and checking that this message fits (it would be answered without its history).
     let promptToFit = enginePrompt
+    let followUp = filesFollowUp
     let prepared: PreparedSend = await serialized {
       // Rewinding: the engine holds later turns that must not stay in context.
       if rewound != nil, self.conversationThreadID == threadID { self.conversationThreadID = nil }
@@ -633,10 +646,17 @@ final class AppState {
       // Keep the KV cache from overflowing (native heap corruption → crash):
       // trim the replayed history if this message + a reply wouldn't fit.
       do {
-        return .ready(
-          trimmed: try await self.engine.fitContext(
-            text: promptToFit, imageData: imageData, audioFileURL: audioFileURL,
-            history: history))
+        // The conversation already read these files: only the question goes, unless fitting
+        // trimmed it, which rebuilds it from the turns' text, without them.
+        var trimmedForFollowUp = false
+        if let followUp, self.heldFiles?.threadID == threadID, self.heldFiles?.key == followUp.key {
+          trimmedForFollowUp = try await self.engine.fitContext(
+            text: followUp.prompt, imageData: imageData, audioFileURL: audioFileURL, history: history)
+          if !trimmedForFollowUp { return .ready(trimmed: false, prompt: followUp.prompt) }
+        }
+        let trimmed = try await self.engine.fitContext(
+          text: promptToFit, imageData: imageData, audioFileURL: audioFileURL, history: history)
+        return .ready(trimmed: trimmed || trimmedForFollowUp, prompt: promptToFit)
       } catch {
         // Fitting may have emptied the conversation on its way to this error: reseed first.
         self.conversationThreadID = nil
@@ -650,7 +670,8 @@ final class AppState {
     case .rejected(let message):
       generationError = message
       return false
-    case .ready(let trimmed):
+    case .ready(let trimmed, let fitted):
+      enginePrompt = fitted
       if trimmed {
         conversationThreadID = threadID
         notice = String(
@@ -688,6 +709,10 @@ final class AppState {
     ReplyTrace.end(reply: reply.isDeleted ? nil : reply, error: generationError, notice: notice)
     // A sampling conversation (Regenerate) serves only this reply.
     if samplingSeed != nil { conversationThreadID = nil }
+    // The conversation read the files with this message: the next ones send only the question.
+    if let filesFollowUp, generationError == nil, conversationThreadID == threadID {
+      heldFiles = (threadID, filesFollowUp.key)
+    }
     // Sources found by the automatic web_search tool during the reply.
     let toolSources = WebSourcesRecorder.drain()
     if !toolSources.isEmpty {
@@ -714,7 +739,8 @@ final class AppState {
     /// The model couldn't load or the conversation couldn't be rebuilt (the error is set).
     case notReady
     case rejected(String)
-    case ready(trimmed: Bool)
+    /// `prompt` is what was fitted: the full file prompt, or the follow-up's.
+    case ready(trimmed: Bool, prompt: String)
   }
 
   /// What became of a helper the scheduler ran.

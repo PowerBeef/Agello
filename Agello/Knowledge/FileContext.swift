@@ -60,6 +60,31 @@ enum FileContext {
     return blocks.joined(separator: "\n\n")
   }
 
+  /// What identifies `materials` once a conversation has read them: whole files and summaries,
+  /// by name and text. nil when they include excerpts, which are chosen for each question and
+  /// so sent with every message.
+  static func heldKey(_ materials: [Material]) -> String? {
+    var parts: [String] = []
+    for material in materials {
+      switch material {
+      case .full(let name, _, let text): parts.append("full\u{0}\(name)\u{0}\(text.count)\u{0}\(text.hashValue)")
+      case .summary(let name, _, let text): parts.append("summary\u{0}\(name)\u{0}\(text.count)\u{0}\(text.hashValue)")
+      case .excerpts: return nil
+      }
+    }
+    return parts.isEmpty ? nil : parts.joined(separator: "\u{1}")
+  }
+
+  /// A follow-up's prompt while the conversation still holds the files it read with an earlier
+  /// message: only the question goes, with a reminder of what's above (2026-11-16, "Files sent
+  /// once"; before, every message sent the files again and each copy stayed in the context).
+  static func followUpPrompt(question: String, names: [String]) -> String {
+    let list = names.map(attribute).joined(separator: ", ")
+    return "The files the user attached (\(list)) are earlier in this conversation. Answer from them as "
+      + "before, citing them the same way; if the message asks about something they don't contain, say so."
+      + "\n\nMessage: \(question.isEmpty ? "Describe the attached files." : question)"
+  }
+
   /// A file name as an attribute value: quotes and angle brackets can't close the tag (a shared
   /// page's name is its title, chosen by whoever wrote the page).
   static func attribute(_ name: String) -> String {

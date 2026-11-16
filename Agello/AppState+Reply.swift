@@ -8,6 +8,9 @@ extension AppState {
   struct FileContextResult {
     var prompt: String
     var sources: [SourceRecord]
+    /// Whole files or summaries the conversation can keep: their key (``FileContext/heldKey(_:)``)
+    /// and the prompt a follow-up sends while it holds them. nil for excerpts.
+    var followUp: (key: String, prompt: String)?
   }
 
   /// The chat's own files, then its project's.
@@ -62,7 +65,10 @@ extension AppState {
       for passage in passages { cite(passage.citation, String(passage.text.prefix(240))) }
     }
     return FileContextResult(
-      prompt: FileContext.prompt(question: question, materials: materials), sources: sources)
+      prompt: FileContext.prompt(question: question, materials: materials), sources: sources,
+      followUp: FileContext.heldKey(materials).map {
+        ($0, FileContext.followUpPrompt(question: question, names: documents.map(\.name)))
+      })
   }
 
   /// A long document's section-by-section summary, written once and cached.

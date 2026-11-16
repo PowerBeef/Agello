@@ -202,6 +202,100 @@ final class FileChatTests: XCTestCase {
     XCTAssertTrue(sent.hasSuffix("Message: Describe the attached files."))
   }
 
+  // MARK: - Files sent once
+
+  private func smallNotes(_ name: String = "notes.md", _ text: String = "Buy boats and rope.") -> ExtractedDocument {
+    ExtractedDocument(name: name, kind: .text, byteCount: Int64(text.utf8.count), pages: [text])
+  }
+
+  /// A follow-up sends only the question while the conversation holds the file it read.
+  func testAWholeFileIsSentOnceWhileTheConversationHoldsIt() async throws {
+    let thread = appState.newThread(in: context)
+    let file = attach(smallNotes(), to: thread)
+    let first = await appState.send(
+      text: "What should I buy?", imageData: nil, audioFileURL: nil, files: [file], in: thread)
+    let second = await appState.send(text: "How many of each?", imageData: nil, audioFileURL: nil, in: thread)
+    XCTAssertTrue(first && second)
+    let log = await mock.sendLog
+    XCTAssertEqual(log.count, 2)
+    XCTAssertTrue(log[0].contains("<file name=\"notes.md\">"), log[0])
+    XCTAssertFalse(log[1].contains("<file"), log[1])
+    XCTAssertFalse(log[1].contains("Buy boats"), log[1])
+    XCTAssertTrue(log[1].contains("(notes.md) are earlier in this conversation"), log[1])
+    XCTAssertTrue(log[1].hasSuffix("Message: How many of each?"))
+    // The reply still cites the file.
+    XCTAssertEqual(thread.orderedTurns.last?.parts.sources.map(\.title), ["notes.md"])
+  }
+
+  /// A rebuilt conversation (a chat switch, a reload, a stop) replays only the turns' text, so
+  /// the next message sends the file again.
+  func testAFileIsSentAgainOnceTheConversationIsRebuilt() async throws {
+    let thread = appState.newThread(in: context)
+    let file = attach(smallNotes(), to: thread)
+    await appState.send(text: "What should I buy?", imageData: nil, audioFileURL: nil, files: [file], in: thread)
+    appState.conversationThreadID = nil
+    await appState.send(text: "And where?", imageData: nil, audioFileURL: nil, in: thread)
+    let log = await mock.sendLog
+    XCTAssertTrue(log.last?.contains("<file name=\"notes.md\">") == true, log.last ?? "")
+    // Held again after that send.
+    await appState.send(text: "When?", imageData: nil, audioFileURL: nil, in: thread)
+    let after = await mock.sendLog
+    XCTAssertFalse(after.last?.contains("<file") == true, after.last ?? "")
+  }
+
+  /// Fitting that trims the history rebuilds the conversation without the file: the full prompt
+  /// is fitted and sent instead.
+  func testATrimmedConversationGetsTheFileAgain() async throws {
+    let thread = appState.newThread(in: context)
+    let file = attach(smallNotes(), to: thread)
+    await appState.send(text: "What should I buy?", imageData: nil, audioFileURL: nil, files: [file], in: thread)
+    await mock.setFitResult(.success(true))
+    let fitsBefore = await mock.fitCalls
+    await appState.send(text: "How many?", imageData: nil, audioFileURL: nil, in: thread)
+    let fits = await mock.fitCalls - fitsBefore
+    let log = await mock.sendLog
+    XCTAssertEqual(fits, 2, "the follow-up's fit trimmed, so the full prompt is fitted too")
+    XCTAssertTrue(log.last?.contains("<file name=\"notes.md\">") == true, log.last ?? "")
+    XCTAssertNotNil(appState.notice)
+  }
+
+  /// A file added later changes what the conversation would need: all the files go again.
+  func testAnAddedFileSendsTheFilesAgain() async throws {
+    let thread = appState.newThread(in: context)
+    let notes = attach(smallNotes(), to: thread)
+    await appState.send(text: "What should I buy?", imageData: nil, audioFileURL: nil, files: [notes], in: thread)
+    let list = attach(smallNotes("list.md", "Paint and nails."), to: thread)
+    await appState.send(text: "And now?", imageData: nil, audioFileURL: nil, files: [list], in: thread)
+    let log = await mock.sendLog
+    let last = try XCTUnwrap(log.last)
+    XCTAssertTrue(last.contains("<file name=\"notes.md\">") && last.contains("<file name=\"list.md\">"), last)
+  }
+
+  /// Excerpts are chosen for each question, so they're sent with every message.
+  func testExcerptsAreSentWithEveryQuestion() async throws {
+    let thread = appState.newThread(in: context)
+    let file = attach(longReport(), to: thread)
+    await appState.send(
+      text: "What was the harbour renovation budget?", imageData: nil, audioFileURL: nil, files: [file],
+      in: thread)
+    await appState.send(text: "When was it approved?", imageData: nil, audioFileURL: nil, in: thread)
+    let log = await mock.sendLog
+    XCTAssertEqual(log.count, 2)
+    XCTAssertTrue(log.allSatisfy { $0.contains("<excerpts>") }, log.map { String($0.prefix(200)) }.joined(separator: "\n"))
+  }
+
+  func testHeldKeyNamesWholeFilesAndSummariesOnly() {
+    let full = FileContext.Material.full(name: "a.md", pageCount: 0, text: "Alpha")
+    let summary = FileContext.Material.summary(name: "b.pdf", pageCount: 9, text: "Beta")
+    XCTAssertNotNil(FileContext.heldKey([full, summary]))
+    XCTAssertEqual(FileContext.heldKey([full]), FileContext.heldKey([full]))
+    XCTAssertNotEqual(
+      FileContext.heldKey([full]),
+      FileContext.heldKey([.full(name: "a.md", pageCount: 0, text: "Alpha, edited")]))
+    XCTAssertNil(FileContext.heldKey([full, .excerpts([(label: "a.md", text: "Alpha")])]))
+    XCTAssertNil(FileContext.heldKey([]))
+  }
+
   func testDeletingAChatDeletesItsFiles() throws {
     let thread = appState.newThread(in: context)
     _ = attach(longReport(pages: 3), to: thread)
