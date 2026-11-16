@@ -193,7 +193,7 @@ scripts/cli-report.py build/cli/runs/quality.jsonl
 ## The tests, natively
 
 ```sh
-scripts/cli-test.sh unit                         # 275 unit tests on the scripted engine, about a minute
+scripts/cli-test.sh unit                         # 292 unit tests on the scripted engine, about a minute
 scripts/cli-test.sh unit AppStateTests           # one class, or Class/method
 scripts/cli-test.sh inference                    # the real-model scenarios on this Mac's GPU (also files, web, thinking, probes, calibrate)
 ```
@@ -343,7 +343,7 @@ the fork's `main` and in release `agello-one-20261115`, which the app ships sinc
 ### C8, built on 2026-11-10
 
 - **269 unit tests passed natively** in 73 s on 2026-11-10 (of the iPhone's 333 then: the rest
-  test the interface). Today the package compiles 275 of the iPhone's 340 (2026-11-15).
+  test the interface). Today the package compiles 292 of the iPhone's 358 (2026-11-16).
 - **The `inference` suite passes natively, 23 of 23, in 105 s**: load, text, chat isolation,
   stop, tools, Think, image, audio, vision toggles, the context limit, exact token counts,
   titles, memory, dictation, voice turns, digits past 2,048 and 4,096 tokens, the benchmark.

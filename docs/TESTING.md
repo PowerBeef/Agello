@@ -4,11 +4,11 @@ Agello is tested on a physical iPhone, and on an Apple silicon Mac running the i
 
 ## The suites
 
-Test methods declared at `e7f116f` (2026-11-15). The dated iPhone runs and their results are in the [roadmap](ROADMAP.md#current-status).
+Test methods declared at `842ea9e` (2026-11-16). The dated iPhone runs and their results are in the [roadmap](ROADMAP.md#current-status).
 
 | Target | Tests | Covers |
 | --- | --- | --- |
-| `AgelloTests` | 340 | Planner, context budgeting, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers and page extraction (recorded fixtures), dictation, voice-activity detection, deep links and intents, Spotlight, the share inbox, chat grouping and search, personalization, titles, downloads, and the whole app pipeline through a scripted engine |
+| `AgelloTests` | 358 | Planner, context budgeting, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers and page extraction (recorded fixtures), dictation, voice-activity detection, deep links and intents, Spotlight, the share inbox, chat grouping and search, personalization, titles, downloads, and the whole app pipeline through a scripted engine |
 | `AgelloDeviceTests` | 69 | The real models, in-process: download, load, text, chat isolation, stop and continue, tools, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, voice turns, exact digits past 2,048 and 4,096 tokens, benchmark; files (EmbeddingGemma indexing, "summarize this 40-page PDF", cited follow-up, search chats by meaning); live web search, automatic search with the on-device tools off |
 | `AgelloUITests` | 28 | Real taps: send, no jumping while a reply streams, Stop, Home button mid-reply, leaving and returning mid-reply, rapid settings changes, drawer and search, pin / rename / delete, projects, attached files, web search, dictation, voice mode, deep links, a long summary in the background, regenerate / edit / versions, Think, memory settings, markdown, keyboard clearance, composer controls that fit at every text size, Models, the screen an iPhone below the 12 GB floor opens on, an accessibility audit of the main screens; plus the opt-in screenshot tour and the bench driver |
 
@@ -51,7 +51,7 @@ The first run registers the Mac for development with the signing team. Results l
 
 For work on the runtime, the app's engine also builds as a command line for macOS
 ([CLI.md](CLI.md)): `scripts/cli-test.sh unit` runs the unit tests that need no interface
-natively (275, about a minute), `scripts/cli-test.sh inference` the real-model scenarios on the
+natively (292, about a minute), `scripts/cli-test.sh inference` the real-model scenarios on the
 Mac's GPU, and `agello bench` the bench's cases with the runtime's telemetry, against any build
 of our LiteRT-LM. It's a development tool: what ships is confirmed on the iPhone.
 
