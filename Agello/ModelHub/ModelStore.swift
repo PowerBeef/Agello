@@ -46,6 +46,10 @@ final class ModelStore: NSObject {
   /// Downloads told to wait for Wi-Fi that haven't received anything yet.
   private(set) var waitingForWiFi: Set<ModelID> = []
   @ObservationIgnored private let pathMonitor = NWPathMonitor()
+  /// The user's choice for the running (or held) download: false waits for Wi-Fi.
+  @ObservationIgnored private var wantsCellular = true
+  /// A download held for Wi-Fi with its resume data, no task running (see ``resumeAction``).
+  @ObservationIgnored private var heldForWiFi: ModelID?
 
   /// Files larger than this ask before downloading over a cellular or metered network.
   nonisolated static let cellularConsentBytes: Int64 = 200_000_000
@@ -65,7 +69,7 @@ final class ModelStore: NSObject {
     reattachRunningDownload()
     pathMonitor.pathUpdateHandler = { [weak self] path in
       let expensive = path.isExpensive || path.isConstrained
-      Task { @MainActor in self?.onExpensiveNetwork = expensive }
+      Task { @MainActor in self?.networkChanged(expensive: expensive) }
     }
     pathMonitor.start(queue: DispatchQueue(label: "agello.network-path"))
   }
@@ -174,6 +178,63 @@ final class ModelStore: NSObject {
     }
   }
 
+  // MARK: - Network policy
+
+  enum ResumeAction: Equatable {
+    /// Resume from the saved data.
+    case resume
+    /// Keep the data and wait for an unmetered network.
+    case hold
+    /// Start over: the saved data can only replay its original request's network policy.
+    case restart
+  }
+
+  /// What to do with saved resume data. It replays the original request, network policy
+  /// included, so a download first started on Wi-Fi (allowed on cellular) resumed under "Wait
+  /// for Wi-Fi" kept using cellular, and a Wi-Fi-only one never ran when "Download now" was
+  /// chosen on cellular (2026-11-16).
+  nonisolated static func resumeAction(
+    wantsCellular: Bool, resumeAllowsCellular: Bool, onExpensiveNetwork: Bool
+  ) -> ResumeAction {
+    guard onExpensiveNetwork else { return .resume }
+    if !wantsCellular { return .hold }
+    return resumeAllowsCellular ? .resume : .restart
+  }
+
+  /// The network policy of the request behind a model's saved resume data (true when unknown:
+  /// downloads allowed cellular before it was recorded).
+  private func resumeAllowsCellular(_ id: ModelID) -> Bool {
+    UserDefaults.standard.object(forKey: "resumeAllowsCellular.\(id.rawValue)") as? Bool ?? true
+  }
+
+  private func setRequestAllowsCellular(_ allows: Bool?, for id: ModelID) {
+    let key = "resumeAllowsCellular.\(id.rawValue)"
+    if let allows { UserDefaults.standard.set(allows, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
+  }
+
+  private func networkChanged(expensive: Bool) {
+    onExpensiveNetwork = expensive
+    if !expensive, let id = heldForWiFi {
+      // Wi-Fi again: the held download resumes.
+      heldForWiFi = nil
+      downloadingSpec = nil
+      startDownload(ModelCatalog.spec(for: id), overCellular: false)
+    } else if expensive, !wantsCellular, let spec = downloadingSpec, activeTask != nil,
+      resumeAllowsCellular(spec.id)
+    {
+      // A download told to wait for Wi-Fi whose request allows cellular: hold it.
+      pauseDownload(spec)
+      hold(spec, progress: 0)
+    }
+  }
+
+  private func hold(_ spec: ModelSpec, progress: Double) {
+    heldForWiFi = spec.id
+    downloadingSpec = spec
+    states[spec.id] = .downloading(progress: progress)
+    waitingForWiFi.insert(spec.id)
+  }
+
   // MARK: - Actions
 
   /// Download `spec`; `overCellular` false waits for Wi-Fi when the network is metered (see
@@ -197,14 +258,31 @@ final class ModelStore: NSObject {
       return
     }
     downloadingSpec = spec
+    wantsCellular = overCellular
+    var saved = resumeData[spec.id]
+    if let data = saved {
+      switch Self.resumeAction(
+        wantsCellular: overCellular, resumeAllowsCellular: resumeAllowsCellular(spec.id),
+        onExpensiveNetwork: onExpensiveNetwork)
+      {
+      case .hold:
+        return hold(spec, progress: Self.progress(ofResumeData: data, size: spec.sizeBytes))
+      case .restart:
+        keepResumeData(nil, for: spec.id)
+        saved = nil
+      case .resume:
+        break
+      }
+    }
     states[spec.id] = .downloading(progress: 0)
     let task: URLSessionDownloadTask
-    if let data = resumeData[spec.id] {
+    if let data = saved {
       task = session.downloadTask(withResumeData: data)
     } else {
       var request = URLRequest(url: spec.downloadURL)
       request.allowsExpensiveNetworkAccess = overCellular
       request.allowsConstrainedNetworkAccess = overCellular
+      setRequestAllowsCellular(overCellular, for: spec.id)
       task = session.downloadTask(with: request)
     }
     if !overCellular, onExpensiveNetwork { waitingForWiFi.insert(spec.id) }
@@ -235,6 +313,14 @@ final class ModelStore: NSObject {
   }
 
   func pauseDownload(_ spec: ModelSpec) {
+    if heldForWiFi == spec.id {
+      heldForWiFi = nil
+      downloadingSpec = nil
+      waitingForWiFi.remove(spec.id)
+      let progress = resumeData[spec.id].map { Self.progress(ofResumeData: $0, size: spec.sizeBytes) } ?? 0
+      states[spec.id] = .paused(progress: progress)
+      return
+    }
     guard downloadingSpec?.id == spec.id, let task = activeTask else { return }
     let progress: Double
     if case .downloading(let p) = states[spec.id] { progress = p } else { progress = 0 }
@@ -251,6 +337,8 @@ final class ModelStore: NSObject {
   }
 
   func cancelDownload(_ spec: ModelSpec) {
+    if heldForWiFi == spec.id { heldForWiFi = nil }
+    setRequestAllowsCellular(nil, for: spec.id)
     if downloadingSpec?.id == spec.id {
       activeTask?.cancel()
       activeTask = nil
@@ -307,9 +395,11 @@ final class ModelStore: NSObject {
     guard Self.externalModelsDirectory == nil, let dir = try? Self.modelsDirectory() else { return }
     let known = Set(ModelCatalog.all.map(\.fileName))
     let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+    // Staged downloads left by an interrupted check go too (the download isn't verified).
+    let staging = downloadingSpec.map { Self.stagedName($0.fileName) }
     for file in files
-    where file.hasSuffix(".litertlm") && !known.contains(file)
-      && file != downloadingSpec?.fileName
+    where (file.hasSuffix(".litertlm") && !known.contains(file) && file != downloadingSpec?.fileName)
+      || (file.hasSuffix(".partial") && file != staging)
     {
       try? FileManager.default.removeItem(at: dir.appendingPathComponent(file))
     }
@@ -331,28 +421,57 @@ final class ModelStore: NSObject {
     }
   }
 
+  /// Stage, then verify and install (tests; the download path runs the two apart).
   @discardableResult
   nonisolated static func placeDownloadedFile(
     from location: URL, fileName: String, expectedSize: Int64, expectedSHA256: String? = nil,
     in directory: URL
   ) throws -> URL {
+    let staged = try stageDownloadedFile(from: location, fileName: fileName, in: directory)
+    return try installStagedFile(
+      staged, fileName: fileName, expectedSize: expectedSize, expectedSHA256: expectedSHA256, in: directory)
+  }
+
+  /// A finished download's name until its size and SHA-256 are checked: the final name exists only
+  /// for a verified file, so ``isDownloaded(_:)`` (size only) never trusts an unchecked one. The
+  /// check used to run after the move to the final name, and an interruption left an unchecked
+  /// model there (2026-11-16).
+  nonisolated static func stagedName(_ fileName: String) -> String { fileName + ".partial" }
+
+  /// Move a finished download to its staging name. Must run synchronously inside
+  /// `didFinishDownloadingTo` (the system may delete `location` once that callback returns).
+  @discardableResult
+  nonisolated static func stageDownloadedFile(from location: URL, fileName: String, in directory: URL) throws -> URL {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let staged = directory.appendingPathComponent(stagedName(fileName))
+    if FileManager.default.fileExists(atPath: staged.path) {
+      try FileManager.default.removeItem(at: staged)
+    }
+    try FileManager.default.moveItem(at: location, to: staged)
+    return staged
+  }
+
+  /// Check a staged download's size and SHA-256, then give it its final name, replacing an older
+  /// copy; a file that fails is removed. About 3 s for E4B: run it off the session's queue.
+  @discardableResult
+  nonisolated static func installStagedFile(
+    _ staged: URL, fileName: String, expectedSize: Int64, expectedSHA256: String?, in directory: URL
+  ) throws -> URL {
+    let size = (try FileManager.default.attributesOfItem(atPath: staged.path)[.size] as? Int64) ?? -1
+    guard size == expectedSize else {
+      try? FileManager.default.removeItem(at: staged)
+      throw ModelStoreError.sizeMismatch(expected: expectedSize, actual: size)
+    }
+    // The right size can still be the wrong bytes (a damaged or swapped file).
+    if let expectedSHA256, try sha256(of: staged) != expectedSHA256.lowercased() {
+      try? FileManager.default.removeItem(at: staged)
+      throw ModelStoreError.checksumMismatch
+    }
     let destination = directory.appendingPathComponent(fileName)
     if FileManager.default.fileExists(atPath: destination.path) {
       try FileManager.default.removeItem(at: destination)
     }
-    try FileManager.default.moveItem(at: location, to: destination)
-    let size =
-      (try FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int64) ?? -1
-    guard size == expectedSize else {
-      try? FileManager.default.removeItem(at: destination)
-      throw ModelStoreError.sizeMismatch(expected: expectedSize, actual: size)
-    }
-    // The right size can still be the wrong bytes (a damaged or swapped file).
-    if let expectedSHA256, try sha256(of: destination) != expectedSHA256.lowercased() {
-      try? FileManager.default.removeItem(at: destination)
-      throw ModelStoreError.checksumMismatch
-    }
+    try FileManager.default.moveItem(at: staged, to: destination)
     return destination
   }
 
@@ -450,24 +569,37 @@ extension ModelStore {
   nonisolated static func finishDownload(
     _ downloadTask: URLSessionDownloadTask, at location: URL, store: ModelStore?
   ) {
-    // Move SYNCHRONOUSLY: the temp file is only guaranteed to exist for the
+    // Stage SYNCHRONOUSLY: the temp file is only guaranteed to exist for the
     // duration of this callback. This runs on the session's background queue.
     let rawID = downloadTask.taskDescription ?? ""
     let spec = ModelID(rawValue: rawID).map(ModelCatalog.spec(for:))
-    var placementError: Error?
-    if let spec, let directory = try? Self.modelsDirectory() {
+    let directory = try? Self.modelsDirectory()
+    let staged: Result<URL, Error> = Result {
+      guard let spec, let directory else {
+        throw ChatError.underlying(message: "Download finished for an unknown model.")
+      }
+      try Self.validateResponse(downloadTask.response)
+      return try Self.stageDownloadedFile(from: location, fileName: spec.fileName, in: directory)
+    }
+    // Verify off the session's queue (the hash takes seconds), then publish on the main actor.
+    DispatchQueue.global(qos: .utility).async {
+      let placementError: Error?
       do {
-        try Self.validateResponse(downloadTask.response)
-        try Self.placeDownloadedFile(
-          from: location, fileName: spec.fileName, expectedSize: spec.sizeBytes,
-          expectedSHA256: spec.sha256, in: directory)
+        let file = try staged.get()
+        if let spec, let directory {
+          try Self.installStagedFile(
+            file, fileName: spec.fileName, expectedSize: spec.sizeBytes, expectedSHA256: spec.sha256,
+            in: directory)
+        }
+        placementError = nil
       } catch {
         placementError = error
       }
-    } else {
-      placementError = ChatError.underlying(message: "Download finished for an unknown model.")
+      Self.publishDownload(spec, error: placementError, store: store)
     }
-    // Publish the outcome on the main actor.
+  }
+
+  private nonisolated static func publishDownload(_ spec: ModelSpec?, error placementError: Error?, store: ModelStore?) {
     Task { @MainActor [weak store] in
       guard let self = store, let spec else { return }
       // Only touch state if this task is still the in-flight download (or

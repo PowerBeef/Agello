@@ -46,6 +46,31 @@ final class ModelStoreTests: XCTestCase {
       FileManager.default.fileExists(atPath: models.appendingPathComponent("model.litertlm").path))
   }
 
+  /// The final name appears only once the file is verified: a staged download, or one that fails
+  /// its check, never sits there (2026-11-16).
+  func testOnlyAVerifiedFileGetsItsFinalName() throws {
+    let models = scratch.appendingPathComponent("Models", isDirectory: true)
+    let final = models.appendingPathComponent("model.litertlm")
+    let good = Data(repeating: 0xAB, count: 64)
+    let source = scratch.appendingPathComponent("download.tmp")
+    try good.write(to: source)
+    let staged = try ModelStore.stageDownloadedFile(from: source, fileName: "model.litertlm", in: models)
+    XCTAssertEqual(staged.lastPathComponent, "model.litertlm.partial")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: final.path))
+    let hash = try ModelStore.sha256(of: staged)
+    try ModelStore.installStagedFile(staged, fileName: "model.litertlm", expectedSize: 64, expectedSHA256: hash, in: models)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: final.path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: staged.path))
+
+    // A wrong file at the right size leaves the verified one in place and no staged copy.
+    try Data(repeating: 0xCD, count: 64).write(to: source)
+    let bad = try ModelStore.stageDownloadedFile(from: source, fileName: "model.litertlm", in: models)
+    XCTAssertThrowsError(
+      try ModelStore.installStagedFile(bad, fileName: "model.litertlm", expectedSize: 64, expectedSHA256: hash, in: models))
+    XCTAssertEqual(try Data(contentsOf: final), good)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: bad.path))
+  }
+
   func testPlaceDownloadedFileMissingSourceThrows() throws {
     let models = scratch.appendingPathComponent("Models", isDirectory: true)
     XCTAssertThrowsError(
@@ -108,7 +133,9 @@ final class ModelStoreTests: XCTestCase {
     ) { error in
       XCTAssertEqual(error as? ModelStoreError, .checksumMismatch)
     }
-    XCTAssertFalse(FileManager.default.fileExists(atPath: models.appendingPathComponent("model.litertlm").path))
+    // The swapped file never reaches the final name; the verified copy stays (since 2026-11-16).
+    XCTAssertEqual(try Data(contentsOf: models.appendingPathComponent("model.litertlm")), data)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: models.appendingPathComponent("model.litertlm.partial").path))
   }
 
   func testSHA256MatchesAKnownValue() throws {
@@ -120,6 +147,23 @@ final class ModelStoreTests: XCTestCase {
   }
 
   /// A paused download's progress survives a relaunch with its resume data.
+  /// Resume data replays its request's network policy: "Wait for Wi-Fi" holds it on a metered
+  /// network, and "Download now" restarts a Wi-Fi-only one there (2026-11-16).
+  func testResumeFollowsTheChosenNetworkPolicy() {
+    typealias A = ModelStore.ResumeAction
+    let cases: [(wants: Bool, allows: Bool, expensive: Bool, expected: A)] = [
+      (true, true, false, .resume), (true, false, false, .resume),
+      (false, true, false, .resume), (false, false, false, .resume),
+      (false, true, true, .hold), (false, false, true, .hold),
+      (true, true, true, .resume), (true, false, true, .restart),
+    ]
+    for c in cases {
+      XCTAssertEqual(
+        ModelStore.resumeAction(wantsCellular: c.wants, resumeAllowsCellular: c.allows, onExpensiveNetwork: c.expensive),
+        c.expected, "wants \(c.wants), allows \(c.allows), expensive \(c.expensive)")
+    }
+  }
+
   func testResumeDataReportsHowFarTheDownloadGot() throws {
     let plist: [String: Any] = ["NSURLSessionResumeBytesReceived": NSNumber(value: Int64(915_181_568))]
     let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0)
