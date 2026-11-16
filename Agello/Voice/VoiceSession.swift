@@ -43,6 +43,8 @@ final class VoiceSession: Identifiable {
   /// The current reply was interrupted: don't speak what's left of it.
   @ObservationIgnored private var silenced = false
   @ObservationIgnored private var turnTask: Task<Void, Never>?
+  /// Counts utterances sent, so a turn that finishes after a newer one leaves its state alone.
+  @ObservationIgnored private var turnNumber = 0
   @ObservationIgnored private var utteranceStarted: Date?
   @ObservationIgnored private let appState: AppState
   @ObservationIgnored private let makeThread: () -> ChatThread
@@ -158,19 +160,32 @@ final class VoiceSession: Identifiable {
     }
     state = .thinking
     heard = ""
-    answer = ""
-    sentences = VoiceText.SentenceStream()
-    replyLanguage = nil
-    replyFinished = false
-    silenced = false
     let image = cameraOn ? camera.snapshot() : nil
+    turnNumber += 1
+    let number = turnNumber
+    let previous = turnTask
     turnTask = Task { [weak self] in
-      guard let self else { return }
+      // A barge-in stopped the last reply: it finishes stopping first, or this turn would find
+      // the engine busy and be dropped (2026-11-16).
+      await previous?.value
+      // Spoken over before it was sent, as a barge-in stops a reply.
+      guard let self, self.turnNumber == number else {
+        try? FileManager.default.removeItem(at: url)
+        return
+      }
+      // Reset only now: until the last reply has stopped, `silenced` keeps its late chunks quiet.
+      self.answer = ""
+      self.sentences = VoiceText.SentenceStream()
+      self.replyLanguage = nil
+      self.replyFinished = false
+      self.silenced = false
       let thread = self.thread ?? self.makeThread()
       self.thread = thread
       let accepted = await self.appState.sendVoiceTurn(
         audioFileURL: url, imageData: image, in: thread)
       try? FileManager.default.removeItem(at: url)
+      // A newer utterance owns the orb and the transcript now.
+      guard self.turnNumber == number else { return }
       self.heard = thread.orderedTurns.last(where: \.isUser)?.text ?? self.heard
       if !accepted || self.answer.isEmpty, self.state == .thinking { self.state = .listening }
     }
