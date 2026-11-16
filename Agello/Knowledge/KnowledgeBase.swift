@@ -178,6 +178,15 @@ final class KnowledgeBase {
     }
   }
 
+  /// Embed `document` again after embedding it failed: its "Keyword search" row offers it. If no
+  /// embedder is ready yet, ``indexPending()`` picks it up.
+  func reindex(_ document: ChatDocument) {
+    guard searchesByKeywords(document) else { return }
+    document.indexedWith = nil
+    try? modelContext?.save()
+    index(document)
+  }
+
   /// Stop indexing (the app moved to the background); ``indexPending()`` resumes it.
   func cancelIndexing() {
     for task in indexTasks.values { task.cancel() }

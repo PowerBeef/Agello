@@ -86,8 +86,19 @@ struct ProjectView: View {
                   Text("\(file.pageCount) pages").font(.caption).foregroundStyle(Theme.Text.tertiary)
                 }
                 if appState.knowledge.searchesByKeywords(file) {
-                  Text("Keyword search").font(.caption).foregroundStyle(Theme.Text.tertiary)
-                    .accessibilityIdentifier("project.file.keywordSearch")
+                  HStack(spacing: Theme.Spacing.sm) {
+                    Text("Keyword search").font(.caption).foregroundStyle(Theme.Text.tertiary)
+                      .accessibilityIdentifier("project.file.keywordSearch")
+                    // Indexing failed once; it's not retried on its own.
+                    Button("Index again") {
+                      appState.knowledge.reindex(file)
+                      reloadFiles()
+                    }
+                    .font(.caption)
+                    .foregroundStyle(Theme.Brand.glacier)
+                    .buttonStyle(.borderless)
+                    .accessibilityIdentifier("project.file.reindex")
+                  }
                 }
               }
               Spacer()

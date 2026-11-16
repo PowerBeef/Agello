@@ -167,6 +167,14 @@ final class KnowledgeTests: XCTestCase {
     XCTAssertTrue(knowledge.searchesByKeywords(failed))
     knowledge.indexPending()
     XCTAssertFalse(knowledge.indexing.contains(failed.id))
+
+    // Asked to, it's indexed again and searched by meaning.
+    knowledge.reindex(failed)
+    XCTAssertTrue(knowledge.indexing.contains(failed.id))
+    await knowledge.waitForIndexing([failed])
+    XCTAssertFalse(knowledge.searchesByKeywords(failed))
+    XCTAssertEqual(failed.indexedWith, HashingEmbedder().identifier)
+    XCTAssertTrue(failed.chunks.allSatisfy { $0.embedding != nil })
   }
 
   /// A file attached before the embedding model arrived (never indexed).

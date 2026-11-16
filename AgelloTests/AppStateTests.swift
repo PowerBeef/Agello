@@ -101,6 +101,19 @@ final class AppStateTests: XCTestCase {
     XCTAssertTrue(old.webSearch)
   }
 
+  /// A cut file's chip says so; files saved before the mark read as whole.
+  func testCutFileMarkDecodesAndDefaultsToNil() throws {
+    let id = UUID()
+    let cut = MessageParts(files: [FileRecord(id: id, name: "big.pdf", kind: "pdf", pageCount: 120, cut: true)])
+    let decoded = try JSONDecoder().decode(MessageParts.self, from: JSONEncoder().encode(cut))
+    XCTAssertEqual(decoded.files.first?.cut, true)
+    let old = try JSONDecoder().decode(
+      MessageParts.self,
+      from: Data(#"{"files":[{"id":"\#(id.uuidString)","name":"a.pdf","kind":"pdf","pageCount":3}]}"#.utf8))
+    XCTAssertEqual(old.files.first?.name, "a.pdf")
+    XCTAssertNil(old.files.first?.cut)
+  }
+
   /// A reply whose task is cancelled (voice mode closed) cancels the native conversation,
   /// which then rejects messages until rebuilt: the next message must still be answered.
   func testAnAbandonedReplyIsRebuiltBeforeTheNextSend() async {

@@ -513,7 +513,9 @@ struct ChatView: View {
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: Theme.Spacing.sm) {
           ForEach(Array(pendingFiles.enumerated()), id: \.offset) { index, file in
-            FileChip(name: file.name, kind: file.kind, pageCount: file.isPaged ? file.pages.count : 0) {
+            FileChip(
+              name: file.name, kind: file.kind, pageCount: file.isPaged ? file.pages.count : 0, cut: file.truncated
+            ) {
               pendingFiles.remove(at: index)
             }
           }
@@ -945,9 +947,12 @@ struct ChatView: View {
     Haptics.send()
     let target = thread ?? newThread()
     // Files belong to the chat from now on (indexed in the background).
-    let documents = files.compactMap { appState.knowledge.add($0, threadID: target.id) }
-    let records = documents.map {
-      FileRecord(id: $0.id, name: $0.name, kind: $0.kindRaw, pageCount: $0.pageCount)
+    let added = files.compactMap { file in appState.knowledge.add(file, threadID: target.id).map { (file, $0) } }
+    let documents = added.map(\.1)
+    let records = added.map { file, document in
+      FileRecord(
+        id: document.id, name: document.name, kind: document.kindRaw, pageCount: document.pageCount,
+        cut: file.truncated ? true : nil)
     }
     Task {
       let accepted = await appState.send(

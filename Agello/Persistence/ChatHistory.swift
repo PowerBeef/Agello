@@ -200,6 +200,9 @@ struct FileRecord: Codable, Equatable, Sendable, Identifiable {
   /// ``DocumentKind`` raw value.
   var kind: String
   var pageCount: Int
+  /// The file was longer than Agello reads, and only its start was kept
+  /// (``ExtractedDocument/truncated``; nil in messages saved before 2026-11-16).
+  var cut: Bool?
 }
 
 struct ToolActivityRecord: Codable, Equatable, Sendable {

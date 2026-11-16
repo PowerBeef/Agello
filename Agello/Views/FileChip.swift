@@ -6,6 +6,8 @@ struct FileChip: View {
   let name: String
   let kind: DocumentKind
   let pageCount: Int
+  /// Only the file's start was read (it's longer than Agello reads).
+  var cut = false
   var onRemove: (() -> Void)?
 
   var body: some View {
@@ -17,7 +19,12 @@ struct FileChip: View {
           .foregroundStyle(Theme.Text.primary)
           .lineLimit(2)
           .truncationMode(.middle)
-        if pageCount > 0 {
+        if cut {
+          Text(pageCount > 0 ? "First \(pageCount) pages read" : "Only its start was read")
+            .font(.caption2)
+            .foregroundStyle(Theme.Text.tertiary)
+            .accessibilityIdentifier("message.file.cut")
+        } else if pageCount > 0 {
           Text(pageCount == 1 ? "1 page" : "\(pageCount) pages")
             .font(.caption2)
             .foregroundStyle(Theme.Text.tertiary)
@@ -53,6 +60,6 @@ extension FileChip {
   init(record: FileRecord) {
     self.init(
       name: record.name, kind: DocumentKind(rawValue: record.kind) ?? .text,
-      pageCount: record.pageCount)
+      pageCount: record.pageCount, cut: record.cut ?? false)
   }
 }

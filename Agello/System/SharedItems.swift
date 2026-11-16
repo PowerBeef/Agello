@@ -29,7 +29,7 @@ extension AppState {
         files.append(
           FileRecord(
             id: document.id, name: document.name, kind: document.kindRaw,
-            pageCount: document.pageCount))
+            pageCount: document.pageCount, cut: extracted.truncated ? true : nil))
       }
     }
 
