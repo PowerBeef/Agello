@@ -27,10 +27,14 @@ enum ReadableText {
         "iframe", "template", "select"],
       from: body)
     // Figures are illustrations and captions, unless they hold code (many sites wrap it in one).
-    body = body.replacingOccurrences(
-      of: "(?is)<figure\\b[^>]*>(?:(?!</figure>|\(codeMarker)).)*</figure>", with: " ",
-      options: .regularExpression)
-    body = body.replacingOccurrences(of: "(?s)<!--.*?-->", with: "", options: .regularExpression)
+    let figures = body as NSString
+    body = HTMLScan.replacing(HTMLScan.elements("figure", in: figures), in: figures) { figure in
+      guard let content = figure.content, figures.range(of: codeMarker, range: content).location == NSNotFound
+      else { return nil }
+      return " "
+    }
+    let comments = body as NSString
+    body = HTMLScan.replacing(HTMLScan.spans(open: "<!--", close: "-->", in: comments), in: comments) { _ in "" }
     let region = largest("article", in: body) ?? largest("main", in: body)
       ?? HTMLText.firstMatch(#"<body[^>]*>(.*)</body>"#, in: body)?.first ?? body
     let text = restoreCode(toText(region), code)
@@ -44,32 +48,25 @@ enum ReadableText {
   /// fence's language), each replaced by a marker paragraph until the page is text again. Flattened
   /// with the rest, code lost its line breaks and indentation (2026-11-02).
   static func setAsideCode(in html: String, into blocks: inout [String]) -> String {
-    guard
-      let regex = try? NSRegularExpression(
-        pattern: "<pre\\b([^>]*)>(.*?)</pre>", options: [.caseInsensitive, .dotMatchesLineSeparators])
-    else { return html }
-    var output = ""
-    var last = html.startIndex
-    for match in regex.matches(in: html, range: NSRange(html.startIndex..., in: html)) {
-      guard let whole = Range(match.range, in: html), let attributes = Range(match.range(at: 1), in: html),
-        let inner = Range(match.range(at: 2), in: html)
-      else { continue }
-      output += html[last..<whole.lowerBound]
-      last = whole.upperBound
+    let page = html as NSString
+    var found: [String] = []
+    let output = HTMLScan.replacing(HTMLScan.elements("pre", in: page), in: page) { pre in
+      guard let content = pre.content else { return nil }  // unclosed: left to the text pass
+      let inner = page.substring(with: content)
       let language =
         HTMLText.firstMatch(
-          #"language-([A-Za-z0-9+#-]+)"#, in: String(html[attributes]) + String(html[inner].prefix(300))
+          #"language-([A-Za-z0-9+#-]+)"#, in: page.substring(with: pre.attributes) + String(inner.prefix(300))
         )?.first?.lowercased() ?? ""
       let code = HTMLText.decodeEntities(
-        String(html[inner])
+        inner
           .replacingOccurrences(of: "(?i)<br\\s*/?>", with: "\n", options: .regularExpression)
           .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
       ).replacingOccurrences(of: "\r\n", with: "\n").trimmingCharacters(in: .newlines)
-      guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-      blocks.append("```\(language)\n\(code)\n```")
-      output += "\n\n<p>\(codeMarker)\(blocks.count - 1)\(codeMarker)</p>\n\n"
+      guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "" }
+      found.append("```\(language)\n\(code)\n```")
+      return "\n\n<p>\(codeMarker)\(blocks.count + found.count - 1)\(codeMarker)</p>\n\n"
     }
-    output += html[last...]
+    blocks += found
     return output
   }
 
@@ -81,32 +78,25 @@ enum ReadableText {
     return text
   }
 
-  /// Remove whole elements (with content, across lines) by tag name.
+  /// Remove whole elements (with content, across lines) by tag name; an unclosed or
+  /// self-closing tag goes alone.
   private static func remove(_ tags: [String], from html: String) -> String {
     var output = html
     for tag in tags {
-      output = output.replacingOccurrences(
-        of: "(?is)<\(tag)\\b[^>]*>.*?</\(tag)>", with: " ",
-        options: [.regularExpression, .caseInsensitive])
-      // Self-closing or unclosed leftovers.
-      output = output.replacingOccurrences(
-        of: "<\(tag)\\b[^>]*/?>", with: " ", options: [.regularExpression, .caseInsensitive])
+      let page = output as NSString
+      output = HTMLScan.replacing(HTMLScan.elements(tag, in: page), in: page) { _ in " " }
     }
     return output
   }
 
-  /// The content of the `tag` element with the most text.
+  /// The content of the `tag` element with the most text (each measured once).
   private static func largest(_ tag: String, in html: String) -> String? {
-    guard
-      let regex = try? NSRegularExpression(
-        pattern: "<\(tag)\\b[^>]*>(.*?)</\(tag)>",
-        options: [.caseInsensitive, .dotMatchesLineSeparators])
-    else { return nil }
-    let matches = regex.matches(in: html, range: NSRange(html.startIndex..., in: html))
-    let contents = matches.compactMap { Range($0.range(at: 1), in: html).map { String(html[$0]) } }
-    let best = contents.max { HTMLText.plain($0).count < HTMLText.plain($1).count }
-    guard let best, HTMLText.plain(best).count >= 200 else { return nil }
-    return best
+    let page = html as NSString
+    let best = HTMLScan.elements(tag, in: page).compactMap(\.content)
+      .map { (content: page.substring(with: $0), length: HTMLText.plain(page.substring(with: $0)).count) }
+      .max { $0.length < $1.length }
+    guard let best, best.length >= 200 else { return nil }
+    return best.content
   }
 
   /// Block structure to line breaks, list items to bullets, table cells to
@@ -164,6 +154,107 @@ enum ReadableText {
       }
     }
     flush()
+    return output
+  }
+}
+
+/// Elements found in one forward pass. Lazy `<tag…>.*?</tag>` regexes rescanned the rest of the
+/// page from every unclosed tag: quadratic on a hostile page (an external review, 2026-11-16).
+/// Here every search starts where the last one ended, and a closing tag missing once is missing
+/// for the rest of the page.
+enum HTMLScan {
+  struct Element {
+    /// The whole element, or the opening tag alone when it isn't closed.
+    var range: NSRange
+    /// Between the tag name and `>`.
+    var attributes: NSRange
+    /// Between the opening and the closing tag; nil when it isn't closed.
+    var content: NSRange?
+  }
+
+  /// `tag` elements, each from its opening tag to the first closing tag after it (attribute
+  /// values holding `>` must be emptied first: ``HTMLText/emptyingAttributesWithAngles(_:)``).
+  static func elements(_ tag: String, in html: NSString) -> [Element] {
+    var found: [Element] = []
+    let open = "<" + tag
+    let close = "</" + tag + ">"
+    let length = html.length
+    var cursor = 0
+    var closesLeft = true
+    while cursor < length {
+      let start = html.range(of: open, options: .caseInsensitive, range: NSRange(location: cursor, length: length - cursor))
+      guard start.location != NSNotFound else { break }
+      let afterName = start.location + start.length
+      // A whole tag name: "<pre" but not "<preview".
+      if afterName < length, let next = UnicodeScalar(html.character(at: afterName)),
+        next != ">", next != "/", !CharacterSet.whitespacesAndNewlines.contains(next)
+      {
+        cursor = afterName
+        continue
+      }
+      let end = html.range(of: ">", range: NSRange(location: afterName, length: length - afterName))
+      guard end.location != NSNotFound else { break }
+      let contentStart = end.location + 1
+      let attributes = NSRange(location: afterName, length: end.location - afterName)
+      var closing = NSRange(location: NSNotFound, length: 0)
+      if closesLeft {
+        closing = html.range(
+          of: close, options: .caseInsensitive, range: NSRange(location: contentStart, length: length - contentStart))
+        closesLeft = closing.location != NSNotFound
+      }
+      if closing.location != NSNotFound {
+        found.append(
+          Element(
+            range: NSRange(location: start.location, length: closing.location + closing.length - start.location),
+            attributes: attributes,
+            content: NSRange(location: contentStart, length: closing.location - contentStart)))
+        cursor = closing.location + closing.length
+      } else {
+        found.append(
+          Element(
+            range: NSRange(location: start.location, length: contentStart - start.location), attributes: attributes,
+            content: nil))
+        cursor = contentStart
+      }
+    }
+    return found
+  }
+
+  /// Spans from `open` to the first `close` after it (comments), in one pass. An unclosed one is
+  /// left alone (a stray `<!--` mustn't take the rest of the article with it).
+  static func spans(open: String, close: String, in html: NSString) -> [Element] {
+    var found: [Element] = []
+    let length = html.length
+    var cursor = 0
+    while cursor < length {
+      let start = html.range(of: open, range: NSRange(location: cursor, length: length - cursor))
+      guard start.location != NSNotFound else { break }
+      let from = start.location + start.length
+      let end = html.range(of: close, range: NSRange(location: from, length: length - from))
+      guard end.location != NSNotFound else { break }
+      let stop = end.location + end.length
+      found.append(
+        Element(
+          range: NSRange(location: start.location, length: stop - start.location),
+          attributes: NSRange(location: from, length: 0), content: nil))
+      cursor = stop
+    }
+    return found
+  }
+
+  /// `html` with each element replaced by what `replacement` returns (nil keeps it).
+  static func replacing(_ elements: [Element], in html: NSString, with replacement: (Element) -> String?) -> String {
+    guard !elements.isEmpty else { return html as String }
+    var output = ""
+    output.reserveCapacity(html.length)
+    var last = 0
+    for element in elements {
+      guard let text = replacement(element) else { continue }
+      output += html.substring(with: NSRange(location: last, length: element.range.location - last))
+      output += text
+      last = element.range.location + element.range.length
+    }
+    output += html.substring(from: last)
     return output
   }
 }

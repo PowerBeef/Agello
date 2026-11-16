@@ -112,6 +112,36 @@ final class WebTests: XCTestCase {
     XCTAssertEqual(HTMLText.plain(cell), "Yes")
   }
 
+  /// A hostile page full of unclosed tags reads in linear time: lazy regexes rescanned the rest
+  /// of the page from each one (an external review, 2026-11-16).
+  func testUnclosedTagsDontMakeReadingQuadratic() {
+    let article = "<article><p>" + String(repeating: "A sentence about the harbour. ", count: 20) + "</p></article>"
+    let junk = String(repeating: "<figure class=x><script><pre><!-- x ", count: 20_000)
+    let html = "<html><body>" + article + junk + "</body></html>"
+    let started = ContinuousClock.now
+    let page = ReadableText.extract(html: html)
+    XCTAssertLessThan(ContinuousClock.now - started, .seconds(2))
+    XCTAssertTrue(page.text.contains("A sentence about the harbour."), page.text.prefix(200).description)
+  }
+
+  /// The same elements as before the scanner: closed ones removed with their content, unclosed
+  /// opening tags alone, code kept, a figure holding code kept.
+  func testElementScannerKeepsTheOldResults() {
+    let html = """
+      <html><body><article><p>\(String(repeating: "Body text here. ", count: 20))</p>
+      <script>var hidden = 1;</script><nav>Menu</nav><figure><img src=a><figcaption>Caption</figcaption></figure>
+      <figure><pre class="language-swift">let x = 1</pre></figure><button>Click<p>After the button.</p>
+      <!-- note --></article></body></html>
+      """
+    let page = ReadableText.extract(html: html)
+    // An unclosed <button> goes alone, its text staying, as with the regexes.
+    for gone in ["hidden", "Menu", "Caption", "note"] {
+      XCTAssertFalse(page.text.contains(gone), "Kept '\(gone)': \(page.text)")
+    }
+    XCTAssertTrue(page.text.contains("```swift\nlet x = 1\n```"), page.text)
+    XCTAssertTrue(page.text.contains("After the button."), page.text)
+  }
+
   /// Wikipedia answers in the question's language when it's clear, else the device's.
   func testWikipediaEditionFollowsTheQuestion() {
     let english = ["en-CA"]
