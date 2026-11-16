@@ -107,7 +107,9 @@ enum SystemPrompt {
       let instructions = String(
         project.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
           .prefix(ProjectContext.instructionLimit))
-      var block = "This chat is part of the project \"\(project.name)\"."
+      // The name capped like a title: instructions have their own limit.
+      let name = String(project.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
+      var block = "This chat is part of the project \"\(name)\"."
       if !instructions.isEmpty { block += " Follow the project's instructions:\n\(instructions)" }
       prompt += "\n\n" + block
     }

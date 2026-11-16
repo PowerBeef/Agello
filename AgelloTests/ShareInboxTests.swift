@@ -29,6 +29,29 @@ final class ShareInboxTests: XCTestCase {
     XCTAssertEqual(ShareInbox.pending(base: base).map(\.item.id), [second.id])
   }
 
+  /// An item's file is its own name inside its folder, and a staging folder a failed save left
+  /// behind is swept once it's an hour old (2026-11-16).
+  func testFileNamesStayInTheirFolderAndStaleStagingIsSwept() throws {
+    let item = ShareInbox.Item(kind: .file, question: "", fileName: "../../outside.txt")
+    let folder = try ShareInbox.save(item, fileData: Data("x".utf8), base: base)
+    let file = try XCTUnwrap(ShareInbox.pending(base: base).first?.file)
+    XCTAssertEqual(
+      file.resolvingSymlinksInPath().path, folder.appendingPathComponent("outside.txt").resolvingSymlinksInPath().path)
+    XCTAssertEqual(try Data(contentsOf: file), Data("x".utf8))
+    XCTAssertNil(ShareInbox.safeName(".."))
+    XCTAssertNil(ShareInbox.safeName(""))
+    XCTAssertEqual(ShareInbox.safeName("report.pdf"), "report.pdf")
+
+    let inbox = folder.deletingLastPathComponent()
+    let stale = inbox.appendingPathComponent(".\(UUID().uuidString)", isDirectory: true)
+    let fresh = inbox.appendingPathComponent(".\(UUID().uuidString)", isDirectory: true)
+    for staging in [stale, fresh] { try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true) }
+    try FileManager.default.setAttributes([.creationDate: Date().addingTimeInterval(-7200)], ofItemAtPath: stale.path)
+    _ = ShareInbox.pending(base: base)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: fresh.path))
+  }
+
   /// The app group is provisioned: the share extension and the app see
   /// the same inbox on this device.
   func testAppGroupContainerIsAvailable() {

@@ -41,6 +41,8 @@ enum ShareInbox {
   @discardableResult
   static func save(_ item: Item, file: URL? = nil, fileData: Data? = nil, base: URL? = nil) throws -> URL {
     guard let inbox = directory(base: base) else { throw CocoaError(.fileNoSuchFile) }
+    var item = item
+    item.fileName = item.fileName.flatMap(safeName)
     let staging = inbox.appendingPathComponent(".\(item.id.uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
     if let fileName = item.fileName {
@@ -59,9 +61,12 @@ enum ShareInbox {
     return final
   }
 
-  /// Saved items, oldest first, with their attached file if any.
+  /// Saved items, oldest first, with their attached file if any. Staging folders a failed save
+  /// left behind (hidden, over an hour old) are removed.
   static func pending(base: URL? = nil) -> [(item: Item, file: URL?)] {
-    guard let inbox = directory(base: base),
+    guard let inbox = directory(base: base) else { return [] }
+    sweepStaging(in: inbox)
+    guard
       let folders = try? FileManager.default.contentsOfDirectory(
         at: inbox, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
     else { return [] }
@@ -69,9 +74,28 @@ enum ShareInbox {
       guard let data = try? Data(contentsOf: folder.appendingPathComponent("item.json")),
         let item = try? JSONDecoder().decode(Item.self, from: data)
       else { return nil }
-      return (item, item.fileName.map { folder.appendingPathComponent($0) })
+      // The file's own name only: nothing in item.json can point outside its folder.
+      return (item, item.fileName.flatMap(safeName).map { folder.appendingPathComponent($0) })
     }
     .sorted { $0.item.createdAt < $1.item.createdAt }
+  }
+
+  /// A file name without any path: "../x.txt" is "x.txt", and "..", "." or nothing is none.
+  static func safeName(_ name: String) -> String? {
+    // NSString's path rules, not URL(fileURLWithPath:), which resolves ".." against the current folder.
+    let last = (name as NSString).lastPathComponent
+    return last.isEmpty || last == "." || last == ".." || last == "/" ? nil : last
+  }
+
+  private static func sweepStaging(in inbox: URL) {
+    let hourAgo = Date().addingTimeInterval(-3600)
+    let entries =
+      (try? FileManager.default.contentsOfDirectory(
+        at: inbox, includingPropertiesForKeys: [.creationDateKey], options: [])) ?? []
+    for entry in entries where entry.lastPathComponent.hasPrefix(".") && entry.lastPathComponent.count > 30 {
+      let created = (try? entry.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? .distantPast
+      if created < hourAgo { try? FileManager.default.removeItem(at: entry) }
+    }
   }
 
   /// Remove an item once the app has taken it.

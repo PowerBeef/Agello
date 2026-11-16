@@ -44,10 +44,63 @@ struct WebSearchSettings: Codable, Equatable, Sendable {
   /// Providers to try, in order: the user's SearXNG server when one is set, then Wikipedia
   /// (official API).
   func chain() -> [SearchProvider] {
-    if provider == .searxng, URL(string: searxngURL)?.scheme?.hasPrefix("http") == true {
+    let address = searxngURL.trimmingCharacters(in: .whitespaces)
+    if provider == .searxng, !address.isEmpty, Self.searxngProblem(address) == nil {
       return [.searxng, .wikipedia]
     }
     return [.wikipedia]
+  }
+
+  /// Why a SearXNG address can't work, for Settings; nil when it can. An instance reached by IP
+  /// address or a local name failed silently (iOS blocks those connections for apps since iOS 17)
+  /// and every search went to Wikipedia (2026-11-16).
+  static func searxngProblem(_ address: String) -> String? {
+    let trimmed = address.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty else { return nil }
+    guard let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+      let host = url.host, !host.isEmpty
+    else { return String(localized: "Enter an address that starts with https://.") }
+    guard WebHost.isPublic(host) else {
+      return String(
+        localized: "iOS doesn't let apps reach a server by IP address or local name. Use its domain name, like https://searx.example.org.")
+    }
+    return nil
+  }
+}
+
+/// Hosts the open web serves. Pages are read only from those: a search result or a shared link
+/// can't point the app at the user's own network (an external review, 2026-11-16).
+enum WebHost {
+  static func isPublic(_ host: String) -> Bool {
+    var name = host.lowercased()
+    if name.hasSuffix(".") { name.removeLast() }
+    if name == "localhost" || name.contains(":") { return false }  // IPv6 literals included
+    let labels = name.split(separator: ".", omittingEmptySubsequences: false)
+    guard labels.count >= 2, !labels.contains(where: \.isEmpty) else { return false }  // an intranet name
+    if labels.allSatisfy({ $0.allSatisfy(\.isNumber) }) { return false }  // an IPv4 address
+    let local = ["localhost", "local", "internal", "lan", "home", "intranet", "corp", "arpa"]
+    return !local.contains(String(labels.last ?? ""))
+  }
+
+  /// An http(s) URL on a public host, without credentials.
+  static func isPublicPage(_ url: URL) -> Bool {
+    guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
+      url.user == nil, url.password == nil, let host = url.host
+    else { return false }
+    return isPublic(host)
+  }
+}
+
+/// Follows a redirect only to a public page (``WebHost``).
+final class PublicRedirects: NSObject, URLSessionTaskDelegate, Sendable {
+  static let shared = PublicRedirects()
+
+  func urlSession(
+    _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+    newRequest request: URLRequest
+  ) async -> URLRequest? {
+    guard let url = request.url, WebHost.isPublicPage(url) else { return nil }
+    return request
   }
 }
 
@@ -109,7 +162,7 @@ struct WebClient: Sendable {
       guard var components = URLComponents(string: settings.searxngURL) else { return [] }
       components.path = (components.path.hasSuffix("/") ? components.path : components.path + "/") + "search"
       components.queryItems = [.init(name: "q", value: query), .init(name: "format", value: "json")]
-      return SearchParsers.searxng(json: try await get(components.url!, agent: Self.appAgent))
+      return SearchParsers.searxng(json: try await get(Self.url(components), agent: Self.appAgent))
     }
   }
 
@@ -117,7 +170,9 @@ struct WebClient: Sendable {
 
   /// A MediaWiki search on one of the Wikimedia projects, in `language`'s edition.
   func searchWiki(_ query: String, site: WikimediaSite, language: String) async throws -> [WebResult] {
-    var components = URLComponents(string: "https://\(site.host(language: language))/w/api.php")!
+    guard var components = URLComponents(string: "https://\(site.host(language: language))/w/api.php") else {
+      throw URLError(.badURL)
+    }
     // A quotation is found by its exact words: searched as loose words, "The only thing we have
     // to fear is fear itself" found the Bene Gesserit (2026-11-12).
     let phrase = site == .wikiquote && !query.contains("\"") ? "\"\(query)\"" : query
@@ -127,7 +182,7 @@ struct WebClient: Sendable {
       .init(name: "srlimit", value: "5"), .init(name: "utf8", value: "1"),
     ]
     return SearchParsers.mediaWiki(
-      json: try await get(components.url!, agent: Self.appAgent), site: site, language: language)
+      json: try await get(Self.url(components), agent: Self.appAgent), site: site, language: language)
   }
 
   /// The answer of a structured topic's source (weather, places, exchange rates), pinned.
@@ -188,35 +243,39 @@ struct WebClient: Sendable {
   /// Wikidata's facts about a Wikipedia article's subject: its item, its statements, then the
   /// labels of the items they name.
   func wikidataFacts(title: String, language: String) async throws -> WebResult? {
-    var pageprops = URLComponents(string: "https://\(WikimediaSite.wikipedia.host(language: language))/w/api.php")!
+    guard var pageprops = URLComponents(string: "https://\(WikimediaSite.wikipedia.host(language: language))/w/api.php")
+    else { throw URLError(.badURL) }
     pageprops.queryItems = [
       .init(name: "action", value: "query"), .init(name: "prop", value: "pageprops"),
       .init(name: "ppprop", value: "wikibase_item"), .init(name: "titles", value: title),
       .init(name: "format", value: "json"),
     ]
-    guard let id = WikidataFacts.itemID(pageprops: try await get(pageprops.url!, agent: Self.appAgent)) else {
+    guard let id = WikidataFacts.itemID(pageprops: try await get(Self.url(pageprops), agent: Self.appAgent)) else {
       return nil
     }
     let languages = language == "en" ? "en" : "\(language)|en"
-    func entities(_ ids: [String], props: String) -> URL {
-      var components = URLComponents(string: "https://www.wikidata.org/w/api.php")!
+    func entities(_ ids: [String], props: String) throws -> URL {
+      var components = URLComponents()
+      components.scheme = "https"
+      components.host = "www.wikidata.org"
+      components.path = "/w/api.php"
       components.queryItems = [
         .init(name: "action", value: "wbgetentities"), .init(name: "ids", value: ids.joined(separator: "|")),
         .init(name: "props", value: props), .init(name: "languages", value: languages),
         .init(name: "format", value: "json"),
       ]
-      return components.url!
+      return try Self.url(components)
     }
     guard
       let entity = WikidataFacts.entity(
-        json: try await get(entities([id], props: "labels|descriptions|claims"), agent: Self.appAgent),
+        json: try await get(try entities([id], props: "labels|descriptions|claims"), agent: Self.appAgent),
         id: id, language: language),
       !entity.facts.isEmpty
     else { return nil }
     let needed = Array(entity.itemsToLabel.prefix(50))
     let labels =
       needed.isEmpty
-      ? [:] : WikidataFacts.labels(json: try await get(entities(needed, props: "labels"), agent: Self.appAgent), language: language)
+      ? [:] : WikidataFacts.labels(json: try await get(try entities(needed, props: "labels"), agent: Self.appAgent), language: language)
     let text = WikidataFacts.describe(entity, labels: labels)
     guard let url = URL(string: "https://www.wikidata.org/wiki/\(id)") else { return nil }
     return WebResult(
@@ -246,13 +305,22 @@ struct WebClient: Sendable {
     return code == "nb" ? "no" : code
   }
 
+  /// A built request's URL, or a thrown error instead of a crash.
+  private static func url(_ components: URLComponents) throws -> URL {
+    guard let url = components.url else { throw URLError(.badURL) }
+    return url
+  }
+
   /// A page's readable text, or nil (not HTML, too large, failed, slow). The type and declared
   /// size are checked before the body is read, which stops at ``maxPageBytes``.
   func readPage(_ url: URL) async -> ReadableText.Page? {
+    guard WebHost.isPublicPage(url) else { return nil }
     var request = URLRequest(url: url, timeoutInterval: 7)
     request.setValue(Self.appAgent, forHTTPHeaderField: "User-Agent")
     request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
-    guard let (bytes, response) = try? await session.bytes(for: request) else { return nil }
+    // A refused redirect returns the 3xx itself, which is turned away below.
+    guard let (bytes, response) = try? await session.bytes(for: request, delegate: PublicRedirects.shared)
+    else { return nil }
     guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
       (http.value(forHTTPHeaderField: "Content-Type") ?? "text/html").contains("html"),
       http.expectedContentLength <= Int64(Self.maxPageBytes)

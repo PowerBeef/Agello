@@ -124,12 +124,14 @@ enum ReplyTrace {
     let available = MemoryProbe.availableBytes()
     let thermal = ProcessInfo.processInfo.thermalState.rawValue
     return running.withLock { trace in
-      guard trace?.generation == generation else { return false }
-      let seconds = (ContinuousClock.now - trace!.started).seconds
-      trace!.samples.append(
+      guard let started = trace?.started, let chunks = trace?.chunks, trace?.generation == generation else {
+        return false
+      }
+      let seconds = (ContinuousClock.now - started).seconds
+      trace?.samples.append(
         Sample(
           seconds: seconds, footprintBytes: footprint, availableBytes: available, thermalState: thermal,
-          chunks: trace!.chunks))
+          chunks: chunks))
       return true
     }
   }
@@ -146,11 +148,11 @@ enum ReplyTrace {
     let seconds = (ContinuousClock.now - started).seconds
     running.withLock { trace in
       guard trace != nil else { return }
-      var work = trace!.work[kind] ?? Work()
+      var work = trace?.work[kind] ?? Work()
       work.count += 1
       work.total += seconds
       work.longest = max(work.longest, seconds)
-      trace!.work[kind] = work
+      trace?.work[kind] = work
     }
   }
 
@@ -169,9 +171,9 @@ enum ReplyTrace {
     let footprint = MemoryProbe.footprintBytes()
     let available = MemoryProbe.availableBytes()
     let recorded = running.withLock { trace -> Bool in
-      guard trace != nil else { return false }
-      let seconds = (ContinuousClock.now - trace!.started).seconds
-      trace!.events.append(
+      guard let started = trace?.started else { return false }
+      let seconds = (ContinuousClock.now - started).seconds
+      trace?.events.append(
         Event(name: name, seconds: seconds, footprintBytes: footprint, availableBytes: available, values: values))
       return true
     }
@@ -304,12 +306,18 @@ enum ReplyTrace {
   }
 
   static func directory() throws -> URL {
-    let folder =
-      try externalDirectory
-      ?? FileManager.default.url(
-        for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-      ).appendingPathComponent("traces", isDirectory: true)
+    if let externalDirectory {
+      try FileManager.default.createDirectory(at: externalDirectory, withIntermediateDirectories: true)
+      return externalDirectory
+    }
+    var folder = try FileManager.default.url(
+      for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+    ).appendingPathComponent("traces", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    // Traces hold whole prompts: not in device backups.
+    var values = URLResourceValues()
+    values.isExcludedFromBackup = true
+    try? folder.setResourceValues(values)
     return folder
   }
 

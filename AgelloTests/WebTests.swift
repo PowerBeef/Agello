@@ -142,6 +142,36 @@ final class WebTests: XCTestCase {
     XCTAssertTrue(page.text.contains("After the button."), page.text)
   }
 
+  /// Pages are read only from public hosts: not loopback, private or local names, IP addresses
+  /// or credentials (2026-11-16).
+  func testPagesComeOnlyFromPublicHosts() {
+    for url in ["https://en.wikipedia.org/wiki/Montreal", "http://example.com/page", "https://news.bbc.co.uk/a"] {
+      XCTAssertTrue(WebHost.isPublicPage(URL(string: url)!), url)
+    }
+    for url in [
+      "http://localhost:8080/", "http://127.0.0.1/", "http://192.168.1.1/admin", "http://10.0.0.5/",
+      "http://[::1]/", "http://router/", "http://nas.local/", "http://printer.lan/", "file:///etc/hosts",
+      "ftp://example.com/", "https://user:secret@example.com/", "http://intranet.corp/",
+    ] {
+      XCTAssertFalse(WebHost.isPublicPage(URL(string: url)!), url)
+    }
+  }
+
+  /// A SearXNG address that can't work says why in Settings, and isn't used.
+  func testSearXNGAddressProblems() {
+    XCTAssertNil(WebSearchSettings.searxngProblem("https://searx.example.org"))
+    XCTAssertNil(WebSearchSettings.searxngProblem(""))
+    XCTAssertNotNil(WebSearchSettings.searxngProblem("httpx://searx.example.org"))
+    XCTAssertNotNil(WebSearchSettings.searxngProblem("http://192.168.1.20:8080"))
+    XCTAssertNotNil(WebSearchSettings.searxngProblem("http://searx.local"))
+    var settings = WebSearchSettings()
+    settings.provider = .searxng
+    settings.searxngURL = "http://192.168.1.20:8080"
+    XCTAssertEqual(settings.chain(), [.wikipedia])
+    settings.searxngURL = "https://searx.example.org"
+    XCTAssertEqual(settings.chain(), [.searxng, .wikipedia])
+  }
+
   /// Wikipedia answers in the question's language when it's clear, else the device's.
   func testWikipediaEditionFollowsTheQuestion() {
     let english = ["en-CA"]

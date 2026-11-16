@@ -183,9 +183,12 @@ enum DocumentIngestor {
     if pdf.isLocked, !pdf.unlock(withPassword: "") { throw IngestionError.locked(name) }
     var pages: [String] = []
     var ocrPages = 0
+    var characters = 0
     for index in 0..<pdf.pageCount {
       // A long scanned PDF takes minutes to read: stop when the read is cancelled.
       try Task.checkCancellation()
+      // Past the text budget the rest isn't kept (``ExtractedDocument``'s cut): don't read it.
+      guard characters <= maxExtractedCharacters else { break }
       guard let page = pdf.page(at: index) else {
         pages.append("")
         continue
@@ -197,6 +200,7 @@ enum DocumentIngestor {
         text = (try? await recognizeText(in: image)) ?? ""
       }
       pages.append(text)
+      characters += text.count
     }
     return ExtractedDocument(name: name, kind: .pdf, byteCount: size, pages: pages)
   }

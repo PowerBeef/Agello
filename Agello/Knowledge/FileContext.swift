@@ -46,17 +46,36 @@ enum FileContext {
     for material in materials {
       switch material {
       case .full(let name, let pages, let text):
-        blocks.append("<file name=\"\(name)\"\(pages > 0 ? " pages=\"\(pages)\"" : "")>\n\(text)\n</file>")
+        blocks.append(
+          "<file name=\"\(attribute(name))\"\(pages > 0 ? " pages=\"\(pages)\"" : "")>\n\(body(text))\n</file>")
       case .summary(let name, let pages, let text):
         blocks.append(
-          "<summary of=\"\(name)\" pages=\"\(pages)\">\n\(text)\n</summary>")
+          "<summary of=\"\(attribute(name))\" pages=\"\(pages)\">\n\(body(text))\n</summary>")
       case .excerpts(let excerpts):
-        let body = excerpts.map { "[\($0.label)]\n\($0.text)" }.joined(separator: "\n\n")
+        let body = excerpts.map { "[\(attribute($0.label))]\n\(body($0.text))" }.joined(separator: "\n\n")
         blocks.append("<excerpts>\n\(body)\n</excerpts>")
       }
     }
     blocks.append("Message: \(question.isEmpty ? "Describe the attached files." : question)")
     return blocks.joined(separator: "\n\n")
+  }
+
+  /// A file name as an attribute value: quotes and angle brackets can't close the tag (a shared
+  /// page's name is its title, chosen by whoever wrote the page).
+  static func attribute(_ name: String) -> String {
+    name.replacingOccurrences(of: "\"", with: "'").replacingOccurrences(of: "<", with: "‹")
+      .replacingOccurrences(of: ">", with: "›")
+  }
+
+  /// A file's text can't close its own block or start the user's message: a joiner inside
+  /// `</file>` and the like, and a line starting "Message:" (an external review, 2026-11-16; the
+  /// chat markers are ``PromptText``'s).
+  static func body(_ text: String) -> String {
+    var text = text
+    for tag in ["file", "summary", "excerpts"] {
+      text = text.replacingOccurrences(of: "</\(tag)", with: "<\u{200D}/\(tag)", options: .caseInsensitive)
+    }
+    return text.replacingOccurrences(of: "(?m)^Message:", with: "Message\u{200D}:", options: .regularExpression)
   }
 
   // MARK: - Summaries of long files

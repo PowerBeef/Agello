@@ -49,7 +49,8 @@ struct WebSearchSettingsView: View {
     case .wikipedia:
       return String(localized: "Searches Wikipedia.")
     case .searxng:
-      return String(localized: "Your SearXNG instance must allow the JSON format. Wikipedia is the fallback.")
+      return WebSearchSettings.searxngProblem(appState.webSettings.searxngURL)
+        ?? String(localized: "Your SearXNG instance must allow the JSON format. Wikipedia is the fallback.")
     }
   }
 }

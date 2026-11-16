@@ -2,9 +2,8 @@ import CoreSpotlight
 import Foundation
 import SwiftData
 
-/// `--uitest-reset`: a clean slate for UI tests. Deletes every chat, project,
-/// file and memory, all settings, the search API keys, items waiting in the
-/// share inbox, and Spotlight entries. Downloaded models (Application
+/// `--uitest-reset` (Debug builds): a clean slate for UI tests. Deletes every chat, project,
+/// file and memory, all settings, items waiting in the share inbox, and Spotlight entries. Downloaded models (Application
 /// Support/Models) and the engine cache are kept.
 @MainActor
 enum AppReset {

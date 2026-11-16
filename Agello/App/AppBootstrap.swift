@@ -29,11 +29,14 @@ struct AppBootstrap {
     let opened = ChatStoreLoader.open()
     container = opened.container
 
-    // `--uitest-reset`: start UI tests from a clean slate (see AppReset).
-    // Downloaded models are kept.
-    if args.contains("--uitest-reset") {
-      AppReset.perform(context: container.mainContext)
-    }
+    // `--uitest-reset`: start UI tests from a clean slate (see AppReset). Downloaded models are
+    // kept. Debug builds only: the UI suites build Debug, and an archive shouldn't carry a launch
+    // argument that deletes every chat (an external review, 2026-11-16).
+    #if DEBUG
+      if args.contains("--uitest-reset") {
+        AppReset.perform(context: container.mainContext)
+      }
+    #endif
 
     // The bench driver's prompt is the draft of a new chat (docs/HARNESS.md): don't reopen the last one.
     if env["AGELLO_BENCH_DRAFT"] != nil { UserDefaults.standard.removeObject(forKey: "selectedThreadID") }
