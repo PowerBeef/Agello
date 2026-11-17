@@ -139,7 +139,9 @@ final class ThinkingScenarioTests: DeviceTestCase {
         "firstAnswer": String(first.text.prefix(120)), "secondAnswer": String(second.text.prefix(120)),
       ], in: self)
     XCTAssertGreaterThan(afterFirst, 0, "No token count after the first turn")
-    XCTAssertGreaterThan(first.thought.utf8.count, 160, "Too little reasoning to measure: \(first.thought)")
+    // The margin the check below has: with the chat prompt D4 (2026-11-17) the product takes about
+    // 118 bytes of reasoning, against about 350 with the one-line prompt before it.
+    XCTAssertGreaterThan(first.thought.utf8.count, 100, "Too little reasoning to measure: \(first.thought)")
     XCTAssertLessThan(
       growth, floorIfKept, "The first reasoning stayed in the cache (grew \(growth), floor \(floorIfKept))")
     XCTAssertTrue(second.text.contains("400"), "Expected 400: \(second.text)")

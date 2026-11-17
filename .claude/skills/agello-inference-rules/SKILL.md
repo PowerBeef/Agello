@@ -207,10 +207,12 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   Search plan's `kind`). Free strings are fine.
 - Don't trust the model file's `thinking` or `functionCalling` flags: Gemma 4
   files report both as unsupported, yet both work.
-- With MTP on, a reply's last token never reaches the KV cache (probe 35, 2026-11-17, the
-  shipped runtime): the next turn sees "40" for a reply that streamed "400". Until the runtime is
-  fixed, a check on what the model remembers of a short answer (a number, a word) can fail for
-  this alone; compare with MTP off before blaming a prompt.
+- With MTP on, the shipped runtime (`agello-one-20261115`) rewrites a reply's last token in the
+  KV cache when the reply stops inside a round (probe 35, 2026-11-17): the next turn sees "40"
+  for a reply that streamed "400". Fixed in the fork's `e62e6ff1` (`Tasks` rolled back one token
+  past the stop). Until a release with it is vendored, a check on what the model remembers of a
+  short answer (a number, a word) can fail for this alone: run it against the fork
+  (`LITERTLM_PACKAGE=../LiteRT-LM scripts/cli-test.sh …`) before blaming a prompt.
 - Sampling (probe 18): with MTP on, every reply is greedy whatever the
   preset; with MTP off the conversation's sampler applies, but every
   conversation starts at seed 0, so a rebuilt conversation repeats the same

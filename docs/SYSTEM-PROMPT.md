@@ -20,7 +20,12 @@ What the failures are:
 - **`thinking` test02, a runtime bug that D4 brings out.** In the three-turn Think chat, "Now divide it by 4" came back "10". The previous answer streamed as "400" (chunks "4", "00"), but the model's next reasoning reads "the previous result (40)" and the calculator ran 40 / 4.
   - **The cause:** with speculative decoding on, the KV cache never gets a reply's last token (probe 35, `AgelloDeviceTests/ThinkTailProbe.swift`). For the same reply it holds one token fewer than with MTP off ("400": 490 against 491), and the reply's decode count is one lower. Asked to quote "400" back, the model quotes "40". It happens with Think off too, and without a tool call; with MTP off, every quote matches.
   - **Why D4 shows it and the old line didn't:** most replies end with a period, and the period is what's lost. D4's bare answers ("400", "It is 2026.") put a digit last.
-  - **The fix belongs in the runtime**, a separate task (ROADMAP, "Small things"). The test's other failure, "too little reasoning to measure" (118 bytes against 160), is D4 thinking less on a simple product.
+  - **Fixed in the fork the same evening** (`e62e6ff1`): a reply that stops inside an MTP round rolled back one token too many, and the next prefill rewrote the reply's last token from an id with no embedding.
+  - **On the fixed build** (`8ba3a9ff1747`, the fork's `main` plus the fix), natively, with D4:
+    - thinking 3/3, inference 22/22, files 5/5, web 7/9;
+    - test01 passes, its follow-up answered: "won the 2026 Tour de France by 6 minutes and 26 seconds over Remco Evenepoel";
+    - test04 and test06 fail as with the old line.
+  - **The test's other failure**, "too little reasoning to measure", was D4 thinking less on a simple product (118 bytes, against 350 with the old line). Its floor is now 100 bytes; the cache check it guards keeps its margin (growth 66 against a floor of 88).
 - **`web` test01, a D4 difference.** D4's first reply gives the winner and his time without the runner-up, which the old line named. Then "By how many minutes?" got "You haven't specified what you would like to know the difference in minutes for." The old line answered "won the 2024 Tour de France by more than six minutes", the wrong year, so it passes the check without being right. Neither follow-up search found the 2026 race.
 - **`web` test04: not the system prompt.** It is the search planner's known fault (it calls "By how many minutes?" answered), and the planner runs with no system turn.
 - **`web` test06 fails with both lines:**
