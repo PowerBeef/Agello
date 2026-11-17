@@ -23,14 +23,11 @@ struct CurrentDateTimeTool: Tool {
     let now = Date()
     let iso = ISO8601DateFormatter()
     iso.timeZone = zone
-    let pretty = DateFormatter()
-    pretty.timeZone = zone
-    pretty.dateStyle = .full
-    pretty.timeStyle = .short
     ToolActivity.record(Self.name, summary: "Checked the date and time")
     return [
       "iso8601": iso.string(from: now),
-      "human": pretty.string(from: now),
+      // In English, whatever the device's language (PromptText.date).
+      "human": PromptText.dateTime(now, timeZone: zone),
       "timezone": zone.identifier,
     ]
   }

@@ -17,6 +17,22 @@ enum PromptText {
   ]
 
   /// `text` with a joiner inside every `<|` and `|>`. Idempotent.
+  /// A date as the model's prompts give it, in English whatever the device's language: in a
+  /// French iPhone's locale, "mardi 17 novembre 2026" went into English prompts and came back
+  /// in English replies (probe 34, 2026-11-17). The model writes it in the reply's language itself.
+  static func date(_ date: Date, timeZone: TimeZone = .current) -> String {
+    var style = Date.FormatStyle(date: .complete, time: .omitted).locale(Locale(identifier: "en_US_POSIX"))
+    style.timeZone = timeZone
+    return date.formatted(style)
+  }
+
+  /// A date and time as the model's tools give them, in English (see ``date(_:timeZone:)``).
+  static func dateTime(_ date: Date, timeZone: TimeZone = .current) -> String {
+    var style = Date.FormatStyle(date: .complete, time: .shortened).locale(Locale(identifier: "en_US_POSIX"))
+    style.timeZone = timeZone
+    return date.formatted(style)
+  }
+
   static func neutralized(_ text: String) -> String {
     guard text.utf8.contains(UInt8(ascii: "|")) else { return text }
     var scalars = String.UnicodeScalarView()

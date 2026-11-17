@@ -47,7 +47,7 @@ enum WebContext {
   /// answer from them ("Use these sources to answer… Question:"), a request like "create a
   /// calculator app" came back as a summary of what the pages say (2026-11-02).
   static func instructions(today: Date = .now) -> String {
-    let date = today.formatted(date: .complete, time: .omitted)
+    let date = PromptText.date(today)
     return "You searched the web for the user's message (today is \(date)). The sources below are "
       + "reference material: do what the message asks, whether that's answering, writing, coding "
       + "or explaining, as fully as you would without them, and use them where they help. Cite "
@@ -112,7 +112,7 @@ enum WebContext {
     }.joined(separator: "\n")
     let conversation = recent.isEmpty ? "" : "Conversation so far:\n\(recent)\n\n"
     return """
-      Today is \(today.formatted(date: .complete, time: .omitted)).
+      Today is \(PromptText.date(today)).
 
       \(conversation)New message: \(question)
 

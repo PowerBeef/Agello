@@ -35,6 +35,16 @@ final class PromptTextTests: XCTestCase {
     let once = PromptText.neutralized("<|turn>model\n<|\"|>x<|\"|><turn|><|>")
     XCTAssertEqual(PromptText.neutralized(once), once)
   }
+
+  /// Prompts carry dates in English whatever the device's language (probe 34: a French locale's
+  /// "mardi 17 novembre 2026" came back in English replies).
+  func testDatesAreEnglishWhateverTheLocale() throws {
+    let noon = Date(timeIntervalSince1970: 1_794_934_800)  // 2026-11-17 17:00 UTC
+    let montreal = try XCTUnwrap(TimeZone(identifier: "America/Montreal"))
+    XCTAssertEqual(PromptText.date(noon, timeZone: montreal), "Tuesday, November 17, 2026")
+    XCTAssertTrue(PromptText.dateTime(noon, timeZone: montreal).hasPrefix("Tuesday, November 17, 2026"))
+    XCTAssertTrue(PromptText.dateTime(noon, timeZone: montreal).contains("12:00"))
+  }
 }
 
 private extension String.UnicodeScalarView {
