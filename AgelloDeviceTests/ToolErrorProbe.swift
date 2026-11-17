@@ -39,7 +39,7 @@ extension ProbeScenarioTests {
         cacheDir: try EngineCache.directory()))
     try await engine.initialize()
     let config = ConversationConfig(
-      systemMessage: LiteRTLM.Message(InferenceOptions().systemPrompt), tools: [FailingLookupTool()])
+      systemMessage: LiteRTLM.Message(ProbeScenarioTests.recordedSystemPrompt), tools: [FailingLookupTool()])
     let conversation = try await engine.createConversation(with: config)
     FailingLookupTool.calls = 0
 

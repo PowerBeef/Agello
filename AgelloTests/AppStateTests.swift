@@ -446,7 +446,10 @@ final class AppStateTests: XCTestCase {
     await appState.ensureEngineLoaded()
     var prompt = await mock.systemPrompt
     XCTAssertTrue(prompt.contains("The user's name is Patrice."), prompt)
-    XCTAssertTrue(prompt.hasPrefix(appState.options.systemPrompt))
+    let base = SystemPrompt.fill(
+      appState.options.systemPrompt, today: .now, current: SystemPrompt.CurrentInfo(webSettings: appState.webSettings),
+      precedence: true)
+    XCTAssertTrue(prompt.hasPrefix(base + "\n\n"), prompt)
 
     appState.personalization.instructions = "Answer in French."
     await appState.applyCurrentOptions()

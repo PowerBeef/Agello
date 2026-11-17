@@ -34,7 +34,7 @@ extension ProbeScenarioTests {
     var mismatches: [String] = []
     for arm in arms {
       let config = ConversationConfig(
-        systemMessage: LiteRTLM.Message(InferenceOptions().systemPrompt),
+        systemMessage: LiteRTLM.Message(ProbeScenarioTests.recordedSystemPrompt),
         initialMessages: [
           LiteRTLM.Message("My name is Ada and I like lighthouses.", role: .user),
           LiteRTLM.Message("Nice to meet you, Ada! Lighthouses are wonderful.", role: .model),

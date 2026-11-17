@@ -6,6 +6,9 @@ import XCTest
 /// Feasibility probes for LiteRT-LM features the overhaul builds on.
 /// Opt-in: HARNESS_PROBES=1. Each probe frees the app's engine first.
 final class ProbeScenarioTests: DeviceTestCase {
+  /// The system prompt the probes' own conversations had when their records were made (the app's
+  /// base until 2026-11-17), kept so the records stay comparable.
+  nonisolated static let recordedSystemPrompt = "You are a helpful on-device assistant."
 
   override func setUp() async throws {
     try await super.setUp()
@@ -728,7 +731,7 @@ final class ProbeScenarioTests: DeviceTestCase {
     async throws -> String
   {
     let config = ConversationConfig(
-      systemMessage: LiteRTLM.Message(InferenceOptions().systemPrompt),
+      systemMessage: LiteRTLM.Message(Self.recordedSystemPrompt),
       samplerConfig: try SamplerConfig(topK: 1, topP: 1, temperature: 0))
     let conversation = try await engine.createConversation(with: config)
     return try await conversation.sendMessage(
@@ -761,7 +764,7 @@ final class ProbeScenarioTests: DeviceTestCase {
         : try SamplerConfig(topK: 64, topP: 0.95, temperature: 0.7, seed: variant.seed)
       let tools: [any Tool] = variant.tools ? [CurrentDateTimeTool(), CalculatorTool()] : []
       let config = ConversationConfig(
-        systemMessage: LiteRTLM.Message(InferenceOptions().systemPrompt), tools: tools,
+        systemMessage: LiteRTLM.Message(Self.recordedSystemPrompt), tools: tools,
         samplerConfig: sampler)
       let conversation = try await engine.createConversation(with: config)
       var chunks: [String] = []

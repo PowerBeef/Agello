@@ -34,7 +34,7 @@ final class AppState {
     var effective = options
     effective.systemPrompt = SystemPrompt.compose(
       base: options.systemPrompt, personalization: personalization, project: activeProject,
-      memories: memoryEnabled ? memoryTexts() : [])
+      memories: memoryEnabled ? memoryTexts() : [], current: SystemPrompt.CurrentInfo(webSettings: webSettings))
     effective.webSearchTool = webSettings.allowed && webSettings.automatic
     return effective
   }
@@ -43,8 +43,9 @@ final class AppState {
   var webSettings = WebSearchSettings() {
     didSet {
       UserDefaults.standard.set(try? JSONEncoder().encode(webSettings), forKey: "webSearch")
-      // Automatic mode changes the tools the conversation offers.
-      if (oldValue.allowed && oldValue.automatic) != (webSettings.allowed && webSettings.automatic) {
+      // Automatic mode changes the tools the conversation offers, and both switches what the
+      // system prompt says about current information.
+      if SystemPrompt.CurrentInfo(webSettings: oldValue) != SystemPrompt.CurrentInfo(webSettings: webSettings) {
         scheduleApplyOptions()
       }
     }

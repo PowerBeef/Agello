@@ -108,7 +108,8 @@ struct InferenceOptions: Codable, Sendable, Equatable {
   var enableThinking: Bool = false
   var thinkingBudget: Int = DeviceProfile.defaultThinkingBudget
   var samplerPreset: SamplerPreset = .balanced
-  var systemPrompt: String = "You are a helpful on-device assistant."
+  /// The base, with slots ``SystemPrompt/compose`` fills (``SystemPrompt/base``).
+  var systemPrompt: String = SystemPrompt.base
   var enableVision: Bool = true
   var enableAudio: Bool = true
   var visualDetail: VisualDetail = .balanced

@@ -37,7 +37,18 @@ final class DeviceHarness {
   /// Options every scenario starts from, as a fresh install has them (with the options
   /// struct's defaults the quality bench once ran Think at 1,024 tokens while the app used
   /// 4,096, 2026-11-10); scenarios that change options restore this in tearDown.
-  let baselineOptions = InferenceOptions.launch(saved: nil)
+  /// The options scenarios start from. `HARNESS_SYSTEM_PROMPT=legacy` gives them the base before
+  /// 2026-11-17 ("You are a helpful on-device assistant."), any other value that text: an A/B of
+  /// the system prompt on the same suites.
+  let baselineOptions: InferenceOptions = {
+    var options = InferenceOptions.launch(saved: nil)
+    switch ProcessInfo.processInfo.environment["HARNESS_SYSTEM_PROMPT"] {
+    case nil, "": break
+    case "legacy": options.systemPrompt = ProbeScenarioTests.recordedSystemPrompt
+    case let text?: options.systemPrompt = text
+    }
+    return options
+  }()
   /// Web search as a fresh install has it (allowed, not automatic): the
   /// phone's own saved settings must not decide whether scenarios search.
   let baselineWeb = WebSearchSettings()
@@ -94,6 +105,7 @@ final class DeviceHarness {
       "runtimeBuild": EngineCache.runtimeBuildInfo() ?? [:],
     ]
     report["startedAt"] = ISO8601DateFormatter().string(from: Date())
+    report["baseSystemPrompt"] = String(baselineOptions.systemPrompt.prefix(60))
     // XCTest relaunches the app after a crash and continues with the next
     // test: keep the results recorded before the crash in the same run
     // (scripts/device-harness.sh passes HARNESS_RUN_ID) instead of

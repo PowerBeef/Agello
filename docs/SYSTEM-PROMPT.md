@@ -1,6 +1,33 @@
 # The chat system prompt: candidates to test
 
-**Status (2026-11-17):** the first screening round ran on the M6 (probe 34, below): D leads, and a rewording of its task line (D3) did better still. Nothing in the app's prompt has changed yet: the base is still `InferenceOptions.systemPrompt`, "You are a helpful on-device assistant." The research behind this page is in `reports/Gemma 4 E4B prompting and reasoning.md` and its notes in `research_notes/` (local files, kept out of git).
+**Status (2026-11-17):** two rounds ran on the M6 (probe 34, below): D4, a rewording of D, leads the confirmation round, and the app now uses it. The base is `SystemPrompt.base` (`Agello/Inference/Personalization.swift`), the default of `InferenceOptions.systemPrompt`, with its slots filled by `SystemPrompt.compose`; until then it was "You are a helpful on-device assistant." It's checked on this Mac only: the iPhone and the bench are next. The research behind this page is in `reports/Gemma 4 E4B prompting and reasoning.md` and its notes in `research_notes/` (local files, kept out of git).
+
+## In the app (2026-11-17, M6)
+
+D4 is the app's base since this round: `SystemPrompt.base`, with `{date}`, `{current}` and `{precedence}` filled by `SystemPrompt.compose` (below, "Composition, in code"). The probes that build conversations of their own keep the old line (`ProbeScenarioTests.recordedSystemPrompt`). `HARNESS_SYSTEM_PROMPT=legacy` runs any suite with the old line, for an A/B on the same build.
+
+The promotion suites, natively on the M6 with the shipped runtime (`0c749789100a`):
+
+| Suite | D4 | The old line, where D4 failed |
+| --- | --- | --- |
+| `unit` | 309/309 | |
+| `inference` (test90 left out) | 22/22 | |
+| `files` | 5/5 | |
+| `thinking` | 2/3: test02 | 3/3 |
+| `web` | 6/9: test01, test04, test06 | test01 passes, test06 fails |
+
+What the failures are:
+- **`thinking` test02, a runtime bug that D4 brings out.** In the three-turn Think chat, "Now divide it by 4" came back "10". The previous answer streamed as "400" (chunks "4", "00"), but the model's next reasoning reads "the previous result (40)" and the calculator ran 40 / 4.
+  - **The cause:** with speculative decoding on, the KV cache never gets a reply's last token (probe 35, `AgelloDeviceTests/ThinkTailProbe.swift`). For the same reply it holds one token fewer than with MTP off ("400": 490 against 491), and the reply's decode count is one lower. Asked to quote "400" back, the model quotes "40". It happens with Think off too, and without a tool call; with MTP off, every quote matches.
+  - **Why D4 shows it and the old line didn't:** most replies end with a period, and the period is what's lost. D4's bare answers ("400", "It is 2026.") put a digit last.
+  - **The fix belongs in the runtime**, a separate task (ROADMAP, "Small things"). The test's other failure, "too little reasoning to measure" (118 bytes against 160), is D4 thinking less on a simple product.
+- **`web` test01, a D4 difference.** D4's first reply gives the winner and his time without the runner-up, which the old line named. Then "By how many minutes?" got "You haven't specified what you would like to know the difference in minutes for." The old line answered "won the 2024 Tour de France by more than six minutes", the wrong year, so it passes the check without being right. Neither follow-up search found the 2026 race.
+- **`web` test04: not the system prompt.** It is the search planner's known fault (it calls "By how many minutes?" answered), and the planner runs with no system turn.
+- **`web` test06 fails with both lines:**
+  - the currency answer is "91 euros" (old line "91 EUR"), not the two decimals the check wants;
+  - the gas station and Walmart searches found nothing, since this Mac has no location.
+
+Read from the replies: the inference suite's answers are short and right, and the voice turns are one or two sentences. The memory test's recipe is vegetarian, but says "it's Tuesday evening", a guess: the prompt has the date, not the time.
 
 ## Confirmation round (2026-11-17, M6): D4 leads
 
@@ -47,10 +74,7 @@ What reading the replies showed:
 - **Multi-turn holds.** After four French turns the reply is still French. The thank-you chat ends in two short paragraphs; D3b is the one that adds an offer of three more tasks.
 - **Still failing everywhere:** the 2022 World Cup isn't flagged as possibly out of date, and the iOS question gets "check the App Store" instead of a version. D2's line fixed the iOS answer in round 1 but moved Einstein's answer; another wording, or Search, is for later.
 
-**Next:**
-- **On the iPhone:** D4 in `SystemPrompt.compose`, with `{date}`, `{current}` and `{precedence}` filled in code.
-- **The promotion checks** listed under "How to test them", with the bench read in full and a new baseline.
-- **Pins:** `PersonalizationTests` and the probes that build from the default prompt keep the old string.
+**Next (done the same day, above):** D4 in the app, with the promotion checks run natively; the iPhone and the bench remain.
 
 ## Screening round 1 (2026-11-17, M6)
 
@@ -110,14 +134,16 @@ Two lines are added only when they apply:
 
 ## Composition, in code
 
-`SystemPrompt.compose` builds the base from the settings it already knows. Slots in the texts below:
+`SystemPrompt.compose` builds the base from the settings it already knows (`SystemPrompt.fill`; `PersonalizationTests` checks each slot). Slots in the texts below:
 
 | Slot | Filled with |
 | --- | --- |
-| `{date}` | `Date.now.formatted(date: .complete, time: .omitted)`, e.g. "Monday, November 16, 2026" |
-| `{current}` | automatic search off: "; the user can tap Search for current information"; on: "; use web_search when a question needs current facts" |
-| `{precedence}` | the precedence line, only when a style, name, about-you, instructions or project block follows |
-| `{think}` | the Think line, only with Think on |
+| `{date}` | `PromptText.date(.now)`: in English whatever the device's language, in its time zone, e.g. "Tuesday, November 17, 2026" |
+| `{current}` | `SystemPrompt.CurrentInfo` from the web settings: Search allowed, automatic off: "; the user can tap Search for current information"; automatic on: "; use web_search when a question needs current facts"; Search not allowed: nothing. A change of either switch reseeds the chat |
+| `{precedence}` | the precedence line, only when a style, name, about-you, instructions or project block follows (memories alone don't add it) |
+| `{think}` | the Think line, only with Think on (not built: D-think is untested) |
+
+**As built, D1:** the date is in the base, and the prompt is compared only when a chat is bound (a chat switch, a reseed, a setting change), so an open chat isn't rebuilt at midnight for the date alone; it runs a day stale until its next rebuild, and a new chat gets today's date.
 
 **The date's one cost:** the system prompt changes at midnight, so the first message after midnight in a running chat rebuilds it and prefills its replayed history: up to about 12 s in the worst case (16,000 tokens of history at 32K), typically far less. Two ways around it, to be decided by the table:
 - **D1, date in the base, outside the rebuild check:** the comparison that triggers a rebuild ignores the date, so it refreshes at the next natural rebuild; a chat that crosses midnight runs a day stale until then.
