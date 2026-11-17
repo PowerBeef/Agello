@@ -1,17 +1,40 @@
 # Roadmap
 
-What has shipped, what's next, and the manual checks still to do. Updated 2026-11-16.
+What has shipped, what's next, and the manual checks still to do. Updated 2026-11-16 (late).
 
 ## Current status
 
 The handoff between work sessions: read this first, then the section of the plan it points to.
 
-- **Where it stands, and what's next** (2026-11-16, evening). The app ships our runtime, release `agello-one-20261115` (build `0c749789100a`, below). 12 GB iPhones ask for a fixed 64K window; the published model file caps it at 32,000 positions, so chats get 32K until the file opened to 128K ships. Four fixes from a coding chat the maintainer reported went in on 2026-11-15 and 16 (below), and that chat is now a bench case, `mockup-os-search`. The fixes from an external review are in (below), pushed up to `83e807e` (the fork up to `34683cb6`). Since then, the evening's Mac work (the entry below), pushed on 2026-11-16 (the app up to `9fa4d21`, the fork up to `581cb758`, the softmax fix included). The maintainer's iPhone runs a Release build with the 128K file in the app's models folder (a catalog change that isn't committed). First, when the iPhone is back: the checks waiting for it (the two entries below). Then, in order:
-  1. **The 64K quality gates on the iPhone** ([PERFORMANCE.md](PERFORMANCE.md), "Quality gates at 64K", where the Mac's results are): probes 27–30 on the phone (the 128K file is in its `Documents/lab/w128k`), twenty real documents read whole against section summaries, and the rewind fix's check. Prose identity at ≤ 32K holds with the A19 Pro's kernels. The M6's own parted between the 32K and 64K windows because one softmax reduction changed order on a 10-core GPU; the runtime fix (fork `581cb758`, not yet released) makes the Mac match, so a macOS version stays possible (PERFORMANCE.md, "Why the M6 parts at 64K"). Probe 30 on the phone confirms the iPhone. The fix ships with the next runtime release (the maintainer's call). Then, on the maintainer's go, the file's upload to Hugging Face and `ModelCatalog.e4b`'s change, which gives users the full 64K.
-  2. **The GPU-resident speculative round:** stages 0 and 1 are done (the tables read from the mapped file and the kernels bit-identical to the host, [PERFORMANCE.md](PERFORMANCE.md)); next the runtime's side, the drafter chain and verify's inputs on the GPU behind `AGELLO_RESIDENT_ROUND`. The bar is +8 % sustained on the iPhone with identical replies.
-  3. **B4's iPhone half:** the bench (`scripts/device-harness.sh bench`) against the new runtime, then a new baseline (`BENCH_ACCEPT=1`), which takes in the twelfth case, `mockup-os-search`; the committed one is from 2026-11-10, on the old runtime.
-  4. **The rest of B5** ([PERFORMANCE.md](PERFORMANCE.md), "On the Mac, now" and "On the iPhone", the items not marked done): B2's drafts from the context, speculative decoding for JSON helpers, G1, the pool's tests and soak, P0 on the iPhone.
-  5. **Small things left:** `ChatFlowUITests` wasn't rerun after the redraw fix (`eba567c`; the bench case was); the coding chat's original stop mid-reply didn't reproduce, so its cause is unconfirmed; the fork's reference pages still describe the three-repository layout in places; `web`'s `test04` and `test06` fail with the old runtime too; `swiftlint` reports two errors in `WebContext.swift` (since 2026-11-12); the README's performance image and table show Google's runtime of October; history replay by tokens (it needs the phone's reseed times), a Bench build configuration for the remaining test hooks, and CI (it needs a macOS 27 runner, the maintainer's call).
+- **Where it stands, and what's next** (2026-11-16, late; the iPhone is away). The app ships our runtime, release `agello-one-20261115` (build `0c749789100a`, below). 12 GB iPhones ask for a fixed 64K window, but the published model file caps it at 32,000 positions, so every chat runs at 32K until the file opened to 128K ships; 32K stays the reference and the fallback until then. Everything is pushed: the app up to `2a27b88`, the fork up to `581cb758`. The fork's `main` has one change past the release: the sliced attention's softmax reduces a row in one order at every window, so the Mac matches the iPhone at 32K and 64K (PERFORMANCE.md, "Why the M6 parts at 64K"; it keeps a macOS version possible). The iPhone runs a Release build with the 128K file in the app's models folder (a catalog change that isn't committed). Next, in three parts:
+  - **A. When the iPhone is back** (one session; connected and unlocked, Mirroring closed):
+    1. **A runtime build with the softmax fix on the phone:** `agello/build-xcframework.sh` on the fork (from the committed `581cb758`, for a clean build id), then `Vendor/use-local-litert.sh` here (never commit `Vendor/` while it points at the local build).
+    2. **The 64K gates on the phone,** probes 27–31 (`AgelloDeviceTests/WindowQualityProbes.swift`; the 128K file is already in the phone's `Documents/lab/w128k`): `TEST_RUNNER_WINDOW_MODEL=w128k/gemma-4-E4B-it-fp16-rope.litertlm TEST_RUNNER_WINDOW_KV=65536 ONLY=AgelloDeviceTests/ProbeScenarioTests/test28_WindowPositions,AgelloDeviceTests/ProbeScenarioTests/test27_NeedleTable,AgelloDeviceTests/ProbeScenarioTests/test29_HistoryFacts,AgelloDeviceTests/ProbeScenarioTests/test30_WindowIdentity scripts/device-harness.sh probes`. The Mac's results are in PERFORMANCE.md, "Quality gates at 64K": all copies exact, needles 89 of 90, history 10 of 10, prose identical at 32K and 64K. Probe 30 on the phone also confirms the softmax fix changes nothing there.
+    3. **The checks waiting since 2026-11-16:**
+       - `unit` (with `MarkdownTests`), `ChatFlowUITests`, the bench case `mockup-os-search` (streaming cost);
+       - a download paused, moved to cellular and resumed, and a real download's staging;
+       - the incomplete-reply line, the embedder's unload fix, a barge-in in voice mode;
+       - a follow-up on a 16K file (the time files sent once saves);
+       - the rewind fix's check (a Think reply over 1,100 tokens, then a follow-up).
+    4. **B4's iPhone half:** `scripts/device-harness.sh bench` on that build, then a new baseline (`BENCH_ACCEPT=1`), which takes in the twelfth case, `mockup-os-search`. The committed baseline is from 2026-11-10, on the old runtime.
+  - **B. The maintainer's decisions:**
+    1. **Twenty real documents** for the last 64K gate: read whole, against their section summaries. Which documents, the maintainer's or ones found for it.
+    2. **A runtime release** with the softmax fix (`agello/release-xcframework.sh`): now, or with the GPU-resident round.
+    3. **The 128K file's upload** to Hugging Face and `ModelCatalog.e4b`'s change, once A and B1 pass: that's when users get 64K. After it, the suites and probes that still measure a 32K engine move to 64K, and the cross-window identity check retires.
+    4. **CI:** it needs a macOS 27 runner (self-hosted, this Mac, or waiting for a hosted image).
+  - **C. On the Mac, meanwhile** (nothing here needs the phone):
+    1. **The GPU-resident speculative round, stage 2:** the drafter's three steps chained on the GPU, each followed by the argmax, gather and concat kernels on the same queue, behind `AGELLO_RESIDENT_ROUND`. Then stage 3 (verify's inputs) and stage 4 (the switch). Stages 0–1 are done (`tools/agello-gpu-round`, fork `ffc639ef`); the design is in `build/drafts/gpu-resident-round-design-2026-11-16.md`. The bar is +8 % sustained on the iPhone with identical replies (the replay test measured +13–17 %).
+    2. **The rest of B5** ([PERFORMANCE.md](PERFORMANCE.md), "On the Mac, now", the items not marked done): B2's drafts from the context, speculative decoding for the JSON helpers, G1, the pool's tests and soak.
+    3. **Small things:**
+       - `swiftlint`'s two errors in `WebContext.swift` (since 2026-11-12);
+       - the README's performance image and table, which show Google's runtime of October;
+       - a Bench build configuration for the remaining test hooks;
+       - the fork's reference pages, which still describe the three-repository layout in places.
+    4. **Open, needing the phone first:**
+       - history replayed by tokens instead of 20 messages (it needs the phone's reseed times);
+       - the coding chat's original stop mid-reply, which didn't reproduce;
+       - `web`'s `test04` and `test06`, which fail with the old runtime too;
+       - P0 on the iPhone.
 - **The Mac work of 2026-11-16, evening** (pushed; unit 299/299 natively, compiled for the iPhone):
   1. `AppState` split by area into extension files, below SwiftLint's limit (`b69268f`).
   2. **Files sent once** (`bd6f5e9`): a follow-up sends only the question while the conversation holds the chat's whole files or summaries; a rebuilt or trimmed conversation gets them again; excerpts still go with each question.
@@ -20,7 +43,7 @@ The handoff between work sessions: read this first, then the section of the plan
      - The needle table found 89 of 90 (17 of 18 at 44K).
      - All 10 history facts were recalled after 51,895 tokens.
      - The digit suite is identical across the 32K and 64K engines.
-     - Prose is identical across the two windows with the A19 Pro's kernels; with the M6's own, one softmax reduction changes order at 64K (item 1 above).
+     - Prose is identical across the two windows with the A19 Pro's kernels. With the M6's own, one softmax reduction changed order at 64K, fixed in the fork (`581cb758`, 4 of 4 identical, the iPhone's arithmetic unchanged).
   4. **The GPU round's stages 0 and 1** (fork `ffc639ef`, item 2 above).
   5. Voice: an utterance spoken over a reply waits for it to stop instead of being dropped (`2256924`). A project file whose index failed can be indexed again, and a file longer than Agello reads says so on its chip (`7957ebd`). The Swift wrapper is in Swift 6 language mode (fork `24f35f81`, vendored in `13a59c9`; the runtime binary is unchanged).
   - Waiting for the iPhone: a barge-in in voice mode, and a follow-up on a 16K file (the time saved by files sent once).
