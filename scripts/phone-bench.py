@@ -76,6 +76,11 @@ def launch_spec(case, cool):
            "AGELLO_BENCH_THINK": "1" if case["think"] else "0"}
     if cool:
         env["AGELLO_BENCH_COOL"] = "1"
+    # The runtime's switches, as set for the run, for every arm (a build without one ignores it):
+    # AGELLO_RESIDENT_ROUND, the GPU-resident round (docs/PERFORMANCE.md).
+    for key in ("AGELLO_RESIDENT_ROUND",):
+        if os.environ.get(key):
+            env[key] = os.environ[key]
     # Memories would change the system prompt from one case to the next: off for these launches
     # only (the argument domain; the saved setting stays the user's).
     arguments = ["--trace", "-memoryEnabled", "NO"] + case["launchArguments"]
