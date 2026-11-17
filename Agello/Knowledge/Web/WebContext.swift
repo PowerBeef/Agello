@@ -74,7 +74,9 @@ enum WebContext {
   /// A question or a request also names its topic (``SearchTopic``), which decides the sources.
   static let querySchema =
     #"{"anyOf":[{"type":"object","properties":{"kind":{"type":"string","enum":["chat","reaction","edit","creative","arithmetic","answered"]},"queries":{"type":"array","items":{"type":"string"},"maxItems":0}},"required":["kind","queries"]},"#
-    + #"{"type":"object","properties":{"kind":{"type":"string","enum":["question","request"]},"topic":{"type":"string","enum":["general","travel","word","quote","weather","place","currency","research","health","news"]},"queries":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":3}},"required":["kind","topic","queries"]}]}"#
+    + #"{"type":"object","properties":{"kind":{"type":"string","enum":["question","request"]},"#
+    + #""topic":{"type":"string","enum":["general","travel","word","quote","weather","place","currency","research","health","news"]},"#
+    + #""queries":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":3}},"required":["kind","topic","queries"]}]}"#
   static let queryMaxOutputTokens = 120
 
   /// Kinds of message that search: the rest need nothing from the web. One word each: on our
@@ -271,11 +273,11 @@ final class WebResearch {
   }
 
   /// Pages read per search.
-  static let pagesToRead = 5
+  nonisolated static let pagesToRead = 5
   /// Passages kept per source.
-  static let passagesPerSource = 3
+  nonisolated static let passagesPerSource = 3
 
-  private let client = WebClient()
+  nonisolated private let client = WebClient()
   private let knowledge: KnowledgeBase
 
   init(knowledge: KnowledgeBase) {
@@ -293,156 +295,218 @@ final class WebResearch {
     firstIndex: Int = 1, today: Date = .now, progress: @MainActor (String) -> Void
   ) async throws -> Findings {
     progress(String(localized: "Searching the web for “\(queries.first ?? question)”…"))
-    let client = self.client
-    var errors: [Error] = []
 
     // 1. A structured topic's own source: its answer, pinned.
     var pinned: [WebResult] = []
     if topic.isStructured, let query = queries.first {
-      do {
-        pinned = try await client.structured(topic, query: query)
-      } catch let error as WebSearchError {
-        throw error
-      } catch {
-        if (error as? URLError)?.code == .notConnectedToInternet { throw WebSearchError.offline }
-        throw WebSearchError.unavailable(topic.sourceName)
-      }
-      try Task.checkCancellation()
-      if pinned.isEmpty { throw WebSearchError.noResults }
+      pinned = try await structuredAnswer(topic, query: query)
     }
 
-    // 2. The reference sources, every search at once. Pages to read come back by list (one per
-    // query and source, the topic's own source first), papers with their abstracts as they are.
-    var pageLists: [Int: [WebResult]] = [:]
-    var papers: [WebResult] = []
-    var usedProvider: SearchProvider?
+    // 2. The reference sources, every search at once.
+    var found = References()
     if pinned.isEmpty {
-      let chain = settings.chain()
-      let site: WikimediaSite? =
-        switch topic {
-        case .travel: .wikivoyage
-        case .word: .wiktionary
-        case .quote: .wikiquote
-        default: nil
-        }
-      let editions = language == "en" ? ["en"] : [language, "en"]
-      enum Outcome: Sendable {
-        case pages(Int, [WebResult], SearchProvider?)
-        case papers([WebResult])
-        case failed(Error)
-      }
-      await withTaskGroup(of: Outcome.self) { group in
-        for (index, query) in queries.enumerated() {
-          // The other editions for the first query only: English is the most complete.
-          let languages = index == 0 ? editions : [language]
-          for (offset, edition) in languages.enumerated() {
-            let slot = (index * 4 + offset) * 2
-            if let site {
-              group.addTask {
-                do { return .pages(slot, try await client.searchWiki(query, site: site, language: edition), nil) } catch {
-                  return .failed(error)
-                }
-              }
-            }
-            group.addTask {
-              var lastError: Error?
-              for provider in chain {
-                do {
-                  let found = try await client.search(query, with: provider, settings: settings, language: edition)
-                  if !found.isEmpty { return .pages(slot + 1, found, provider) }
-                } catch {
-                  lastError = error
-                  if case WebSearchError.offline = error { break }
-                }
-              }
-              return lastError.map(Outcome.failed) ?? .pages(slot + 1, [], nil)
-            }
-          }
-        }
-        if let query = queries.first {
-          switch topic {
-          case .research:
-            group.addTask { do { return .papers(try await client.crossref(query)) } catch { return .failed(error) } }
-          case .health:
-            group.addTask { do { return .papers(try await client.pubMed(query)) } catch { return .failed(error) } }
-          case .news:
-            for day in CurrentEvents.pages(today: today) {
-              group.addTask {
-                do { return .papers([try await client.currentEvents(day)].compactMap { $0 }) } catch { return .failed(error) }
-              }
-            }
-          default:
-            break
-          }
-        }
-        for await outcome in group {
-          switch outcome {
-          case .pages(let slot, let found, let provider):
-            pageLists[slot] = found
-            if usedProvider == nil, let provider, !found.isEmpty { usedProvider = provider }
-          case .papers(let found): papers += found
-          case .failed(let error): errors.append(error)
-          }
-        }
-      }
-      try Task.checkCancellation()
-      if let offline = errors.first(where: { if case WebSearchError.offline = $0 { true } else { false } }) {
-        throw offline
-      }
-      // The facts of the first article found, for a general question.
-      if topic == .general, let first = pageLists[1]?.first, first.url.host()?.hasSuffix("wikipedia.org") == true,
-        let facts = try? await client.wikidataFacts(title: first.title, language: language)
-      {
-        papers.insert(facts, at: 0)
-      }
+      found = try await searchReferences(
+        queries: queries, topic: topic, language: language, settings: settings, today: today)
     }
-    let merged = Self.merge(pageLists.keys.sorted().compactMap { pageLists[$0] }.filter { !$0.isEmpty })
-    guard !pinned.isEmpty || !merged.isEmpty || !papers.isEmpty else {
-      throw errors.last ?? WebSearchError.noResults
+    let merged = Self.merge(found.pageLists.keys.sorted().compactMap { found.pageLists[$0] }.filter { !$0.isEmpty })
+    guard !pinned.isEmpty || !merged.isEmpty || !found.papers.isEmpty else {
+      throw found.errors.last ?? WebSearchError.noResults
     }
 
     // 3. Read the top pages in parallel (snippets stand in for failures); papers and facts are
     // read already.
     let pages = Array(merged.prefix(Self.pagesToRead))
-    let candidates = papers + pages
-    var texts: [Int: String] = [:]
-    for (index, paper) in papers.enumerated() { texts[index] = paper.content }
-    if !pages.isEmpty {
-      progress(String(localized: "Reading \(pages.count) pages…"))
-      let first = papers.count
-      await withTaskGroup(of: (Int, ReadableText.Page?).self) { group in
-        for (offset, result) in pages.enumerated() {
-          group.addTask { (first + offset, await client.readPage(result.url)) }
-        }
-        for await (index, page) in group { texts[index] = page?.text }
-      }
-    }
+    let candidates = found.papers + pages
+    let texts = await readTexts(papers: found.papers, pages: pages, progress: progress)
     try Task.checkCancellation()
 
     // 4. Rank passages by relevance to the question.
-    struct Candidate {
-      var result: Int
-      var text: String
-    }
-    var passages: [Candidate] = []
-    for (index, result) in candidates.enumerated() {
-      if let text = texts[index] {
-        for chunk in Chunker.chunks(pages: [text], paged: false).prefix(40) {
-          passages.append(Candidate(result: index, text: chunk.text))
-        }
-      }
-      if !result.snippet.isEmpty, result.content == nil {
-        passages.append(Candidate(result: index, text: result.snippet))
-      }
-    }
+    let passages = Self.passages(of: candidates, texts: texts)
     var order: [Int] = []
     if !passages.isEmpty {
       progress(String(localized: "Picking the relevant parts…"))
       order = await rank(passages.map(\.text), against: rankingQueries ?? [question])
     }
 
-    // 5. The pinned answers first and whole, then the best passages within budget; sources are
-    // numbered by first use.
+    // 5. The pinned answers first and whole, then the best passages within budget.
+    let sources = Self.sources(
+      pinned: pinned, ranked: order.map { passages[$0] }, candidates: candidates, budgetTokens: budgetTokens,
+      firstIndex: firstIndex)
+    return Findings(sources: sources, queries: queries, provider: found.provider)
+  }
+
+  /// What the reference searches found: pages to read by list (one per query and source, the
+  /// topic's own source first), papers and facts read already, the provider that answered, the
+  /// errors.
+  struct References {
+    var pageLists: [Int: [WebResult]] = [:]
+    var papers: [WebResult] = []
+    var provider: SearchProvider?
+    var errors: [Error] = []
+  }
+
+  /// A passage to rank, and the candidate it came from.
+  struct Passage {
+    var result: Int
+    var text: String
+  }
+
+  /// A structured topic's answer from its own source; empty or failing, the search stops there.
+  nonisolated func structuredAnswer(_ topic: SearchTopic, query: String) async throws -> [WebResult] {
+    let pinned: [WebResult]
+    do {
+      pinned = try await client.structured(topic, query: query)
+    } catch let error as WebSearchError {
+      throw error
+    } catch {
+      if (error as? URLError)?.code == .notConnectedToInternet { throw WebSearchError.offline }
+      throw WebSearchError.unavailable(topic.sourceName)
+    }
+    try Task.checkCancellation()
+    if pinned.isEmpty { throw WebSearchError.noResults }
+    return pinned
+  }
+
+  /// Every reference search at once: Wikipedia (or the topic's sister project) and the search
+  /// chain per query and edition, the topic's paper or news source, then the first article's
+  /// facts for a general question.
+  nonisolated func searchReferences(
+    queries: [String], topic: SearchTopic, language: String, settings: WebSearchSettings, today: Date
+  ) async throws -> References {
+    let client = self.client
+    var found = References()
+    let chain = settings.chain()
+    let site: WikimediaSite? =
+      switch topic {
+      case .travel: .wikivoyage
+      case .word: .wiktionary
+      case .quote: .wikiquote
+      default: nil
+      }
+    let editions = language == "en" ? ["en"] : [language, "en"]
+    await withTaskGroup(of: SearchOutcome.self) { group in
+      for (index, query) in queries.enumerated() {
+        // The other editions for the first query only: English is the most complete.
+        let languages = index == 0 ? editions : [language]
+        for (offset, edition) in languages.enumerated() {
+          let slot = (index * 4 + offset) * 2
+          if let site {
+            group.addTask {
+              do { return .pages(slot, try await client.searchWiki(query, site: site, language: edition), nil) } catch {
+                return .failed(error)
+              }
+            }
+          }
+          group.addTask {
+            var lastError: Error?
+            for provider in chain {
+              do {
+                let pages = try await client.search(query, with: provider, settings: settings, language: edition)
+                if !pages.isEmpty { return .pages(slot + 1, pages, provider) }
+              } catch {
+                lastError = error
+                if case WebSearchError.offline = error { break }
+              }
+            }
+            return lastError.map(SearchOutcome.failed) ?? .pages(slot + 1, [], nil)
+          }
+        }
+      }
+      if let query = queries.first {
+        Self.addPaperSearches(topic: topic, query: query, today: today, client: client, to: &group)
+      }
+      for await outcome in group {
+        switch outcome {
+        case .pages(let slot, let pages, let provider):
+          found.pageLists[slot] = pages
+          if found.provider == nil, let provider, !pages.isEmpty { found.provider = provider }
+        case .papers(let papers): found.papers += papers
+        case .failed(let error): found.errors.append(error)
+        }
+      }
+    }
+    try Task.checkCancellation()
+    if let offline = found.errors.first(where: { if case WebSearchError.offline = $0 { true } else { false } }) {
+      throw offline
+    }
+    // The facts of the first article found, for a general question.
+    if topic == .general, let first = found.pageLists[1]?.first, first.url.host()?.hasSuffix("wikipedia.org") == true,
+      let facts = try? await client.wikidataFacts(title: first.title, language: language)
+    {
+      found.papers.insert(facts, at: 0)
+    }
+    return found
+  }
+
+  /// One reference search's outcome.
+  enum SearchOutcome: Sendable {
+    case pages(Int, [WebResult], SearchProvider?)
+    case papers([WebResult])
+    case failed(Error)
+  }
+
+  /// The topic's paper or news source: Crossref for research, PubMed for health, the current
+  /// events pages for news.
+  nonisolated static func addPaperSearches(
+    topic: SearchTopic, query: String, today: Date, client: WebClient, to group: inout TaskGroup<SearchOutcome>
+  ) {
+    switch topic {
+    case .research:
+      group.addTask { do { return .papers(try await client.crossref(query)) } catch { return .failed(error) } }
+    case .health:
+      group.addTask { do { return .papers(try await client.pubMed(query)) } catch { return .failed(error) } }
+    case .news:
+      for day in CurrentEvents.pages(today: today) {
+        group.addTask {
+          do { return .papers([try await client.currentEvents(day)].compactMap { $0 }) } catch { return .failed(error) }
+        }
+      }
+    default:
+      break
+    }
+  }
+
+  /// The pages' readable text by candidate index (papers first, whose text is in hand).
+  private func readTexts(
+    papers: [WebResult], pages: [WebResult], progress: @MainActor (String) -> Void
+  ) async -> [Int: String] {
+    let client = self.client
+    var texts: [Int: String] = [:]
+    for (index, paper) in papers.enumerated() { texts[index] = paper.content }
+    guard !pages.isEmpty else { return texts }
+    progress(String(localized: "Reading \(pages.count) pages…"))
+    let first = papers.count
+    await withTaskGroup(of: (Int, ReadableText.Page?).self) { group in
+      for (offset, result) in pages.enumerated() {
+        group.addTask { (first + offset, await client.readPage(result.url)) }
+      }
+      for await (index, page) in group { texts[index] = page?.text }
+    }
+    return texts
+  }
+
+  /// Each candidate's text cut into passages (40 at most), and its snippet when the page wasn't
+  /// read.
+  nonisolated static func passages(of candidates: [WebResult], texts: [Int: String]) -> [Passage] {
+    var passages: [Passage] = []
+    for (index, result) in candidates.enumerated() {
+      if let text = texts[index] {
+        for chunk in Chunker.chunks(pages: [text], paged: false).prefix(40) {
+          passages.append(Passage(result: index, text: chunk.text))
+        }
+      }
+      if !result.snippet.isEmpty, result.content == nil {
+        passages.append(Passage(result: index, text: result.snippet))
+      }
+    }
+    return passages
+  }
+
+  /// The pinned answers first and whole, then the `ranked` passages within `budgetTokens`
+  /// (`passagesPerSource` at most each); sources are numbered by first use from `firstIndex`.
+  nonisolated static func sources(
+    pinned: [WebResult], ranked: [Passage], candidates: [WebResult], budgetTokens: Int, firstIndex: Int
+  ) -> [WebContext.Source] {
     var used = 0
     var sources: [WebContext.Source] = []
     for result in pinned {
@@ -453,11 +517,10 @@ final class WebResearch {
     }
     var perSource: [Int: [String]] = [:]
     var sourceOrder: [Int] = []
-    for position in order {
-      let passage = passages[position]
+    for passage in ranked {
       let cost = ContextBudget.estimateTokens(passage.text) + 16
       guard used + cost <= budgetTokens || used == 0 else { continue }
-      guard perSource[passage.result, default: []].count < Self.passagesPerSource else { continue }
+      guard perSource[passage.result, default: []].count < passagesPerSource else { continue }
       if perSource[passage.result] == nil { sourceOrder.append(passage.result) }
       perSource[passage.result, default: []].append(passage.text)
       used += cost
@@ -468,7 +531,7 @@ final class WebResearch {
           index: firstIndex + sources.count, title: candidates[result].title, url: candidates[result].url,
           passages: perSource[result] ?? []))
     }
-    return Findings(sources: sources, queries: queries, provider: usedProvider)
+    return sources
   }
 
   /// Results interleaved across queries (best of each first), deduplicated.
