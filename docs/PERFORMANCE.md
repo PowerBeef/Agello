@@ -779,7 +779,20 @@ there predate the measurements.
    can use 1,024-token chunks (the peak at 128K likely stays too high for them). **Done
    2026-11-14** (`agello-one` `d3730b60`, the window's step 2; released in `agello-one-20261115`).
 5. B2, drafts copied from the context (prompt lookup), the largest decode gain the Mac can
-   measure: up to ~1.6× on summaries, edits and file answers.
+   measure: up to ~1.6× on summaries, edits and file answers. **Built and measured, off by
+   default (2026-11-17, fork `0e3004e3`, `AGELLO_CONTEXT_DRAFTS=3` or `=2`):** an incremental
+   bigram and trigram index over the context's tokens proposes a round's three drafts from what
+   followed the latest earlier occurrence of its last tokens; the drafter doesn't run, and in
+   rounds the context could draft, the source that has earned more tokens a millisecond drafts
+   (the other tried every eighth time). Replies identical in every run; the native `inference`
+   suite 23/23 with it on. The gain isn't there at three drafts: the MTP drafter already keeps
+   3.91 of a round's 4 tokens when fixing a paragraph's typos and 3.76 when commenting a module
+   (M6), so copied drafts can only save the drafter's run, about 8 % of a round on the M6 and
+   11 % on the iPhone (its drafting phase is 4.8–6.4 ms of 45–55 ms), and they're kept less often.
+   Medians of three on the M6: the typo fix +0.9 % (`=3`) and +4.3 % (`=2`), the module −0.4 % and
+   −7.9 %, free writing unchanged. Copy-heavy replies are bound by the verify's four positions,
+   not by the drafts: B2 pays off with B5's longer verifies, where copied drafts fill a long
+   round for free and the drafter would need a run per draft.
 6. B4 (speculative decoding for JSON helpers, every Search message waits on one), then B3
    (Regenerate with speculative decoding; changes seeded replies).
 7. G1 now: unknown chip names fall to Apple1 (`MD/common/gpu_info.cc`), which turns the matrix-unit
