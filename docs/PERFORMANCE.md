@@ -800,7 +800,16 @@ there predate the measurements.
    products stay on the fully connected kernel at 8 rows, attention goes to 32 rows and the
    convolutions), then rounds of 7 copied drafts. Estimate: about 1.3 to 1.6 times faster
    decoding on copy-heavy replies, free writing unchanged; a new model file, best shipped with the
-   128K file.
+   128K file. **Phase 1 done (2026-11-17, fork `0a32b7cf`):** `tools/model-surgery/verify_n.py`
+   writes `verify_8` on both files. The exports aren't one graph at four lengths (`decode` has
+   2,749 ops, `verify` 2,838, the prefills 1,810), so the main graph is traced instead: each
+   dimension an ordered product of factors `a·T + b` from the signature's inputs, every op checked
+   against the stored shapes (E4B's 4 query heads per key-value head are also a 4); `rms_norm` and
+   `cache_update` decompositions traced, `runtime_bmm`'s solved from `decode` (the local window's
+   slice is `T + 511`). On the published file, LiteRT's CPU interpreter gives `verify_8` over
+   positions 0–7 and `verify` chained over 0–3 and 4–7 the same logits and caches, bit for bit.
+   The graph section grows by 21 MB. The 128K file can't run on the CPU (its decompositions keep
+   the full cache length, which the GPU never reads), so phase 2 checks it on the GPU.
 6. B4 (speculative decoding for JSON helpers, every Search message waits on one), then B3
    (Regenerate with speculative decoding; changes seeded replies).
 7. G1 now: unknown chip names fall to Apple1 (`MD/common/gpu_info.cc`), which turns the matrix-unit
