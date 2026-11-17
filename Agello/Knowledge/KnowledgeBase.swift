@@ -33,6 +33,8 @@ final class KnowledgeBase {
   @ObservationIgnored private let useHashingEmbedder: Bool
   @ObservationIgnored private var embedder: (any TextEmbedder)?
   @ObservationIgnored private var indexTasks: [UUID: Task<Void, Never>] = [:]
+  /// Short texts' vectors (memories) for the session, by embedder and text.
+  @ObservationIgnored private var textVectors: [String: [Float]] = [:]
   /// Each indexed document's passages and their vectors, decoded once (with every vector decoded
   /// again, a question over 1,800 passages cost 27 ms on a Mac before any searching).
   @ObservationIgnored private var vectorCache:
@@ -239,9 +241,13 @@ final class KnowledgeBase {
 
   /// Whether a chat's search vector is missing or out of date (it changes
   /// only while the chat is short; later turns don't affect it).
-  static func needsSearchEmbedding(_ thread: ChatThread) -> Bool {
+  /// A vector of another length than `dimensions` (when given) is out of date too: it scores
+  /// 0 against the current embedder's queries (vectors went from 256 to 768 on 2026-11-16).
+  static func needsSearchEmbedding(_ thread: ChatThread, dimensions: Int? = nil) -> Bool {
     guard !thread.turns.isEmpty else { return false }
-    guard let embeddedAt = thread.searchEmbeddedAt, thread.searchEmbedding != nil else { return true }
+    guard let embeddedAt = thread.searchEmbeddedAt, let stored = thread.searchEmbedding else { return true }
+    // Stored as float16: two bytes a component.
+    if let dimensions, stored.count / 2 != dimensions { return true }
     return thread.updatedAt > embeddedAt && thread.turns.count <= searchTurns + 1
   }
 
@@ -251,7 +257,7 @@ final class KnowledgeBase {
   /// Embed chats that need it, in the background (drawer opening).
   func indexChats(_ threads: [ChatThread]) {
     guard chatIndexTask == nil, let embedder = currentEmbedder() else { return }
-    let pending = threads.filter(Self.needsSearchEmbedding)
+    let pending = threads.filter { Self.needsSearchEmbedding($0, dimensions: embedder.dimensions) }
     guard !pending.isEmpty else { return }
     let inputs = pending.map { (title: "none", text: Self.searchText(for: $0)) }
     chatIndexTask = Task {
@@ -305,6 +311,23 @@ final class KnowledgeBase {
     }
     return VectorIndex.top(candidates.count, query: queryVector, candidates: candidates)
       .map { (thread: $0.item, score: $0.score) }
+  }
+
+  /// `texts` by meaning against `query`, closest first; nil without an embedder or when embedding
+  /// fails. For short texts such as memories: their vectors are kept for the session.
+  func rank(_ texts: [String], against query: String) async -> [String]? {
+    guard let embedder = currentEmbedder(), !texts.isEmpty, !query.isEmpty else { return nil }
+    let key = { (text: String) in embedder.identifier + "\u{0}" + text }
+    let missing = Array(Set(texts.filter { textVectors[key($0)] == nil }))
+    if !missing.isEmpty {
+      guard let vectors = try? await embedder.embed(documents: missing.map { (title: "none", text: $0) }),
+        vectors.count == missing.count
+      else { return nil }
+      for (text, vector) in zip(missing, vectors) { textVectors[key(text)] = vector }
+    }
+    guard let queryVector = try? await embedder.embed(query: query) else { return nil }
+    let scores = texts.map { VectorIndex.dot(textVectors[key($0)] ?? [], queryVector) }
+    return texts.indices.sorted { scores[$0] != scores[$1] ? scores[$0] > scores[$1] : $0 < $1 }.map { texts[$0] }
   }
 
   /// Wait for chat indexing started by ``indexChats(_:)``.

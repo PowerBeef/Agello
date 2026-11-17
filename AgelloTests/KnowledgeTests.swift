@@ -255,6 +255,11 @@ extension KnowledgeTests {
     thread.append(ChatTurn(role: .user, text: "And peppers?"))
     XCTAssertTrue(KnowledgeBase.needsSearchEmbedding(thread))
     XCTAssertFalse(KnowledgeBase.needsSearchEmbedding(ChatThread()), "Empty chats are skipped")
+    // A vector of another length (256 before 2026-11-16) is embedded again.
+    thread.searchEmbedding = VectorIndex.encode([Float](repeating: 0.1, count: 256))
+    thread.searchEmbeddedAt = .now
+    XCTAssertFalse(KnowledgeBase.needsSearchEmbedding(thread, dimensions: 256))
+    XCTAssertTrue(KnowledgeBase.needsSearchEmbedding(thread, dimensions: 768))
   }
 }
 

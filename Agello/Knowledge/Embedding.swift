@@ -6,6 +6,8 @@ import LiteRTLM
 protocol TextEmbedder: Sendable {
   /// Stored with indexed data; a different identifier means "re-index".
   var identifier: String { get }
+  /// Components per vector: a stored vector of another length is indexed again.
+  var dimensions: Int { get }
   /// Cosine similarity above which a chat can count as related to a search…
   var relatedThreshold: Float { get }
   /// …when it also beats the median chat by this much (0: threshold only).
@@ -17,16 +19,22 @@ protocol TextEmbedder: Sendable {
   func unload() async
 }
 
-/// EmbeddingGemma 2 (text, 270M) through LiteRT-LM, truncated to 256
-/// dimensions (Matryoshka) and normalized. Loads on first use, on the GPU.
+/// EmbeddingGemma 2 (text, 270M) through LiteRT-LM, at its full 768 dimensions, normalized.
+/// Loads on first use, on the GPU, in the runtime's float16 activations: probe 32 found them
+/// within a cosine of 0.9956 of float32 with no overflow, at half the time.
 actor LiteRTEmbedder: TextEmbedder {
-  static let dimensions = 256
-  nonisolated let identifier = "embeddinggemma-2-text-270m@\(LiteRTEmbedder.dimensions)"
-  /// Calibrated on device (KnowledgeScenarioTests.test03): matching chats
-  /// scored 0.67-0.78 and stood 0.09-0.15 above the median chat; unrelated
-  /// ones scored up to 0.61 but only 0.02 above it.
+  /// 256 until 2026-11-16. Google's card puts 768 about a point above 256 on multilingual search
+  /// and 2.5 on code; vectors take 1.5 KB a passage in float16.
+  static let outputSize = 768
+  nonisolated let dimensions = LiteRTEmbedder.outputSize
+  nonisolated let identifier = "embeddinggemma-2-text-270m@\(LiteRTEmbedder.outputSize)"
+  /// Calibrated by probe 33 (the chats of KnowledgeScenarioTests.test03 and unrelated queries)
+  /// at 768 dimensions: a query's own chat scored 0.645-0.727 and stood 0.094-0.152 above the
+  /// median chat; the best other chat scored at most 0.579, and an unrelated query's best stood
+  /// at most 0.044 above the median. At 256 the margin was 0.08 (matching chats 0.10-0.20 above
+  /// the median, unrelated ones up to 0.07).
   nonisolated let relatedThreshold: Float = 0.60
-  nonisolated let relatedMargin: Float = 0.08
+  nonisolated let relatedMargin: Float = 0.07
 
   private let modelURL: URL
   private var engine: EmbeddingEngine?
@@ -40,7 +48,7 @@ actor LiteRTEmbedder: TextEmbedder {
   /// Truncate, never fail: an input longer than the loaded signatures (1,024 tokens) used to
   /// fail its whole batch and the document with it.
   private let options = EmbeddingOptions(
-    normalize: true, outputSize: LiteRTEmbedder.dimensions, inputOverflowStrategy: .truncate)
+    normalize: true, outputSize: LiteRTEmbedder.outputSize, inputOverflowStrategy: .truncate)
   /// Requests per native batch call.
   private static let batchSize = 8
 
@@ -138,6 +146,7 @@ actor LiteRTEmbedder: TextEmbedder {
 struct HashingEmbedder: TextEmbedder {
   /// v2: keyword terms split CJK runs into character pairs.
   let identifier = "hashing@256v2"
+  var dimensions: Int { Self.dimensions }
   let relatedThreshold: Float = 0.15
   let relatedMargin: Float = 0
   static let dimensions = 256

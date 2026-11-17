@@ -41,7 +41,7 @@ full table, with what's left at defaults, is in
   conversation; `sendMessageStream` with an output cap from `ContextBudget`.
 - **Helpers:** JSON helpers turn MTP off and use a JSON-schema response format; transcription
   samples greedily; the others pass no sampler.
-- **Embeddings:** on the GPU (two tries, then search by keywords), normalized, 256 dimensions, batches of 8.
+- **Embeddings:** on the GPU (two tries, then search by keywords), normalized, 768 dimensions (256 until 2026-11-16), batches of 8, in the runtime's float16 activations: EmbeddingGemma 2's card warns against float16, but probe 32 measured our file on the GPU within a cosine of 0.9956 of float32, with no overflow, at half the time. `EmbeddingEngineConfig.activationDataType` (a wrapper patch) can ask for float32.
 
 ## Words to get right
 
