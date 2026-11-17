@@ -16,7 +16,6 @@
 // the flags are kept behind one lock (Swift 6 language mode).
 import Foundation
 import OSLog
-import Synchronization
 
 /// A struct to manage flags for APIs that are not yet considered mature.
 ///
@@ -39,7 +38,20 @@ public struct ExperimentalFlags {
     var enableYnnpack: Bool? = nil
   }
 
-  private static let values = Mutex(Values())
+  /// The values behind an NSLock. A `Mutex` in a static returned an invalid string in optimized
+  /// builds (`createConversation` crashed reading the channel name, 2026-11-16), so: a class.
+  private final class Store: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values = Values()
+
+    func withLock<Result>(_ body: (inout Values) -> Result) -> Result {
+      lock.lock()
+      defer { lock.unlock() }
+      return body(&values)
+    }
+  }
+
+  private static let values = Store()
 
   /// Whether ``optIntoExperimentalAPIs()`` has been called.
   public static var optedIn: Bool { values.withLock { $0.optedIn } }
