@@ -28,8 +28,9 @@
 #      cool to nominal; off sends at once),
 #      MIN_CLEAN (undisturbed runs wanted of each case and build, default 3 or ROUNDS if less),
 #      EXTRA_ROUNDS (the most rounds added to get them, default 2),
-#      AGELLO_RESIDENT_ROUND (passed to the app for every arm: 1 the GPU-resident round with
-#      verify's inputs, 2 its drafter chain only; docs/PERFORMANCE.md),
+#      AGELLO_RESIDENT_ROUND (passed to the app for every arm: 0 the GPU-resident round off, 1 with
+#      verify's inputs, 2 its drafter chain only, the default of builds since fork c137900d;
+#      docs/PERFORMANCE.md),
 #      BUILD_PRIORITY (background, the default: the two builds run at background priority and on
 #      BUILD_JOBS jobs (default 4), so other work keeps this Mac and the builds take longer;
 #      normal: full speed), CHECKS (off skips the answer checks).
