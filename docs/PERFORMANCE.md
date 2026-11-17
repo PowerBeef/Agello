@@ -461,7 +461,10 @@ prefill pools released, the window read from the file):**
     - `=1`, verify's inputs too: decode +2.6 % (+2.3 to +2.8 %), prefill −1.5 % (`todo`, 3,288 tokens: −3.2 % [−4.3, −0.4]), and a footprint that grows as gathers touch the per-layer tables' pages (the wired pages of E5): +44 MB after a 213-token reply, +157 MB after 1,090 tokens, up to the sections' 0.9 GB.
     - Stage 3's prefill cost comes with the per-layer tables mapped, whether or not a round uses them. The GPU's own prefill time is unchanged; the host waits 35–45 ms longer on the 3,288-token prompt (cause not found). On the M6, stage 2 alone is the better trade.
   - **Why the M6 gains little** (telemetry level 2, one 958-token coding reply, 333 rounds, the same replies): a round is 25.1 ms with the round off, and 21.2 ms of it is verify's GPU time (the drafter's three runs take 1.9 ms of GPU). On the M6 the host's gaps are about 2 ms of a 25 ms round, so the whole round can gain at most about 8 % here; it gains 2.6 %. The iPhone, where the replay measured +13–17 %, decides.
-  - **Next, on the iPhone:** `AGELLO_RESIDENT_ROUND=2 scripts/phone-bench.sh release next`, the same with `=1` (the switch reaches the app through the launch environment), and a long chat's footprint with `=1`. Under about +8 % sustained the round is dropped (the bar above); it stays off by default until then.
+  - **On the iPhone 17 Pro: no gain, so dropped** (2026-11-17, `scripts/phone-bench.sh release next`, `explain`, `email` and `file-report`, five rounds, the phone cooled to nominal before each send; runtime build `8f24e4123eb5`; replies identical in every case). The traces show the round ran: 1.01 counted waits a round with `=2` and 0.01 with `=1`, against 4.01 for the release.
+    - `=2`: decode +0.1 % (+0.2, −0.3, +0.6 % a case; noise band 0.6 %), prefill −0.2 %.
+    - `=1`: decode −1.3 % (`email` +1.5 % [+0.7, +2.6], `file-report` −0.4 %, `explain` −4.9 % from one undisturbed release run), prefill −3.8 % (`explain` −10.8 % from the same run; the others within noise).
+    - Below the +8 % bar, so the round stays off and stage 4 doesn't happen; the code stays in the fork behind `AGELLO_RESIDENT_ROUND`. The replay's +13–17 % didn't carry over to a real chain. On the phone a round takes about 45 ms, of which the host's side is about 3 ms (`load.txt`), so removing the host's steps could give at most about 6 %. The replay's gain must come from something else, most likely that its runs reused one input and didn't depend on each other (not checked).
 
 The A19 Pro has sparse buffers (probe 26). Had it none, the window would have stayed a fixed 64K
 with ordinary buffers (+0.4–0.55 GB a chat) or gone back to the growth below.
@@ -608,6 +611,14 @@ growth.
   - The graph dumps differ from the release's in one kernel only: the 1,024-token prefill's reduction at 64K, now `[8,4,1]` as at 32K.
   - The needle table is unchanged (89 of 90), and so are its times (57K: 29.6 s against 33.9).
   - The delegate's `bounded_attention_test` passes, with a check that every slice keeps the whole rows.
+
+**Results on the iPhone 17 Pro, the 128K file at 65,536** (2026-11-17, `scripts/device-harness.sh probes`, probes 27–30; runtime build `8f24e4123eb5`, the fork's `5126675f`, softmax fix included): every gate the Mac met is met, the same way.
+- Identity at ≤ 32K: probe 30's prose is identical at 32,768 and 65,536 in 4 of 4, so the iPhone's replies don't depend on the window, with the softmax fix as without.
+- 48-digit copies: 12 of 12 exact: the reference at 0–95 % of 57,000 tokens, across 32,768, and to the window's last position (65,536 cached).
+- Needles: 18, 18, 17, 18 and 18 of 18 (21,379 to 59,290 tokens). The one miss is the Mac's: 8487 for 84873, at 7 % depth of 45,617 tokens.
+- History: 10 of 10 facts after 51,895 tokens.
+- Times: a 57,000-token copy prompt with its reply takes 75–79 s; a 65,487-token one, 101 s; each needle size with its 18 questions, from 23.2 s (21K) to 88.6 s (59K). The footprint at the end of each long probe is 3.2–3.4 GB (the app's limit is 6.4 GB).
+- Left: the FP32-sums build and the twenty documents (the maintainer's B1).
 
 **Releases** (timing stays the maintainer's call): R1, train 1 with files sent once and the stop
 check; R2, the ring/128K file at a true 32,768 with the rewind fix, the old file kept until the
