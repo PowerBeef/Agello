@@ -793,6 +793,14 @@ there predate the measurements.
    −7.9 %, free writing unchanged. Copy-heavy replies are bound by the verify's four positions,
    not by the drafts: B2 pays off with B5's longer verifies, where copied drafts fill a long
    round for free and the drafter would need a run per draft.
+   **B5 scoped (2026-11-17, `build/drafts/b5-longer-verify-scope-2026-11-17.md`):** a `verify_8`
+   signature added beside `verify` by graph surgery (its shapes and constants solved from the
+   `decode`, `verify` and `prefill_128` exports, weights shared, checked on the CPU against
+   `verify`), then a cost probe as the go/no-go (at most about 1.3 times `verify`: weight
+   products stay on the fully connected kernel at 8 rows, attention goes to 32 rows and the
+   convolutions), then rounds of 7 copied drafts. Estimate: about 1.3 to 1.6 times faster
+   decoding on copy-heavy replies, free writing unchanged; a new model file, best shipped with the
+   128K file.
 6. B4 (speculative decoding for JSON helpers, every Search message waits on one), then B3
    (Regenerate with speculative decoding; changes seeded replies).
 7. G1 now: unknown chip names fall to Apple1 (`MD/common/gpu_info.cc`), which turns the matrix-unit
