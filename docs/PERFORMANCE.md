@@ -823,6 +823,16 @@ there predate the measurements.
    kernel, reading the cache once): two 16-row blocks would cost about twice `verify`'s attention,
    about 1.2× after 13.6K. Memory: the file with `verify_8` holds about 105 MB more after load and
    peaks 345 MB higher (its graph's buffers), to weigh on the iPhone.
+   **The kernel, a go on the M6 (2026-11-17, fork `13def71b`):** on Apple GPUs an attention
+   product of up to 64 rows keeps the fully connected kernel, its rows tiled 16 to a work group
+   (`FullyConnected::ConvParams::row_tile`). `verify_8` now costs 1.11× `verify` at a short
+   context and 1.23× after 13,635 tokens; its attention 8.4 ms against `verify`'s 5.1 for twice
+   the rows. Graphs with 16 rows or fewer are unchanged (the published file's reply identical,
+   `inference` 23/23 natively). `AGELLO_VERIFY8_PROBE=2` compares `verify_8`'s greedy picks with
+   `verify`'s on the round's real tokens: 366 of 368 and 20 of 20 agree, the two others near-ties
+   (another summation order), so replies with `verify_8` rounds can part from today's at near-ties.
+   Next: the same measurement on the iPhone (a device probe on the 128K file with `verify_8`), then
+   phase 3.
 6. B4 (speculative decoding for JSON helpers, every Search message waits on one), then B3
    (Regenerate with speculative decoding; changes seeded replies).
 7. G1 now: unknown chip names fall to Apple1 (`MD/common/gpu_info.cc`), which turns the matrix-unit
