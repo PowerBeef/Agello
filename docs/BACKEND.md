@@ -3,8 +3,8 @@
 A plan, from the maintainer's direction of 2026-11-10. Where it stands (2026-11-15): B0, B1 (its
 iPhone suites passed on 2026-11-12), B2 and B3 are done. The runtime is one repository,
 `PowerBeef/agello-litert-lm`, with one branch, `main`, since 2026-11-15, and one checkout on this
-Mac, `../LiteRT-LM`. The Mac's half of B4 is measured ("The ledger", below); its iPhone half, the
-bench against the new runtime and a new baseline, is still to run. B5, the performance work
+Mac, `../LiteRT-LM`. Both halves of B4 are done: the Mac's ("The ledger", below) and the iPhone's, the bench on
+the fork's `c137900d`, accepted as the baseline on 2026-11-17. B5, the performance work
 ([PERFORMANCE.md](PERFORMANCE.md)), is under way. B6 is in part: the first release built from the
 one repository, `agello-one-20261115` (fork `6da75396`, build `0c749789100a`), ships in the app
 since 2026-11-15 (commit `39daed1`), after the iPhone comparisons of that build (the ledger).
@@ -76,7 +76,7 @@ maintainer's go, as before.
 | **B1** (done 2026-11-12: `unit`, `inference`, `files`, `web`, `thinking` and `ui` on the iPhone) | The app sheds its two spare paths (below). | The unit tests pass natively and on the iPhone, with `inference`, `files`, `web`, `thinking` and `ui` on the iPhone. |
 | **B2** (done 2026-11-11 on the branch `agello-one`: local until 2026-11-12, then on GitHub; the fork's `main` since 2026-11-15) | One repository: LiteRT and ML Drift imported at the pinned commits as folders, the build reading them in place of the archives. No source changes. | Replies identical to the build before the move, speed inside the noise, and a kernel edit rebuilds without a pin. |
 | **B3** (pruned 2026-11-11; in release `agello-one-20261115`, whose iPhone comparison stands for the owed speed run) | Prune to what the Apple build compiles: other platforms, other GPU APIs, vendor NPUs, converters, the other bindings and build systems, and the path that runs the language model on the CPU. | The same check as B2, with the file count before and after recorded. |
-| **B4** (the Mac's half done 2026-11-11) | The baseline: a noise run on a quiet Mac, the bench on the iPhone, and a ledger of what each later change bought. | Both baselines are committed with their noise bands. |
+| **B4** (done: the Mac's half 2026-11-11, the iPhone's 2026-11-17) | The baseline: a noise run on a quiet Mac, the bench on the iPhone, and a ledger of what each later change bought. | Both baselines are committed with their noise bands. |
 | **B5** (approved 2026-11-13: [PERFORMANCE.md](PERFORMANCE.md); under way: train 1, the sparse KV caches and the window read from the model file done and released in `agello-one-20261115`, 2026-11-15) | The performance work (below), one thread at a time. | Each thread: a gain outside the noise on the Mac, confirmed on the iPhone, with a quality verdict. |
 | **B6** (in part 2026-11-15: release `agello-one-20261115` built from the one repository and vendored; left: the fork's reference pages) | Releases and instructions from the one repository: the release and vendoring scripts, the fork's reference, the `agello-litert-update` skill, this repo's docs. | A release built from the one repository ships in the app after its iPhone gate. |
 

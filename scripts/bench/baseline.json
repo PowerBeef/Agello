@@ -1,93 +1,107 @@
 {
- "accepted": "2026-11-10T18:53:04Z",
+ "accepted": "2026-11-17T14:55:22Z",
  "cases": {
   "calculator-search": {
    "ended": "model",
    "failedChecks": [
     "7 \u00d7 8: no 56"
    ],
-   "outputTokens": 3157,
+   "outputTokens": 2691,
    "search": true,
-   "tokPerSecond": 44.2
+   "tokPerSecond": 47.6
   },
   "email": {
    "ended": "model",
    "failedChecks": [],
    "outputTokens": 197,
    "search": false,
-   "tokPerSecond": 44.2
+   "tokPerSecond": 46.4
   },
   "explain": {
    "ended": "model",
    "failedChecks": [],
    "outputTokens": 1666,
    "search": false,
-   "tokPerSecond": 31.4
+   "tokPerSecond": 37.3
   },
   "facts-search": {
    "ended": "model",
    "failedChecks": [],
-   "outputTokens": 1373,
+   "outputTokens": 439,
    "search": true,
-   "tokPerSecond": 38.5
+   "tokPerSecond": 60.1
   },
   "file-report": {
    "ended": "model",
    "failedChecks": [],
    "outputTokens": 172,
    "search": false,
-   "tokPerSecond": 31.4
+   "tokPerSecond": 33.8
   },
   "file-report/2": {
    "ended": "model",
    "failedChecks": [],
-   "outputTokens": 49,
+   "outputTokens": 47,
    "search": false,
-   "tokPerSecond": 34.9
+   "tokPerSecond": 55.1
   },
   "followup-search": {
    "ended": "model",
    "failedChecks": [],
-   "outputTokens": 316,
+   "outputTokens": 46,
    "search": true,
-   "tokPerSecond": 33.2
+   "tokPerSecond": 51.3
   },
   "followup-search/2": {
    "ended": "model",
    "failedChecks": [],
-   "outputTokens": 43,
+   "outputTokens": 36,
    "search": true,
-   "tokPerSecond": 31.5
+   "tokPerSecond": 53.3
+  },
+  "mockup-os-search": {
+   "ended": "model",
+   "failedChecks": [],
+   "outputTokens": 5734,
+   "search": true,
+   "tokPerSecond": 38.4
+  },
+  "mockup-os-search/2": {
+   "ended": "model",
+   "failedChecks": [],
+   "outputTokens": 7644,
+   "search": true,
+   "tokPerSecond": 33.8
   },
   "python": {
    "ended": "model",
    "failedChecks": [],
    "outputTokens": 2235,
    "search": false,
-   "tokPerSecond": 38.5
+   "tokPerSecond": 40.3
   },
   "swiftui-search": {
    "ended": "model",
    "failedChecks": [
-    "5 Swift errors"
+    "3 Swift errors"
    ],
-   "outputTokens": 1483,
+   "outputTokens": 1626,
    "search": true,
-   "tokPerSecond": 37.4
+   "tokPerSecond": 34.8
   },
   "todo": {
    "ended": "model",
    "failedChecks": [],
    "outputTokens": 3827,
    "search": false,
-   "tokPerSecond": 41.0
+   "tokPerSecond": 40.6
   },
   "trip-search": {
    "ended": "model",
    "failedChecks": [],
-   "outputTokens": 1911,
+   "outputTokens": 1845,
    "search": true,
-   "tokPerSecond": 29.5
+   "tokPerSecond": 38.5
   },
   "ttl-cache": {
    "ended": "model",
@@ -98,7 +112,7 @@
    ],
    "outputTokens": 4517,
    "search": false,
-   "tokPerSecond": 39.8
+   "tokPerSecond": 37.6
   }
  }
 }
