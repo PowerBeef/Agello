@@ -88,6 +88,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   private var loadedContextTokens: Int?
   private var toolsEnabled = true
   private var generating = false
+  /// The last reply's chunks as the wrapper delivered them, when a probe asks for them
+  /// (``recordChunks(_:)``; probe 35): text, channels and tool calls, one line a chunk.
+  private(set) var chunkLog: [String]?
+
+  func recordChunks(_ on: Bool) { chunkLog = on ? [] : nil }
   /// Set by ``cancel()`` during a generation. LiteRT-LM leaves the
   /// conversation cancelled afterwards (the next message fails with
   /// "CANCELLED"), so a cancelled generation always ends as
@@ -887,6 +892,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         }
         streamedChunks += 1
         if streamedChunks.isMultiple(of: 100) { ReplyTrace.progress(chunks: streamedChunks) }
+        if chunkLog != nil {
+          chunkLog?.append(
+            "text=\(chunk.toString.debugDescription) channels=\(chunk.channels.sorted { $0.key < $1.key }) "
+              + "toolCalls=\(chunk.toolCalls.map(\.name))")
+        }
         let thought = chunk.channels["thought"]
         if guardsToolRounds {
           for piece in [chunk.toString, thought ?? ""] {

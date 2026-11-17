@@ -156,6 +156,8 @@ final class ThinkingScenarioTests: DeviceTestCase {
       results.append([
         "prompt": prompt, "reply": String(exchange.text.prefix(200)),
         "thoughtLength": exchange.reply?.thought.count ?? 0,
+        "thought": String((exchange.reply?.thought ?? "").prefix(400)),
+        "tools": exchange.reply?.parts.toolActivity.map { "\($0.name): \($0.summary)" } ?? [],
         "inputTokens": exchange.reply?.stats?.inputTokens ?? -1,
         "error": appState.generationError ?? "",
       ])
