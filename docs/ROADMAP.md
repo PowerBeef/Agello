@@ -25,13 +25,14 @@ The handoff between work sessions: read this first, then the section of the plan
     4. **CI:** it needs a macOS 27 runner (self-hosted, this Mac, or waiting for a hosted image).
   - **C. On the Mac, meanwhile** (nothing here needs the phone):
     1. **The GPU-resident speculative round, stage 2:** the drafter's three steps chained on the GPU, each followed by the argmax, gather and concat kernels on the same queue, behind `AGELLO_RESIDENT_ROUND`. Then stage 3 (verify's inputs) and stage 4 (the switch). Stages 0–1 are done (`tools/agello-gpu-round`, fork `ffc639ef`); the design is in `build/drafts/gpu-resident-round-design-2026-11-16.md`. The bar is +8 % sustained on the iPhone with identical replies (the replay test measured +13–17 %).
-    2. **The rest of B5** ([PERFORMANCE.md](PERFORMANCE.md), "On the Mac, now", the items not marked done): B2's drafts from the context, speculative decoding for the JSON helpers, G1, the pool's tests and soak.
-    3. **Small things:**
+    2. **The chat system prompt** ([SYSTEM-PROMPT.md](SYSTEM-PROMPT.md), written 2026-11-16 from research, untested): five candidates, from today's one line (A) to a long control (E), with D, eight short defaults in about 180 tokens composed in code, the lead. They give the model the date, its knowledge limit, the reply language and shape, and "do the task". Next: `InferenceScenarioTests/test16_SystemPromptTable` with code checks, a Mac screening run on the maintainer's go, then the iPhone, then the bench read in full. The same page lists faults the research placed outside the system prompt: comma-list citations, tool parameters never marked required, the weather block's "tomorrow", the web prompt's wording, memories learned from web pages, and the image-before-text order.
+    3. **The rest of B5** ([PERFORMANCE.md](PERFORMANCE.md), "On the Mac, now", the items not marked done): B2's drafts from the context, speculative decoding for the JSON helpers, G1, the pool's tests and soak.
+    4. **Small things:**
        - `swiftlint`'s two errors in `WebContext.swift` (since 2026-11-12);
        - the README's performance image and table, which show Google's runtime of October;
        - a Bench build configuration for the remaining test hooks;
        - the fork's reference pages, which still describe the three-repository layout in places.
-    4. **Open, needing the phone first:**
+    5. **Open, needing the phone first:**
        - history replayed by tokens instead of 20 messages (it needs the phone's reseed times);
        - the coding chat's original stop mid-reply, which didn't reproduce;
        - `web`'s `test04` and `test06`, which fail with the old runtime too;
