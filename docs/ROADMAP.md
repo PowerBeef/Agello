@@ -16,6 +16,7 @@ The handoff between work sessions: read this first, then the section of the plan
        - the incomplete-reply line, the embedder's unload fix, a barge-in in voice mode;
        - a follow-up on a 16K file (the time files sent once saves);
        - the rewind fix's check (a Think reply over 1,100 tokens, then a follow-up);
+       - `files` at EmbeddingGemma 2's full 768 dimensions (2026-11-16, natively 5/5), and how long the phone takes to index a user's files and chats again after the update; a chat with more than 25 memories;
        - `web`'s `test06` with its new check that every citation names a source given (the 2026-11-15 run had 3 of 13 answers citing footnote numbers such as [42] with eight sources; fixed in the page reader and on screen, unit-tested).
     4. **B4's iPhone half:** `scripts/device-harness.sh bench` on that build, then a new baseline (`BENCH_ACCEPT=1`), which takes in the twelfth case, `mockup-os-search`. The committed baseline is from 2026-11-10, on the old runtime.
   - **B. The maintainer's decisions:**
@@ -26,13 +27,14 @@ The handoff between work sessions: read this first, then the section of the plan
   - **C. On the Mac, meanwhile** (nothing here needs the phone):
     1. **The GPU-resident speculative round, stage 2:** the drafter's three steps chained on the GPU, each followed by the argmax, gather and concat kernels on the same queue, behind `AGELLO_RESIDENT_ROUND`. Then stage 3 (verify's inputs) and stage 4 (the switch). Stages 0–1 are done (`tools/agello-gpu-round`, fork `ffc639ef`); the design is in `build/drafts/gpu-resident-round-design-2026-11-16.md`. The bar is +8 % sustained on the iPhone with identical replies (the replay test measured +13–17 %).
     2. **The chat system prompt** ([SYSTEM-PROMPT.md](SYSTEM-PROMPT.md), written 2026-11-16 from research, untested): five candidates, from today's one line (A) to a long control (E), with D, eight short defaults in about 180 tokens composed in code, the lead. They give the model the date, its knowledge limit, the reply language and shape, and "do the task". Next: `InferenceScenarioTests/test16_SystemPromptTable` with code checks, a Mac screening run on the maintainer's go, then the iPhone, then the bench read in full. The same page lists faults the research placed outside the system prompt. Done on the Mac on 2026-11-16 (unit 303/303 natively, compiled for the iPhone): comma-list citations (`d159ad1`), the weather block's Today and Tomorrow (`45c7ebe`), and shared text kept out of memories (`c02d942`). Left, since each changes what the model reads and needs a real-model check: tool parameters marked required, the date tool's description, the web prompt's wording, and the image-before-text order.
-    3. **The rest of B5** ([PERFORMANCE.md](PERFORMANCE.md), "On the Mac, now", the items not marked done): B2's drafts from the context, speculative decoding for the JSON helpers, G1, the pool's tests and soak.
-    4. **Small things:**
+    3. **EmbeddingGemma 2, put to fuller use** (2026-11-16, natively verified; probes 32 and 33): 768 dimensions instead of 256 (`2707f88`), memories chosen by meaning when there are more than 25 (`86ab9c9`), and float16 measured as safe on our GPU despite the card's warning (`b5c5072`). Options left: memories deduplicated by meaning, older turns of a trimmed chat brought back by relevance (with history replay by tokens), the "code retrieval" task prefix for code questions, and the text-vision model (388 MB) to search photos by meaning, which would be a second download.
+    4. **The rest of B5** ([PERFORMANCE.md](PERFORMANCE.md), "On the Mac, now", the items not marked done): B2's drafts from the context, speculative decoding for the JSON helpers, G1, the pool's tests and soak.
+    5. **Small things:**
        - `swiftlint`'s two errors in `WebContext.swift` (since 2026-11-12);
        - the README's performance image and table, which show Google's runtime of October;
        - a Bench build configuration for the remaining test hooks;
        - the fork's reference pages, which still describe the three-repository layout in places.
-    5. **Open, needing the phone first:**
+    6. **Open, needing the phone first:**
        - history replayed by tokens instead of 20 messages (it needs the phone's reseed times);
        - the coding chat's original stop mid-reply, which didn't reproduce;
        - `web`'s `test04` and `test06`, which fail with the old runtime too;
