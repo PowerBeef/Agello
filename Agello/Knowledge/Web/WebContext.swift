@@ -145,7 +145,8 @@ enum WebContext {
   /// cut to 400 bytes. With them a cited reply was cut after its second name, and the follow-up
   /// was planned around that name (the runner-up of a race, 2026-11-10).
   static func historyLine(_ text: String) -> String {
-    let plain = text.replacing(/\[\d+\]/, with: "").replacing(/\*+/, with: "")
+    let plain = text.replacingOccurrences(of: citationMarker, with: "", options: .regularExpression)
+      .replacing(/\*+/, with: "")
     let collapsed = plain.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
       .joined(separator: " ")
       .replacing(" .", with: ".").replacing(" ,", with: ",")
@@ -186,6 +187,10 @@ enum WebContext {
 
   // MARK: Citations
 
+  /// A citation marker: "[3]", or a list such as "[4, 22]" (the model writes both; the list
+  /// form slipped past every check until 2026-11-16).
+  static let citationMarker = #"\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\]"#
+
   /// "[1]" markers turned into markdown links to their sources (outside code). A marker for a
   /// source without an address (a file) stays as it is; one that matches no source is dropped
   /// with the space before it: the model copies a page's own footnote numbers ("[42]" with eight
@@ -219,27 +224,34 @@ enum WebContext {
   }
 
   private static func linkMarkers(_ text: String, urls: [Int: String], known: Set<Int>) -> String {
-    guard let regex = try? NSRegularExpression(pattern: #"\[(\d{1,3})\](?!\()"#) else { return text }
+    guard let regex = try? NSRegularExpression(pattern: citationMarker + #"(?!\()"#) else { return text }
     var output = ""
     var last = text.startIndex
     for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
-      guard let range = Range(match.range, in: text), let numberRange = Range(match.range(at: 1), in: text),
-        let number = Int(text[numberRange])
+      guard let range = Range(match.range, in: text), let numbersRange = Range(match.range(at: 1), in: text)
       else { continue }
-      if let url = urls[number] {
+      let numbers = text[numbersRange].split(separator: ",").compactMap {
+        Int($0.trimmingCharacters(in: .whitespaces))
+      }
+      // Each number of a list ("[4, 22]") on its own: a link, a plain marker for a source
+      // without an address, or nothing for a number that matches no source.
+      let kept = numbers.compactMap { number -> String? in
+        if let url = urls[number] { return "[\\[\(number)\\]](\(url))" }
+        return known.contains(number) ? "[\(number)]" : nil
+      }
+      if numbers.count == 1, kept == ["[\(numbers[0])]"] { continue }  // unchanged
+      if !kept.isEmpty {
         output += text[last..<range.lowerBound]
-        output += "[\\[\(number)\\]](\(url))"
-      } else if !known.contains(number) {
+        output += kept.joined()
+      } else {
         // Dropped, and the space before it unless a word follows ("is 1.8 million [16]." reads
         // "is 1.8 million.", "a [16] b" reads "a b").
-        var kept = String(text[last..<range.lowerBound])
+        var before = String(text[last..<range.lowerBound])
         let wordFollows = text[range.upperBound...].first.map { $0.isLetter || $0.isNumber } ?? false
         if !wordFollows {
-          while kept.last == " " { kept.removeLast() }
+          while before.last == " " { before.removeLast() }
         }
-        output += kept
-      } else {
-        continue
+        output += before
       }
       last = range.upperBound
     }

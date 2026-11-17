@@ -251,6 +251,10 @@ final class WebTests: XCTestCase {
     XCTAssertEqual(
       linked,
       "Nausea is common. It affects 1 in 4 [\\[2\\]](https://s2.example) people, and more.\n`[42]`")
+    // A list is taken number by number: kept, linked, or dropped.
+    XCTAssertEqual(
+      WebContext.linkCitations("Rain is likely [2, 16]. Snow too [42, 79].", sources: sources),
+      "Rain is likely [\\[2\\]](https://s2.example). Snow too.")
     // Without sources nothing is a citation: bracketed numbers stay.
     XCTAssertEqual(WebContext.linkCitations("Item [42].", sources: []), "Item [42].")
   }

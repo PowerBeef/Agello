@@ -31,7 +31,7 @@ enum VoiceText {
     var spoken = text
     spoken = spoken.replacingOccurrences(
       of: #"\[([^\]]+)\]\([^)]+\)"#, with: "$1", options: .regularExpression)  // links
-    spoken = spoken.replacingOccurrences(of: #"\[\d{1,2}\]"#, with: "", options: .regularExpression)
+    spoken = spoken.replacingOccurrences(of: WebContext.citationMarker, with: "", options: .regularExpression)
     spoken = spoken.replacingOccurrences(of: #"https?://\S+"#, with: "", options: .regularExpression)
     spoken = spoken.replacingOccurrences(of: #"[*_#`~>|]"#, with: "", options: .regularExpression)
     spoken = String(spoken.unicodeScalars.filter { !$0.properties.isEmojiPresentation }.map(Character.init))

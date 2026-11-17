@@ -171,7 +171,7 @@ struct MessageBubbleView: View {
       text = text.replacingOccurrences(of: token, with: "")
     }
     text = text.replacingOccurrences(of: #"(?m)^#{1,6}\s+"#, with: "", options: .regularExpression)
-    return text.replacingOccurrences(of: #"\[(\d+)\]"#, with: "", options: .regularExpression)
+    return text.replacingOccurrences(of: WebContext.citationMarker, with: "", options: .regularExpression)
   }
 
   // MARK: - Reasoning

@@ -186,7 +186,8 @@ for row in surface["rows"]:
             "citations": len(re.findall(r"\[\d+\]", reply)),
             # Markers that match no source: a page's own footnote numbers copied into the reply
             # (2026-11-15: [42] with eight sources). The screen drops them; the reply still had them.
-            "citationsWithoutSource": sorted({int(n) for n in re.findall(r"\[(\d+)\]", reply)}
+            "citationsWithoutSource": sorted({int(n) for group in re.findall(r"\[(\d+(?:\s*,\s*\d+)*)\]", reply)
+                                              for n in group.split(",")}
                                              - {int(s.split()[0]) for s in trace.get("sources", []) if s.split() and s.split()[0].isdigit()})
             if trace.get("sources") else [],
             "searchPlan": helpers[0].get("output", "") if helpers and row.get("search") else "",

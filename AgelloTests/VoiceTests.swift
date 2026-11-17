@@ -16,6 +16,10 @@ final class VoiceTextTests: XCTestCase {
     XCTAssertNil(VoiceText.split("Sure.").heard)
   }
 
+  func testSpeakableTextDropsCitationLists() {
+    XCTAssertEqual(VoiceText.speakable("It rains often [4, 22]. Snow is rare [7]."), "It rains often. Snow is rare.")
+  }
+
   func testSpeakableText() {
     XCTAssertEqual(
       VoiceText.speakable("**Canberra** is the [capital](https://x.y) [1]. 🇦🇺 See https://a.b"),
