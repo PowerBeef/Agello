@@ -810,6 +810,19 @@ there predate the measurements.
    positions 0–7 and `verify` chained over 0–3 and 4–7 the same logits and caches, bit for bit.
    The graph section grows by 21 MB. The 128K file can't run on the CPU (its decompositions keep
    the full cache length, which the GPU never reads), so phase 2 checks it on the GPU.
+   **Phase 2, measured (2026-11-17, fork `7e825ebb`, M6): not yet a go.** The drafter loads
+   `verify_8` and `AGELLO_VERIFY8_PROBE=1` times it each round (replies identical with the probe
+   on). Against `verify`'s GPU time per run: 1.10× at a short context, 1.62× after 13,635 tokens.
+   At 8 positions the attention products have 32 rows (4 query heads per key-value head), past
+   the fully connected kernel's 16, so they go to the convolutions, which convert the INT8 cache
+   to FP16 every run (6.8 ms at 13.6K, growing with the context); the weight products stay where
+   they were (15.9 against 16.6 ms). Keeping attention on the fully connected kernel with all 32
+   rows in each thread (tried, not kept) gave 1.24× and 1.45×: that kernel holds every row's
+   accumulator in one thread and has no row tiling, so its attention cost 4.2 times `verify`'s.
+   The fix is an attention kernel that tiles 32 rows into blocks of 16 (or C3's grouped-query
+   kernel, reading the cache once): two 16-row blocks would cost about twice `verify`'s attention,
+   about 1.2× after 13.6K. Memory: the file with `verify_8` holds about 105 MB more after load and
+   peaks 345 MB higher (its graph's buffers), to weigh on the iPhone.
 6. B4 (speculative decoding for JSON helpers, every Search message waits on one), then B3
    (Regenerate with speculative decoding; changes seeded replies).
 7. G1 now: unknown chip names fall to Apple1 (`MD/common/gpu_info.cc`), which turns the matrix-unit
