@@ -65,7 +65,9 @@ extension AppState {
       }
     }
     // Removed once it's sent: a send that fails leaves it for the next launch.
-    guard await send(text: question, imageData: image, audioFileURL: nil, files: files, in: thread)
+    // Memories come from what the user typed, never from the shared text or page.
+    let typed = item.question.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard await send(text: question, imageData: image, audioFileURL: nil, files: files, remembering: typed, in: thread)
     else {
       sharedItemsTried.insert(item.id)
       for record in files {

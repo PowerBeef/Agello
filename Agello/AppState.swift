@@ -445,9 +445,11 @@ final class AppState {
   /// Send a message in `thread`. Returns false when the message was not
   /// accepted (nothing was persisted), so the caller can restore the draft.
   @discardableResult
+  /// `remembering` is what the memory helper may read, when it isn't the whole message: a shared
+  /// item's own text was written by someone else, so only what the user typed counts.
   func send(
     text: String, imageData: Data?, audioFileURL: URL?, files: [FileRecord] = [],
-    webSearch: Bool = false, in thread: ChatThread
+    webSearch: Bool = false, remembering: String? = nil, in thread: ChatThread
   ) async -> Bool {
     let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !prompt.isEmpty || imageData != nil || audioFileURL != nil || !files.isEmpty else {
@@ -455,7 +457,7 @@ final class AppState {
     }
     return await generate(
       prompt: prompt, imageData: imageData, audioFileURL: audioFileURL, in: thread,
-      history: nil, webSearch: webSearch
+      history: nil, webSearch: webSearch, remembering: remembering
     ) {
       let turn = ChatTurn(
         role: .user, text: prompt, imageData: imageData, hasAudio: audioFileURL != nil)
@@ -532,7 +534,7 @@ final class AppState {
   private func generate(
     prompt: String, imageData: Data?, audioFileURL: URL?, in thread: ChatThread,
     history rewound: [(role: ChatRole, text: String)]?, replacing: ChatTurn? = nil,
-    webSearch: Bool = false, samplingSeed: Int? = nil, persist: () -> Void
+    webSearch: Bool = false, samplingSeed: Int? = nil, remembering: String? = nil, persist: () -> Void
   ) async -> Bool {
     guard !isGenerating, !isPreparing, !isBenchmarking else { return false }
     guard let context = modelContext else { return false }
@@ -729,7 +731,7 @@ final class AppState {
       pendingOptionsApply = false
       await applyCurrentOptions()
     }
-    queueHelpers(after: reply, message: voiceTurn?.text ?? prompt, in: thread)
+    queueHelpers(after: reply, message: remembering ?? voiceTurn?.text ?? prompt, in: thread)
     SpotlightIndex.index([thread])
     return true
   }
