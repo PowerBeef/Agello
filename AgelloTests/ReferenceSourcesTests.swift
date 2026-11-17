@@ -188,11 +188,11 @@ final class ReferenceSourcesTests: XCTestCase {
           date: start.addingTimeInterval(Double($0) * 3600), temperature: .init(value: 2, unit: .celsius),
           condition: "Rain", precipitationChance: 0.6)
       },
-      days: [
+      days: [0, 1, 2].map {
         .init(
-          date: start.addingTimeInterval(86_400), high: .init(value: 5, unit: .celsius),
+          date: start.addingTimeInterval(Double($0) * 86_400), high: .init(value: 5, unit: .celsius),
           low: .init(value: -1, unit: .celsius), condition: "Snow", precipitationChance: 0.4)
-      ])
+      })
     // Formatters put narrow no-break spaces before units and "PM".
     let text = WeatherLookup.describe(report, locale: Locale(identifier: "en_CA"))
       .replacingOccurrences(of: "\u{202F}", with: " ").replacingOccurrences(of: "\u{00A0}", with: " ")
@@ -201,5 +201,33 @@ final class ReferenceSourcesTests: XCTestCase {
     XCTAssertTrue(text.contains("3°C") || text.contains("3 °C"), text)
     XCTAssertTrue(text.contains("60 % chance of precipitation"), text)
     XCTAssertTrue(text.contains("snow, high 5"), text)
+    // Today and tomorrow are named in the place's calendar (14:00 in Montreal on Thursday the 12th).
+    XCTAssertTrue(text.contains("  Today, Thu, Nov 12"), text)
+    XCTAssertTrue(text.contains("  Tomorrow, Fri, Nov 13"), text)
+    XCTAssertTrue(text.contains("  Sat, Nov 14"), text)
+    XCTAssertFalse(text.contains("Today, Sat"), text)
+  }
+
+  /// Hours past midnight say so.
+  func testWeatherHoursPastMidnightSayTomorrow() throws {
+    let zone = try XCTUnwrap(TimeZone(identifier: "America/Toronto"))
+    let start = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-13T03:30:00Z"))  // 22:30 local
+    let report = WeatherLookup.Report(
+      place: "Montreal", timeZone: zone,
+      now: .init(
+        date: start, temperature: .init(value: 0, unit: .celsius), feelsLike: .init(value: -3, unit: .celsius),
+        condition: "Clear", windSpeed: .init(value: 5, unit: .kilometersPerHour), humidity: 0.5),
+      hours: (1...4).map {
+        .init(
+          date: start.addingTimeInterval(Double($0) * 3600), temperature: .init(value: 0, unit: .celsius),
+          condition: "Clear", precipitationChance: 0)
+      },
+      days: [])
+    let text = WeatherLookup.describe(report, locale: Locale(identifier: "en_CA"))
+      .replacingOccurrences(of: "\u{202F}", with: " ").replacingOccurrences(of: "\u{00A0}", with: " ")
+    let hours = text.components(separatedBy: "\n").filter { $0.hasPrefix("  ") }
+    XCTAssertEqual(hours.count, 2, text)  // every third hour: 23:30 and 02:30
+    XCTAssertFalse(hours[0].contains("tomorrow"), text)
+    XCTAssertTrue(hours[1].contains("tomorrow"), text)
   }
 }

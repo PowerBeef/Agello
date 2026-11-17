@@ -271,6 +271,15 @@ enum WeatherLookup {
       value.formatted(.measurement(width: .abbreviated, usage: .weather, numberFormatStyle: .number.precision(.fractionLength(0))).locale(locale))
     }
     func percent(_ value: Double) -> String { "\(Int((value * 100).rounded())) %" }
+    // Today and tomorrow named, in the place's own calendar: given only weekdays, a reply put
+    // "tomorrow" on the wrong line ("tomorrow, Sunday, November 22" on Monday the 16th, 2026-11-15).
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = report.timeZone
+    func relative(_ date: Date) -> String? {
+      if calendar.isDate(date, inSameDayAs: report.now.date) { return "Today" }
+      guard let next = calendar.date(byAdding: .day, value: 1, to: report.now.date) else { return nil }
+      return calendar.isDate(date, inSameDayAs: next) ? "Tomorrow" : nil
+    }
     var lines = ["Weather for \(report.place) (local time):"]
     let now = report.now
     lines.append(
@@ -280,15 +289,17 @@ enum WeatherLookup {
       lines.append("Next hours:")
       for item in report.hours.enumerated() where item.offset.isMultiple(of: 3) {
         let next = item.element
+        let label = relative(next.date) == "Tomorrow" ? " tomorrow" : ""
         lines.append(
-          "  \(next.date.formatted(hour)): \(temperature(next.temperature)), \(next.condition.lowercased()), "
+          "  \(next.date.formatted(hour))\(label): \(temperature(next.temperature)), \(next.condition.lowercased()), "
             + "\(percent(next.precipitationChance)) chance of precipitation")
       }
     }
     lines.append("Next days:")
     for next in report.days {
+      let label = relative(next.date).map { "\($0), " } ?? ""
       lines.append(
-        "  \(next.date.formatted(day)): \(next.condition.lowercased()), high \(temperature(next.high)), "
+        "  \(label)\(next.date.formatted(day)): \(next.condition.lowercased()), high \(temperature(next.high)), "
           + "low \(temperature(next.low)), \(percent(next.precipitationChance)) chance of precipitation")
     }
     return lines.joined(separator: "\n")
