@@ -184,6 +184,11 @@ for row in surface["rows"]:
             "replyCharacters": len(reply), "reasoningCharacters": len(trace.get("thought", "")),
             "fencesClosed": len(fences) % 2 == 0, "sources": trace.get("sources", []),
             "citations": len(re.findall(r"\[\d+\]", reply)),
+            # Markers that match no source: a page's own footnote numbers copied into the reply
+            # (2026-11-15: [42] with eight sources). The screen drops them; the reply still had them.
+            "citationsWithoutSource": sorted({int(n) for n in re.findall(r"\[(\d+)\]", reply)}
+                                             - {int(s.split()[0]) for s in trace.get("sources", []) if s.split() and s.split()[0].isdigit()})
+            if trace.get("sources") else [],
             "searchPlan": helpers[0].get("output", "") if helpers and row.get("search") else "",
             "engine": engine_summary(trace.get("engineTelemetry", {})),
             "timeline": trace.get("timeline", []), "work": trace.get("work", {}), "frames": trace.get("frames", {}),
@@ -301,7 +306,9 @@ for case in cases:
             + (f"; second attempt ({case['firstAttempt']})" if case.get("attempts", 1) > 1 else ""))
     lines += layers(case)
     if case["search"]:
-        lines.append(f"- **Search:** plan {' '.join(case['searchPlan'].split()) or 'none recorded'}; {len(case['sources'])} sources, {case['citations']} citations")
+        stray = case.get("citationsWithoutSource", [])
+        lines.append(f"- **Search:** plan {' '.join(case['searchPlan'].split()) or 'none recorded'}; {len(case['sources'])} sources, {case['citations']} citations"
+                     + (f"; **citing no source: {', '.join(f'[{n}]' for n in stray)}**" if stray else ""))
     lines += ["", "| Step | Seconds | Footprint | Available | Details |", "| --- | --- | --- | --- | --- |"]
     for event in case["events"]:
         details = ", ".join(f"{key} {' '.join(str(value).split())[:80]}" for key, value in event.items() if key not in ("name", "seconds", "footprintGB", "availableGB"))
@@ -322,6 +329,11 @@ for case in cases:
     lines.append("")
 if problems:
     lines += ["## Problems", ""] + [f"- {problem}" for problem in problems] + [""]
+# A reply quality note, not a problem with the run: the baseline can still be accepted.
+stray_cases = [(case["id"], case["citationsWithoutSource"]) for case in cases if case.get("citationsWithoutSource")]
+if stray_cases:
+    lines += ["## Citations to no source", ""] + [
+        f"- {name}: {', '.join(f'[{n}]' for n in numbers)}" for name, numbers in stray_cases] + [""]
 open(os.path.join(bench, "report.md"), "w").write("\n".join(lines))
 print("\n".join(lines[: len(cases) + 7 + max(len(changes), 1)]))
 if problems:

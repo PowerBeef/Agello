@@ -15,7 +15,8 @@ The handoff between work sessions: read this first, then the section of the plan
        - a download paused, moved to cellular and resumed, and a real download's staging;
        - the incomplete-reply line, the embedder's unload fix, a barge-in in voice mode;
        - a follow-up on a 16K file (the time files sent once saves);
-       - the rewind fix's check (a Think reply over 1,100 tokens, then a follow-up).
+       - the rewind fix's check (a Think reply over 1,100 tokens, then a follow-up);
+       - `web`'s `test06` with its new check that every citation names a source given (the 2026-11-15 run had 3 of 13 answers citing footnote numbers such as [42] with eight sources; fixed in the page reader and on screen, unit-tested).
     4. **B4's iPhone half:** `scripts/device-harness.sh bench` on that build, then a new baseline (`BENCH_ACCEPT=1`), which takes in the twelfth case, `mockup-os-search`. The committed baseline is from 2026-11-10, on the old runtime.
   - **B. The maintainer's decisions:**
     1. **Twenty real documents** for the last 64K gate: read whole, against their section summaries. Which documents, the maintainer's or ones found for it.

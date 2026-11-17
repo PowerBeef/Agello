@@ -186,13 +186,16 @@ enum WebContext {
 
   // MARK: Citations
 
-  /// "[1]" markers turned into markdown links to their sources (outside
-  /// code); markers without a matching source are left alone.
+  /// "[1]" markers turned into markdown links to their sources (outside code). A marker for a
+  /// source without an address (a file) stays as it is; one that matches no source is dropped
+  /// with the space before it: the model copies a page's own footnote numbers ("[42]" with eight
+  /// sources, 2026-11-15), and they would point nowhere.
   static func linkCitations(_ text: String, sources: [SourceRecord]) -> String {
     let urls = Dictionary(
       sources.compactMap { source in source.url.map { (source.index, $0) } },
       uniquingKeysWith: { first, _ in first })
-    guard !urls.isEmpty, text.contains("[") else { return text }
+    let known = Set(sources.map(\.index))
+    guard !known.isEmpty, text.contains("[") else { return text }
     var output = ""
     var inFence = false
     for (lineIndex, line) in text.components(separatedBy: "\n").enumerated() {
@@ -209,22 +212,35 @@ enum WebContext {
       // Leave inline code spans untouched.
       let parts = line.components(separatedBy: "`")
       output += parts.enumerated().map { index, part in
-        index.isMultiple(of: 2) ? linkMarkers(part, urls: urls) : part
+        index.isMultiple(of: 2) ? linkMarkers(part, urls: urls, known: known) : part
       }.joined(separator: "`")
     }
     return output
   }
 
-  private static func linkMarkers(_ text: String, urls: [Int: String]) -> String {
-    guard let regex = try? NSRegularExpression(pattern: #"\[(\d{1,2})\](?!\()"#) else { return text }
+  private static func linkMarkers(_ text: String, urls: [Int: String], known: Set<Int>) -> String {
+    guard let regex = try? NSRegularExpression(pattern: #"\[(\d{1,3})\](?!\()"#) else { return text }
     var output = ""
     var last = text.startIndex
     for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
       guard let range = Range(match.range, in: text), let numberRange = Range(match.range(at: 1), in: text),
-        let number = Int(text[numberRange]), let url = urls[number]
+        let number = Int(text[numberRange])
       else { continue }
-      output += text[last..<range.lowerBound]
-      output += "[\\[\(number)\\]](\(url))"
+      if let url = urls[number] {
+        output += text[last..<range.lowerBound]
+        output += "[\\[\(number)\\]](\(url))"
+      } else if !known.contains(number) {
+        // Dropped, and the space before it unless a word follows ("is 1.8 million [16]." reads
+        // "is 1.8 million.", "a [16] b" reads "a b").
+        var kept = String(text[last..<range.lowerBound])
+        let wordFollows = text[range.upperBound...].first.map { $0.isLetter || $0.isNumber } ?? false
+        if !wordFollows {
+          while kept.last == " " { kept.removeLast() }
+        }
+        output += kept
+      } else {
+        continue
+      }
       last = range.upperBound
     }
     return output + text[last...]

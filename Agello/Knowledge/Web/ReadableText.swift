@@ -26,6 +26,15 @@ enum ReadableText {
       ["script", "style", "noscript", "svg", "nav", "header", "footer", "aside", "form", "button",
         "iframe", "template", "select"],
       from: body)
+    // A page's own footnote markers ("[16]", "[a]", "[citation needed]"): the model copied them
+    // as if they were the sources' numbers (2026-11-15: a reply cited [42] and [74] with eight
+    // sources). Superscripts without brackets, such as exponents, stay.
+    let superscripts = body as NSString
+    body = HTMLScan.replacing(HTMLScan.elements("sup", in: superscripts), in: superscripts) { sup in
+      guard let content = sup.content else { return nil }
+      let text = HTMLText.plain(superscripts.substring(with: content)).trimmingCharacters(in: .whitespaces)
+      return text.count <= 40 && text.hasPrefix("[") && text.hasSuffix("]") ? "" : nil
+    }
     // Figures are illustrations and captions, unless they hold code (many sites wrap it in one).
     let figures = body as NSString
     body = HTMLScan.replacing(HTMLScan.elements("figure", in: figures), in: figures) { figure in

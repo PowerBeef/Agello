@@ -336,6 +336,13 @@ final class WebScenarioTests: DeviceTestCase {
       {
         wrong.append("\(item.message): no \(source) source in \(described)")
       }
+      // Citations name the sources given: a page's own footnote numbers copied into the reply
+      // point to none (2026-11-15: [42] and [74] with eight sources).
+      let cited = Set(answer.text.matches(of: /\[(\d{1,3})\]/).compactMap { Int($0.1) })
+      let stray = cited.subtracting(sources.map(\.index)).sorted()
+      if !sources.isEmpty, !stray.isEmpty {
+        wrong.append("\(item.message): cites no source \(stray)")
+      }
     }
     harness.record("web06_answersFromSources", ["rows": rows, "wrong": wrong], in: self)
     XCTAssertTrue(wrong.isEmpty, "Answers that missed: \(wrong)")

@@ -227,7 +227,7 @@ final class WebTests: XCTestCase {
     let text = "Pogačar won [1][2]. See [3] and [9].\n`array[1]`\n```\nx[1]\n```"
     let linked = WebContext.linkCitations(text, sources: sources)
     XCTAssertTrue(linked.hasPrefix("Pogačar won [\\[1\\]](https://a.example)[\\[2\\]](https://b.example)."))
-    XCTAssertTrue(linked.contains("See [3] and [9]."), "No URL / no source: unchanged")
+    XCTAssertTrue(linked.contains("See [3] and."), "A source without a URL stays; one that doesn't exist goes")
     XCTAssertTrue(linked.contains("`array[1]`"))
     XCTAssertTrue(linked.contains("x[1]"))
     #if !SWIFT_PACKAGE
@@ -238,6 +238,37 @@ final class WebTests: XCTestCase {
       }
       XCTAssertTrue(first.runs.contains { $0.link?.absoluteString == "https://a.example" })
     #endif
+  }
+
+  /// A page's own footnote numbers copied into a reply point to no source: they're dropped with
+  /// the space before them (2026-11-15: "[42]" and "[74]" with eight sources).
+  func testCitationsThatMatchNoSourceAreDropped() {
+    let sources = (1...8).map {
+      SourceRecord(index: $0, title: "S\($0)", url: "https://s\($0).example", snippet: nil)
+    }
+    let text = "Nausea is common [42][74]. It affects 1 in 4 [2] people [16], and [79] more.\n`[42]`"
+    let linked = WebContext.linkCitations(text, sources: sources)
+    XCTAssertEqual(
+      linked,
+      "Nausea is common. It affects 1 in 4 [\\[2\\]](https://s2.example) people, and more.\n`[42]`")
+    // Without sources nothing is a citation: bracketed numbers stay.
+    XCTAssertEqual(WebContext.linkCitations("Item [42].", sources: []), "Item [42].")
+  }
+
+  /// Wikipedia's footnote superscripts don't reach the model; exponents do.
+  func testPageReaderDropsFootnoteMarkers() {
+    let filler = String(repeating: "The city grew along the river over many centuries. ", count: 6)
+    let html = """
+      <html><body><article><p>Montreal has 1,762,949 residents.<sup id="cite_ref-16" class="reference">\
+      <a href="#cite_note-16"><span class="cite-bracket">[</span>16<span class="cite-bracket">]</span></a></sup> \
+      Its area is 431 km<sup>2</sup>.<sup class="noprint Inline-Template"><i>[<a href="/wiki/Citation_needed">\
+      citation needed</a>]</i></sup> \(filler)</p></article></body></html>
+      """
+    let text = ReadableText.extract(html: html).text
+    XCTAssertTrue(text.contains("1,762,949 residents."), text)
+    XCTAssertFalse(text.contains("[16]"), text)
+    XCTAssertFalse(text.contains("citation needed"), text)
+    XCTAssertTrue(text.contains("431 km 2") || text.contains("431 km2"), text)
   }
 
   func testWebPromptLayout() {
