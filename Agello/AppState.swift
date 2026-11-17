@@ -128,6 +128,8 @@ final class AppState {
   /// this chat: follow-ups send only the question while it holds them (``FileContext/heldKey(_:)``).
   /// A reseed replays the turns' text without them, so it ends with any change of conversation.
   @ObservationIgnored var heldFiles: (threadID: UUID, key: String)?
+  /// The memories chosen for a chat by meaning (``selectMemories(for:firstMessage:)``).
+  @ObservationIgnored var memorySelection: (threadID: UUID, texts: [String])?
   /// True while the native conversation holds no turns (fresh load / empty reseed).
   @ObservationIgnored private var conversationIsEmpty = true
   /// Tail of the engine-lifecycle queue (see ``serialized(_:)``).
@@ -389,6 +391,9 @@ final class AppState {
     // Leaving a chat: its helpers run now, before the switch rebuilds the conversation anyway.
     if hasPendingHelpers, conversationThreadID != threadID { await runPendingHelpers() }
     let history = thread.textHistory
+    if let first = thread.orderedTurns.first(where: \.isUser)?.text {
+      await selectMemories(for: thread, firstMessage: first)
+    }
     return await serialized {
       await self.prepareConversation(threadID: threadID, history: history)
     }
@@ -583,6 +588,9 @@ final class AppState {
     }
 
     let history = rewound ?? thread.textHistory
+    // With many memories, the chat's are chosen by meaning before its conversation is built.
+    await selectMemories(
+      for: thread, firstMessage: thread.orderedTurns.first(where: \.isUser)?.text ?? prompt)
 
     // Web search the user asked for: plan queries, search, read, rank.
     if webSearch, webSettings.allowed {

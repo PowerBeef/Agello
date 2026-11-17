@@ -104,6 +104,38 @@ final class MemoryFlowTests: XCTestCase {
     XCTAssertTrue(prompt.contains("- Is vegetarian"), prompt)
   }
 
+  /// With more memories than a chat holds, it gets the most recent and those closest in meaning
+  /// to its first message: an old one that bears on the chat makes it in, and stays out of others.
+  func testManyMemoriesAreChosenByMeaning() async throws {
+    appState.memoryEnabled = true
+    let peanut = MemoryItem(text: "Is allergic to peanut butter")
+    peanut.updatedAt = Date(timeIntervalSinceNow: -100_000)
+    context.insert(peanut)
+    for index in 0..<40 {
+      let item = MemoryItem(text: "Collects stamps from country number \(index)")
+      item.updatedAt = Date(timeIntervalSinceNow: -Double(index) * 60)
+      context.insert(item)
+    }
+    try context.save()
+    func remembered(_ prompt: String) -> [String] {
+      prompt.components(separatedBy: "\n").filter { $0.hasPrefix("- ") }
+    }
+    await appState.send(
+      text: "Can I bake peanut butter cookies for the party?", imageData: nil, audioFileURL: nil,
+      in: appState.newThread(in: context))
+    var prompt = await mock.systemPrompt
+    XCTAssertTrue(prompt.contains("- Is allergic to peanut butter"), prompt)
+    XCTAssertEqual(remembered(prompt).count, SystemPrompt.memoryLimit)
+    XCTAssertTrue(prompt.contains("- Collects stamps from country number 0\n"), "the most recent are kept")
+
+    await appState.send(
+      text: "Recommend a good album for my collection", imageData: nil, audioFileURL: nil,
+      in: appState.newThread(in: context))
+    prompt = await mock.systemPrompt
+    XCTAssertFalse(prompt.contains("peanut"), prompt)
+    XCTAssertEqual(remembered(prompt).count, SystemPrompt.memoryLimit)
+  }
+
   func testNothingIsLearnedOrUsedWhenOff() async {
     appState.memoryEnabled = false
     context.insert(MemoryItem(text: "Lives in Montreal"))

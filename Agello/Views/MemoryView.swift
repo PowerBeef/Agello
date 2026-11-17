@@ -61,7 +61,7 @@ struct MemoryView: View {
         Text("Saved memories")
       } footer: {
         if memories.count > SystemPrompt.memoryLimit {
-          Text("The \(SystemPrompt.memoryLimit) most recent memories are used in chats.")
+          Text("Each chat uses the \(SystemPrompt.recentMemories) most recent memories and the \(SystemPrompt.memoryLimit - SystemPrompt.recentMemories) closest to what it's about.")
         }
       }
       .themedRow()

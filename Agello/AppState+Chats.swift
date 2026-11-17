@@ -33,16 +33,38 @@ extension AppState {
 
   // MARK: - Memory
 
-  /// Saved memories, most recent first, as added to the system prompt.
+  /// The memories added to the system prompt: the chat's own choice (``selectMemories``) when it
+  /// has one, else the most recent.
   func memoryTexts() -> [String] {
+    if let memorySelection, memorySelection.threadID == selectedThreadID { return memorySelection.texts }
+    return recentMemoryTexts(limit: SystemPrompt.memoryLimit)
+  }
+
+  private func recentMemoryTexts(limit: Int) -> [String] {
     var descriptor = FetchDescriptor<MemoryItem>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
-    descriptor.fetchLimit = SystemPrompt.memoryLimit
+    descriptor.fetchLimit = limit
     return ((try? modelContext?.fetch(descriptor)) ?? []).map(\.text)
+  }
+
+  /// With more memories than the system prompt holds, `thread` gets the most recent
+  /// (``SystemPrompt/recentMemories``) and then those closest in meaning to its first message,
+  /// chosen once so the chat's system prompt, and its cache, stay put while it goes on. Without
+  /// the embedder (not downloaded, or in the background) the most recent are used.
+  func selectMemories(for thread: ChatThread, firstMessage: String) async {
+    guard memoryEnabled, memorySelection?.threadID != thread.id, GPUGate.isOpen else { return }
+    let all = recentMemoryTexts(limit: SystemPrompt.memoryCandidateLimit)
+    guard all.count > SystemPrompt.memoryLimit else { return }
+    let recent = Array(all.prefix(SystemPrompt.recentMemories))
+    let older = Array(all.dropFirst(SystemPrompt.recentMemories))
+    let query = firstMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let ranked = await knowledge.rank(older, against: query) else { return }
+    memorySelection = (thread.id, recent + ranked.prefix(SystemPrompt.memoryLimit - recent.count))
   }
 
   /// Memories were added, edited or deleted (or memory was switched): the
   /// open conversation picks them up before the next message.
   func memoriesChanged() {
+    memorySelection = nil
     conversationThreadID = nil
   }
 

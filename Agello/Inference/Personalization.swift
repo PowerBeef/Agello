@@ -80,8 +80,13 @@ struct ProjectContext: Equatable, Sendable {
 }
 
 enum SystemPrompt {
-  /// Memories added to the system prompt (most recent first).
+  /// Memories added to the system prompt.
   static let memoryLimit = 25
+  /// With more saved than ``memoryLimit``, a chat gets the most recent this many, then the rest
+  /// closest in meaning to its first message (2026-11-16; before, only the most recent).
+  static let recentMemories = 10
+  /// Memories ranked for a chat at most (the most recent).
+  static let memoryCandidateLimit = 500
 
   /// Base prompt, personalization, saved memories, then the project's
   /// instructions.
