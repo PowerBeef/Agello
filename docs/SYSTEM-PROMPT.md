@@ -1,6 +1,33 @@
 # The chat system prompt: candidates to test
 
-**Status (2026-11-16):** candidates written from research, none tested. Nothing in the app has changed: the base prompt is still `InferenceOptions.systemPrompt`, "You are a helpful on-device assistant." The research behind this page is in `reports/Gemma 4 E4B prompting and reasoning.md` and its notes in `research_notes/` (local files, kept out of git).
+**Status (2026-11-17):** the first screening round ran on the M6 (probe 34, below): D leads, and a rewording of its task line (D3) did better still. Nothing in the app's prompt has changed yet: the base is still `InferenceOptions.systemPrompt`, "You are a helpful on-device assistant." The research behind this page is in `reports/Gemma 4 E4B prompting and reasoning.md` and its notes in `research_notes/` (local files, kept out of git).
+
+## Screening round 1 (2026-11-17, M6)
+
+`ProbeScenarioTests/test34_SystemPromptTable` (`AgelloDeviceTests/SystemPromptProbes.swift`), natively with `scripts/cli-test.sh probes`, tools on, automatic search off, greedy (MTP on): 33 cases, 75 checks, every reply recorded.
+
+| Candidate | Checks | Prompt (est. tokens) | Output, 33 replies |
+| --- | --- | --- | --- |
+| A, today's | 61/75 | 13 | 12,591 tokens |
+| B | 68/75 | 111 | 10,085 |
+| C | 71/75 | 219 | 10,014 |
+| D | 72/75 | 281 | 7,666 |
+| E, long control | 71/75 | 698 | 4,860 |
+
+What reading the replies showed:
+- **A's faults are real:** "Suggest a dinner recipe" got four questions back, a puppy's name 2,555 characters under `###` headings, Iceland's population a deflection to a statistics site; and "What year is it?" came back **empty**: the model called the date tool and then wrote nothing (still so with the tool's date in English; a bug of its own, in the app today).
+- **The knowledge-limit line matters:** B (without it) said "Yes, 2025 is in the future. Today is … 2026"; C, D and E get it right.
+- **D does the tasks and answers with caveats:** a recipe with ingredients and steps, "around 380,000" for Iceland, mid-length replies (HTTPS 2,613 characters against A's 3,250).
+- **E's extra 400 tokens make the model cautious and terse:** Iceland deflected again, HTTPS in 1,466 characters. Not a candidate, as planned.
+- **No candidate flags outdated facts:** all five call 2022 the latest World Cup (it's November 2026) and none names an iOS version.
+- **The date came out in the device's language:** "Today is mardi 17 novembre 2026" in English replies (B to E), from the locale-formatted date. Fixed in the app for the web prompts and the date tool (`66a88d9`, `PromptText.date`); the candidates' `{date}` uses it.
+
+Rewordings of D on the date, honesty, task and shape cases (24 cases, 51 checks, the date in English):
+- **D3**, the task line "For open-ended requests such as plans, suggestions or recipes, make a sensible choice and do the task; the user can refine it": **49/51**, the best. "Plan my Saturday" now gives ideas, Iceland "approximately 380,000 … may be slightly out of date, and you can tap Search".
+- **D2**, the knowledge line "such as versions, prices, populations or results, give the latest you know": the iOS answer names a version and flags it, but Einstein's Nobel came back wrong (it accepted the false premise that D and D3 correct): wording moves unrelated facts. Not kept.
+- D itself: 47/51.
+
+Next: D3 under two or three paraphrases, then the confirmation table (more cases per family, the languages, multi-turn, personalization and the precedence line) for D3 against D; then the iPhone, and the bench read in full.
 
 ## What the research found
 
