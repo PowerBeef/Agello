@@ -164,12 +164,12 @@ The research placed these elsewhere; each is a separate change with its own chec
 
 | Fault | Where it belongs |
 | --- | --- |
-| Comma-list citations such as "[4, 22]" get past the out-of-range check | the display regex, `test06`, `bench-report.py` |
+| Comma-list citations such as "[4, 22]" get past the out-of-range check | **Done** (`d159ad1`): one pattern for single markers and lists, on screen, in spoken text, `test06` and `bench-report.py` |
 | The web prompt's wording leaks ("Based on the reference material…") and replies discuss sources that don't bear on the question | `WebContext.instructions` |
-| A web or file page could plant a memory that rides in every later system prompt | the memory extractor: ignore text that came from web or file material |
+| A web or file page could plant a memory that rides in every later system prompt | **Checked:** the memory helper reads only the typed message, never the material. **Done** for shared items (`c02d942`): their text was sent as the message, so only what the user typed is remembered |
 | No tool parameter is marked required (`calculate.expression`, `web_search.query` reach the model as optional) | Swift signatures without defaults (about 6 tokens a tool) |
 | The date tool went unused in `web02` | the tool's description: when to call it |
-| A weather answer said "tomorrow, Sunday, November 22" with the date given | the weather block: label Today and Tomorrow |
+| A weather answer said "tomorrow, Sunday, November 22" with the date given | **Done** (`45c7ebe`): the forecast names Today and Tomorrow in the place's calendar |
 | The planner wrote a French query for an English message and planned a store's closing time without "near me" | `queryPrompt`, and the message's language detected in code |
 | The app puts the image after the text; Google's card puts it before | `ChatEngine.runSend`, tested on its own |
 | Thoughts are removed before a tool's response, against Google's rule to keep them within a tool-calling turn | the runtime, tested on its own |
