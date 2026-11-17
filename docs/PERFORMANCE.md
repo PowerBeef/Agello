@@ -834,7 +834,16 @@ there predate the measurements.
    Next: the same measurement on the iPhone (a device probe on the 128K file with `verify_8`), then
    phase 3.
 6. B4 (speculative decoding for JSON helpers, every Search message waits on one), then B3
-   (Regenerate with speculative decoding; changes seeded replies).
+   (Regenerate with speculative decoding; changes seeded replies). **B4 done in the runtime
+   (2026-11-17, fork `1382157b`), on in the app with `AGELLO_JSON_MTP=1` until a release with
+   it is vendored:** two faults, both fixed in `llg_constraint.cc`. Every state of a round shared
+   one llguidance matcher (`ComputeNext` committed into the given state's), so verify's masks came
+   from the wrong position and a rejected draft stayed committed: the next state now clones the
+   matcher. And llguidance computes a position's mask once, while a round reads it twice (drafting,
+   then verify): each state now keeps its mask ("compute_mask() called after stop" before). With
+   the switch on, natively on the M6: web's search-decision table 21/21 right (19 had failed),
+   `inference` 23/23 (titles and memories right); helpers a median 1.24 s against 1.73 s (1.4×),
+   14 of 21 outputs the same text, the others a query worded differently.
 7. G1 now: unknown chip names fall to Apple1 (`MD/common/gpu_info.cc`), which turns the matrix-unit
    kernels off; families from `supportsFamily`, unknown chips to the newest family.
 8. App groundwork: `DeviceProfile` memory rules (KV per position with rings, the 6.44 GB limit,

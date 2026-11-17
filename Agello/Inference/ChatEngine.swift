@@ -613,6 +613,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     lastHelperKeptConversation = false
   }
 
+  /// Whether JSON helpers keep speculative decoding (PERFORMANCE.md, B4). Our runtime's grammar
+  /// states stopped sharing one matcher across a speculative round in fork `1382157b`; until a release
+  /// with it is vendored, `AGELLO_JSON_MTP=1` turns it on for a runtime that has it.
+  nonisolated static let jsonHelpersSpeculate = ProcessInfo.processInfo.environment["AGELLO_JSON_MTP"] == "1"
+
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data {
     guard let engine, let resolved, let options else { throw ChatError.engineNotReady }
     guard !generating else { throw ChatError.underlying(message: "Busy generating.") }
@@ -625,11 +630,14 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     let keep = beginHelper()
     let output: String
     do {
-      // Speculative decoding (MTP) breaks grammar-constrained decoding on
-      // device (drafted tokens bypass the JSON mask: garbled output or
-      // "compute_mask() called after stop"), so helpers decode plainly.
+      // Speculative decoding (MTP) broke grammar-constrained decoding: the
+      // runtime's grammar states shared one matcher across a round (garbled
+      // output or "compute_mask() called after stop"), so helpers decode
+      // plainly unless the runtime has the fix (``jsonHelpersSpeculate``).
       let helper = try await engine.createConversation(
-        with: ConversationConfig(enableResponseFormat: true, enableSpeculativeDecoding: false))
+        with: ConversationConfig(
+          enableResponseFormat: true,
+          enableSpeculativeDecoding: Self.jsonHelpersSpeculate ? resolved.enableSpeculativeDecoding : false))
       helperConversation = helper
       try checkHelperNotCancelled()
       let reply = try await helper.sendMessage(

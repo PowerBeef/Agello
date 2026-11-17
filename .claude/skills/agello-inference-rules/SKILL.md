@@ -196,7 +196,11 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   device: the draft and verify states share
   one grammar matcher, so verify masks come from the wrong position and a
   rejected draft stays committed (reference `troubleshooting.md`).
-  `helperJSON` turns MTP off; plain-text helpers keep it.
+  `helperJSON` turns MTP off; plain-text helpers keep it. Fixed in the fork's
+  `1382157b` (each state its own matcher, each mask kept): with a runtime that
+  has it, `AGELLO_JSON_MTP=1` lets JSON helpers speculate
+  (`LiteRTChatEngine.jsonHelpersSpeculate`); the default flips when a release
+  with it is vendored.
 - JSON-schema enums take one-word values: on our runtime a space inside an
   enum or const value fails the grammar ("Failed to commit token: ▁talk",
   the tokenizer's word-start marker read as its own bytes; 2026-11-02, the
