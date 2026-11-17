@@ -2,6 +2,56 @@
 
 **Status (2026-11-17):** the first screening round ran on the M6 (probe 34, below): D leads, and a rewording of its task line (D3) did better still. Nothing in the app's prompt has changed yet: the base is still `InferenceOptions.systemPrompt`, "You are a helpful on-device assistant." The research behind this page is in `reports/Gemma 4 E4B prompting and reasoning.md` and its notes in `research_notes/` (local files, kept out of git).
 
+## Confirmation round (2026-11-17, M6): D4 leads
+
+The same probe, natively, with the table grown to 60 cases and 137 checks:
+- **More of each family:** Korean, Russian, Arabic, Dutch and a French coding request; a book, a bakery's name and a birthday message as tasks; the Titanic's year as a false premise; France's president, Bitcoin's price and the latest iPhone; an age from a birth year and today's weekday.
+- **Two multi-turn chats** (four turns each, the checks on the last reply): one in French, one ending on "Thanks, that's really helpful!".
+- **Four personalization cases**, each with the precedence line in the base: "Always answer in bullet points", the Concise style, the name Sam, and "Always answer in French" under an English message.
+
+Settings as in round 1. Greedy replies repeat: D3 ran twice and gave the same reply in 59 of 60 cases.
+
+| Candidate | Checks | Prompt (est. tokens) | Output, 60 cases | Task family |
+| --- | --- | --- | --- | --- |
+| D | 128/137 | 282 | 13,842 tokens | 10/16 |
+| D3 | 130/137 | 303 | 14,579 | 12/16 |
+| D3a, D3 reworded line by line | 129/137 | 324 | 14,903 | 12/16 |
+| D3b, D3 packed into fewer, longer lines | 126/137 | 251 | 15,904 | 11/16 |
+| **D4** | **133/137** | 345 | 14,574 | 15/16 |
+
+**D4** is D3 with two changes, in its knowledge and task lines:
+
+```text
+Your training data ends in early 2025, so trust today's date over your own sense of the year, and mention the date only when the answer depends on it. For anything that may have changed since then, give what you know and say it may be out of date{current}.
+
+For open-ended requests such as recommendations, names, messages, plans or recipes, don't ask about preferences first: make sensible assumptions and give your answer, and the user can refine it. Ask a question only when you can't proceed without the answer.
+```
+
+What reading the replies showed:
+- **D3's wording holds under paraphrase, and its shape matters.** D3a reads like D3, within one check of it. D3b, packed into fewer lines, gets worse:
+  - it deflects Iceland's population and the latest iPhone to Search without a number or a model;
+  - it translates "See you tomorrow at the station" into English instead of Spanish;
+  - it asks four numbered questions for a recipe.
+- **D3 still opened with preference questions for three of five tasks.** The book, the bakery and the birthday message all started with "To give you the best recommendation, could you tell me…", and the birthday message wrote no message. D4 fixes two of the three:
+  - the birthday message comes back as four drafts, each in a different tone;
+  - the book gets three titles, after one sentence that still asks for more;
+  - the bakery still asks, then lists twelve names.
+- **Dates recited.** D3 starts a recipe with "Since it's Tuesday, November 17, 2026, …" and answers "What year is it?" with the full date. D4 answers "It is 2026." and "It is Tuesday."; outside the date cases, its replies never name the date.
+- **Identity.** "What model are you?" got "I am Gemma 4, a Large Language Model developed by Google DeepMind" from D3, and "I am Agello, an assistant running on your iPhone" from D4. Neither is checked; the second fits the app better but leaves out the model.
+- **Personalization works through the precedence line.** Every candidate:
+  - answers "What's my name?" with "Sam";
+  - writes French under "Always answer in French" for an English message;
+  - answers in bullet points when asked.
+
+  The Concise style is the one that doesn't hold: "Explain how vaccines work" came back in 1,000 to 1,200 characters with a numbered list from every candidate. Its instruction ("Keep answers short and to the point; skip preambles and summaries.") is too weak for the model: a fix for `Personalization.Style`, not the base.
+- **Multi-turn holds.** After four French turns the reply is still French. The thank-you chat ends in two short paragraphs; D3b is the one that adds an offer of three more tasks.
+- **Still failing everywhere:** the 2022 World Cup isn't flagged as possibly out of date, and the iOS question gets "check the App Store" instead of a version. D2's line fixed the iOS answer in round 1 but moved Einstein's answer; another wording, or Search, is for later.
+
+**Next:**
+- **On the iPhone:** D4 in `SystemPrompt.compose`, with `{date}`, `{current}` and `{precedence}` filled in code.
+- **The promotion checks** listed under "How to test them", with the bench read in full and a new baseline.
+- **Pins:** `PersonalizationTests` and the probes that build from the default prompt keep the old string.
+
 ## Screening round 1 (2026-11-17, M6)
 
 `ProbeScenarioTests/test34_SystemPromptTable` (`AgelloDeviceTests/SystemPromptProbes.swift`), natively with `scripts/cli-test.sh probes`, tools on, automatic search off, greedy (MTP on): 33 cases, 75 checks, every reply recorded.

@@ -20,9 +20,11 @@ extension ProbeScenarioTests {
     let cases = SystemPromptTable.cases.filter { item in prefixes.map { $0.contains { item.id.hasPrefix($0) } } ?? true }
     let savedPrompt = appState.options.systemPrompt
     let savedThinking = appState.options.enableThinking
+    let savedPersonalization = appState.personalization
     defer {
       appState.options.systemPrompt = savedPrompt
       appState.options.enableThinking = savedThinking
+      appState.personalization = savedPersonalization
     }
     let automatic = appState.webSettings.allowed && appState.webSettings.automatic
     var report: [String: Any] = ["automaticSearch": automatic, "tools": appState.enableTools]
@@ -30,7 +32,6 @@ extension ProbeScenarioTests {
     for name in names {
       guard let template = SystemPromptTable.candidates[name] else { continue }
       let prompt = SystemPromptTable.fill(template, today: .now, automaticSearch: automatic)
-      appState.options.systemPrompt = prompt
       var rows: [[String: Any]] = []
       var passed = 0
       var checks = 0
@@ -40,8 +41,17 @@ extension ProbeScenarioTests {
         if appState.options.enableThinking != item.think {
           appState.options.enableThinking = item.think
         }
+        appState.personalization = item.personalization ?? Personalization()
+        appState.options.systemPrompt = SystemPromptTable.fill(
+          template, today: .now, automaticSearch: automatic, precedence: item.personalization != nil)
         await appState.applyCurrentOptions()
-        let exchange = await harness.ask(item.prompt, in: harness.newThread())
+        let thread = harness.newThread()
+        var exchange = await harness.ask(item.prompt, in: thread)
+        var earlier: [String] = []
+        for turn in item.turns {
+          earlier.append(exchange.text)
+          exchange = await harness.ask(turn, in: thread)
+        }
         let reply = exchange.text
         let results = item.checks.map { check in (check.name, check.test(reply)) }
         passed += results.filter(\.1).count
@@ -50,7 +60,7 @@ extension ProbeScenarioTests {
         rows.append([
           "id": item.id, "family": item.family, "prompt": item.prompt, "think": item.think,
           "accepted": exchange.accepted, "seconds": (exchange.seconds * 100).rounded() / 100,
-          "outputTokens": exchange.reply?.stats?.outputTokens ?? -1, "reply": reply,
+          "outputTokens": exchange.reply?.stats?.outputTokens ?? -1, "reply": reply, "earlierReplies": earlier,
           "thoughtChars": exchange.reply?.thought.count ?? 0,
           "passed": results.filter(\.1).map(\.0), "failed": results.filter { !$0.1 }.map(\.0),
           "error": appState.generationError ?? "",
@@ -61,6 +71,7 @@ extension ProbeScenarioTests {
         ]
         harness.record("probe34_systemPromptTable", report, in: self)
       }
+      appState.personalization = savedPersonalization
       let line = "\(name): \(passed)/\(checks) checks; failed \(failures)"
       summary.append(line)
       print("probe34 \(line)")
@@ -82,11 +93,15 @@ enum SystemPromptTable {
     let family: String
     let prompt: String
     var think = false
+    /// Follow-ups sent after `prompt` in the same chat; the checks read the last reply.
+    var turns: [String] = []
+    /// Set for this case only, with the precedence line in the base.
+    var personalization: Personalization?
     let checks: [Check]
   }
 
-  /// docs/SYSTEM-PROMPT.md's candidates; `{date}` and `{current}` are filled in code, and
-  /// `{precedence}` is empty (no personalization in the screening table).
+  /// docs/SYSTEM-PROMPT.md's candidates; `{date}`, `{current}` and `{precedence}` are filled in
+  /// code, the last only for the cases that set personalization.
   static let candidates: [String: String] = [
     "A": "You are a helpful on-device assistant.",
     "B": """
@@ -105,7 +120,7 @@ enum SystemPromptTable {
 
       Start with the answer. Write conversational replies as plain paragraphs, and use headings, lists or a table only when a long or structured answer needs them.
 
-      If you're unsure of a fact, say so in a few words and still give your best answer.
+      If you're unsure of a fact, say so in a few words and still give your best answer.{precedence}
       """,
     "D": """
       You are Agello, an assistant running on the user's iPhone. Today is {date}.
@@ -118,7 +133,7 @@ enum SystemPromptTable {
 
       For open-ended requests, make a sensible choice and do the task. Ask a question only when you can't proceed without the answer.
 
-      If you're unsure of a fact, say so in a few words and still give your best answer.
+      If you're unsure of a fact, say so in a few words and still give your best answer.{precedence}
       """,
     "D2": """
       You are Agello, an assistant running on the user's iPhone. Today is {date}.
@@ -131,7 +146,7 @@ enum SystemPromptTable {
 
       For open-ended requests, make a sensible choice and do the task. Ask a question only when you can't proceed without the answer.
 
-      If you're unsure of a fact, say so in a few words and still give your best answer.
+      If you're unsure of a fact, say so in a few words and still give your best answer.{precedence}
       """,
     "D3": """
       You are Agello, an assistant running on the user's iPhone. Today is {date}.
@@ -144,7 +159,44 @@ enum SystemPromptTable {
 
       For open-ended requests such as plans, suggestions or recipes, make a sensible choice and do the task; the user can refine it. Ask a question only when you can't proceed without the answer.
 
-      If you're unsure of a fact, say so in a few words and still give your best answer.
+      If you're unsure of a fact, say so in a few words and still give your best answer.{precedence}
+      """,
+    "D4": """
+      You are Agello, an assistant running on the user's iPhone. Today is {date}.
+
+      Your training data ends in early 2025, so trust today's date over your own sense of the year, and mention the date only when the answer depends on it. For anything that may have changed since then, give what you know and say it may be out of date{current}.
+
+      Reply in the language of the user's latest message unless they ask for another.
+
+      Start with the answer, not a preamble. Write conversational replies as plain paragraphs. Use headings, lists or a narrow table only when a long or structured answer needs them. Don't use emoji unless the user does.
+
+      For open-ended requests such as recommendations, names, messages, plans or recipes, don't ask about preferences first: make sensible assumptions and give your answer, and the user can refine it. Ask a question only when you can't proceed without the answer.
+
+      If you're unsure of a fact, say so in a few words and still give your best answer.{precedence}
+      """,
+    "D3a": """
+      You're Agello, the assistant built into the user's iPhone. The date today is {date}.
+
+      What you learned in training stops in early 2025: rely on today's date, not your own idea of the year. When something may have changed since then, share what you know and note that it could be outdated{current}.
+
+      Answer in the language of the user's most recent message, unless they request a different one.
+
+      Lead with the answer instead of an introduction. Keep conversational replies to plain paragraphs. Bring in headings, lists or a narrow table only when a long or structured answer calls for them. Avoid emoji unless the user uses them.
+
+      When a request is open-ended, such as a plan, a suggestion or a recipe, pick something sensible and do it; the user can adjust it. Only ask a question if you truly can't go on without the answer.
+
+      When you're not sure about a fact, say so briefly and give your best answer anyway.{precedence}
+      """,
+    "D3b": """
+      You are Agello, running on the user's iPhone. Today is {date}; your training data ends in early 2025, so go by today's date rather than your sense of the year, and for anything that may have changed since, say what you know and that it may be out of date{current}.
+
+      Use the language of the user's latest message unless asked for another.
+
+      Answer first. Use plain paragraphs for conversation, and headings, lists or narrow tables only for long or structured answers. No emoji unless the user uses them.
+
+      Do open-ended tasks (plans, suggestions, recipes) with a sensible choice the user can refine; ask only when you can't proceed.
+
+      When unsure of a fact, say so in a few words and still answer.{precedence}
       """,
     "E": """
       You are Agello, an assistant running on the user's iPhone. You write every reply on the phone; only a web search sends anything out, and only its queries. Today is {date}.
@@ -175,8 +227,12 @@ enum SystemPromptTable {
     today.formatted(Date.FormatStyle(date: .complete, time: .omitted).locale(Locale(identifier: "en_US")))
   }
 
-  static func fill(_ template: String, today: Date, automaticSearch: Bool) -> String {
+  static func fill(_ template: String, today: Date, automaticSearch: Bool, precedence: Bool = false) -> String {
     template
+      .replacingOccurrences(
+        of: "{precedence}",
+        with: precedence
+          ? "\n\nThe user's preferences and project instructions below take precedence over these defaults." : "")
       .replacingOccurrences(of: "{date}", with: englishDate(today))
       .replacingOccurrences(
         of: "{current}",
@@ -202,8 +258,10 @@ enum SystemPromptTable {
     text.filter { $0 == "?" || $0 == "？" }.count
   }
 
+  /// The reply's language, code blocks left out.
   static func language(_ text: String) -> String? {
-    NLLanguageRecognizer.dominantLanguage(for: text)?.rawValue
+    let prose = text.replacingOccurrences(of: #"```[\s\S]*?```"#, with: " ", options: .regularExpression)
+    return NLLanguageRecognizer.dominantLanguage(for: prose)?.rawValue
   }
 
   static let noOpener = Check(name: "no opener") { reply in
@@ -320,6 +378,59 @@ enum SystemPromptTable {
       // Identity: recorded for reading.
       Case(id: "identity-model", family: "identity", prompt: "What model are you?", checks: []),
       Case(id: "identity-online", family: "identity", prompt: "Are you connected to the internet?", checks: []),
+      // Confirmation round (2026-11-17): more of each family.
+      Case(id: "shape-austen", family: "shape", prompt: "Who wrote Pride and Prejudice?",
+           checks: simple + [noList, shorterThan(300), contains("Austen", "Austen")]),
+      Case(id: "shape-tomato", family: "shape", prompt: "Is a tomato a fruit?", checks: simple + [shorterThan(800)]),
+      Case(id: "shape-morning", family: "shape", prompt: "Good morning!", checks: simple + [noList, shorterThan(300)]),
+      Case(id: "shape-percent", family: "shape", prompt: "What's 15% of 80?", checks: simple + [noList, contains(#"\b12\b"#, "12")]),
+      Case(id: "long-photosynthesis", family: "long", prompt: "Explain photosynthesis to a ten-year-old.",
+           checks: [noOpener, contains("sun", "sunlight"), contains("water", "water"), contains("(carbon dioxide|CO2|air)", "carbon dioxide")]),
+      Case(id: "long-sql", family: "long", prompt: "Compare SQL and NoSQL databases.",
+           checks: [noOpener, contains("schema", "schemas"), Check(name: "800 characters or more") { $0.count >= 800 }]),
+      Case(id: "date-weekday", family: "date", prompt: "What day of the week is it?",
+           checks: [contains(today.formatted(Date.FormatStyle().weekday(.wide).locale(Locale(identifier: "en_US"))), "today's weekday")]),
+      Case(id: "date-age", family: "date", prompt: "How old is someone born in 1990?",
+           checks: [contains("\\b(\(year - 1990 - 1)|\(year - 1990))\\b", "\(year - 1990 - 1) or \(year - 1990)")]),
+      Case(id: "lang-ko", family: "language", prompt: "서울에서 가볼 만한 곳을 추천해 주세요.", checks: [inLanguage("ko")]),
+      Case(id: "lang-ru", family: "language", prompt: "Как научиться программировать?", checks: [inLanguage("ru")]),
+      Case(id: "lang-ar", family: "language", prompt: "ما هي فوائد شرب الماء؟", checks: [inLanguage("ar")]),
+      Case(id: "lang-nl", family: "language", prompt: "Hoe maak ik een goede kop koffie?", checks: [inLanguage("nl")]),
+      Case(id: "lang-fr-code", family: "language", prompt: "Écris une fonction Python qui inverse une liste.",
+           checks: [inLanguage("fr"), contains("```", "a code block")]),
+      Case(id: "task-book", family: "task", prompt: "Recommend a book.", checks: [atMostQuestions(1), noOpener]),
+      Case(id: "task-bakery", family: "task", prompt: "Suggest a name for my bakery.", checks: [atMostQuestions(1), noOpener]),
+      Case(id: "task-birthday", family: "task", prompt: "Help me write a birthday message for my mom.",
+           checks: [atMostQuestions(1), contains("birthday", "a message")]),
+      Case(id: "honesty-president", family: "honesty", prompt: "Who is the current president of France?",
+           checks: [contains("Macron", "Macron")]),
+      Case(id: "honesty-titanic", family: "honesty", prompt: "Did the Titanic sink in 1915?", checks: [contains("1912", "1912")]),
+      Case(id: "honesty-bitcoin", family: "honesty", prompt: "What's the price of Bitcoin right now?",
+           checks: [noDeflection, contains(#"(\$|real-time|live|Search|current price)"#, "explains or estimates")]),
+      Case(id: "honesty-iphone", family: "honesty", prompt: "What's the latest iPhone model?",
+           checks: [contains(#"iPhone \d+"#, "a model"), noDeflection]),
+      Case(id: "benign-night-photo", family: "benign", prompt: "How do I shoot a good photo at night?",
+           checks: [contains("(tripod|ISO|exposure|shutter)", "answers")]),
+      // Multi-turn: the last reply keeps the chat's language and shape.
+      Case(id: "multi-fr", family: "multi-turn", prompt: "Bonjour ! J'aimerais apprendre à cuisiner.",
+           turns: ["Par quoi je commence ?", "Et pour les épices ?", "Merci ! Dernière question : combien de temps pour cuire du riz ?"],
+           checks: [inLanguage("fr"), noEmoji]),
+      Case(id: "multi-garden", family: "multi-turn", prompt: "Hi! I'm planning a vegetable garden.",
+           turns: ["What vegetables grow well in partial shade?", "How often should I water them?", "Thanks, that's really helpful!"],
+           checks: [noEmoji, noHeading, shorterThan(400)]),
+      // Personalization: the user's instructions, style and name win over the defaults.
+      Case(id: "personal-bullets", family: "personalization", prompt: "What are the benefits of walking every day?",
+           personalization: { var p = Personalization(); p.instructions = "Always answer in bullet points."; return p }(),
+           checks: [Check(name: "bullets") { reply in lines(reply).filter { $0.hasPrefix("- ") || $0.hasPrefix("* ") || $0.hasPrefix("•") }.count >= 3 }]),
+      Case(id: "personal-concise", family: "personalization", prompt: "Explain how vaccines work.",
+           personalization: { var p = Personalization(); p.style = .concise; return p }(),
+           checks: [shorterThan(900), noOpener]),
+      Case(id: "personal-name", family: "personalization", prompt: "What's my name?",
+           personalization: { var p = Personalization(); p.name = "Sam"; return p }(),
+           checks: [contains("Sam", "Sam")]),
+      Case(id: "personal-french", family: "personalization", prompt: "What's a good way to start running?",
+           personalization: { var p = Personalization(); p.instructions = "Always answer in French."; return p }(),
+           checks: [inLanguage("fr")]),
       // Think.
       Case(id: "think-bat", family: "think", prompt: "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost?",
            think: true, checks: [contains(#"(0\.05|5 cents|five cents)"#, "5 cents")]),
