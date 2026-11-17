@@ -452,8 +452,8 @@ prefill pools released, the window read from the file):**
     - The argmax gives the CPU sampler's pick in 96 of 96 rows, in f32 and f16, with ties and
       signed zeros.
     - A round's gathers take 2–9 µs of GPU (`tools/agello-gpu-round`).
-  - Next, in the runtime: the drafter chain (stage 2), verify's inputs (stage 3), behind
-    `AGELLO_RESIDENT_ROUND`.
+  - **Stage 2 done on the M6** (fork `1109d46c`, build `8b61cb348e58`, behind `AGELLO_RESIDENT_ROUND=1`): the drafter's three runs and the kernels between them (the greedy pick, the gather from a no-copy buffer over the mapped embedder section, a blit of the projected activations) go out on one queue under deferred waits; the host waits once. Replies identical with the switch off and on (a short answer, a coding answer, a 2K-token summary); the native `inference` suite 23/23 with it on; decode 4.6–5.8 % faster on single runs. Any failure, a NaN maximum included, drafts the round on the host.
+  - Next: stage 3 (verify's inputs on the GPU), then the iPhone's verdict.
 
 The A19 Pro has sparse buffers (probe 26). Had it none, the window would have stayed a fixed 64K
 with ordinary buffers (+0.4–0.55 GB a chat) or gone back to the growth below.
