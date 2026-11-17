@@ -13,8 +13,8 @@
 // limitations under the License.
 //
 // Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
-// an input-overflow option, and the native handle declared for Swift 6
-// language mode.
+// an input-overflow option, the native handle declared for Swift 6 language
+// mode, and the text encoder's activation type.
 
 import Foundation
 import OSLog
@@ -117,6 +117,19 @@ public actor EmbeddingEngine {
         litert_lm_embedding_engine_settings_set_vision_tokens_per_image(
           settings, Int32(visionTokensPerImage)),
         "litert_lm_embedding_engine_settings_set_vision_tokens_per_image", settingsError)
+    }
+
+    if let activationDataType = config.activationDataType {
+      let cActivationDataType: LiteRtLmActivationDataType
+      switch activationDataType {
+      case .float32: cActivationDataType = kLiteRtLmActivationDataTypeFloat32
+      case .float16: cActivationDataType = kLiteRtLmActivationDataTypeFloat16
+      case .int16: cActivationDataType = kLiteRtLmActivationDataTypeInt16
+      case .int8: cActivationDataType = kLiteRtLmActivationDataTypeInt8
+      }
+      try LiteRTLMError.check(
+        litert_lm_embedding_engine_settings_set_activation_data_type(settings, cActivationDataType),
+        "litert_lm_embedding_engine_settings_set_activation_data_type", settingsError)
     }
 
     let engineHandle = try LiteRTLMError.create(

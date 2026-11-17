@@ -62,7 +62,9 @@ fixes:
 4. `swift/Engine.swift`: `tokenize` and `countTokens`
    (`litert_lm_engine_tokenize`); `swift/EmbeddingEngineConfig.swift`:
    `EmbeddingOptions.inputOverflowStrategy` (truncate long inputs instead of
-   failing the batch).
+   failing the batch); `EmbeddingEngineConfig.activationDataType`, the text encoder's activation
+   type through the C API's `litert_lm_embedding_engine_settings_set_activation_data_type` (probe
+   32 measures float16 against float32).
 5. Swift 6 language mode (`Package.swift` at tools 6.0, fork `24f35f81`): `ExperimentalFlags`
    keeps its values behind one `Mutex` instead of unprotected static vars (same public API);
    the immutable native handles of `Conversation`, `Engine` and `EmbeddingEngine` and

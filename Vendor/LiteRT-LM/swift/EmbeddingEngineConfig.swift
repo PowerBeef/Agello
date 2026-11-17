@@ -11,6 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
+// an input-overflow option, and the text encoder's activation type.
 
 import Foundation
 
@@ -30,6 +33,10 @@ public struct EmbeddingEngineConfig: Hashable, Sendable {
   public let maxInputLength: Int?
   /// Desired number of vision tokens generated per image.
   public let visionTokensPerImage: Int?
+  /// Activation data type for the text encoder; `nil` takes the model file's preference, then
+  /// float16 on the GPU (Agello, 2026-11-16: EmbeddingGemma 2's card warns that float16 can
+  /// overflow its activations).
+  public let activationDataType: ActivationDataType?
 
   /// - Parameters:
   ///   - modelPath: The file path to the LiteRT-LM embedding model.
@@ -39,6 +46,7 @@ public struct EmbeddingEngineConfig: Hashable, Sendable {
   ///   - cacheDir: The directory for placing cache files.
   ///   - maxInputLength: Maximum sequence length (in tokens) for text encoder signatures.
   ///   - visionTokensPerImage: Desired number of vision tokens generated per image.
+  ///   - activationDataType: Activation data type for the text encoder (`nil`: the default).
   public init(
     modelPath: String,
     backend: Backend = .cpu(),
@@ -46,7 +54,8 @@ public struct EmbeddingEngineConfig: Hashable, Sendable {
     audioBackend: Backend? = nil,
     cacheDir: String? = nil,
     maxInputLength: Int? = nil,
-    visionTokensPerImage: Int? = nil
+    visionTokensPerImage: Int? = nil,
+    activationDataType: ActivationDataType? = nil
   ) {
     self.modelPath = modelPath
     self.backend = backend
@@ -55,6 +64,7 @@ public struct EmbeddingEngineConfig: Hashable, Sendable {
     self.cacheDir = cacheDir
     self.maxInputLength = maxInputLength
     self.visionTokensPerImage = visionTokensPerImage
+    self.activationDataType = activationDataType
   }
 }
 
