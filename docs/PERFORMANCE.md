@@ -581,7 +581,7 @@ growth.
 
 | Gate | Result |
 | --- | --- |
-| Identity at ≤ 32K | **Met with the iPhone's kernels; the M6 differs, and why is known.** The xl32k digit suite (12 cases, 12K–30K) gives the same text and token count on three engines: the published file at 32K, and the 128K file at 32K and at 64K. Prose (probe 30, the 128K file at 32,768 against 65,536, greedy) is identical in 4 of 4 with the A19 Pro's kernels (`AGELLO_SIMULATE_APPLE_GPU="Apple A19 Pro"` on the M6). With the M6's own kernels, 2 of 4 part at near-ties, with speculative decoding on or off; both sides read equally right. The cause is below the table. |
+| Identity at ≤ 32K | **Met with the iPhone's kernels; the M6 differed until the runtime fix below (build `8edcae354aa7`, 4 of 4 identical on both).** The xl32k digit suite (12 cases, 12K–30K) gives the same text and token count on three engines: the published file at 32K, and the 128K file at 32K and at 64K. Prose (probe 30, the 128K file at 32,768 against 65,536, greedy) is identical in 4 of 4 with the A19 Pro's kernels (`AGELLO_SIMULATE_APPLE_GPU="Apple A19 Pro"` on the M6). With the M6's own kernels, 2 of 4 part at near-ties, with speculative decoding on or off; both sides read equally right. The cause is below the table. |
 | 48-digit copies | All exact (probe 28): the reference at 0, 10, 25, 50, 75, 90 and 95 % of 57,000 tokens; the reference's digits at 32,744–32,791; the reply's digits across 32,768 with the reference late and 32K back. Also 4 xl64k copies at 40K and 50K, early and late. |
 | Positions 65,519–65,535 | Exact: a 65,487-token prompt whose 48 digits and end token fill the window to 65,536 cached, with the reference late and 65K back. |
 | Needle table | 18, 18, 17, 18 and 18 of 18 at 21K, 32K, 44K, 50K and 57K (21,379 to 59,290 tokens prefilled); the miss dropped a crate's last digit (8487 for 84873, at 7 % depth). |
@@ -594,7 +594,12 @@ growth.
 - On the M6 (10 units) the 32K slices have about 410 rows per unit and stay serial; the 64K slices have about 205 and switch (work group `[8,4,1]` to `[32,1,4]`). That is the only kernel whose work group changes with the window: the others differ only in their FLOPs, from longer rows.
 - The A19 Pro (6 units) has about 683 and 341 rows per unit: serial at both windows, so the iPhone 17 Pro's replies shouldn't depend on the window. Probe 30 on the phone is the check.
 - The logits already differ by 0.5–1.0 at the first decoded token. That's the engine's ordinary sensitivity: float32 activations against float16 at one window move them as much. The int8 quantization of activations between layers turns a last-bit change into another rounding step.
-- Making the Mac match would take a window-independent rule for the sliced attention's softmax, in a runtime release. It isn't needed for the iPhone.
+- **Fixed in the runtime** (fork `581cb758`, built as `8edcae354aa7` before the commit, 2026-11-16; not yet released), so the Mac matches the iPhone and a macOS version of the app stays open. The bounded attention records the whole score tensor's rows (`BoundedSoftmaxReduceAttributes::whole_rows`, kept by every row slice), and ML Drift's softmax picks its reduction from them (`SoftmaxRuntimeCheckDesc::decision_rows`): whether to share a row among threads, and among how many. The work group's spatial part stays the slice's. Checked natively on the M6 (the 128K file):
+  - Probe 30's prose is identical at 32K and 64K in 4 of 4, with the M6's kernels and with the A19 Pro's.
+  - The 32K replies equal the release's; so do both windows' with the A19 Pro's kernels, so the iPhone's arithmetic is unchanged.
+  - The graph dumps differ from the release's in one kernel only: the 1,024-token prefill's reduction at 64K, now `[8,4,1]` as at 32K.
+  - The needle table is unchanged (89 of 90), and so are its times (57K: 29.6 s against 33.9).
+  - The delegate's `bounded_attention_test` passes, with a check that every slice keeps the whole rows.
 
 **Releases** (timing stays the maintainer's call): R1, train 1 with files sent once and the stop
 check; R2, the ring/128K file at a true 32,768 with the rewind fix, the old file kept until the
