@@ -14,7 +14,7 @@ extension ProbeScenarioTests {
     defer { appState.options = saved }
     let prompts = ["What year is it?", "What's today's date?", "What time is it?", "What day of the week is it?"]
     var rows: [[String: Any]] = []
-    for (name, base) in [("legacy", Self.recordedSystemPrompt), ("D4", SystemPrompt.base)] {
+    for (name, base) in [("legacy", Self.recordedSystemPrompt), ("app", SystemPrompt.base)] {
       appState.options.systemPrompt = base
       appState.options.enableThinking = false
       await appState.applyCurrentOptions()

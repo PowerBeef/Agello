@@ -68,7 +68,7 @@ final class PersonalizationTests: XCTestCase {
     XCTAssertTrue(prompt.contains("say it may be out of date; the user can tap Search for current information."))
     XCTAssertFalse(prompt.contains("{"), prompt)
     XCTAssertFalse(prompt.contains(SystemPrompt.precedenceLine))
-    XCTAssertTrue(prompt.hasSuffix("still give your best answer."))
+    XCTAssertTrue(prompt.hasSuffix("running Google's Gemma 4 model on the device."), prompt)
   }
 
   func testCurrentInformationFollowsTheSearchSettings() {
@@ -93,7 +93,7 @@ final class PersonalizationTests: XCTestCase {
     var named = Personalization()
     named.name = "Sam"
     XCTAssertTrue(
-      prompt(named).contains("still give your best answer.\n\n\(SystemPrompt.precedenceLine)\n\nThe user's name is Sam."))
+      prompt(named).contains("on the device.\n\n\(SystemPrompt.precedenceLine)\n\nThe user's name is Sam."))
     var concise = Personalization()
     concise.style = .concise
     XCTAssertTrue(prompt(concise).contains(SystemPrompt.precedenceLine))

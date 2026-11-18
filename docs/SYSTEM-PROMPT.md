@@ -1,6 +1,27 @@
 # The chat system prompt: candidates to test
 
-**Status (2026-11-17):** two rounds ran on the M6 (probe 34, below): D4, a rewording of D, leads the confirmation round, and the app now uses it. The base is `SystemPrompt.base` (`Agello/Inference/Personalization.swift`), the default of `InferenceOptions.systemPrompt`, with its slots filled by `SystemPrompt.compose`; until then it was "You are a helpful on-device assistant." It's checked on this Mac only: the iPhone and the bench are next. The research behind this page is in `reports/Gemma 4 E4B prompting and reasoning.md` and its notes in `research_notes/` (local files, kept out of git).
+**Status (2026-11-17):** four rounds ran on the M6 (probe 34, below). The app now uses D8, round 4's lead (D4 with examples of what may have changed and an explicit answer to "what model are you?", placed last). The base is `SystemPrompt.base` (`Agello/Inference/Personalization.swift`), the default of `InferenceOptions.systemPrompt`, with its slots filled by `SystemPrompt.compose`; until then it was "You are a helpful on-device assistant." It's checked on this Mac only: the iPhone and the bench are next. The research behind this page is in `reports/Gemma 4 E4B prompting and reasoning.md` and its notes in `research_notes/` (local files, kept out of git).
+
+## Round 4 (2026-11-17, M6): D8, the app's base now
+
+Probe 34 on the fork's runtime with today's fixes (build `ca7bbff03b2c` and later), the table grown to 63 cases and 142 checks: three Think cases (a capital, a train trip's length, counting words in Python), and "What model are you?" now checked for the model's name.
+
+| Candidate | Checks | What it changes from D4 |
+| --- | --- | --- |
+| D4 | 138/142 | (fails identity, the bakery, iOS, the World Cup) |
+| D5 | 140/142 | The identity line says "built on Google's Gemma 4 model"; the knowledge line's examples, "such as the latest version, holder or winner of something" |
+| D5t | 139/142 | D5 with the Think line ("Think briefly about simple questions, and reason fully about math, code and problems with several steps.") |
+| D6 | 140/142 | D5, the identity line reworded ("…with Google's Gemma 4 model, entirely on the device") |
+| D7 | 138/142 | D5's examples, and near the top: "If asked what you are or which model you run, say you're Agello, running Google's Gemma 4 model on the device." |
+| **D8** | **141/142** | D5's examples, and that sentence last instead |
+
+What reading the replies showed:
+- **Identity.** The model calls itself Gemma 4 when the identity line names Gemma: D5 and D6 answered "I am Gemma 4, an assistant running on your iPhone, built on Google's Gemma 4 model". The explicit answer works ("I am Agello, running Google's Gemma 4 model on your device"), but near the top it moved other replies: D7 left "See you tomorrow at the station" untranslated and lost the keys from HTTPS. Placed last (D8), it moves nothing that the checks see.
+- **The Think line is out.** Thought on the capital wasn't shorter (171 characters against 146). On the train trip, the thought shortened (1,372 against 1,732) but the answer came out wrong.
+- **What may have changed.** D8 answers the iOS question with "likely iOS 18 … You can tap Search" instead of only pointing to Search. The World Cup is still called 2022's without a caveat in every candidate. Iceland's population lost its caveat in D8.
+- D8's replies are identical to D4's in 18 of 63 cases. The others differ in wording, and some are better: the Saturday plan gives options before asking, and the tomato answer is shorter.
+
+**In the app:** `SystemPrompt.base` is D8 since this round.
 
 ## In the app (2026-11-17, M6)
 
