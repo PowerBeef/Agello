@@ -16,7 +16,23 @@ protocol TextEmbedder: Sendable {
   var relatedMargin: Float { get }
   func embed(documents: [(title: String, text: String)]) async throws -> [[Float]]
   func embed(query: String) async throws -> [Float]
+  /// A query for one of EmbeddingGemma's tasks; the others embed every query alike.
+  func embed(query: String, task: EmbeddingQueryTask) async throws -> [Float]
   func unload() async
+}
+
+extension TextEmbedder {
+  func embed(query: String, task: EmbeddingQueryTask) async throws -> [Float] {
+    try await embed(query: query)
+  }
+}
+
+/// EmbeddingGemma's query tasks (its model card's prompts): a search over documents, or a search
+/// for code. Probe 39 (2026-11-17) found the code task no better on code questions (the same ranks
+/// over 14 code passages), so search uses the search task.
+enum EmbeddingQueryTask: String, Sendable {
+  case search = "search result"
+  case code = "code retrieval"
 }
 
 /// EmbeddingGemma 2 (text, 270M) through LiteRT-LM, at its full 768 dimensions, normalized.
@@ -74,9 +90,13 @@ actor LiteRTEmbedder: TextEmbedder {
   }
 
   func embed(query: String) async throws -> [Float] {
+    try await embed(query: query, task: .search)
+  }
+
+  func embed(query: String, task: EmbeddingQueryTask) async throws -> [Float] {
     let engine = try await loaded()
     return try await engine.computeEmbedding(
-      contents: [.text(Self.queryPrompt(query))], options: options
+      contents: [.text(Self.queryPrompt(query, task: task))], options: options
     ).embedding
   }
 
@@ -93,8 +113,8 @@ actor LiteRTEmbedder: TextEmbedder {
     "title: \(title.isEmpty ? "none" : String(title.prefix(80))) | text: \(text)"
   }
 
-  static func queryPrompt(_ query: String) -> String {
-    "task: search result | query: \(query)"
+  static func queryPrompt(_ query: String, task: EmbeddingQueryTask = .search) -> String {
+    "task: \(task.rawValue) | query: \(query)"
   }
 
   private func loaded() async throws -> EmbeddingEngine {

@@ -315,19 +315,39 @@ final class KnowledgeBase {
 
   /// `texts` by meaning against `query`, closest first; nil without an embedder or when embedding
   /// fails. For short texts such as memories: their vectors are kept for the session.
-  func rank(_ texts: [String], against query: String) async -> [String]? {
+  func rank(
+    _ texts: [String], against query: String, task: EmbeddingQueryTask = .search
+  ) async -> [String]? {
     guard let embedder = currentEmbedder(), !texts.isEmpty, !query.isEmpty else { return nil }
     let key = { (text: String) in embedder.identifier + "\u{0}" + text }
-    let missing = Array(Set(texts.filter { textVectors[key($0)] == nil }))
-    if !missing.isEmpty {
-      guard let vectors = try? await embedder.embed(documents: missing.map { (title: "none", text: $0) }),
-        vectors.count == missing.count
-      else { return nil }
-      for (text, vector) in zip(missing, vectors) { textVectors[key(text)] = vector }
-    }
-    guard let queryVector = try? await embedder.embed(query: query) else { return nil }
+    guard await textVectorsCached(texts, embedder: embedder) else { return nil }
+    guard let queryVector = try? await embedder.embed(query: query, task: task) else { return nil }
     let scores = texts.map { VectorIndex.dot(textVectors[key($0)] ?? [], queryVector) }
     return texts.indices.sorted { scores[$0] != scores[$1] ? scores[$0] > scores[$1] : $0 < $1 }.map { texts[$0] }
+  }
+
+  /// The highest similarity of `text` to any of `texts`, both embedded as documents (cosines of
+  /// the normalized vectors); nil without an embedder or when embedding fails. Probe 39 measured it
+  /// for memories (2026-11-17): reworded facts (0.87–0.98) and different ones (0.83–0.96) overlap,
+  /// so memories aren't deduplicated by meaning.
+  func nearestSimilarity(of text: String, among texts: [String]) async -> Float? {
+    guard let embedder = currentEmbedder(), !text.isEmpty, !texts.isEmpty else { return nil }
+    let key = { (text: String) in embedder.identifier + "\u{0}" + text }
+    guard await textVectorsCached(texts + [text], embedder: embedder), let vector = textVectors[key(text)]
+    else { return nil }
+    return texts.map { VectorIndex.dot(textVectors[key($0)] ?? [], vector) }.max()
+  }
+
+  /// Embeds the texts not embedded yet (as documents) into the session's cache.
+  private func textVectorsCached(_ texts: [String], embedder: TextEmbedder) async -> Bool {
+    let key = { (text: String) in embedder.identifier + "\u{0}" + text }
+    let missing = Array(Set(texts.filter { textVectors[key($0)] == nil }))
+    guard !missing.isEmpty else { return true }
+    guard let vectors = try? await embedder.embed(documents: missing.map { (title: "none", text: $0) }),
+      vectors.count == missing.count
+    else { return false }
+    for (text, vector) in zip(missing, vectors) { textVectors[key(text)] = vector }
+    return true
   }
 
   /// Wait for chat indexing started by ``indexChats(_:)``.
