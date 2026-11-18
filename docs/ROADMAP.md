@@ -18,7 +18,12 @@ The handoff between work sessions: read this first, then the section of the plan
       2. **The manual checks:** a download paused, moved to cellular and resumed, and a real download's staging; the incomplete-reply line, the embedder's unload fix, a barge-in in voice mode; a follow-up on a 16K file (the time files sent once saves); the rewind fix (a Think reply over 1,100 tokens, then a follow-up); how long the phone takes to index files and chats again after the update; a chat with more than 25 memories.
   - **B. The maintainer's decisions:**
     1. **Twenty real documents** for the last 64K gate: read whole, against their section summaries. Which documents, the maintainer's or ones found for it.
-    2. **A runtime release** with the softmax fix (`agello/release-xcframework.sh`), from the fork's `main`, which also runs the GPU-resident round's drafter chain by default (C1).
+    2. **A runtime release**, from the fork's `main`. The candidate `agello-one-20261117` is built and gated on this Mac (2026-11-17, not published).
+       - **What it is:** fork `30d9be9c`, build `4cb2961f87bc`, files and notes in `../LiteRT-LM/dist/release/agello-one-20261117/`.
+       - **What it carries:** the softmax fix, the drafter chain on by default, the last-token, pending-embedding and tool-boundary fixes, JSON speculation, and G1.
+       - **Against `agello-one-20261115`:** replies identical in 5 of 5 cases, decode +1.9 %, prefill −1.2 %.
+       - **Suites:** inference 22/22, thinking 3/3, files 5/5, web 8/9 (test06's rounding, as before); probes 35, 36 and 38 pass.
+       - **Left:** the iPhone gate (`phone-bench.sh`, the suites, the bench), then publishing (`gh release create` on the dry run's files) and vendoring it, both the maintainer's call. After it, `AGELLO_JSON_MTP` turns on by default.
     3. **The 128K file's upload** to Hugging Face and `ModelCatalog.e4b`'s change, once B1 passes (A's gates passed on the phone on 2026-11-17): that's when users get 64K. After it, the suites and probes that still measure a 32K engine move to 64K, and the cross-window identity check retires.
     4. **CI:** it needs a macOS 27 runner (self-hosted, this Mac, or waiting for a hosted image).
   - **C. On the Mac, meanwhile** (nothing here needs the phone):
