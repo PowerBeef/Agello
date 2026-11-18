@@ -311,11 +311,15 @@ upgrades.
 
 | # | Change | Why |
 | --- | --- | --- |
-| G1 | Detect the GPU family with `supportsFamily` instead of the device name | ML Drift matches names (`MD/common/gpu_info.cc:690-768`). The A20 Pro is listed, but any chip name it doesn't know falls to Apple1 with 4 units, which turns off `ConvAppleMPP` and takes prefill off the neural accelerators |
+| G1 | **Done 2026-11-17** (below the table). Detect the GPU family with `supportsFamily` instead of the device name | ML Drift matches names (`MD/common/gpu_info.cc:690-768`). The A20 Pro is listed, but any chip name it doesn't know falls to Apple1 with 4 units, which turns off `ConvAppleMPP` and takes prefill off the neural accelerators |
 | G2 | Compile at MSL 4.1 on iOS 27, and drop the Apple7–9 paths | Unlocks the int2, FP8 and FP4 operands and persistent kernels; less code to keep |
 | G3 | Tile shapes and work-group splits measured on the A19 Pro (6 cores), never taken from the Mac | The phone is a different family with half the bandwidth or less |
 | G4 | Load time: deduplicate the per-node compiles and keep binary archives keyed by the runtime's build id; a cheaper `validate()` | Cold loads of 7.2–9.6 s; ~0.18 s off each warm load [E] |
 | G5 | The iPhone 18 Pro runs what ships: once before a release, the A20 Pro's code paths on the 17 Pro (`AGELLO_SIMULATE_APPLE_GPU="Apple A20 Pro"`: identical replies, the matrix-unit kernels on) | Correctness only; its speed is for the notes below |
+
+**G1, done (2026-11-17):** an Apple chip ML Drift's name table doesn't know now takes the Metal device's family (`supportsFamily`) and an estimate of its cores (6 on iPhones, the A19 Pro's; 10 on Macs).
+- **Before:** such a chip fell to Apple1 with four cores, which turns the matrix-unit paths off. Simulated that way on the M6 (`AGELLO_SIMULATE_APPLE_GPU=Apple_A7`), prefill ran 75 % slower and decode 34 %.
+- **Now:** an unknown name (`Apple_A21_Pro`) runs within 7 % of the real chip.
 
 **Notes for the iPhone 18 Pro (A20 Pro), for later.** Not scheduled; they wait for the hardware.
 
