@@ -19,7 +19,10 @@ struct Personalization: Codable, Equatable, Sendable {
     var instruction: String? {
       switch self {
       case .standard: return nil
-      case .concise: return "Keep answers short and to the point; skip preambles and summaries."
+      // Probe 37 (2026-11-17): the line before ("Keep answers short and to the point; skip
+      // preambles and summaries.") left everyday answers at two thirds of the default's length.
+      case .concise:
+        return "Keep answers short: two to four sentences for a question. For a recipe, a plan or steps, give only what's needed to do it, as a compact list. Leave out background, caveats, summaries and offers of more help."
       case .detailed: return "Give thorough, well-structured answers with explanations and examples."
       case .friendly: return "Use a warm, conversational, encouraging tone."
       case .professional: return "Use a precise, formal, professional tone."

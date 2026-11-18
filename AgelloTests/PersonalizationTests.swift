@@ -20,7 +20,7 @@ final class PersonalizationTests: XCTestCase {
       """
       You are a helpful on-device assistant.
 
-      Keep answers short and to the point; skip preambles and summaries.
+      Keep answers short: two to four sentences for a question. For a recipe, a plan or steps, give only what's needed to do it, as a compact list. Leave out background, caveats, summaries and offers of more help.
 
       The user's name is Patrice.
 

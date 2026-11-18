@@ -76,6 +76,10 @@ What reading the replies showed:
   - answers in bullet points when asked.
 
   The Concise style is the one that doesn't hold: "Explain how vaccines work" came back in 1,000 to 1,200 characters with a numbered list from every candidate. Its instruction ("Keep answers short and to the point; skip preambles and summaries.") is too weak for the model: a fix for `Personalization.Style`, not the base.
+  - **Fixed the same day (probe 37, `AgelloDeviceTests/StyleProbe.swift`).** Ten everyday asks were run under D4 with candidate lines, each ask with a length ceiling and what it must still say. The new line is "Keep answers short: two to four sentences for a question. For a recipe, a plan or steps, give only what's needed to do it, as a compact list. Leave out background, caveats, summaries and offers of more help."
+    - **Length:** about 4,000 characters over the ten replies, against 10,900 with the old line and 15,700 with no style.
+    - **Tasks stay usable:** the pancake recipe keeps its amounts, and the Paris trip keeps a plan for each day.
+    - **The shortest candidate wasn't kept:** "two to four sentences" on its own dropped the recipe's amounts.
 - **Multi-turn holds.** After four French turns the reply is still French. The thank-you chat ends in two short paragraphs; D3b is the one that adds an offer of three more tasks.
 - **Still failing everywhere:** the 2022 World Cup isn't flagged as possibly out of date, and the iOS question gets "check the App Store" instead of a version. D2's line fixed the iOS answer in round 1 but moved Einstein's answer; another wording, or Search, is for later.
 
