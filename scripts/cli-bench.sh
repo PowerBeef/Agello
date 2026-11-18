@@ -24,6 +24,8 @@
 #      busy after that, the run refuses with exit 4 and what to fix),
 #      MIN_CLEAN (undisturbed runs wanted of each case and build, default 3 or ROUNDS if less),
 #      EXTRA_ROUNDS (the most rounds added to get them, default 3).
+#      ARMENV_<name>: environment assignments for that arm's process only, such as
+#      ARMENV_long="AGELLO_VERIFY8_ROUNDS=1" (two arms of one build that differ by a switch).
 #      ARMOPTS_<name>: options for that arm's agello bench only, such as another models folder
 #      (for an arm w128k=release, the file opened to 128K: ARMOPTS_w128k="--models
 #      $HOME/Models/agello/lab/w128k --cache …"; paths without spaces). The runtime reads that
@@ -141,6 +143,7 @@ measure_round() {
   for name in $names; do
     eval "binary=\"\$binary_$name\""
     eval "arm_options=\"\${ARMOPTS_$name:-}\""
+    eval "arm_env=\"\${ARMENV_$name:-}\""
     # Busy again between two processes: wait a little, then measure anyway. The records say
     # afterwards whether the run was disturbed.
     if [ "$QUIET" != off ]; then
@@ -148,7 +151,7 @@ measure_round() {
     fi
     echo "Round $round_label, $name:"
     # shellcheck disable=SC2086 # the arm's own options, split into words
-    "$binary" bench --label "$name" --out "$OUT/$name.jsonl" --warmup --repeat "$REPEAT" $arm_options "$@" 2>&1 | sed 's/^/  /' || status=$?
+    env $arm_env "$binary" bench --label "$name" --out "$OUT/$name.jsonl" --warmup --repeat "$REPEAT" $arm_options "$@" 2>&1 | sed 's/^/  /' || status=$?
   done
 }
 round=1

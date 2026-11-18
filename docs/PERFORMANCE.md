@@ -853,6 +853,22 @@ there predate the measurements.
    (`e084e1f`). Left: the rules for the 6.44 GB limit (E9), the reply reserve (still a quarter of
    the window), D4's re-fit, F4's design, A3.
 
+   **Phase 3, a go on the M6 for copy-heavy replies (2026-11-17, fork `4fa592c5`, opt-in with
+   `AGELLO_VERIFY8_ROUNDS=1`):**
+   - **How a round works:** when the file has `verify_8`, the round needs no masks over 8 positions, its positions fit the cache, and the context offers 7 drafts, the round checks them all on `verify_8`. It picks greedily on the GPU (a host argmax over 8 rows of logits had cost up to 14 ms a round), keeps the accepted prefix and the bonus token, and copies `verify_8`'s activations row into the verifier's row 0 for the next round's drafter. Rounds are chosen by tokens a millisecond, as B2's are.
+   - **Measured** (quiet, three rounds, against the same build without it, `scripts/cli-bench.sh base=next long=next` with `ARMENV_long`, the lab file with `verify_8`): two new bench cases, `comment-module` (a module returned with docstrings) and `typo-fix` (a document returned with its typos fixed).
+
+     | Case | Decode | Long rounds |
+     | --- | --- | --- |
+     | `comment-module` | **+37.1 %** (207.9 against 151.7 tok/s) | 66 of 102 rounds, 5.4 of 7 drafts kept |
+     | `typo-fix` | +7.1 % | 11 of about 60 rounds, 4.2 kept |
+     | `explain`, `email` | −1.2 % and −0.4 % | |
+
+     The typo fix gains less because, after each correction, the context has nothing to propose until three tokens later.
+   - **Replies:** identical in 2 of 4 cases. The others part at near-ties ("sending its" against "sending you its"; two docstrings worded differently), as expected from the 8-row attention's other kernel.
+   - **Suites:** the native `inference`, `thinking` and `files` pass with it on, and probe 35's quotes all match.
+   - **Next:** the iPhone, with the 128K file plus `verify_8`, then on by default.
+
 **On the iPhone**
 
 9. P0 in one session: level-4 kernels, a System Trace, stream-read bandwidth, the jetsam limit per

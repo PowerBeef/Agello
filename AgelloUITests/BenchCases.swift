@@ -62,6 +62,10 @@ struct BenchCase {
         "The design makes no sense and you should include only fonctionnal apps in the mockup like a calculator and other apps that can actually work. Also can you replicate iOS design for the mockup os UI"
       ],
       searchFollowUps: true),
+    // Replies that copy their input with small changes (B5's rounds of copied drafts, 2026-11-17):
+    // a document returned with its typos fixed, and a module returned with docstrings added.
+    BenchCase(id: "typo-fix", prompt: Prompts.typoFix, think: false),
+    BenchCase(id: "comment-module", prompt: Prompts.commentModule, think: false),
     // A 60-page report from the app's sample (`--uitest-sample-report`): section 23 is about water
     // quality, inspected by district 4.
     BenchCase(
@@ -71,6 +75,81 @@ struct BenchCase {
   ]
 
   enum Prompts {
+    /// About 230 words with 14 mistakes; the reply is the text again, corrected.
+    static let typoFix = """
+      Fix the spelling and grammar mistakes in this text and give back the whole corrected text, nothing else.
+
+      Our neighbourhood library has been a quiet center of the comunity for more then forty years. Every morning, before the doors open, volunters sort the returned books, water the plants by the windows and set out the newspapers on the long oak table. Most visitors are regulars: retired teachers who come for the crossword, students who need a calm place to study, and parents whose children spend the afternoon in the reading corner. Last spring the city anounced that the building would close for six months of repairs. The roof had been leaking for years, and the heating system was older then most of the staff. Many people worried that they would lose the habbit of coming, and that the library would struggle to win them back. Instead, the staff opened a small temporary branch in the old post office acros the street. It was cramped, and the shelfs held only a fraction of the collection, but the regulars came anyway. When the main building reopened in October, there was a line at the door before eight o'clock. The new roof dont leak, the reading room is finaly warm in winter, and the oak table is back in it's place by the windows. The librarians say the visit numbers are already higher than before the closure, wich nobody expected.
+      """
+
+    /// A 60-line module of five functions; the reply is the module again with a docstring each.
+    static let commentModule = #"""
+      Add a one-line docstring to every function in this module and give back the whole module, otherwise unchanged.
+
+      ```python
+      import csv
+      import statistics
+      from collections import defaultdict
+      from datetime import date, datetime
+
+
+      def load_readings(path):
+          readings = []
+          with open(path, newline="") as handle:
+              for row in csv.DictReader(handle):
+                  readings.append(
+                      {
+                          "station": row["station"].strip(),
+                          "day": datetime.strptime(row["day"], "%Y-%m-%d").date(),
+                          "temperature": float(row["temperature"]),
+                      }
+                  )
+          return readings
+
+
+      def by_station(readings):
+          groups = defaultdict(list)
+          for reading in readings:
+              groups[reading["station"]].append(reading)
+          for station_readings in groups.values():
+              station_readings.sort(key=lambda reading: reading["day"])
+          return dict(groups)
+
+
+      def daily_range(readings, start, end):
+          if start > end:
+              raise ValueError("start must not be after end")
+          return [reading for reading in readings if start <= reading["day"] <= end]
+
+
+      def summary(readings):
+          temperatures = [reading["temperature"] for reading in readings]
+          if not temperatures:
+              return {"count": 0, "mean": None, "low": None, "high": None}
+          return {
+              "count": len(temperatures),
+              "mean": round(statistics.fmean(temperatures), 2),
+              "low": min(temperatures),
+              "high": max(temperatures),
+          }
+
+
+      def warm_spells(readings, threshold, length):
+          spells = []
+          current = []
+          for reading in readings:
+              if reading["temperature"] >= threshold:
+                  current.append(reading["day"])
+              else:
+                  if len(current) >= length:
+                      spells.append((current[0], current[-1]))
+                  current = []
+          if len(current) >= length:
+              spells.append((current[0], current[-1]))
+          return spells
+      ```
+      """#
+
     /// A three-part coding evaluation the maintainer ran on the iPhone (2026-11-09): about 3.8K
     /// tokens in, about 4.5K out with Think. Judged by `scripts/bench/ttl-cache/`.
     static let threePartCoding = #"""

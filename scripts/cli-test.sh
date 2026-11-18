@@ -13,7 +13,9 @@
 #   scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall
 #
 # Env: LITERTLM_PACKAGE (the runtime to build against, as for the command line; default
-#      Vendor/LiteRT-LM), AGELLO_TELEMETRY (the engine's telemetry level, default 2).
+#      Vendor/LiteRT-LM), AGELLO_TELEMETRY (the engine's telemetry level, default 2),
+#      AGELLO_MODELS_DIR and AGELLO_ENGINE_CACHE_DIR (another models folder, such as a lab file's,
+#      with a cache of its own; defaults ~/Models/agello and its agello-cli/<build> cache).
 # The tests run with their home folder redirected to build/cli/test-home, so they never touch
 # this Mac's own Library, Documents or settings; models are read from ~/Models/agello and
 # never changed. Not here: the interface's tests, the memory envelopes and the UI suites.
@@ -80,8 +82,8 @@ if [ "$bundle" = AgelloDeviceTests ]; then
   build="$("$SCRATCH/debug/agello" env --trace-dir "$SCRATCH/env-traces" 2>/dev/null \
     | python3 -c 'import json, sys; print((json.load(sys.stdin)["machine"].get("runtimeBuild") or {}).get("build_id", "no-build-id"))')"
   rm -rf "$SCRATCH/env-traces" "$SCRATCH/runtime.log"
-  export AGELLO_MODELS_DIR="$HOME/Models/agello"
-  export AGELLO_ENGINE_CACHE_DIR="$HOME/Models/agello/cache/agello-cli/$build"
+  export AGELLO_MODELS_DIR="${AGELLO_MODELS_DIR:-$HOME/Models/agello}"
+  export AGELLO_ENGINE_CACHE_DIR="${AGELLO_ENGINE_CACHE_DIR:-$HOME/Models/agello/cache/agello-cli/$build}"
   export AGELLO_TELEMETRY="${AGELLO_TELEMETRY:-2}"
   export HARNESS_RUN_ID="cli-$(date +%Y%m%d-%H%M%S)"
 fi
