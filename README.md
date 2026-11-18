@@ -76,14 +76,19 @@ Agello's color follows what you're doing. Each mode has its own accent, and it l
 
 ## Performance
 
-<img src="docs/images/readme/performance.webp" width="100%" alt="Google's LiteRT-LM runtime in October 2026, on an iPhone 17 Pro: 0.4 seconds to the first word, 38 tokens per second in a chat with the 8K window that was then the default, 1.7 seconds to index a 40-page PDF, 1.3 seconds to the first spoken sentence. Decode speed by context window: 43 tokens per second at 4K, 38 at 8K, 34 at 16K, 27 at 32K.">
+<img src="docs/images/readme/performance.webp" width="100%" alt="Our LiteRT-LM build on an iPhone 17 Pro, 2026-11-17: 0.4 seconds to the first word, 46 tokens per second in a chat with a 32K window, 1.9 seconds to index a 40-page PDF, 1.2 seconds to the first spoken sentence. Decode speed by reply: an email at 46 tokens per second, a cited Search answer at 60, a 4,517-token coding reply at 38, an explanation with Think at 37.">
 
 <details>
 <summary><b>Every measurement</b></summary>
 
 <br>
 
-The image above and the table below show Google's runtime in October 2026. Since 2026-10-28 the app runs our own build of the runtime (release `agello-next-20261024`, build `99b8f5f6ea49`, until 2026-11-15; now `agello-one-20261115`, build `0c749789100a`: prefill +13.8 %, the first token −16.6 %, decode the same, replies identical), and since 2026-11-09 chat uses a 32K window. Since 2026-11-14, 12 GB iPhones ask for a 64K window, and the published model file caps it at 32,000 positions, so chats get 32K today; a 128K model file (not yet published) gives the full 64K. On an iPhone 17 Pro with the first build:
+The image above shows our runtime on an iPhone 17 Pro on 2026-11-17, with the 32K window:
+- **The bench, in a Release build:** an email (197 tokens) started after 0.42 s and decoded at 46.4 tok/s. A cited Search answer (439 tokens) decoded at 60.1, a 4,517-token coding reply with Think at 37.6, and a 1,666-token explanation with Think at 37.3.
+- **The device suites, in Debug builds:** a 40-page PDF indexed in 1.9 s (EmbeddingGemma 2 at 768 dimensions), and a voice turn spoke its first sentence after 1.2 s.
+- **The build:** the runs used the fork's `main`, which decodes within 1 % of the release on the phone.
+
+The table below is Google's runtime in October 2026. Since 2026-10-28 the app runs our own build of the runtime (release `agello-next-20261024`, build `99b8f5f6ea49`, until 2026-11-15; now `agello-one-20261115`, build `0c749789100a`: prefill +13.8 %, the first token −16.6 %, decode the same, replies identical), and since 2026-11-09 chat uses a 32K window. Since 2026-11-14, 12 GB iPhones ask for a 64K window, and the published model file caps it at 32,000 positions, so chats get 32K today; a 128K model file (not yet published) gives the full 64K. On an iPhone 17 Pro with the first build:
 
 - On 2026-11-10, in a Release build with the 32K window, a 4,517-token reply decoded at 43.3 tok/s with the phone's thermal state at "fair". A hand run on a cool phone the day before gave about 49 ([harness notes](docs/HARNESS.md#h3-done-on-2026-11-10)).
 - The calibration of 2026-11-02 (a Debug build, thermal state nominal throughout) decoded a one-sentence reply at 39 / 42 / 42 tok/s with 8K / 16K / 32K windows, so the window hardly changes the speed any more. A 32K engine peaks at about 3.5 GB ([roadmap](docs/ROADMAP.md#next)).
