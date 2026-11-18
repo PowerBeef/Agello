@@ -40,6 +40,7 @@ The handoff between work sessions: read this first, then the section of the plan
        - **the search planner's call on "By how many minutes?", fixed** (2026-11-17). After a reply that gives the winner's time, the planner called it "answered" or "arithmetic" under every wording tried (three more today).
          - **The fix, in code:** a follow-up that asks how two figures differ ("by how many", "how much faster", "difference", "margin", "gap") is planned again with only a question or a request allowed (`WebContext.replansAsQuestion`, `AppState.planSearch`, one more planner call for those only).
          - **Checked natively:** `web` test04 passes, every decision right, and test01 finds the margin ("6 minutes and 26 seconds over Remco Evenepoel");
+       - **The pool's 200-turn soak, done on the M6** (probe 38, 2026-11-17): the footprint is flat through long prompts, stops, helpers, images and engine reloads. The growth the first run showed was macOS's malloc keeping freed large blocks (`MallocLargeCache=0` in the native tests now); the iPhone run of probe 38 confirms the phone has no such growth;
        - **G1, done** (2026-11-17, fork `e5e4c6eb`): an Apple chip ML Drift doesn't know by name (an iPhone 18's) takes its family from the Metal device. Before, it fell to the oldest family, which on the M6 meant 75 % slower prefill and 34 % slower decode;
        - the README's performance image and table, which show Google's runtime of October;
        - a Bench build configuration for the remaining test hooks;

@@ -189,6 +189,8 @@ final class AppState {
   /// The system says memory is low: give back what ``MemoryPolicy`` says for that level.
   func relieveMemoryPressure(level: MemoryPressureLevel) async {
     let relief = MemoryPolicy.action(level: level)
+    // Freed memory that malloc kept counts toward the limit: hand it back first.
+    MemoryProbe.returnFreedMemory()
     if relief.contains(.stopReplyIfExhausted) { stopIfMemoryIsExhausted() }
     if relief.contains(.releaseEmbedder) { await knowledge.releaseMemory() }
   }

@@ -776,7 +776,11 @@ there predate the measurements.
    128K; the ring file alone was not published): it waits for the 64K quality gates.
 2. Tests for the pool's free-and-rebuild (`MD/metal/memory_manager.mm`): 1,024-token prefill →
    decode → prefill with a stop mid-prefill, a helper snapshot, an image and an engine release in
-   between; a 200-turn soak asserting a flat footprint.
+   between; a 200-turn soak asserting a flat footprint. **Done 2026-11-17 on the M6** as probe 38
+   (`AgelloDeviceTests/PoolSoakProbe.swift`), through the app.
+   - **The mix:** 200 turns of short replies, with a message of about 1,400 tokens every 10th turn, a reply stopped mid-stream every 25th, a helper every 30th, an image every 40th, and the engine released and loaded again every 50th.
+   - **The result:** the footprint is flat (−303 MB from the early turns to the last, peak 0.98 GB), and every unload goes back to 0.05 GB.
+   - **The first run's growth was the Mac's allocator:** 1.3 GB with macOS's default malloc, which keeps freed large blocks (the CPU encoders' buffers) counted in the footprint: `vmmap`'s "Malloc Large (empty)", 1.4 GB after two reloads. `MallocLargeCache=0` removes it, and `scripts/cli-test.sh` now sets it. As far as libmalloc documents, the iPhone has no such cache: probe 38 there confirms it.
 3. The ×V tile (16×512: −2.8 % first token at 21K, replies identical) confirmed on the bench;
    score slices chosen by the 128K peak (256 MB kept).
 4. A private pool for the 1,024-token prefill, freed whole after each long prompt, so a 64K window

@@ -18,6 +18,15 @@ enum MemoryProbe {
     vmInfo()?.phys_footprint ?? 0
   }
 
+  /// Hands the system the free pages malloc's zones still hold, and returns how many bytes that
+  /// was: on a memory warning, before anything else. It doesn't empty macOS's cache of freed large
+  /// blocks, which held 1.4 GB after a 200-turn session with images and reloads on the Mac (probe
+  /// 38, 2026-11-17; `vmmap`'s "Malloc Large (empty)"); only `MallocLargeCache=0` at launch does.
+  @discardableResult
+  static func returnFreedMemory() -> UInt64 {
+    UInt64(malloc_zone_pressure_relief(nil, 0))
+  }
+
   /// Where the footprint sits, in GB: the kernel's ledgers for graphics
   /// (Metal), media and the Neural Engine, purgeable memory, and malloc's
   /// bytes in use against what its zones hold. Read by the memory scenarios.

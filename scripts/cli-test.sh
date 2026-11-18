@@ -85,6 +85,10 @@ if [ "$bundle" = AgelloDeviceTests ]; then
   export AGELLO_MODELS_DIR="${AGELLO_MODELS_DIR:-$HOME/Models/agello}"
   export AGELLO_ENGINE_CACHE_DIR="${AGELLO_ENGINE_CACHE_DIR:-$HOME/Models/agello/cache/agello-cli/$build}"
   export AGELLO_TELEMETRY="${AGELLO_TELEMETRY:-2}"
+  # macOS's malloc keeps freed large blocks, counted in the footprint (probe 38: 1.4 GB after 200
+  # turns with images and reloads); the iPhone's doesn't, as far as libmalloc documents. Off here,
+  # so memory checks read as on the phone.
+  export MallocLargeCache="${MallocLargeCache:-0}"
   export HARNESS_RUN_ID="cli-$(date +%Y%m%d-%H%M%S)"
 fi
 
