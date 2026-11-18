@@ -32,7 +32,11 @@ The handoff between work sessions: read this first, then the section of the plan
          - **Checked natively on the M6 with build `8ba3a9ff1747`** (the fork's `main` plus the fix): every quote matches, the cache holds the same count with MTP on and off, and with D4 thinking passes 3/3, inference 22/22, files 5/5 and web 7/9. `web` test01 passes there too, with the follow-up answered; test04 and test06 fail with the old line as well.
          - **It reaches users with the next runtime release** (the maintainer's call).
          - **Still to check on the iPhone:** this morning's replies there lost their final period from the streamed text, on build `8f24e4123eb5`. This Mac didn't reproduce that on the fixed build;
-       - a reply after a tool call can be empty: with today's prompt, "What year is it?" called the date tool and then wrote nothing (probe 34, 2026-11-17);
+       - **an empty reply after a tool call, fixed in the fork** (probe 36, 2026-11-17).
+         - **The fault:** under the old one-line prompt, three of four date questions called the date tool and then wrote nothing. The model's first token after the tool's response was `<|tool_response>`, a stop token. D4 answered all four, but the fault is the runtime's.
+         - **Fork `9a84a518`:** the reply to a tool response can't open with that token. A Gemma 4 file's template also gets upstream's tool boundary (`f240215c`), so the call's stop token is no longer rendered a second time.
+         - **Fork `a82611eb`:** a prefill now looks up a pending token's embeddings (upstream's `0101cf3b`), so no turn boundary is written from an id-and-zeros row.
+         - **Checked natively on build `ca7bbff03b2c`:** probe 36 answers 8 of 8; inference 22/22, thinking 3/3, files 5/5, and web 7/9 as before. It reaches users with the next runtime release;
        - the search planner calls "By how many minutes?", after a reply that gives the winner's time, answered instead of searching (`web` test04 with the date in English; it searched only with a French date);
        - the README's performance image and table, which show Google's runtime of October;
        - a Bench build configuration for the remaining test hooks;
