@@ -206,7 +206,7 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
 
 - **Swift wrapper patches** (`swift/`) are commits on the fork's `main`, and
   the app vendors it at the release's commit (`Vendor/use-release-litert.sh`,
-  below). `Vendor/README.md`, "Swift patches", lists the four of them with the
+  below). `Vendor/README.md`, "Swift patches", lists the five of them with the
   probe or test that checks each: keep the list there. (The same patches on
   Google's v0.18.0 are in `main`'s history, from the old `agello` branch.)
   - Two are worth offering upstream as issues, with the user's go-ahead: the
@@ -254,8 +254,8 @@ that applies now.
     it names the build), so compare replies, not bytes
     (`scripts/cli-bench.sh`, `scripts/phone-bench.sh`).
   - After changing what the reference cites, re-verify it:
-    `reference/maintenance.md` (`tools/agello-docs/check_refs.py` lists the
-    claims whose cited code moved).
+    `reference/maintenance.md`, "After a re-pin or rebase" (`tools/agello-docs/repin.py`
+    re-cites what didn't change and lists the claims to re-verify).
 - **Comparing builds:** `scripts/cli-bench.sh release next` (this Mac) and
   `scripts/phone-bench.sh release next` (the iPhone) take `next` from
   `../LiteRT-LM/dist/`. To keep a build as an arm while you change the tree,

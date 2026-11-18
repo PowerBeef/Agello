@@ -104,8 +104,8 @@ The rest is in [glossary.md](https://github.com/PowerBeef/agello-litert-lm/blob/
    upstream work follow `agello-litert-update`.
 2. After changing `agello/litert` or `agello/ml_drift`, vendoring a new release, or a model update,
    re-verify the reference as
-   [maintenance.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/maintenance.md) describes: `tools/agello-docs/check_refs.py --repin` lists
-   the claims whose cited code moved; they are re-verified and the pages fixed before anyone quotes
-   them.
+   [maintenance.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/maintenance.md) describes: move the pins in `tools/agello-docs/pins.json`,
+   and `tools/agello-docs/repin.py` re-cites every citation whose lines didn't change and lists the
+   claims to re-verify; they are re-verified and the pages fixed before anyone quotes them.
 3. After vendoring a new release, update this page's "What ships" table, the README's performance
    numbers (from a fresh measurement with its build id) and `CLAUDE.md`.

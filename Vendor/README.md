@@ -1,9 +1,11 @@
 # Vendored LiteRT-LM (Swift package surface only)
 
 `Vendor/LiteRT-LM` is a pruned copy of our LiteRT-LM fork,
-https://github.com/PowerBeef/agello-litert-lm (one branch, `main`), at commit
-**6da75396** (Google's LiteRT-LM 0.19.0-nightly.20261013 plus our commits, with LiteRT and
-ML Drift as folders of the same repository). It contains only what the Xcode build needs:
+https://github.com/PowerBeef/agello-litert-lm (one branch, `main`): its `swift/` at commit
+**82b05ea1**, and the binary of release `agello-one-20261115`, built from **6da75396** (Google's
+LiteRT-LM 0.19.0-nightly.20261013 plus our commits, with LiteRT and ML Drift as folders of the same
+repository; the wrapper's later commits change only `swift/`). It contains only what the Xcode build
+needs:
 
 - `Package.swift` (pins the `CLiteRTLM.xcframework.zip` of our release
   [`agello-one-20261115`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-one-20261115),
@@ -66,7 +68,8 @@ fixes:
    type through the C API's `litert_lm_embedding_engine_settings_set_activation_data_type` (probe
    32 measures float16 against float32).
 5. Swift 6 language mode (`Package.swift` at tools 6.0, fork `24f35f81`): `ExperimentalFlags`
-   keeps its values behind one `Mutex` instead of unprotected static vars (same public API);
+   keeps its values behind an `NSLock` instead of unprotected static vars (same public API; a
+   `Mutex` in a static crashed optimized builds on their first conversation, fork `82b05ea1`);
    the immutable native handles of `Conversation`, `Engine` and `EmbeddingEngine` and
    `ToolManager`'s registry are `nonisolated(unsafe)`, each with why; a stream's `yield` takes
    its message as `sending`.
