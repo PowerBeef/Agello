@@ -79,7 +79,15 @@ struct BenchCase {
     static let typoFix = """
       Fix the spelling and grammar mistakes in this text and give back the whole corrected text, nothing else.
 
-      Our neighbourhood library has been a quiet center of the comunity for more then forty years. Every morning, before the doors open, volunters sort the returned books, water the plants by the windows and set out the newspapers on the long oak table. Most visitors are regulars: retired teachers who come for the crossword, students who need a calm place to study, and parents whose children spend the afternoon in the reading corner. Last spring the city anounced that the building would close for six months of repairs. The roof had been leaking for years, and the heating system was older then most of the staff. Many people worried that they would lose the habbit of coming, and that the library would struggle to win them back. Instead, the staff opened a small temporary branch in the old post office acros the street. It was cramped, and the shelfs held only a fraction of the collection, but the regulars came anyway. When the main building reopened in October, there was a line at the door before eight o'clock. The new roof dont leak, the reading room is finaly warm in winter, and the oak table is back in it's place by the windows. The librarians say the visit numbers are already higher than before the closure, wich nobody expected.
+      Our neighbourhood library has been a quiet center of the comunity for more then forty years. \
+      Every morning, before the doors open, volunters sort the returned books, water the plants by the windows and set out the newspapers on the long oak table. \
+      Most visitors are regulars: retired teachers who come for the crossword, students who need a calm place to study, and parents whose children spend the afternoon in the reading corner. \
+      Last spring the city anounced that the building would close for six months of repairs. The roof had been leaking for years, and the heating system was older then most of the staff. \
+      Many people worried that they would lose the habbit of coming, and that the library would struggle to win them back. \
+      Instead, the staff opened a small temporary branch in the old post office acros the street. It was cramped, and the shelfs held only a fraction of the collection, but the regulars came anyway. \
+      When the main building reopened in October, there was a line at the door before eight o'clock. \
+      The new roof dont leak, the reading room is finaly warm in winter, and the oak table is back in it's place by the windows. \
+      The librarians say the visit numbers are already higher than before the closure, wich nobody expected.
       """
 
     /// A 60-line module of five functions; the reply is the module again with a docstring each.
