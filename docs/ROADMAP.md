@@ -1,12 +1,12 @@
 # Roadmap
 
-What has shipped, what's next, and the manual checks still to do. Updated 2026-11-17.
+What has shipped, what's next, and the manual checks still to do. Updated 2026-11-18.
 
 ## Current status
 
 The handoff between work sessions: read this first, then the section of the plan it points to.
 
-- **Where it stands, and what's next** (2026-11-17, evening). The app ships our runtime, release `agello-one-20261115` (build `0c749789100a`), at 32K: 12 GB iPhones ask for 64K, and the published model file caps the window at 32,000 positions until the file opened to 128K ships. Since today the chat's system prompt is D8 ([SYSTEM-PROMPT.md](SYSTEM-PROMPT.md), "Round 4"). Everything is pushed: the app up to `51e2d95`, the fork up to `b7b856a0`.
+- **Where it stands, and what's next** (2026-11-17, evening). The app ships our runtime, release `agello-one-20261115` (build `0c749789100a`), at 32K: 12 GB iPhones ask for 64K, and the published model file caps the window at 32,000 positions until the file opened to 128K ships. Since today the chat's system prompt is D8 ([SYSTEM-PROMPT.md](SYSTEM-PROMPT.md), "Round 4"). Pushed: the app up to `51e2d95`, the fork up to `b7b856a0`; not pushed yet: the app's roadmap and doc fixes since, and the fork's reference re-pin (`4318c4a1`).
   - **The fork's `main` past the release:**
     - fixes: the softmax at every window, a speculative round's last token, pending tokens' embeddings, the Gemma 4 tool boundary and a reply after a tool call that ended empty, and JSON with speculative decoding;
     - G1 (unknown Apple chips);
@@ -30,9 +30,10 @@ The handoff between work sessions: read this first, then the section of the plan
     3. **Twenty real documents** for the last 64K gate.
     4. **A macOS 27 runner** for CI.
   - **C. On the Mac:**
-    - the fork's reference re-pinned to `main` (`docs/agello/reference/`);
+    - the reference's loose ends from its re-pin (fork `docs/agello/reference/_work/audits.md`, "The re-pin to `main`"): `agello/THIRD_PARTY_NOTICES.md` still names `agello-next` and the old forks; `docs/agello/upstream/`'s index keeps its "branches pushed" caveat; code with no claims yet (row slicing, per-row mask bounds, the drafter's global window, `whole_rows`, the CPU embedder's zero-point compression); probe 3 still embeds at 256 dimensions where the app keeps 768;
     - the World Cup still unflagged as possibly out of date (SYSTEM-PROMPT.md);
     - what's left of PERFORMANCE.md's "On the Mac, now".
+  - **Done on the Mac on 2026-11-18:** the fork's reference re-pinned to `main` `b7b856a0` (fork `4318c4a1`): the tools read LiteRT and ML Drift from the one checkout; 648 claims verified again (480 corrected, 9 wrong, all off the pages), their copies aligned; a spot audit of what the script moved held 23 of 23. The app's docs it found stale were fixed in `f51fe1d` (the vendored wrapper is `main`'s `swift/` at `82b05ea1` with the release's binary; five Swift patches everywhere).
   - **Done on the Mac on 2026-11-17** (details in the [Log](#log), "2026-11-17"):
     - fixes:
       - the last-token and empty-reply fixes in the runtime;
@@ -48,7 +49,7 @@ The handoff between work sessions: read this first, then the section of the plan
     - memories by meaning and EmbeddingGemma's code task, measured and left out.
 - **The window: a fixed 64K with sparse KV caches** (adopted 2026-11-14; [PERFORMANCE.md](PERFORMANCE.md), "The window: a fixed 64K with sparse KV caches"). Done: the global KV caches are Metal placement sparse buffers mapped as a chat fills them, and prefill pools are released after each prompt (the runtime, released in `agello-one-20261115`); 12 GB iPhones request 65,536 positions, capped by the model file's window (the app). On the iPhone 17 Pro the memory suite's engine holds 1.23 GB after load (2.34 before) and 1.26 GB with an image (3.60), and with the 128K file a 45K prompt, a helper and an image peak at 2.49 GB. Left: the 128K file's quality gates, then its upload and the catalog change, which give users 64K (item 1 above). The full record is in the [Log](#log).
 - **Runtime release `agello-one-20261115`** (fork `6da75396`, build `0c749789100a`, published and vendored on 2026-11-15): the sparse caches, the window read from the model file, train 1's speedups and a decode fix (attention's mask bounds only in prefill graphs). On the iPhone 17 Pro against `agello-next-20261024`: replies identical, prefill +13.8 %, first token −16.6 %, decode the same (+1.7 % on a cool phone). The phone suites weren't rerun on the vendored package (the maintainer's choice: it's the build the comparison ran).
-- **The plans.** The backend's hard fork ([BACKEND.md](BACKEND.md)): B0–B4 are done (B4's iPhone half on 2026-11-17), B5 is under way, and B6 is in part (the first release from the one repository ships; the fork's reference pages still describe the old layout). B5's performance plan ([PERFORMANCE.md](PERFORMANCE.md), approved 2026-11-13): train 1 and the 64K window are released; the GPU-resident round, B2's drafts from the context, speculative decoding for JSON helpers, G1 and P0 come next (items 2 and 4 above).
+- **The plans.** The backend's hard fork ([BACKEND.md](BACKEND.md)): B0–B4 are done (B4's iPhone half on 2026-11-17), B5 is under way, and B6 is in part (the first release from the one repository ships; the fork's reference was re-pinned to `main` on 2026-11-18). B5's performance plan ([PERFORMANCE.md](PERFORMANCE.md), approved 2026-11-13): train 1 and the 64K window are released; the GPU-resident round, B2's drafts from the context, speculative decoding for JSON helpers, G1 and P0 come next (items 2 and 4 above).
 
 ## Shipped
 
@@ -74,7 +75,6 @@ The order of work is Current status's first entry; the plan is [BACKEND.md](BACK
 
 1. The B5 items that the Mac can measure first: B2's drafts from the context, speculative decoding for JSON helpers, G1, the pool's tests and the 200-turn soak (`scripts/cli-bench.sh release next`, then the iPhone).
 2. The GPU-resident round, built and checked here before the phone.
-3. The fork's reference pages (`../LiteRT-LM/docs/agello/reference/`): the layout and re-pin pages still describe three repositories, and `facts.md` F-003, F-018 and F-029 still describe Google's v0.18.0 as shipped.
 
 **On the iPhone** (connected, unlocked, iPhone Mirroring closed):
 
@@ -176,7 +176,7 @@ Entries moved out of Current status on 2026-11-17 come first; then those moved o
        - **G1, done** (2026-11-17, fork `e5e4c6eb`): an Apple chip ML Drift doesn't know by name (an iPhone 18's) takes its family from the Metal device. Before, it fell to the oldest family, which on the M6 meant 75 % slower prefill and 34 % slower decode;
        - **the README's performance image, done** (2026-11-17): our runtime on the iPhone 17 Pro, from the day's bench and suites;
        - **a Bench build configuration, done** (2026-11-17): Release with `BENCH` defined, for the bench, `phone-bench.sh` and `bench-direct.sh`. The launch-argument and bench hooks compile only into Debug and Bench, so a Release binary carries none of them (checked with `strings`). The Mac command line defines `BENCH`;
-       - **the fork's reference README, done** (2026-11-17, fork `30d9be9c`): it describes the one-repository layout and what ships; a re-pin of the reference to `main` stays to do.
+       - **the fork's reference README, done** (2026-11-17, fork `30d9be9c`): it describes the one-repository layout and what ships; a re-pin of the reference to `main` stays to do (done 2026-11-18, fork `4318c4a1`).
     6. **Open, needing the phone first:**
        - history replayed by tokens instead of 20 messages (it needs the phone's reseed times);
        - the coding chat's original stop mid-reply, which didn't reproduce;
