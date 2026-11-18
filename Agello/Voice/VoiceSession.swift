@@ -51,7 +51,11 @@ final class VoiceSession: Identifiable {
   @ObservationIgnored private var thread: ChatThread?
 
   /// UI tests can't answer the system microphone prompt on device.
-  private static let fakeMic = ProcessInfo.processInfo.arguments.contains("--uitest-fake-mic")
+  #if DEBUG || BENCH
+    private static let fakeMic = ProcessInfo.processInfo.arguments.contains("--uitest-fake-mic")
+  #else
+    private static let fakeMic = false
+  #endif
   static let maxUtterance: TimeInterval = 30
 
   init(appState: AppState, thread: ChatThread?, makeThread: @escaping () -> ChatThread) {

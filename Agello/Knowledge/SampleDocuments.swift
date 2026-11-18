@@ -36,8 +36,11 @@ enum SampleDocuments {
 
   /// The sample a launch argument names, if any.
   static func named(in arguments: [String]) -> ExtractedDocument? {
-    if arguments.contains("--uitest-sample-file") { return tripNotes }
-    if arguments.contains("--uitest-sample-report") { return coastalReport }
+    // Debug and Bench builds only (2026-11-17).
+    #if DEBUG || BENCH
+      if arguments.contains("--uitest-sample-file") { return tripNotes }
+      if arguments.contains("--uitest-sample-report") { return coastalReport }
+    #endif
     return nil
   }
 }

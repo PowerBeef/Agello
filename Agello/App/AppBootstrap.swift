@@ -21,7 +21,12 @@ struct AppBootstrap {
     // engine: full UI without a 2 GB model. Used for simulator smoke tests.
     let args = ProcessInfo.processInfo.arguments
     let env = ProcessInfo.processInfo.environment
-    let useMock = args.contains("--mock-engine") || env["AGELLO_MOCK_ENGINE"] != nil
+    // Debug and Bench builds only (2026-11-17): an App Store build carries no test hooks.
+    #if DEBUG || BENCH
+      let useMock = args.contains("--mock-engine") || env["AGELLO_MOCK_ENGINE"] != nil
+    #else
+      let useMock = false
+    #endif
 
     // Crash, hang and performance reports from the system, kept on the device (Settings → Help).
     if !Self.hostsTests { MetricsReporter.shared.start() }
@@ -39,7 +44,9 @@ struct AppBootstrap {
     #endif
 
     // The bench driver's prompt is the draft of a new chat (docs/HARNESS.md): don't reopen the last one.
-    if env["AGELLO_BENCH_DRAFT"] != nil { UserDefaults.standard.removeObject(forKey: "selectedThreadID") }
+    #if DEBUG || BENCH
+      if env["AGELLO_BENCH_DRAFT"] != nil { UserDefaults.standard.removeObject(forKey: "selectedThreadID") }
+    #endif
 
     let state = AppState(useMockEngine: useMock)
     // Must be the same context the views use (`.modelContainer` injects

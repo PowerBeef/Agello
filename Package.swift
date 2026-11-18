@@ -55,7 +55,9 @@ let package = Package(
         // One list of bench cases for the iPhone's driver and for `agello bench`.
         "AgelloUITests/BenchCases.swift",
         "AgelloCLI/Sources",
-      ]
+      ],
+      // A development tool: it keeps the hooks Release builds of the app leave out (Bench's).
+      swiftSettings: [.define("BENCH")]
     ),
     // The app's unit tests that need no interface, on the scripted engine (scripts/cli-test.sh).
     .testTarget(

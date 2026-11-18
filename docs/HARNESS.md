@@ -128,7 +128,7 @@ rest is built.
 
 ### H1, done on 2026-11-10
 
-`scripts/device-harness.sh bench` builds Release (the `AgelloBench` scheme), runs
+`scripts/device-harness.sh bench` builds Bench (Release with the bench's hooks, since 2026-11-17; the `AgelloBench` scheme), runs
 `AgelloUITests/BenchUITests` with `--trace`, pulls `Documents/traces` from the phone, and
 `scripts/bench-report.py` writes `build/device-harness/bench/report.md`, `report.json` and each
 reply as Markdown.

@@ -2,10 +2,10 @@
 # One bench case with no UI driver attached (docs/HARNESS.md, H3): the installed app is launched
 # with the case's prompt as its draft and sends it itself, tracing the reply. For telling what
 # the driver's accessibility session costs: compare with the same case in
-# `scripts/device-harness.sh bench`, which also installs the Release build this needs.
+# `scripts/device-harness.sh bench`, which also installs the Bench build (Release with the bench's hooks) this needs.
 #
 # Usage: scripts/bench-direct.sh CASE_ID      (an id of AgelloUITests/BenchCases.swift)
-# It sets the case's Think, as the driver does (AGELLO_BENCH_THINK). The app must be a Release
+# It sets the case's Think, as the driver does (AGELLO_BENCH_THINK). The app must be a Bench
 # build: run the bench first, or scripts/phone-bench.sh, which installs one per runtime.
 # The traces land in build/device-harness/bench-direct/.
 # It relaunches the app, so it refuses (exit 3) while a harness run holds the iPhone.
@@ -60,7 +60,7 @@ for name in sorted(os.listdir(folder)):
     if datetime.datetime.fromisoformat(trace["startedAt"].replace("Z", "+00:00")) >= started - datetime.timedelta(seconds=5):
         traces.append(trace)
 if not traces:
-    sys.exit("No trace of this run: is the Release build with tracing installed (run the bench first)?")
+    sys.exit("No trace of this run: is the Bench build with tracing installed (run the bench first)?")
 trace = traces[-1]
 stats, settings = trace.get("stats", {}), trace["settings"]
 writing = [sample for sample in trace.get("timeline", []) if sample["chunks"] > 0]

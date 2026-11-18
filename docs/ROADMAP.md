@@ -44,9 +44,9 @@ The handoff between work sessions: read this first, then the section of the plan
          - **Checked natively:** `web` test04 passes, every decision right, and test01 finds the margin ("6 minutes and 26 seconds over Remco Evenepoel");
        - **The pool's 200-turn soak, done on the M6** (probe 38, 2026-11-17): the footprint is flat through long prompts, stops, helpers, images and engine reloads. The growth the first run showed was macOS's malloc keeping freed large blocks (`MallocLargeCache=0` in the native tests now); the iPhone run of probe 38 confirms the phone has no such growth;
        - **G1, done** (2026-11-17, fork `e5e4c6eb`): an Apple chip ML Drift doesn't know by name (an iPhone 18's) takes its family from the Metal device. Before, it fell to the oldest family, which on the M6 meant 75 % slower prefill and 34 % slower decode;
-       - the README's performance image and table, which show Google's runtime of October;
-       - a Bench build configuration for the remaining test hooks;
-       - the fork's reference pages, which still describe the three-repository layout in places.
+       - **the README's performance image, done** (2026-11-17): our runtime on the iPhone 17 Pro, from the day's bench and suites;
+       - **a Bench build configuration, done** (2026-11-17): Release with `BENCH` defined, for the bench, `phone-bench.sh` and `bench-direct.sh`. The launch-argument and bench hooks compile only into Debug and Bench, so a Release binary carries none of them (checked with `strings`). The Mac command line defines `BENCH`;
+       - **the fork's reference README, done** (2026-11-17, fork `30d9be9c`): it describes the one-repository layout and what ships; a re-pin of the reference to `main` stays to do.
     6. **Open, needing the phone first:**
        - history replayed by tokens instead of 20 messages (it needs the phone's reseed times);
        - the coding chat's original stop mid-reply, which didn't reproduce;

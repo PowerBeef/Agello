@@ -149,36 +149,39 @@ struct ChatView: View {
     }
     .onDisappear { reader.stop() }
     .onAppear {
-      // The bench driver (docs/HARNESS.md): a long prompt arrives as the composer's draft, and
-      // the driver taps the real send button. Typing 3K characters through XCUITest is slow.
-      let environment = ProcessInfo.processInfo.environment
-      if thread == nil, draft.isEmpty, let prompt = environment["AGELLO_BENCH_DRAFT"] {
-        draft = prompt
-        // Without a driver (`scripts/bench-direct.sh`, `scripts/phone-bench.sh`): the app sends the
-        // draft itself once the model is ready, so a reply can be traced with no UI automation
-        // attached. Nobody touches the phone meanwhile, so the screen stays on.
-        if environment["AGELLO_BENCH_AUTOSEND"] == "1" {
-          Platform.keepScreenOn()
-          Task { @MainActor in
-            for _ in 0..<600 where appState.engineState != .ready { try? await Task.sleep(for: .milliseconds(500)) }
-            // What the driver's Think pill does: "1" on, "0" off. Like the pill, it marks the
-            // options changed, so the send applies them first; the setting alone doesn't reach
-            // the conversation the launch loaded.
-            if let think = environment["AGELLO_BENCH_THINK"], appState.options.enableThinking != (think == "1") {
-              appState.options.enableThinking = think == "1"
-              appState.scheduleApplyOptions()
-            }
-            // Heat slows decoding by up to a fifth (docs/HARNESS.md, H2): wait up to ten minutes
-            // for the phone to cool, as the driver's BENCH_COOL does.
-            if environment["AGELLO_BENCH_COOL"] == "1" {
-              for _ in 0..<120 where ProcessInfo.processInfo.thermalState != .nominal {
-                try? await Task.sleep(for: .seconds(5))
+      // Debug and Bench builds only (2026-11-17).
+      #if DEBUG || BENCH
+        // The bench driver (docs/HARNESS.md): a long prompt arrives as the composer's draft, and
+        // the driver taps the real send button. Typing 3K characters through XCUITest is slow.
+        let environment = ProcessInfo.processInfo.environment
+        if thread == nil, draft.isEmpty, let prompt = environment["AGELLO_BENCH_DRAFT"] {
+          draft = prompt
+          // Without a driver (`scripts/bench-direct.sh`, `scripts/phone-bench.sh`): the app sends the
+          // draft itself once the model is ready, so a reply can be traced with no UI automation
+          // attached. Nobody touches the phone meanwhile, so the screen stays on.
+          if environment["AGELLO_BENCH_AUTOSEND"] == "1" {
+            Platform.keepScreenOn()
+            Task { @MainActor in
+              for _ in 0..<600 where appState.engineState != .ready { try? await Task.sleep(for: .milliseconds(500)) }
+              // What the driver's Think pill does: "1" on, "0" off. Like the pill, it marks the
+              // options changed, so the send applies them first; the setting alone doesn't reach
+              // the conversation the launch loaded.
+              if let think = environment["AGELLO_BENCH_THINK"], appState.options.enableThinking != (think == "1") {
+                appState.options.enableThinking = think == "1"
+                appState.scheduleApplyOptions()
               }
+              // Heat slows decoding by up to a fifth (docs/HARNESS.md, H2): wait up to ten minutes
+              // for the phone to cool, as the driver's BENCH_COOL does.
+              if environment["AGELLO_BENCH_COOL"] == "1" {
+                for _ in 0..<120 where ProcessInfo.processInfo.thermalState != .nominal {
+                  try? await Task.sleep(for: .seconds(5))
+                }
+              }
+              send()
             }
-            send()
           }
         }
-      }
+      #endif
       // UI tests: the system file picker can't be driven, so attach a sample.
       if thread == nil, pendingFiles.isEmpty,
         let sample = SampleDocuments.named(in: ProcessInfo.processInfo.arguments)

@@ -250,10 +250,10 @@ build_app() {
     priority="taskpolicy -b nice -n 15"
     jobs="-jobs $BUILD_JOBS"
   fi
-  say "Building the app with $name's runtime (Release, $BUILD_PRIORITY priority)…"
+  say "Building the app with $name's runtime (Bench: Release with the bench's hooks, $BUILD_PRIORITY priority)…"
   started="$(date +%s)"
   # shellcheck disable=SC2086 # priority and jobs are words or nothing
-  if ! $priority xcodebuild build -project "$ROOT/Agello.xcodeproj" -scheme Agello -configuration Release \
+  if ! $priority xcodebuild build -project "$ROOT/Agello.xcodeproj" -scheme Agello -configuration Bench \
     -destination "id=$DEVICE_ID" -allowProvisioningUpdates -allowProvisioningDeviceRegistration $jobs \
     >"$OUT/build-$name.log" 2>&1; then
     say "The build of $name failed: $OUT/build-$name.log"
@@ -261,7 +261,7 @@ build_app() {
   fi
   # The app target's own block: the scheme lists its extensions too.
   products="$(xcodebuild -showBuildSettings -project "$ROOT/Agello.xcodeproj" -scheme Agello \
-    -configuration Release -destination "id=$DEVICE_ID" 2>/dev/null |
+    -configuration Bench -destination "id=$DEVICE_ID" 2>/dev/null |
     awk '/^Build settings for action build and target / {target = $NF}
       target == "Agello:" && /^ *TARGET_BUILD_DIR = / {sub(/^ *TARGET_BUILD_DIR = /, ""); print; exit}')"
   if [ ! -d "$products/Agello.app" ]; then

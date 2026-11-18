@@ -140,11 +140,14 @@ struct InferenceOptions: Codable, Sendable, Equatable {
   static func launch(saved: InferenceOptions?, arguments: [String] = []) -> InferenceOptions {
     var options = InferenceOptions()
     options.enableThinking = saved?.enableThinking ?? false
-    if let index = arguments.firstIndex(of: "--uitest-window"), index + 1 < arguments.count,
-      let tokens = Int(arguments[index + 1])
-    {
-      options.maxNumTokensOverride = tokens
-    }
+    // Debug and Bench builds only (2026-11-17).
+    #if DEBUG || BENCH
+      if let index = arguments.firstIndex(of: "--uitest-window"), index + 1 < arguments.count,
+        let tokens = Int(arguments[index + 1])
+      {
+        options.maxNumTokensOverride = tokens
+      }
+    #endif
     return options
   }
 }

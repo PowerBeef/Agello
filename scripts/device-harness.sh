@@ -24,7 +24,7 @@
 #   screenshots  A guided UI tour with the real model: one screenshot per
 #              screen (attachments/screenshots/) for the README and App Store.
 #   bench      The autonomous harness (docs/HARNESS.md): each bench case sent
-#              through the app's screens in a Release build, the app tracing
+#              through the app's screens in a Bench build (Release with the bench's hooks), the app tracing
 #              the reply; traces pulled and joined in bench/report.md.
 #              BENCH_ONLY=id,id runs some cases; BENCH_RESUME=1 runs only those
 #              the last report doesn't hold complete; BENCH_COOL=1 waits for
@@ -251,13 +251,14 @@ case "$SUITE" in
     scopes="AgelloUITests/ScreenshotTourUITests"
     ;;
   bench)
-    # Release, in a scheme of its own: the unit and device tests need @testable (Debug).
+    # Bench (Release with the bench's hooks, 2026-11-17), in a scheme of its own: the unit and
+    # device tests need @testable (Debug).
     export TEST_RUNNER_HARNESS_BENCH=1
     [ -n "${BENCH_ONLY:-}" ] && export TEST_RUNNER_BENCH_ONLY="$BENCH_ONLY"
     [ -n "${BENCH_TRACE:-}" ] && export TEST_RUNNER_BENCH_TRACE="$BENCH_TRACE"
     [ -n "${BENCH_COOL:-}" ] && export TEST_RUNNER_BENCH_COOL="$BENCH_COOL"
     SCHEME=AgelloBench
-    CONFIGURATION=Release
+    CONFIGURATION=Bench
     BENCH_STARTED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     # Resuming: only the cases the last report doesn't hold complete; its other cases are kept.
     BENCH_PREVIOUS=""

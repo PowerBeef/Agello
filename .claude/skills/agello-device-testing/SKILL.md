@@ -102,7 +102,7 @@ Other extra arguments go to `xcodebuild` as is.
 
 `scripts/device-harness.sh bench` sends each bench case (`AgelloUITests/BenchCases.swift`: the quality
 bench's eight requests, a three-part coding prompt, a Search follow-up, a file with a follow-up) through
-the app's own screens in a **Release** build, with the app tracing the reply (`--trace`,
+the app's own screens in a **Bench** build (Release with `BENCH` defined, which keeps the test hooks out of Release since 2026-11-17), with the app tracing the reply (`--trace`,
 `Agello/Support/ReplyTrace.swift`). It then pulls the traces and writes
 `build/device-harness/bench/report.md` (and `report.json`, and each reply as Markdown):
 settings in effect, each step with memory, why the reply ended, what the screen showed, the

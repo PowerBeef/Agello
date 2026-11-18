@@ -19,7 +19,11 @@ final class AudioRecorder: NSObject {
 
   /// UI tests: XCTest can't answer the system microphone prompt on device,
   /// so `--uitest-fake-mic` "records" a second of silence without it.
-  private static let fakeMic = ProcessInfo.processInfo.arguments.contains("--uitest-fake-mic")
+  #if DEBUG || BENCH
+    private static let fakeMic = ProcessInfo.processInfo.arguments.contains("--uitest-fake-mic")
+  #else
+    private static let fakeMic = false
+  #endif
 
   func toggle() async {
     if isRecording {
