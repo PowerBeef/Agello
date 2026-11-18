@@ -120,6 +120,11 @@ final class ReferenceSourcesTests: XCTestCase {
     XCTAssertEqual(request, ExchangeRates.Request(amount: 100, from: "USD", to: ["EUR"]))
     let text = ExchangeRates.describe(table, request: request)
     XCTAssertTrue(text.contains("100 USD = 90.24 EUR"), text)
+    // A converted amount keeps its cents when it comes out whole.
+    let whole = ExchangeRates.Table(date: table.date, perEuro: ["EUR": 1, "USD": 1.25])
+    XCTAssertTrue(
+      ExchangeRates.describe(whole, request: ExchangeRates.Request(amount: 125, from: "USD", to: ["EUR"]))
+        .contains("125 USD = 100.00 EUR"))
     XCTAssertTrue(text.contains("1 EUR = 1.1081 USD"), text)
     XCTAssertEqual(
       ExchangeRates.request("convert 1,250.5 euros to yen and CAD", known: known),

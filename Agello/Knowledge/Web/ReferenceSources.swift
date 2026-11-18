@@ -187,7 +187,9 @@ enum ExchangeRates {
           continue
         }
         let rate = to / from
-        lines.append("\(number(request.amount)) \(request.from) = \(number(request.amount * rate)) \(code)")
+        // Money keeps its cents: an amount that rounded to a whole number lost them ("91 EUR"), and
+        // the reply repeated it (web test06, 2026-11-17).
+        lines.append("\(number(request.amount)) \(request.from) = \(money(request.amount * rate)) \(code)")
         lines.append("1 \(request.from) = \(number(rate, digits: 4)) \(code); 1 \(code) = \(number(1 / rate, digits: 4)) \(request.from)")
       }
     } else {
@@ -200,6 +202,11 @@ enum ExchangeRates {
 
   private static func number(_ value: Double, digits: Int = 2) -> String {
     value.formatted(.number.precision(.fractionLength(0...digits)).locale(Locale(identifier: "en_US")))
+  }
+
+  /// An amount of money, with exactly two decimals.
+  private static func money(_ value: Double) -> String {
+    value.formatted(.number.precision(.fractionLength(2)).locale(Locale(identifier: "en_US")))
   }
 }
 
