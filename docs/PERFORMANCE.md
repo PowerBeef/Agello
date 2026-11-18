@@ -875,6 +875,15 @@ there predate the measurements.
      The typo fix gains less because, after each correction, the context has nothing to propose until three tokens later.
    - **Replies:** identical in 2 of 4 cases. The others part at near-ties ("sending its" against "sending you its"; two docstrings worded differently), as expected from the 8-row attention's other kernel.
    - **Suites:** the native `inference`, `thinking` and `files` pass with it on, and probe 35's quotes all match.
+   - **Realignment after an edit** (fork, the same evening; off with `AGELLO_CONTEXT_REALIGN=0`). The drafter remembers where in the context its last proposal came from and where the reply stopped matching it. When no n-gram matches, it looks for the token just written in the 16 tokens after that point and proposes what follows. Against the same build without it (quiet, three rounds):
+
+     | Case | Decode |
+     | --- | --- |
+     | `typo-fix` | **+12.4 %** (218.5 against 194.4 tok/s; 159 drafts kept in long rounds against 123) |
+     | `comment-module` | +1.0 % |
+     | `email`, `explain` | +1.1 % and +3.0 % |
+
+     Replies identical.
    - **Next:** the iPhone, with the 128K file plus `verify_8`, then on by default.
 
 **On the iPhone**
