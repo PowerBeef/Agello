@@ -200,11 +200,10 @@ final class WebScenarioTests: DeviceTestCase {
       let started = Date()
       var row: [String: Any] = ["message": item.message, "expected": item.search, "expectedTopics": item.topics.map(\.rawValue).sorted()]
       do {
-        let data = try await appState.engine.helperJSON(
-          prompt: WebContext.queryPrompt(question: item.message, history: item.history),
-          schemaJSON: WebContext.querySchema, maxOutputTokens: WebContext.queryMaxOutputTokens)
-        let plan = WebContext.parsePlan(data)
-        row["output"] = String(decoding: data, as: UTF8.self)
+        // The app's own planning, a second call included (AppState.planSearch).
+        let (plan, outputs) = await appState.planSearch(question: item.message, history: item.history)
+        guard !outputs.isEmpty else { throw HarnessError.timedOut("the planner gave no output") }
+        row["output"] = outputs.map { String(decoding: $0, as: UTF8.self) }.joined(separator: "\n---\n")
         row["search"] = plan.needsSearch
         row["queries"] = plan.queries
         row["request"] = plan.isRequest

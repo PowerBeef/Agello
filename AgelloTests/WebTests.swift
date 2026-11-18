@@ -325,11 +325,11 @@ final class WebTests: XCTestCase {
     let prompt = WebContext.queryPrompt(question: "Hello there", history: [])
     XCTAssertTrue(prompt.contains("- chat: a greeting") && prompt.contains("- request: a request to write code"))
     let skip = WebContext.parsePlan(Data(#"{"kind":"chat","queries":["greetings"]}"#.utf8))
-    XCTAssertEqual(skip, WebContext.Plan(queries: [], isRequest: false, needsSearch: false))
+    XCTAssertEqual(skip, WebContext.Plan(queries: [], isRequest: false, needsSearch: false, kind: "chat"))
     let question = WebContext.parsePlan(Data(#"{"kind":"question","queries":["swift 6.3"]}"#.utf8))
-    XCTAssertEqual(question, WebContext.Plan(queries: ["swift 6.3"], isRequest: false))
+    XCTAssertEqual(question, WebContext.Plan(queries: ["swift 6.3"], isRequest: false, kind: "question"))
     let request = WebContext.parsePlan(Data(#"{"kind":"request","queries":["css grid keypad"]}"#.utf8))
-    XCTAssertEqual(request, WebContext.Plan(queries: ["css grid keypad"], isRequest: true))
+    XCTAssertEqual(request, WebContext.Plan(queries: ["css grid keypad"], isRequest: true, kind: "request"))
     XCTAssertTrue(WebContext.parsePlan(Data(#"{"queries":["swift 6.3"]}"#.utf8)).needsSearch)
     XCTAssertTrue(WebContext.parsePlan(Data("not json".utf8)).needsSearch)
     XCTAssertTrue(WebContext.instructions().contains("don't bear on the message"))
@@ -376,4 +376,30 @@ final class WebTests: XCTestCase {
     XCTAssertTrue(decoded.automatic)
     XCTAssertEqual(decoded.provider, .wikipedia)
   }
+
+  func testADifferenceFollowUpIsPlannedAgainAsAQuestion() {
+    let race: [(role: ChatRole, text: String)] = [
+      (.user, "Who won the 2026 Tour de France?"), (.model, "Tadej Pogačar, in 73 hours, 56 minutes."),
+    ]
+    for question in ["By how many minutes?", "How much faster was he?", "What was the gap?", "And the margin?"] {
+      XCTAssertTrue(WebContext.replansAsQuestion(kind: "answered", question: question, history: race), question)
+      XCTAssertTrue(WebContext.replansAsQuestion(kind: "arithmetic", question: question, history: race), question)
+    }
+    // Planned as a question already, a first message, another follow-up or another kind: no second call.
+    XCTAssertFalse(WebContext.replansAsQuestion(kind: "question", question: "By how many minutes?", history: race))
+    XCTAssertFalse(WebContext.replansAsQuestion(kind: "answered", question: "By how many minutes?", history: []))
+    XCTAssertFalse(WebContext.replansAsQuestion(kind: "answered", question: "Who came third?", history: race))
+    XCTAssertFalse(WebContext.replansAsQuestion(kind: "chat", question: "Thanks, by how much!", history: race))
+    XCTAssertFalse(WebContext.replansAsQuestion(kind: "arithmetic", question: "What's 15% of 80?", history: race))
+  }
+
+  func testTheSearchingSchemaIsTheQuerySchemasSecondBranch() throws {
+    let schema = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(WebContext.searchingQuerySchema.utf8)) as? [String: Any])
+    let full = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(WebContext.querySchema.utf8)) as? [String: Any])
+    let branches = try XCTUnwrap(full["anyOf"] as? [[String: Any]])
+    XCTAssertEqual(NSDictionary(dictionary: schema), NSDictionary(dictionary: branches[1]))
+  }
+
 }

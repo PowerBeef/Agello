@@ -79,6 +79,26 @@ enum WebContext {
     + #""queries":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":3}},"required":["kind","topic","queries"]}]}"#
   static let queryMaxOutputTokens = 120
 
+  /// ``querySchema`` without the kinds that skip the search: a question or a request, with its
+  /// topic and 1–3 queries (``replansAsQuestion(kind:question:history:)``).
+  static let searchingQuerySchema =
+    #"{"type":"object","properties":{"kind":{"type":"string","enum":["question","request"]},"#
+    + #""topic":{"type":"string","enum":["general","travel","word","quote","weather","place","currency","research","health","news"]},"#
+    + #""queries":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":3}},"required":["kind","topic","queries"]}"#
+
+  /// Whether a plan that skips the search gets a second call with ``searchingQuerySchema``: a
+  /// follow-up that asks how two figures differ ("By how many minutes?") needs both, and after a
+  /// reply that gave the winner's time but not the runner-up's, E4B called it "answered" or
+  /// "arithmetic" whatever the wording of those two kinds (WebScenarioTests/test04, 2026-11-17).
+  static func replansAsQuestion(
+    kind: String?, question: String, history: [(role: ChatRole, text: String)]
+  ) -> Bool {
+    guard !history.isEmpty, kind == "answered" || kind == "arithmetic" else { return false }
+    let difference =
+      #"\b(by how (much|many|far|long)|how (much|many) (more|less|fewer|longer|shorter|faster|slower|bigger|smaller|older|younger|higher|lower)|difference|margin|gap|ahead of|behind)\b"#
+    return question.range(of: difference, options: [.regularExpression, .caseInsensitive]) != nil
+  }
+
   /// Kinds of message that search: the rest need nothing from the web. One word each: on our
   /// runtime a space inside an enum value fails the grammar ("Failed to commit token: ▁talk",
   /// the tokenizer's word-start marker read as its own bytes, 2026-11-02).
@@ -97,6 +117,8 @@ enum WebContext {
     var isRequest: Bool
     var needsSearch = true
     var topic: SearchTopic = .general
+    /// The kind the planner gave, when it gave one.
+    var kind: String?
   }
 
   /// Prompt for the message's kind and 1–3 search queries for what it needs: the facts that
@@ -161,7 +183,9 @@ enum WebContext {
       let queries = object["queries"] as? [String]
     else { return Plan(queries: [], isRequest: false) }
     let kind = object["kind"] as? String
-    if let kind, !searchedKinds.contains(kind) { return Plan(queries: [], isRequest: false, needsSearch: false) }
+    if let kind, !searchedKinds.contains(kind) {
+      return Plan(queries: [], isRequest: false, needsSearch: false, kind: kind)
+    }
     let topic = (object["topic"] as? String).flatMap(SearchTopic.init(rawValue:)) ?? .general
     var seen = Set<String>()
     let cleaned = queries.compactMap { raw -> String? in
@@ -170,7 +194,8 @@ enum WebContext {
       return String(query.prefix(200))
     }.prefix(3).map { $0 }
     return Plan(
-      queries: cleaned, isRequest: kind == "request" || object["request"] as? Bool == true, topic: topic)
+      queries: cleaned, isRequest: kind == "request" || object["request"] as? Bool == true, topic: topic,
+      kind: kind)
   }
 
   static func parseQueries(_ json: Data) -> [String] {

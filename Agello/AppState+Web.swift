@@ -11,15 +11,7 @@ extension AppState {
     fileTokens: Int = 0
   ) async -> WebOutcome {
     preparingStatus = String(localized: "Planning the search…")
-    let prompt = WebContext.queryPrompt(question: question, history: history)
-    let output: Data? = await serialized {
-      let output = try? await self.engine.helperJSON(
-        prompt: prompt, schemaJSON: WebContext.querySchema,
-        maxOutputTokens: WebContext.queryMaxOutputTokens)
-      await self.afterHelper()
-      return output
-    }
-    let plan = output.map(WebContext.parsePlan) ?? WebContext.Plan(queries: [], isRequest: false)
+    let plan = await planSearch(question: question, history: history).plan
     lastWebPlan = plan
     if !plan.needsSearch { return .notNeeded }
     let queries = plan.queries.isEmpty ? [WebContext.directQuery(question, history: history)] : plan.queries
@@ -44,6 +36,34 @@ extension AppState {
       return .failed(
         String(localized: "Web search failed: \(error.localizedDescription) Answered without it."))
     }
+  }
+
+  /// The plan for a Search message, and the planner's raw outputs. A follow-up that asks how two
+  /// figures differ, planned as answered or as arithmetic, is planned again as a question or a
+  /// request (``WebContext/replansAsQuestion(kind:question:history:)``). Without any output, the
+  /// plan searches the message as typed.
+  func planSearch(
+    question: String, history: [(role: ChatRole, text: String)]
+  ) async -> (plan: WebContext.Plan, outputs: [Data]) {
+    let prompt = WebContext.queryPrompt(question: question, history: history)
+    var outputs: [Data] = []
+    for schema in [WebContext.querySchema, WebContext.searchingQuerySchema] {
+      let output: Data? = await serialized {
+        let output = try? await self.engine.helperJSON(
+          prompt: prompt, schemaJSON: schema, maxOutputTokens: WebContext.queryMaxOutputTokens)
+        await self.afterHelper()
+        return output
+      }
+      guard let output else { break }
+      outputs.append(output)
+      let plan = WebContext.parsePlan(output)
+      if schema == WebContext.searchingQuerySchema
+        || !WebContext.replansAsQuestion(kind: plan.kind, question: question, history: history)
+      {
+        return (plan, outputs)
+      }
+    }
+    return (outputs.last.map(WebContext.parsePlan) ?? WebContext.Plan(queries: [], isRequest: false), outputs)
   }
 
   /// The automatic `web_search` tool's work (runs during a reply).

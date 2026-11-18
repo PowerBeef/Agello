@@ -37,7 +37,9 @@ The handoff between work sessions: read this first, then the section of the plan
          - **Fork `9a84a518`:** the reply to a tool response can't open with that token. A Gemma 4 file's template also gets upstream's tool boundary (`f240215c`), so the call's stop token is no longer rendered a second time.
          - **Fork `a82611eb`:** a prefill now looks up a pending token's embeddings (upstream's `0101cf3b`), so no turn boundary is written from an id-and-zeros row.
          - **Checked natively on build `ca7bbff03b2c`:** probe 36 answers 8 of 8; inference 22/22, thinking 3/3, files 5/5, and web 7/9 as before. It reaches users with the next runtime release;
-       - the search planner calls "By how many minutes?", after a reply that gives the winner's time, answered instead of searching (`web` test04 with the date in English; it searched only with a French date);
+       - **the search planner's call on "By how many minutes?", fixed** (2026-11-17). After a reply that gives the winner's time, the planner called it "answered" or "arithmetic" under every wording tried (three more today).
+         - **The fix, in code:** a follow-up that asks how two figures differ ("by how many", "how much faster", "difference", "margin", "gap") is planned again with only a question or a request allowed (`WebContext.replansAsQuestion`, `AppState.planSearch`, one more planner call for those only).
+         - **Checked natively:** `web` test04 passes, every decision right, and test01 finds the margin ("6 minutes and 26 seconds over Remco Evenepoel");
        - the README's performance image and table, which show Google's runtime of October;
        - a Bench build configuration for the remaining test hooks;
        - the fork's reference pages, which still describe the three-repository layout in places.
