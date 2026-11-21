@@ -8,7 +8,8 @@ description: Run and read Agello's tests on the physical iPhone, or on this Mac 
 Agello is tested on a physical iPhone, and on this Mac running the iPhone
 app while the phone is away (see "On this Mac"). The simulator has no Metal
 path for LiteRT-LM: never build, test, or take screenshots there.
-MobileBuildMCP is configured with the `device` workflow only.
+`.agents/hooks.json` hard-blocks simulator MCP tools; run builds and tests
+through the harness scripts below, not raw `mobilebuildmcp` tools.
 
 ## Before a run
 
@@ -38,14 +39,14 @@ MobileBuildMCP is configured with the `device` workflow only.
    `DEVICE_ID=<udid>`. `xcrun devicectl list devices` shows whether it's
    connected.
 4. Don't edit files in the target folders (`Agello*/`) while a run is
-   building: stage changes elsewhere and apply them after the run. Files
-   outside them (docs, `.claude/`, `scripts/`) are safe to edit. The
-   `guard-target-edits` hook denies Edit and Write there until the run's last
-   suite has started testing; edits made through Bash aren't checked.
-5. For `ui` and `screenshots`, turn on a Focus (Do Not Disturb) on the
-   iPhone: notification banners, Claude's own included when Remote Control
-   pushes to this phone, land on top of the app under test and in the
-   screenshots.
+   building: stage changes in `<Artifact Directory Path>/scratch/` and apply
+   them after the run. Files outside them (`docs/`, `.agents/`, `scripts/`)
+   are safe to edit. The `.agents/hooks/guard-target-edits.sh` hook denies
+   file edits there until the run's last suite has started testing; edits made
+   through shell commands aren't checked, and the rule still holds for them.
+5. For `ui` and `screenshots`, ask the user to turn on a Focus (Do Not
+   Disturb) on the iPhone: notification banners land on top of the app under
+   test and in the screenshots.
 
 ## Running suites
 
@@ -62,10 +63,13 @@ scripts/device-harness.sh screenshots # UI tour, one screenshot per screen
 scripts/device-harness.sh bench       # the autonomous harness (docs/HARNESS.md): bench cases through the UI, Release
 ```
 
-Start suites with the Bash tool's `run_in_background: true` and send the
-console to a file (`> "$scratchpad/inference.console" 2>&1`). You're notified
-when the command ends, so don't poll. Chain suites in one command with `;`
-when they should run back to back.
+Start suites with `run_command` using `WaitMsBeforeAsync: 500` (and
+`BypassSandbox: true`, since `xcodebuild` / `devicectl` / `DerivedData` need
+host access) so the run backgrounds automatically. Stop calling tools and wait
+for the completion notification — never poll. Inspect or cancel via
+`manage_task`. Invoke scripts directly without extra shell wrappers so
+prefix-matched "Always Allow" approvals work cleanly; chain back-to-back
+suites with `;` only when required.
 
 - **One run at a time.** The script takes `build/.harness.lock` in the main
   checkout and exits with 3, printing the other run's suite, pid and
@@ -75,10 +79,9 @@ when they should run back to back.
   the edit hook: it lets edits through once the first is testing, and the
   next one builds them, so leave the targets alone until the last has
   started testing.
-- **Watching.** The raw log grows as the run goes. A Terminal panel tab
-  (`run_in_terminal`) on
+- **Watching.** The raw log grows as the run goes. The user can watch it live
+  in a terminal with:
   `tail -n +1 -f build/device-harness/<suite>.log | /opt/homebrew/bin/xcbeautify`
-  lets the user follow it; stop the tab after the run.
 - **Staying awake.** The script runs `caffeinate` until it exits, on the
   iPhone and the Mac, so a run outlasts the turn that started it. A closed
   lid still puts the Mac to sleep.
@@ -118,7 +121,7 @@ A full run is 13 turns and about 20 minutes; the phone warms up, so compare spee
   checks, how replies ended, a different reply where Search is off, speeds more than 15 % away).
   `BENCH_ACCEPT=1` makes a run the new baseline: only when the user accepts its results.
 - `BENCH_COOL=1` waits for the phone to cool before each case, for speeds.
-- `scripts/bench-direct.sh CASE` sends one case with no driver attached (the installed Release
+- `scripts/bench-direct.sh CASE` sends one case with no driver attached (the installed Bench
   build launches with the prompt, sets the case's Think and sends it itself). Use it for speed: XCUITest's
   accessibility session costs about 8 % of decode speed and causes late frames (2026-11-10).
 - The phone reaches thermal state "fair" within three cases and decodes up to a fifth slower:
@@ -126,7 +129,7 @@ A full run is 13 turns and about 20 minutes; the phone warms up, so compare spee
   phone cool before a run whose speeds matter.
 - Each case's report says where the time went: before the first token, reasoning, answer; the
   main thread's work (chat writes, markdown parses); late frames; the helpers after the reply.
-- It leaves the Release build on the phone, and keeps the user's chats: each case starts a new
+- It leaves the Bench build on the phone, and keeps the user's chats: each case starts a new
   chat. It does change Think and Search, through the composer's own buttons; Think's budget is
   the app's fixed 4,096, which the bench doesn't set.
 - Use it, not a device test, to answer "what does the app do with this prompt": device tests
@@ -147,13 +150,13 @@ ROUNDS=5 scripts/phone-bench.sh release next -- explain email
 scripts/phone-bench.sh release again=release           # the noise: the shipped build against itself
 ```
 
-- Start it in the background and wait for the notification: about an hour to an hour and a
-  half for the default. Before it, ask the user for Auto-Lock set to Never, a Focus on, iPhone
-  Mirroring closed, and the phone plugged in.
-- It builds the app once per runtime (Release; background priority unless
+- Start it in the background (`WaitMsBeforeAsync: 500`, `BypassSandbox: true`) and wait for the
+  notification: about an hour to an hour and a half for the default. Before it, ask the user for
+  Auto-Lock set to Never, a Focus on, iPhone Mirroring closed, and the phone plugged in.
+- It builds the app once per runtime (Bench/Release; background priority unless
   `BUILD_PRIORITY=normal`), then installs the builds in turns, a warm-up after each install. It
   vendors each runtime into `Vendor/LiteRT-LM` to build it and puts it back, so it refuses to
-  start when `Vendor/LiteRT-LM` isn't as committed. Leave the Agello* folders alone until both
+  start when `Vendor/LiteRT-LM` isn't as committed. Leave the `Agello*` folders alone until both
   builds are done (the edit guard holds them).
 - Each case is a driverless launch: the app sets the case's Think, waits for the phone to cool
   to nominal (`COOL=off` sends at once), keeps the screen on, and runs with memories off.
@@ -168,7 +171,7 @@ scripts/phone-bench.sh release again=release           # the noise: the shipped 
 - Heat isn't the thermal state: on 2026-11-12 the phone said "nominal" while a long case lost a
   quarter of its decode speed on the GPU's side over the run. Short cases stay clean; for a long
   one, read `load.txt` and the order the builds ran in before believing a difference.
-- Never edit `phone-bench.sh` while it runs: sh reads the script as it goes.
+- Never edit `phone-bench.sh` while it runs: `sh` reads the script as it goes.
 
 ## On this Mac
 
@@ -203,8 +206,11 @@ PLATFORM=mac ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scrip
 - Logs: `log stream --level debug --predicate 'subsystem == "com.patricedery.agello"'`.
   Crash reports: `~/Library/Logs/DiagnosticReports/Agello-*.ips`.
 - To look at the app outside a run, open the last run's build with
-  `open -b com.patricedery.agello --args --mock-engine` (CLAUDE.md, "Claude
-  desktop app").
+  `open -b com.patricedery.agello --args --mock-engine` (drop `--mock-engine`
+  for the real model), inspect/tap via `cua-driver` MCP (`list_windows`,
+  `get_window_state`, `click`, `run_steps`), and quit with
+  `osascript -e 'tell application id "com.patricedery.agello" to quit'`
+  before the next run.
 
 ## On this Mac, natively: the command line
 
@@ -215,7 +221,7 @@ can be built against any checkout of our LiteRT-LM. The iPhone still confirms wh
 ```sh
 swift build -c release --scratch-path build/cli/release            # then build/cli/release/release/agello
 scripts/cli-check.sh                                                # does it still build? (every harness run ends with it)
-scripts/cli-test.sh unit [Class[/method]]                           # 292 unit tests, about a minute, no phone
+scripts/cli-test.sh unit [Class[/method]]                           # ~299 unit tests, about a minute, no phone
 scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-model scenarios on this Mac's GPU
 build/cli/release/release/agello bench --only todo,explain --out build/cli/runs/x.jsonl
 scripts/cli-bench.sh release next -- --only explain                 # two runtime builds, in turns, with the comparison
@@ -223,6 +229,10 @@ scripts/cli-report.py | cli-timeline.py | cli-replies.py            # answer che
 scripts/mac-ready.sh | cli-load.py                                   # is the Mac quiet enough to measure; which runs its load disturbed
 ```
 
+- **Sandbox note:** `swift build`, `cli-check.sh`, `cli-test.sh`, and `cli-bench.sh` need
+  `BypassSandbox: true` (SwiftPM's manifest sandbox collides with Seatbelt, and scenarios read
+  `~/Models/agello`). Pure Python report scripts (`cli-report.py`, `cli-timeline.py`,
+  `cli-replies.py`, `cli-load.py`) run sandboxed.
 - **Ask before a real-model run** (anything but `unit`, `--mock`, a build or `cli-check.sh`): it
   takes this Mac's GPU, which the user often needs.
 - **A measuring run handles the Mac's load itself** (`docs/CLI.md`, "System load"):
@@ -253,7 +263,7 @@ scripts/mac-ready.sh | cli-load.py                                   # is the Ma
 ## Outside test runs
 
 `scripts/device-run.sh` looks at the installed app directly (results in
-`build/device-run/`):
+`build/device-run/`; needs `BypassSandbox: true`):
 
 ```sh
 scripts/device-run.sh logs 20                 # relaunch, save its logs for 20 s
@@ -263,13 +273,14 @@ scripts/device-run.sh crashes                 # Agello crash/resource reports
 scripts/device-run.sh crashes pull            # copy them to build/device-run/crashes/
 ```
 
-- Symbolicate pulled reports with `/axiom:analyze-crash <file>` (Axiom's
-  `xcsym`).
+- Symbolicate pulled reports with the `axiom` MCP server (`axiom_xcsym_crash`
+  for one report, `axiom_xcsym_triage` for a batch).
 - `logs` relaunches the app, which brings it to the front on the phone.
 - Screenshots show whatever is on screen, so only take them when the user
   expects it.
-- Axiom's `xclog` console capture is simulator-only, and `log collect` needs
-  root for a physical device: use `logs` instead.
+- Axiom's `axiom_xclog_*` console capture is simulator-only (and blocked by
+  `.agents/hooks.json`), and `log collect` needs root for a physical device:
+  use `logs` instead.
 
 ## Looking at the iPhone
 
@@ -285,14 +296,13 @@ user's own tool, for looking only (dropped as a testing tool on 2026-11-10):
   preflight refuses a run while it's open; a run takes over the phone, and
   the mirror then shows "iPhone en cours d'utilisation" until the phone is
   locked. Opening it, closing it and locking the phone are the user's calls.
-- When the user has it open and asks for a look, computer use reaches it
-  with the background `app_*` tools (`app_screenshot`, `app_click`; access
-  granted 2026-11-02). They look and tap only: scrolling, typing and long
-  presses need full-screen control (`mouse_move` before a long press, about
-  100 scroll ticks for three lines), and the microphone isn't reachable. After
-  a few minutes idle it pauses: its "Connexion" button resumes.
-- The app on the phone is the last run's build: Release after `bench`, Debug
-  (the test host) after the other suites. It holds the user's chats and
+- When the user already has it open and explicitly asks for a look, inspect
+  its window through `cua-driver` MCP (`list_windows`, `get_window_state`,
+  `click` / `run_steps`; follow the `cua-driver` skill). Remember the mirror
+  surface has a sparse accessibility tree, pauses after a few minutes idle
+  ("Connexion" resumes), and doesn't expose the microphone.
+- The app on the phone is the last run's build: Bench/Release after `bench`,
+  Debug (the test host) after the other suites. It holds the user's chats and
   settings, so start a new chat for a check.
 
 ## Tuning a prompt or a model decision
@@ -433,7 +443,6 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
   resource is missing or invalid), left by a stopped run or an unsigned
   compile check writing into the same folder. Cancel the dialog, delete that
   `Agello.app`, and run again.
-
 - `ThinkingScenarioTests/test02_ReasoningStaysOutOfCache` failed on the Mac
   only with Google's v0.18.0 (2026-10-16: the cache grew 139 tokens over the
   second Think turn). With our runtime, which drops the reasoning right after

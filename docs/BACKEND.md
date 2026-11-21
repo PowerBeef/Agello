@@ -98,7 +98,7 @@ B0 and B1 don't depend on each other. B2 comes before B3, and B4 before any B5 t
   releases the chat's conversation when memory is short. Those are about the iPhone, not about
   Google's runtime.
 - `InferenceOptions` is decoded from saved settings: the stored `backendPreference` key must
-  keep decoding (CLAUDE.md, "Settings decoding").
+  keep decoding (AGENTS.md, "Settings decoding").
 - The rules in `agello-inference-rules` are rewritten in the same commit: several describe
   Google's behaviour as a live case.
 

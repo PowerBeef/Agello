@@ -89,7 +89,7 @@ UNIT_TESTS=AgelloTests
 DEVICE_TESTS=AgelloDeviceTests
 
 # One run at a time on this machine, from any checkout or worktree; the
-# Claude Code hooks read the lock (scripts/lib/harness-lock.sh).
+# Antigravity hooks read the lock (scripts/lib/harness-lock.sh).
 # shellcheck source=scripts/lib/harness-lock.sh
 . "$ROOT/scripts/lib/harness-lock.sh"
 LOCK="$(harness_lock_dir "$ROOT")"

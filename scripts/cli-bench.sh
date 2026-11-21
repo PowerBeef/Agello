@@ -38,7 +38,7 @@
 # The Mac's load: scripts/mac-ready.sh must say ready before the first run and is asked again
 # before each process; afterwards scripts/cli-load.py reads from the records which runs were
 # disturbed and by what, rounds are added while a case lacks undisturbed runs, and the
-# comparison is made on the undisturbed records. Start it and leave the Mac alone, the Claude
+# comparison is made on the undisturbed records. Start it and leave the Mac alone, the agent
 # session that started it included.
 # Outputs in OUT: <arm>.jsonl (records), <arm>.traces/, load.txt (what was disturbed, and each
 # build's best run), compare.txt (undisturbed records), compare-all.txt (every record),

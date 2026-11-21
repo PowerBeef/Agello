@@ -265,7 +265,7 @@ Each winner should also be checked under two or three paraphrases of its own wor
 
 **Hold everything else fixed:** the runtime build, the model file, MTP (so chat is greedy and one run per case is deterministic) and the 4,096-token Think budget. Three engine-side changes the research raised are tested separately, never mixed with wording: a newline after `<|think|>` (the file's template has none; Hugging Face's has one), a thought prefix after tool responses, and image-before-text order.
 
-**The instrument:** `InferenceScenarioTests/test16_SystemPromptTable`, in the mould of `WebScenarioTests/test04_SearchDecisions` ([CLAUDE.md](../CLAUDE.md), "The fix loop"). It loops the candidates over the cases (tests can set `InferenceOptions.systemPrompt` in memory), records each raw reply, and checks outcomes in code:
+**The instrument:** `InferenceScenarioTests/test16_SystemPromptTable`, in the mould of `WebScenarioTests/test04_SearchDecisions` ([AGENTS.md](../AGENTS.md), "The fix loop"). It loops the candidates over the cases (tests can set `InferenceOptions.systemPrompt` in memory), records each raw reply, and checks outcomes in code:
 
 | Family | Example inputs (from the record where possible) | Check in code |
 | --- | --- | --- |

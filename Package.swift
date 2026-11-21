@@ -28,7 +28,7 @@ let package = Package(
         "AgelloUITests/AccessibilityAuditUITests.swift", "AgelloUITests/BenchUITests.swift",
         "AgelloUITests/ChatFlowUITests.swift", "AgelloUITests/DeviceFloorUITests.swift",
         "AgelloUITests/ScreenshotTourUITests.swift",
-        "AgelloiOS", "Vendor", "build", "docs", "scripts", "CLAUDE.md", "LICENSE", "NOTICE",
+        "AgelloiOS", "Vendor", "build", "docs", "scripts", "AGENTS.md", "LICENSE", "NOTICE",
         "README.md", "buildServer.json",
         // The app's interface, and what only it uses.
         "Agello/App", "Agello/Assets.xcassets", "Agello/PrivacyInfo.xcprivacy", "Agello/Resources",

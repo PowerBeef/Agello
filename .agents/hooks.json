@@ -1,0 +1,39 @@
+{
+  "session-context": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "./hooks/session-start.sh",
+        "timeout": 45
+      }
+    ]
+  },
+  "guard-target-edits": {
+    "PreToolUse": [
+      {
+        "matcher": "edit_file|write_file|replace_file_content|multi_replace_file_content|write_to_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./hooks/guard-target-edits.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "guard-hardware-only": {
+    "PreToolUse": [
+      {
+        "matcher": "call_mcp_tool|mcp_.*|read_file|view_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./hooks/guard-hardware-only.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

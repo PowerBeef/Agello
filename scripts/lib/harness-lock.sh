@@ -1,6 +1,6 @@
 # Shared by scripts/device-harness.sh, the scripts that relaunch the app
-# (device-run.sh, bench-direct.sh), scripts/storage.sh and the Claude Code
-# hooks in .claude/hooks/ (sourced, not run). One harness run at a time on this
+# (device-run.sh, bench-direct.sh), scripts/storage.sh and the Antigravity
+# hooks in .agents/hooks/ (sourced, not run). One harness run at a time on this
 # machine: runs share the iPhone or this Mac, and the hooks read the lock to
 # guard the checkout being built. The lock is a folder in the main checkout's
 # build/, so worktrees share it; its `info` file holds key=value lines:

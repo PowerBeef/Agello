@@ -25,6 +25,15 @@ BAZEL_DISK="$HOME/.cache/bazel-disk"
 BAZEL_DISK_CAP_KB=$((${STORAGE_BAZEL_DISK_CAP_MB:-6144} * 1024))
 BUDGET_GB="${STORAGE_BUDGET_GB:-40}"
 MIN_FREE_GB="${STORAGE_MIN_FREE_GB:-50}"
+
+# Fail loudly instead of silently returning 0 GB when run inside a restricted sandbox.
+for probe in "$DERIVED" "$MODELS" "$PROJECTS/LiteRT-LM"; do
+  if ls "$probe" 2>&1 >/dev/null | grep -q "Operation not permitted"; then
+    echo "scripts/storage.sh: cannot read $probe (Operation not permitted — rerun outside the terminal sandbox for an accurate report)." >&2
+    exit 5
+  fi
+done
+
 ROWS="$(mktemp)"
 trap 'rm -f "$ROWS" "$ROWS.sorted"' EXIT
 
@@ -71,7 +80,7 @@ git -C "$MAIN" worktree list --porcelain 2>/dev/null |
     [ "$path" = "$MAIN" ] && continue
     merged=""
     git -C "$MAIN" merge-base --is-ancestor "refs/heads/$branch" main 2>/dev/null && merged=", merged into main"
-    row review "$(kb "$path")" "worktree $branch$merged: remove it once its session is done (Settings → This computer → Storage)"
+    row review "$(kb "$path")" "worktree $branch$merged: remove it once its session is done"
   done
 
 # DerivedData: one folder per checkout path; a folder whose checkout is gone is scratch.
@@ -246,8 +255,8 @@ for r in "$PROJECTS"/LiteRT-LM/dist/release/*; do
   row review "$size" "release files for $(basename "$r") in the fork's checkout (delete once published)"
 done
 row keep $(($(kb "$PROJECTS/LiteRT-LM") - benches - releases)) "../LiteRT-LM: the runtime's checkout (branch main) and its build"
-# The repository itself, without build/ and the worktrees (both counted above).
-row keep $(($(kb "$MAIN") - ${repo_build:-0} - $(kb "$MAIN/.claude/worktrees"))) "this repository"
+# The repository itself, without build/ (counted above).
+row keep $(($(kb "$MAIN") - ${repo_build:-0})) "this repository"
 
 sort -t "$(printf '\t')" -k2,2nr "$ROWS" >"$ROWS.sorted"
 total="$(awk -F'\t' '$1 != "clone" {s += $2} END {print s + 0}' "$ROWS.sorted")"

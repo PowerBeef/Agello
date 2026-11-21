@@ -38,9 +38,10 @@ breaks Swift Package Manager resolution.
 
 `PowerBeef/agello-litert-lm` (renamed from `PowerBeef/LiteRT-LM` on 2026-10-14; old
 URLs redirect) is a fork of `google-ai-edge/LiteRT-LM`, cloned beside
-this repo at `../LiteRT-LM`. `.claude/settings.json` lists it in
-`additionalDirectories`, so its C++ and Swift sources are readable from this
-project (its own CLAUDE.md and skills don't load):
+this repo at `../LiteRT-LM`. Add `../LiteRT-LM` alongside `iRT` in a multi-root
+Antigravity workspace so its C++, Metal, and Swift sources, reference docs, and
+bench scripts are directly readable and editable in-workspace (it has no
+separate `AGENTS.md` or `.agents/` folder):
 
 | Item | Value |
 | --- | --- |
@@ -149,9 +150,9 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   (hheydary); the last comments are ours of 2026-11-03, and the round on
   john-rocky's exports is finished. Check for replies with
   `gh api repos/google-ai-edge/LiteRT-LM/issues/3913/comments`, and for new
-  exports with `hf_fs ls hf://models/mlboydaisuke` (or `hf models list --author
-  mlboydaisuke`): the 2026-10-25 files went unseen for a week. Comments go out
-  under the user's name, without Claude attribution.
+  exports with `huggingface` MCP (`hf_fs` on `hf://models/mlboydaisuke`) or
+  `hf models list --author mlboydaisuke`: the 2026-10-25 files went unseen for
+  a week. Comments go out under the user's name, without AI/agent attribution.
 - The follow-up also describes two WebGPU delegate bugs found while building
   the patch (FULLY_CONNECTED with float weights; REDUCE_MAX over a non-last
   axis). They don't reproduce as single ops: on 2026-10-13, standalone models
@@ -173,17 +174,20 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
     the first revision `13d5aa4c`, left in place); main model and MTP drafter;
     weights unchanged. `--block 2048` reproduces the first revision.
   - The output is deterministic: the model card lists the sha256 of both files.
-- **When litert-community updates the E4B file** (the `hf` CLI and the
-  plugin's Hub tools, CLAUDE.md "Hugging Face"; load `huggingface-skills:hf-cli`):
-  1. See what changed: `hf models list litert-community/gemma-4-E4B-it-litert-lm --format json`
-     (each file's `last_commit`), or `hub_repo_details`.
+- **When litert-community updates the E4B file** (use the `huggingface` MCP
+  tools `hf_fs`, `hub_repo_details`, `hub_repo_search`, `hf_whoami` for Hub
+  inspection, and `/opt/homebrew/bin/hf` with `BypassSandbox: true` for
+  downloads/uploads; see `AGENTS.md`, "Hugging Face"):
+  1. See what changed: `hub_repo_details` or
+     `hf models list litert-community/gemma-4-E4B-it-litert-lm --format json`
+     (each file's `last_commit`).
   2. Download it to scratch, never the shared cache:
      `hf download litert-community/gemma-4-E4B-it-litert-lm <file> --revision <commit> --local-dir <scratch>`.
   3. Run `patch_rope.py --split --block 512` on it.
   4. On the user's go, upload it to the same repo with the model card's sha256
      and source revision updated:
      `hf upload PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope <file> <file> --commit-message "…"`
-     (no Claude attribution).
+     (no AI/agent attribution).
   5. Update `ModelCatalog.e4b` (`revision`, `sizeBytes`, `sha256`) from
      `hf models list PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope --revision <commit> --format json`:
      the file's `size` and `lfs.sha256`. Downloads are checked against it.
@@ -195,9 +199,9 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   - If FP16 copies exactly past position 2,048, the catalog can go back to
     their file.
 - **Lab models for the probes:** download them with
-  `hf download <repo> <file> --local-dir ~/Models/agello/lab` and check the sha256 against the
-  poster's or the Hub's (`hf models list <repo> --format json`, `lfs.sha256`). Copy them to
-  the app's `Documents/lab` with `devicectl device copy to`, and delete them with
+  `hf download <repo> <file> --local-dir ~/Models/agello/lab` (`BypassSandbox: true`)
+  and check the sha256 against the poster's or the Hub's (`hf models list <repo> --format json`, `lfs.sha256`).
+  Copy them to the app's `Documents/lab` with `devicectl device copy to`, and delete them with
   `TEST_RUNNER_LAB_REMOVE=<file> ONLY=…/test13_RemoveLabModels scripts/device-harness.sh probes`.
   - Probe 11 needs `ishift-2048.litertlm` (`patch_rope.py … -2048 … --int`).
   - Probe 12 needs `split.litertlm` (`--split --block 512`).
@@ -234,7 +238,8 @@ Google's nightly), `TELEMETRY.md`, and `tracks/` (one note per track). Some
 three-repository layout of before 2026-11-11: pins, overrides, re-pins. None of
 that applies now.
 
-- **Build:** `agello/build-xcframework.sh` in `../LiteRT-LM` writes
+- **Build:** `agello/build-xcframework.sh` in `../LiteRT-LM` (run with
+  `BypassSandbox: true`, backgrounded with `WaitMsBeforeAsync: 500`) writes
   `dist/CLiteRTLM.xcframework` and `dist/BUILD-INFO.txt` (commits, SHA-256s).
   The `WORKSPACE` reads `agello/litert` and `agello/ml_drift` as
   `local_repository`: edit them in place and rebuild. A first build after
@@ -260,17 +265,18 @@ that applies now.
   `scripts/phone-bench.sh release next` (the iPhone) take `next` from
   `../LiteRT-LM/dist/`. To keep a build as an arm while you change the tree,
   copy its `dist/` aside and pass `NAME=/abs/path` (the scripts' headers).
-- **Pushing:** `git push origin main` from `../LiteRT-LM`. The tree's `.lfsconfig` points Git LFS
-  at Google's repository, so its pre-push lock check fails ("You must have push access to verify
-  locks"): this clone has `lfs.https://github.com/google-ai-edge/LiteRT-LM.git/info/lfs.locksverify`
+- **Pushing:** `git push origin main` from `../LiteRT-LM` (only on user go).
+  The tree's `.lfsconfig` points Git LFS at Google's repository, so its
+  pre-push lock check fails ("You must have push access to verify locks"):
+  this clone has `lfs.https://github.com/google-ai-edge/LiteRT-LM.git/info/lfs.locksverify`
   set to `false`; set it again in a new clone.
-- **In Agello:** `Vendor/use-local-litert.sh` vendors `../LiteRT-LM`'s build
-  (its header says how to switch back). It *copies* the framework: rerun it
-  after every rebuild, and check the build id in the harness report's device
-  record (`runtimeBuild`) before trusting a run. Never commit `Vendor/LiteRT-LM`
-  while it points at the local build. Then verify on the iPhone
-  (`agello-device-testing`); a `PLATFORM=mac` run only after asking the user,
-  who often keeps the Mac busy.
+- **In Agello:** `Vendor/use-local-litert.sh` (`BypassSandbox: true`) vendors
+  `../LiteRT-LM`'s build (its header says how to switch back). It *copies* the
+  framework: rerun it after every rebuild, and check the build id in the
+  harness report's device record (`runtimeBuild`) before trusting a run. Never
+  commit `Vendor/LiteRT-LM` while it points at the local build. Then verify on
+  the iPhone (`agello-device-testing`); a `PLATFORM=mac` run only after asking
+  the user, who often keeps the Mac busy.
 - **Shipping it:** `agello/release-xcframework.sh <tag>` on the fork (a dry run
   without `--publish`; publishing needs the user's OK). `--publish` rebuilds
   first: to publish the dry run's files you tested, run the script's
@@ -305,7 +311,7 @@ that applies now.
 - Note any Swift API changes in `swift/` (Engine, Conversation, Config,
   ResponseFormat, Tool, EmbeddingEngine, ExperimentalFlags). In the fork:
   `git fetch upstream --tags && git diff agello-base-20261013 <new base> -- swift/`.
-- We don't take new upstream versions (CLAUDE.md: no merges or rebases). A
+- We don't take new upstream versions (`AGENTS.md`: no merges or rebases). A
   fix or a new model's support worth having is ported by hand into `main`,
   with the user's go, then built, compared and released ("The source build",
   above).
@@ -328,7 +334,7 @@ copied to `Agello/Resources/NOTICE.txt`).
 ## 3. Build and fix
 
 Build for the iPhone. Fix API changes only in the files that import LiteRTLM
-(CLAUDE.md, "Engine boundary": `Inference/ChatEngine.swift`,
+(`AGENTS.md`, "Engine boundary": `Inference/ChatEngine.swift`,
 `Inference/Tools.swift`, `Knowledge/Embedding.swift` and AppState's benchmark).
 Keep every rule in the `agello-inference-rules` skill.
 

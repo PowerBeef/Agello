@@ -108,4 +108,4 @@ The rest is in [glossary.md](https://github.com/PowerBeef/agello-litert-lm/blob/
    and `tools/agello-docs/repin.py` re-cites every citation whose lines didn't change and lists the
    claims to re-verify; they are re-verified and the pages fixed before anyone quotes them.
 3. After vendoring a new release, update this page's "What ships" table, the README's performance
-   numbers (from a fresh measurement with its build id) and `CLAUDE.md`.
+   numbers (from a fresh measurement with its build id) and `AGENTS.md`.
