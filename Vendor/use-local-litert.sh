@@ -21,6 +21,11 @@ if [ ! -d "$SRC/dist/CLiteRTLM.xcframework" ]; then
   echo "No $SRC/dist/CLiteRTLM.xcframework: run agello/build-xcframework.sh there first." >&2
   exit 2
 fi
+if [ ! -d "$SRC/dist/CLiteRTLM.xcframework/ios-arm64" ]; then
+  echo "$SRC/dist/CLiteRTLM.xcframework has no ios-arm64 slice (built with --mac-only)." >&2
+  echo "Run agello/build-xcframework.sh (without --mac-only) before vendoring for iPhone or PLATFORM=mac." >&2
+  exit 2
+fi
 DEST="$ROOT/Vendor/LiteRT-LM"
 rm -rf "$DEST"
 mkdir -p "$DEST/dist"

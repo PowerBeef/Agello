@@ -13,7 +13,9 @@
 #   scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall
 #
 # Env: LITERTLM_PACKAGE (the runtime to build against, as for the command line; default
-#      Vendor/LiteRT-LM), AGELLO_TELEMETRY (the engine's telemetry level, default 2),
+#      Vendor/LiteRT-LM), SIM_GPU (Apple GPU kernel profile to simulate on this Mac; default
+#      Apple_A19_Pro for iPhone 17 Pro parity, or native/off for this Mac's native GPU),
+#      AGELLO_TELEMETRY (the engine's telemetry level, default 2),
 #      AGELLO_MODELS_DIR and AGELLO_ENGINE_CACHE_DIR (another models folder, such as a lab file's,
 #      with a cache of its own; defaults ~/Models/agello and its agello-cli/<build> cache).
 # The tests run with their home folder redirected to build/cli/test-home, so they never touch
@@ -85,6 +87,15 @@ if [ "$bundle" = AgelloDeviceTests ]; then
   export AGELLO_MODELS_DIR="${AGELLO_MODELS_DIR:-$HOME/Models/agello}"
   export AGELLO_ENGINE_CACHE_DIR="${AGELLO_ENGINE_CACHE_DIR:-$HOME/Models/agello/cache/agello-cli/$build}"
   export AGELLO_TELEMETRY="${AGELLO_TELEMETRY:-2}"
+  # Default to iPhone 17 Pro (A19 Pro) kernel & workgroup selection unless overridden.
+  if [ -z "${AGELLO_SIMULATE_APPLE_GPU+x}" ]; then
+    SIM_GPU="${SIM_GPU:-Apple_A19_Pro}"
+    case "$SIM_GPU" in
+      native | off | none | "") unset AGELLO_SIMULATE_APPLE_GPU ;;
+      *) export AGELLO_SIMULATE_APPLE_GPU="$SIM_GPU" ;;
+    esac
+  fi
+  echo "GPU profile: ${AGELLO_SIMULATE_APPLE_GPU:-native}"
   # macOS's malloc keeps freed large blocks, counted in the footprint (probe 38: 1.4 GB after 200
   # turns with images and reloads); the iPhone's doesn't, as far as libmalloc documents. Off here,
   # so memory checks read as on the phone.

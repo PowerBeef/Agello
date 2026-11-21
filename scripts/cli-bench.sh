@@ -18,7 +18,9 @@
 #
 # Env: ROUNDS (default 3: each build runs the cases that many times, one process a time),
 #      OUT (default build/cli/runs/<time>), CHECKS (off skips the answer checks),
-#      REPEAT (per process, default 1), and for the Mac's load (docs/CLI.md, "System load"):
+#      REPEAT (per process, default 1), SIM_GPU (Apple GPU kernel profile to simulate on this Mac;
+#      default Apple_A19_Pro for iPhone 17 Pro parity, or native/off for native Mac kernels),
+#      and for the Mac's load (docs/CLI.md, "System load"):
 #      QUIET (off: no readiness check, no extra rounds; for a run read only for its replies),
 #      QUIET_WAIT (seconds to wait for the Mac to be ready before measuring, default 120; still
 #      busy after that, the run refuses with exit 4 and what to fix),
@@ -57,6 +59,14 @@ MIN_CLEAN="${MIN_CLEAN:-3}"
 [ "$MIN_CLEAN" -gt "$ROUNDS" ] && MIN_CLEAN="$ROUNDS"
 OUT="${OUT:-$ROOT/build/cli/runs/$(date +%Y%m%d-%H%M%S)}"
 FORK="$ROOT/../LiteRT-LM/tools/agello-bench"
+# Default to iPhone 17 Pro (A19 Pro) kernel & workgroup selection unless overridden.
+if [ -z "${AGELLO_SIMULATE_APPLE_GPU+x}" ]; then
+  SIM_GPU="${SIM_GPU:-Apple_A19_Pro}"
+  case "$SIM_GPU" in
+    native | off | none | "") unset AGELLO_SIMULATE_APPLE_GPU ;;
+    *) export AGELLO_SIMULATE_APPLE_GPU="$SIM_GPU" ;;
+  esac
+fi
 
 arms=""
 while [ $# -gt 0 ]; do
@@ -102,6 +112,7 @@ printf 'pid=%s\nroot=%s\nplatform=mac\nsuite=cli-bench\nlog=%s\nlast=yes\nstarte
 caffeinate -dims -w $$ &
 
 # 1. Build every arm before measuring anything. Arms on the same package share a build.
+echo "GPU profile: ${AGELLO_SIMULATE_APPLE_GPU:-native}"
 names=""
 for arm in $arms; do
   name="${arm%%=*}"

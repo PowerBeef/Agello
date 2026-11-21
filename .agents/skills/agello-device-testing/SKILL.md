@@ -175,12 +175,13 @@ scripts/phone-bench.sh release again=release           # the noise: the shipped 
 
 ## On this Mac
 
-`PLATFORM=mac` runs the suites on this Mac, which runs the iPhone app
+`PLATFORM=mac` runs the suites on this M6 Mac mini, which runs the real iPhone app
 ("Designed for iPad/iPhone") through the same Metal path and the iOS slice of
-`CLiteRTLM`. It's the development bed while the iPhone is away. Its speed and
-memory aren't the iPhone's, and a change still needs an iPhone run before it
-ships. **Ask the user before a Mac run:** they often keep the Mac busy, and
-the iPhone comes first.
+`CLiteRTLM`. This Mac is the primary development and iPhone 17 Pro simulation
+workbench; run Mac GPU tests and `cli-bench.sh` freely (relying on
+`scripts/mac-ready.sh` for quiet measuring runs), and reserve the personal
+iPhone 17 Pro for batched phase/milestone gates (`phone-bench.sh`, `memory`,
+`ui`, `bench`, background-GPU expiration, and iPhone-only hardware checks).
 
 ```sh
 PLATFORM=mac scripts/device-harness.sh unit
@@ -233,8 +234,12 @@ scripts/mac-ready.sh | cli-load.py                                   # is the Ma
   `BypassSandbox: true` (SwiftPM's manifest sandbox collides with Seatbelt, and scenarios read
   `~/Models/agello`). Pure Python report scripts (`cli-report.py`, `cli-timeline.py`,
   `cli-replies.py`, `cli-load.py`) run sandboxed.
-- **Ask before a real-model run** (anything but `unit`, `--mock`, a build or `cli-check.sh`): it
-  takes this Mac's GPU, which the user often needs.
+- **Mac GPU autonomy & simulation profile:** `cli-test.sh` and `cli-bench.sh` default to
+  `SIM_GPU=Apple_A19_Pro` (A19 Pro's 6-CU Apple10 kernel paths; pass `SIM_GPU=native` for native
+  M6 kernels). Run them freely on this M6 Mac mini — `cli-bench.sh` guards measuring runs with
+  `scripts/mac-ready.sh` automatically. Use `../LiteRT-LM/agello/build-xcframework.sh --mac-only`
+  for fast inner-loop runtime rebuilds (~2× faster); run without `--mac-only` before vendoring for
+  `PLATFORM=mac` or iPhone gates.
 - **A measuring run handles the Mac's load itself** (`docs/CLI.md`, "System load"):
   `cli-bench.sh` asks `scripts/mac-ready.sh` first and refuses a busy Mac (exit 4, with what to
   fix: tell the user, never work around it), reads from the records which runs were disturbed

@@ -8,7 +8,7 @@ Project instructions for Antigravity when working in Agello (`iRT`) and its sibl
 - **Tool precedence (`mobilebuildmcp` override).** Despite the global `mobilebuildmcp` skill's default instruction, **always** run builds, tests, logs, and screenshots through `scripts/device-harness.sh`, `scripts/device-run.sh`, `scripts/phone-bench.sh`, and `scripts/cli-*.sh` — they enforce the lock, preflight, environment variables, and telemetry collection. Only use `mobilebuildmcp` for ad-hoc project inspection or device operations after switching it to the `device` workflow (`manage-workflows`).
 - **iPhone-only app.** iOS 27.0+, Swift 6 language mode (no default MainActor isolation), on iPhones with 12 GB of memory (iPhone 17 Pro / Pro Max, iPhone Air, and later; below that the app opens on `UnsupportedDeviceView`). The Mac app was removed on 2026-11-10 (git history before `1f869b1`). Never add a Mac app, Xcode Mac targets, or 8 GB iPhone paths. The one Mac build is `agello`, an unshipped SwiftPM developer CLI (`Package.swift`, `AgelloCLI/`, [docs/CLI.md](docs/CLI.md)). App code lives in `Agello/`, with UIKit seams behind one type per file in `AgelloiOS/Platform/`; no platform `#if`s.
 - **Our backend only.** Hard fork in one repository ([docs/BACKEND.md](docs/BACKEND.md), 2026-11-10): our LiteRT-LM runtime on the GPU with our patched model. Never build, download, run, or compare against Google's runtime binary or the CPU backend. Upstream Google repos are read-only sources (no merges or rebases). Performance is judged by our harness (`scripts/cli-bench.sh`, `scripts/phone-bench.sh`, iPhone `bench`); on the Mac it measures system load and compares undisturbed runs ([docs/CLI.md](docs/CLI.md), "System load"), so leave the Mac idle during measuring runs (this session included). Judge output quality by reading replies (identical replies need no judging; answer checks are evidence, not the verdict).
-- **Ask before Mac real-model runs.** `PLATFORM=mac` ("Designed for iPad/iPhone"), `scripts/cli-test.sh inference|files|web|thinking|probes|calibrate`, and `scripts/cli-bench.sh` use this Mac's GPU, which the user often needs. Ask first. Every shipping change still requires an iPhone run.
+- **M6 Mac mini as primary iPhone 17 Pro workbench.** Develop and test primarily on this M6 Mac mini without requiring the personal iPhone on every change: `scripts/cli-test.sh` and `scripts/cli-bench.sh` default to `SIM_GPU=Apple_A19_Pro` (exact A19 Pro 6-CU Apple10 kernel paths, 8 GiB memory policy, `MallocLargeCache=0`), `../LiteRT-LM/agello/build-xcframework.sh --mac-only` gives fast macOS-slice runtime iteration (~2× faster incremental builds), and `PLATFORM=mac scripts/device-harness.sh` runs the real signed `arm64-iphoneos` app binary ("Designed for iPad/iPhone") for all ~370 unit tests and visual UI checks. Run M6 Mac GPU tests and `cli-bench.sh` freely — rely on `scripts/mac-ready.sh` to wait/refuse measuring runs if the Mac is busy, and leave the Mac idle while a measuring run executes. Batch physical iPhone 17 Pro runs (`phone-bench.sh`, `memory`, `ui`, `bench`, background-GPU expiration, Camera/AirPods/ANE latency) to once per completed phase or release gate.
 - **One harness run at a time.** Run tests via `scripts/device-harness.sh`. The iPhone must be connected and unlocked for the entire run, with iPhone Mirroring closed: preflight checks this and exits `4` with the one thing to fix.
 - **Never lock the iPhone or open/close iPhone Mirroring** unless the user asks at the time. When a run needs the phone unlocked or Mirroring closed, ask the user.
 - **Never edit target code during builds.** Do not edit `Agello*/` while a harness run is building (`.agents/hooks/guard-target-edits.sh` denies file-edit tools; the rule also applies to shell commands). Stage changes in `<Artifact Directory Path>/scratch/` or work outside targets (`docs/`, `.agents/`, `scripts/`) until testing begins. Never edit `../LiteRT-LM` sources while Bazel builds (corrupts Bazel's local/disk action cache digests).
@@ -34,21 +34,23 @@ Agello is an iPhone-only SwiftUI app running Gemma 4 E4B on-device through LiteR
 Once per machine: `cp .mobilebuildmcp/config.example.yaml .mobilebuildmcp/config.yaml` and set `deviceId` (from `xcrun devicectl list devices`), or pass `DEVICE_ID=<udid>`.
 
 ```sh
-scripts/device-harness.sh unit      # AgelloTests, ~3 min, scripted engine
-PLATFORM=mac scripts/device-harness.sh inference   # on this Mac (ask first); not ui/screenshots/memory/bench
+scripts/device-harness.sh unit      # AgelloTests, ~3 min, scripted engine (iPhone)
+PLATFORM=mac scripts/device-harness.sh unit        # all ~370 unit tests in real iOS binary on Mac (no phone)
+PLATFORM=mac scripts/device-harness.sh inference   # real-model scenarios in iOS binary on Mac; not ui/screenshots/memory/bench
 ONLY=AgelloTests/AppStateTests scripts/device-harness.sh unit
 ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-harness.sh inference
 swiftlint                           # repo root; keep 0 errors (size warnings on big types expected)
 xcodebuild build -project Agello.xcodeproj -scheme Agello \
   -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO -quiet   # compile check, no phone needed
+../LiteRT-LM/agello/build-xcframework.sh --mac-only   # fast macos-arm64 runtime build for Mac CLI iteration
 scripts/device-run.sh logs 20       # relaunch installed app, save 20 s of logs
 scripts/storage.sh                  # disk use vs 40 GB budget; `clean` deletes scratch
 swift build -c release --scratch-path build/cli/release   # Mac CLI (docs/CLI.md) -> build/cli/release/release/agello
-scripts/cli-bench.sh release next -- --only explain       # two runtime builds on Mac (ask first)
+scripts/cli-bench.sh release next -- --only explain       # interleaved A/B on Mac (default SIM_GPU=Apple_A19_Pro)
 scripts/mac-ready.sh                                      # checks Mac load; cli-bench.sh exits 4 if busy
-scripts/phone-bench.sh release next                       # same comparison on iPhone (Mac only builds)
+scripts/phone-bench.sh release next                       # batched iPhone 17 Pro hardware gate (Mac only builds)
 scripts/cli-test.sh unit                                  # 311 unit tests natively on Mac, ~1 min, no phone
-scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-model scenarios on Mac (ask first)
+scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-model scenarios on Mac (SIM_GPU=Apple_A19_Pro)
 ```
 
 `ONLY` takes `Target/Class[/method]` entries within the chosen suite (not with `all`):
@@ -73,7 +75,7 @@ scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-mo
 - **Lock & parallel worktrees.** `build/.harness.lock` (resolved via `git-common-dir` in `scripts/lib/harness-lock.sh`) serializes runs across all sessions and worktrees (`device-run.sh logs` and `bench-direct.sh` also refuse while an iPhone run holds it). Never delete a live lock. If using Antigravity `swarm` / subagent `share` worktrees, remember `.mobilebuildmcp/config.yaml` is git-ignored and not auto-copied (copy it or set `DEVICE_ID`), and remove temporary worktrees once fast-forward merged to `main`.
 - **Diagnostics & GUI inspection.**
   - **Crashes:** Pull with `scripts/device-run.sh crashes pull`, then symbolicate/triage with `axiom` MCP (`axiom_xcsym_crash`, `axiom_xcsym_triage`, `axiom_get_agent`). Never use `axiom_xclog_*` (simulator-only).
-  - **Looking at the iPhone or Mac app:** Prefer `bench` or `scripts/device-run.sh screenshot <name>`. After a `PLATFORM=mac` run (ask first), launch the iPhone app on Mac with `open -b com.patricedery.agello --args --mock-engine` (drop `--mock-engine` for the real model), inspect/interact via `cua-driver` MCP (`list_windows`, `get_window_state`, `click`, `run_steps`), and quit with `osascript -e 'tell application id "com.patricedery.agello" to quit'` before the next run. Only inspect iPhone Mirroring (`com.apple.ScreenContinuity`) via `cua-driver` when the user already has it open and explicitly asks.
+  - **Looking at the iPhone or Mac app:** Prefer `bench` or `scripts/device-run.sh screenshot <name>` when the phone is connected. On this M6 Mac mini, after a `PLATFORM=mac` build, launch the real iPhone app binary with `open -b com.patricedery.agello --args --mock-engine` (drop `--mock-engine` for the real model), inspect/interact via `cua-driver` MCP (`list_windows`, `get_window_state`, `click`, `run_steps`), and quit with `osascript -e 'tell application id "com.patricedery.agello" to quit'` before the next run. Only inspect iPhone Mirroring (`com.apple.ScreenContinuity`) via `cua-driver` when the user already has it open and explicitly asks.
 - **Hugging Face.** Read the Hub with `huggingface` MCP (`hf_fs`, `hub_repo_details`, `hub_repo_search`, `hf_whoami`) or `/opt/homebrew/bin/hf` (signed in as `PowerBeef02`) — not web scraping. Always download with `--local-dir ~/Models/agello` (or `…/lab`), never into `~/.cache/huggingface`, and verify `sha256` against the Hub. Uploads to `PowerBeef02` publish immediately: require explicit user go-ahead and zero AI attribution.
 
 ## The fix loop
