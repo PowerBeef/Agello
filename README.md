@@ -295,7 +295,8 @@ The README art comes from the same tokens: `scripts/readme-art/render.sh` redraw
 | [The backend](docs/BACKEND.md) | The plan for our own runtime: a hard fork for Apple GPUs and iOS 27 |
 | [LiteRT-LM](docs/LITERT-LM.md) | The LiteRT-LM the app ships, what it sets, and a map of the fork's verified runtime and model reference |
 | [Privacy policy](https://powerbeef.github.io/Agello/privacy) | What stays on the iPhone, and what the network is used for |
-| [Roadmap](docs/ROADMAP.md) | What has shipped and what's next |
+| [Runtime audit (2026-11-21)](docs/RUNTIME-AUDIT-2026-11-21.md) | Deep-dive runtime, numerical accuracy, and A19 Pro+ Metal 4 / ANE audit |
+| [Roadmap](docs/ROADMAP.md) | Current status, A19 Pro+ GPU/ANE plan, and tracked work-item ledger |
 
 ### Vendored LiteRT-LM
 

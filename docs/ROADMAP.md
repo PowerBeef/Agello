@@ -2,7 +2,7 @@
 
 Engineering Agello into the definitive local AI assistant and multi-step agent for **iPhone 17 Pro and newer** — purpose-built around **Gemma 4 E4B** and the **A19 Pro+ heterogeneous silicon architecture** (6-core Apple10+ GPU with per-core Neural Accelerators, Metal 4 / MSL 4.1, 16-core Apple Neural Engine, and 12 GB unified memory on iOS 27.0+).
 
-Updated 2026-11-21.
+Updated 2026-11-21. Technical backing: [RUNTIME-AUDIT-2026-11-21.md](RUNTIME-AUDIT-2026-11-21.md).
 
 ## Current status
 
@@ -10,12 +10,12 @@ The handoff between work sessions (injected automatically at startup by `.agents
 
 - **Baseline (2026-11-21):**
   - **Runtime (`../LiteRT-LM`):** `main` at `4318c4a1`; app vendors `agello-one-20261115` (`0c749789100a`) with 5 Swift 6 wrapper patches. Sparse Metal 4 KV caches (`MTLBufferSparseTier1`), per-prefill transient pool release, D8 system prompt (`141/142`), and `EmbeddingGemma 2` at 768 dims are in place.
-  - **App (`iRT`):** `main` clean (local tooling & storage hygiene committed; push only when asked). Storage at `27.7 / 40.0 GB` budget.
-  - **Resolved:** Deep-dive runtime + iOS 27.2 SDK + WWDC26 audit completed (2026-11-21). Proved why `AGELLO_MTP_REPLAY=1` (`+13–17%`) did not carry over to GPU-Resident Round Stage 3 (artificial cross-CB GPU overlap in replay + 837 MB PLE `mmap` page wiring slowing prefill `−3.8%`; Stage 3 `=1` closed, drafter chain `=2` kept). Uncovered `3.5–4.0 MiB/round` CPU logits `memcpy` in `TopPSampler`, 32 KiB `ConvAppleMPP` occupancy cap (`1 TG/core`), linear raster vs. Morton Z-order walk, 302 unfused `RMSNorm + Mul` pairs, `llguidance` `TokTrie` byte bugs, and iOS background GPU / Swift 6 XPC isolation hazards.
-- **Active focus — Phase 1 (`P1` Foundation, Mac-verifiable while iPhone is away):**
-  1. **P1.1 Background GPU & Swift 6.4 XPC Safety (`P0`):** `nonisolated` `BGContinuedProcessingTask` handlers in `BackgroundWork.swift`, synchronous `beginBackgroundTask` + C++ `wait_until_done` drain, intra-MTP & post-Think rewind cancel checks, `keep && GPUGate.isOpen` helper guard, and inter-tool stream cancellation.
-  2. **P1.2 Zero-Copy Unified-Memory Sampling & Bandit Reset (`P0`):** Replace `TopPSampler` `3.5–4.0 MiB/round` CPU `memcpy` with in-place `TensorBufferScopedLock` + NEON `vmaxq_f16` (plus fused `PostConvert` `simd_max` argmax for `verify`/`verify_8`); reset `ContextDrafts` bandit rates per turn; fix `agello_context_drafts.cc` `size - 1` off-by-one and `telemetry.py` `max_us`.
-  3. **P1.3 Metal Pipeline & Cache Hygiene (`P1`):** Deduplicate ~6,910 shader compiles to ~250 PSOs + `MTLBinaryArchive`, adopt `MTLComputePipelineDescriptor` (`requiredThreadsPerThreadgroup`, `MTLMutabilityImmutable`), align `CacheBuilder` to 16 KB over one file-wide `mmap`, delegate `verify_8` before `verify` (`−25–35 MB`), and trim `SparseKvMapper` on `Reset()` / rewind.
+  - **App (`iRT`):** `main` clean (local tooling, storage hygiene, and new roadmap + runtime audit committed; push only when asked). Storage at `27.7 / 40.0 GB` budget.
+  - **Audit complete ([RUNTIME-AUDIT-2026-11-21.md](RUNTIME-AUDIT-2026-11-21.md)):** Proved why `AGELLO_MTP_REPLAY=1` (`+13–17%`) did not carry over to GPU-Resident Round Stage 3 (artificial cross-CB GPU overlap in replay + 837 MB PLE `mmap` page wiring slowing prefill `−3.8%`; Stage 3 `=1` closed, drafter chain `=2` kept). Uncovered `3.5–4.0 MiB/round` CPU logits `memcpy` in `TopPSampler`, 32 KiB `ConvAppleMPP` occupancy cap (`1 TG/core`), linear raster vs. Morton Z-order walk, 302 unfused `RMSNorm + Mul` pairs, `llguidance` `TokTrie` byte/marker bugs, and iOS background GPU / Swift 6 XPC isolation hazards.
+- **Active focus — Phase 1 (`P1.1`–`P1.3`, Mac-verifiable while iPhone is away):**
+  - [ ] `P1.1` (`P0`, `iRT` + `LiteRT-LM`): `nonisolated` `BGContinuedProcessingTask` handlers, synchronous `beginBackgroundTask` + `wait_until_done` drain, intra-MTP & post-Think cancel, `keep && GPUGate.isOpen` helper guard, inter-tool cancel.
+  - [ ] `P1.2` (`P0`, `LiteRT-LM`): Zero-copy NEON `GreedyHalf` (`TopPSampler`, −3.5–4.0 MiB/round `memcpy`), per-turn `ContextDrafts` bandit reset, `size - 1` off-by-one, `telemetry.py` `max_us`.
+  - [ ] `P1.3` (`P1`, `LiteRT-LM`): Shader compile deduplication (~6,910 → ~250 PSOs) + `MTLBinaryArchive`, `MTLComputePipelineDescriptor` hints, 16 KB `CacheBuilder` alignment, RAII encoder cleanup, `gpu_info.cc` Ultra/Pro+ matching.
 - **Next physical iPhone 17 Pro gate (once connected):**
   - Verify Phase 1 runtime candidate via `scripts/phone-bench.sh`, full device suites (`unit`, `inference`, `files`, `web`, `thinking`, `memory`), D8 `bench` baseline refresh, and background-interruption checks.
 
@@ -146,6 +146,32 @@ Make Agello feel indistinguishable from a first-party iOS 27 system intelligence
 - **6.2 Hardware Soak, Thermal Envelopes & Telemetry Gates:**
   - Upgrade `scripts/phone-bench.sh` with case-alternating thermal rest rules validated against `release again=release` noise bands.
   - Wire iOS 27 `MetricKit` `.memoryException` diagnostics, `ledger_phys_footprint_peak` deltas, and GPU/ANE power telemetry into `MetricsReporter` / `Diagnostics`.
+
+---
+
+## Tracked Work-Item Ledger
+
+Every roadmap deliverable has a stable ID checked off with its commit SHA once verified against its gate.
+
+| Done | ID | Pri | Repo | Work Item | Primary Verification Gate | Commit |
+| :---: | :---: | :---: | :---: | --- | --- | :---: |
+| [ ] | **P1.1** | P0 | `iRT` + `LiteRT-LM` | Background GPU drain (`beginBackgroundTask` + `wait_until_done`), `nonisolated` `BackgroundWork`, `keep && GPUGate.isOpen`, inter-tool cancel | `cli-test.sh unit` + iPhone background interruption | — |
+| [ ] | **P1.2** | P0 | `LiteRT-LM` | Zero-copy NEON `GreedyHalf` (+ optional `PostConvert` `simd_max`), `ContextDrafts` bandit reset, `size - 1` fix, `telemetry.py` `max_us` | `cli-bench.sh` → `phone-bench.sh` | — |
+| [ ] | **P1.3** | P1 | `LiteRT-LM` | Shader compile dedup (~6,910 → ~250) + `MTLBinaryArchive`, `MTLComputePipelineDescriptor` hints, 16 KB `CacheBuilder`, RAII encoder, `gpu_info.cc` | `cli-test.sh` + `MTL_DEBUG_LAYER` → `phone-bench.sh` | — |
+| [ ] | **P2.1** | P1 | `LiteRT-LM` | `FullyConnected` `simd_sum` + `GetLocalBatchSize` fix on `verify`/`verify_8`, fused `RMSNorm + gamma` (−302 ops), `MTLResourceUsageRead`, `{32,1,1}` 1D WG | `cli-bench.sh` → `phone-bench.sh` | — |
+| [ ] | **P2.2** | P1 | `LiteRT-LM` | `ConvAppleMPP` 0-B register epilogue (`c_tile`), Morton Z-order walk, coarse K-sync window skip, 47 `kUint8` PLE in-place INT4 | `cli-bench.sh` → `phone-bench.sh` (`file-report`) | — |
+| [ ] | **P2.3** | P2 | `LiteRT-LM` | MSL 4.1 cooperative-tensor FlashAttention (`reduce_rows` + `get_left_input_cooperative_tensor`) + `int2b_format` INT2 LM head | `cli-bench.sh` → `phone-bench.sh` + `WindowQualityProbes` | — |
+| [ ] | **P3.1** | P1 | `LiteRT-LM` + `iRT` | Surgical model v2: unshifted Dual-`GATHER` 128K RoPE (`<0.00078 rad`) + `ring_kv` + `verify_8` (upload on maintainer go) | `WindowQualityProbes` + 20-doc 64K gate + `phone-bench.sh` | — |
+| [ ] | **P3.2** | P1 | `LiteRT-LM` | FP32 `AddValuesToCacheKernel` scale math, padded-row `Softmax` guard, FP32 PV `c_tile` validation | `cli-test.sh inference` + `probes` | — |
+| [ ] | **P3.3** | P1 | `LiteRT-LM` + `iRT` | Delegate `verify_8` before `verify` (−25–35 MB), `SparseKvMapper` trim on reset/rewind + `copyMappings`, `DeviceProfile`/`ContextBudget` (~56–60K) | `cli-test.sh unit` + iPhone `memory` & 200-turn soak | — |
+| [ ] | **P4.1** | P1 | `iRT` | `EmbeddingGemma 2` (768-dim) on A19 Pro 16-core ANE (`CoreAI`/`CoreML` `.cpuAndNeuralEngine` + `.continued-processing.inference`) | Cosine parity `>= 0.995` + iPhone `files` suite | — |
+| [ ] | **P4.2** | P1 | `LiteRT-LM` + `iRT` | Vision GPU fixes (`kGpu` + `OneHot` rank + preamble), Audio lazy unload + QoS, image-before-text check, ANE ViT/Conformer eval | iPhone `inference` + `memory` + Voice+Camera trace | — |
+| [ ] | **P4.3** | P2 | `iRT` | iOS 27 `SpeechAnalyzer` ANE live streaming dictation + neural endpointing in `VoiceSession` | iPhone Voice + AirPods manual check | — |
+| [ ] | **P5.1** | P1 | `LiteRT-LM` + `iRT` | `llguidance` `0x20`/`0xFF` `TokTrie` fix, default `AGELLO_JSON_MTP`, `SuppressTokensConstraint` inside Think, tool-turn `<thought>` continuity, required `@ToolParam` | `cli-test.sh inference,thinking,web` → iPhone `bench` | — |
+| [ ] | **P5.2** | P1 | `iRT` | Autonomous workspace tools (`search_files`, `read_document_pages`, `search_past_chats`, `query_table_or_json`) + parallel read-only dispatch | `cli-test.sh unit,files` → iPhone `bench` | — |
+| [ ] | **P5.3** | P1 | `iRT` | Opt-in `EventKit`/`Contacts`/`MapKit` tools + deterministic pre-execution confirmation cards + 100%-gated prompt-injection suite | `cli-test.sh unit` + iPhone adversarial device suite | — |
+| [ ] | **P6.1** | P2 | `iRT` | `AppEntity`/`IndexedEntity` Siri/Shortcuts/Spotlight, multimodal Action Button/Control Center, research Live Activities, isolated `ComposerView` | iPhone `ui` + `screenshots` | — |
+| [ ] | **P6.2** | P2 | `iRT` | `phone-bench.sh` alternating thermal rest rules + iOS 27 `MetricKit` `.memoryException` & energy telemetry | iPhone `phone-bench.sh release again=release` + soak | — |
 
 ---
 

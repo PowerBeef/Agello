@@ -1,6 +1,9 @@
 # The performance plan: A19 Pro, A20 Pro and the full window
 
-**Status: approved 2026-11-13 (the maintainer's go). Where it stands (2026-11-15):** the window is a
+> [!NOTE]
+> **Superseded as active plan (2026-11-21):** The active A19 Pro+ (GPU Neural Accelerators + 16-core ANE + Local Agent) plan is now tracked in [ROADMAP.md](ROADMAP.md), backed by the 2026-11-21 runtime audit in [RUNTIME-AUDIT-2026-11-21.md](RUNTIME-AUDIT-2026-11-21.md) (which also closes GPU-Resident Round Stage 3 and resolves the `AGELLO_MTP_REPLAY` vs. Stage 3 and PLE prefill questions). This document stays as the B5 measurement record.
+
+**Status: approved 2026-11-13 (the maintainer's go). Historical record through 2026-11-17:** the window is a
 fixed 64K with sparse KV caches (adopted 2026-11-14), and the runtime that carries it, with train 1
 and the window read from the model file, ships in release `agello-one-20261115` (fork `6da75396`,
 build `0c749789100a`, vendored in app commit `39daed1`). The published model file still caps chats
