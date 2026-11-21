@@ -654,6 +654,14 @@ public final class Conversation: Sendable {
       { .conversation(.invalidResponse($0)) })
   }
 
+  /// Blocks the calling thread until any ongoing asynchronous inference or cancellation finishes.
+  public func waitUntilDone() throws {
+    let handle = try checkIsAlive()
+    try LiteRTLMError.check(
+      litert_lm_conversation_wait_until_done(handle), "litert_lm_conversation_wait_until_done",
+      { .conversation(.invalidResponse($0)) })
+  }
+
   /// Renders the message into a string for testing and logging.
   ///
   /// This function does not need to be called for actual message sending, as the `sendMessage` and

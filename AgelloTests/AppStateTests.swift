@@ -308,6 +308,48 @@ final class AppStateTests: XCTestCase {
     XCTAssertEqual(thread.title, "Mock chat")
   }
 
+  /// Entering the background stops an active reply and drains native GPU threads before releasing.
+  func testEnterBackgroundCancelsAndDrainsActiveReply() async throws {
+    let thread = appState.newThread(in: context)
+    let state: AppState = appState
+    let sending = Task { @MainActor in
+      await state.send(text: "Long reply", imageData: nil, audioFileURL: nil, in: thread)
+    }
+    try await Task.sleep(for: .milliseconds(90))
+    appState.enterBackground()
+    XCTAssertFalse(GPUGate.isOpen)
+    _ = await sending.value
+    // Give the background drain task a moment to complete on the mock actor.
+    for _ in 0..<40 where await mock.drainCount == 0 {
+      try? await Task.sleep(for: .milliseconds(5))
+    }
+    let drains = await mock.drainCount
+    XCTAssertGreaterThanOrEqual(drains, 1)
+    XCTAssertNotNil(appState.notice)
+  }
+
+  /// A closed GPU gate refuses embedding queries and batches immediately without touching Metal.
+  func testEmbedderRejectsWhenGPUGateClosed() async {
+    GPUGate.set(false)
+    let embedder = LiteRTEmbedder(modelURL: FileManager.default.temporaryDirectory)
+    do {
+      _ = try await embedder.embed(query: "test query")
+      XCTFail("Expected GPUGate.closedError")
+    } catch let error as ChatError {
+      XCTAssertEqual(error, GPUGate.closedError)
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+    do {
+      _ = try await embedder.embed(documents: [(title: "Doc", text: "Body")])
+      XCTFail("Expected GPUGate.closedError")
+    } catch let error as ChatError {
+      XCTAssertEqual(error, GPUGate.closedError)
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+  }
+
   func testUserRenamedChatKeepsItsTitle() async {
     let thread = appState.newThread(in: context)
     thread.title = "My trip"

@@ -57,10 +57,14 @@ fixes:
    LiteRT-LM reports a rejected tool call up to three times as a final error,
    and the wrapper released the stream on each, so the second report was a
    use-after-free. Now a stream ends once and late chunks find nothing.
-   Cancelling also stops a stream between tool rounds; a reader that stops
-   iterating cancels the native work; an unreadable chunk ends the stream and
-   cancels the decode; `sendMessageStream` gains `followUpMaxOutputTokens` and
-   `maxToolRounds`. `StreamRegistryTests` drives it without a model.
+   Cancelling also stops a stream between tool rounds (including while an
+   async tool call executes, via `StreamTable.activeToolRounds` and
+   `toolRoundTask`); a reader that stops iterating cancels the native work;
+   an unreadable chunk ends the stream and cancels the decode;
+   `Conversation.waitUntilDone()` exposes `litert_lm_conversation_wait_until_done`
+   so the app can drain in-flight GPU threads before background suspension;
+   `sendMessageStream` gains `followUpMaxOutputTokens` and `maxToolRounds`.
+   `StreamRegistryTests` drives it without a model.
 4. `swift/Engine.swift`: `tokenize` and `countTokens`
    (`litert_lm_engine_tokenize`); `swift/EmbeddingEngineConfig.swift`:
    `EmbeddingOptions.inputOverflowStrategy` (truncate long inputs instead of

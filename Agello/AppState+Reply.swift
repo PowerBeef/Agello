@@ -82,7 +82,7 @@ extension AppState {
     let name = document.name
     let count = sections.count
     // Only long, user-requested file summaries request background GPU time.
-    BackgroundWork.shared.onExpire = { [weak self] in self?.stop() }
+    BackgroundWork.shared.onExpire = { [weak self] in await self?.stopAndDrain() }
     BackgroundWork.shared.begin(
       title: String(localized: "Summarizing \(name)"),
       subtitle: String(localized: "Reading \(count) sections"))
@@ -235,6 +235,13 @@ extension AppState {
   }
 
   func stop() {
+    if BackgroundWork.shared.isPendingOrActive {
+      stopCount &+= 1
+      preparationTask?.cancel()
+      webTask?.cancel()
+      Task { await self.stopAndDrain() }
+      return
+    }
     stopCount &+= 1
     BackgroundWork.shared.end(success: false)
     preparationTask?.cancel()
@@ -242,27 +249,47 @@ extension AppState {
     Task { await engine.cancel() }
   }
 
+  /// Cancels active work and waits for in-flight GPU work to drain before completing any
+  /// continued processing task (keeps `.gpu` entitlement held during drain).
+  func stopAndDrain() async {
+    stopCount &+= 1
+    drainingBackgroundWork = true
+    defer {
+      drainingBackgroundWork = false
+      BackgroundWork.shared.end(success: false)
+    }
+    preparationTask?.cancel()
+    webTask?.cancel()
+    await engine.cancelAndDrain()
+  }
+
   /// iOS doesn't allow GPU work in the background: stop a running reply
-  /// deliberately (keeping the partial text) instead of letting Metal
+  /// deliberately (keeping the partial text) and drain native GPU threads
+  /// under a UIKit background task assertion instead of letting Metal
   /// command buffers fail or the app be terminated.
   func enterBackground() {
     isInForeground = false
-    // A continued task with background GPU access lets the reply finish.
-    let continuing = BackgroundWork.shared.isActive
+    // A continued task with background GPU access (submitted or running) lets the reply finish.
+    let continuing = BackgroundWork.shared.isPendingOrActive
     GPUGate.set(continuing)
     if continuing {
       Log.lifecycle.info("background: work continues as a continued processing task")
       return
     }
+    let drainGuard = BackgroundTaskGuard.begin(name: "AgelloGPUDrain")
     helperTimer?.cancel()
     knowledge.cancelIndexing()
     if isBusy {
-      Log.lifecycle.info("background: stopping generation")
-      stop()
+      Log.lifecycle.info("background: stopping generation and draining GPU")
+      stopCount &+= 1
+      preparationTask?.cancel()
+      webTask?.cancel()
       notice = String(localized: "Reply stopped because Agello moved to the background.")
-    } else {
-      // A title, memory or dictation helper: stopped, and queued work runs again on return.
-      Task { await engine.cancel() }
+    }
+    // Cancels and drains either an active reply or a running helper before releasing the assertion.
+    Task {
+      await self.engine.cancelAndDrain()
+      drainGuard.end()
     }
   }
 

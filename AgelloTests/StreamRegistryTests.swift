@@ -144,6 +144,41 @@ final class StreamRegistryTests: XCTestCase {
     XCTAssertEqual(harness.toolRoundsStarted, 0)
   }
 
+  /// Cancelling while async app tool code executes (after round 1 retired, before round 2
+  /// registers) must cancel the tool task and prevent round 2 from starting native GPU work.
+  func testCancelDuringAsyncToolRoundStopsBeforeNextSend() async {
+    final class Flag: @unchecked Sendable {
+      private let lock = NSLock()
+      private var _entered = false
+      private var _taskCancelled = false
+      var entered: Bool { lock.withLock { _entered } }
+      var taskCancelled: Bool { lock.withLock { _taskCancelled } }
+      func markEntered() { lock.withLock { _entered = true } }
+      func markTaskCancelled() { lock.withLock { _taskCancelled = true } }
+    }
+    let flag = Flag()
+    let harness = StreamTestHarness(onToolRound: {
+      flag.markEntered()
+      do {
+        try await Task.sleep(for: .seconds(5))
+      } catch {
+        flag.markTaskCancelled()
+        throw error
+      }
+    })
+    let firstID = harness.currentID
+    harness.deliver(toolCall)
+    harness.deliver(StreamChunk(isFinal: true))
+    await waitUntil { flag.entered && !harness.isRegistered(firstID) }
+    XCTAssertTrue(flag.entered)
+    XCTAssertFalse(harness.isRegistered(firstID))
+    harness.cancel()
+    let outcome = await drain(harness.stream)
+    XCTAssertTrue(outcome.error is CancellationError)
+    XCTAssertTrue(flag.taskCancelled)
+    XCTAssertEqual(harness.toolRoundsStarted, 0)
+  }
+
   func testAbandoningTheStreamStopsTheNativeWork() async {
     let harness = StreamTestHarness()
     let reader = Task {

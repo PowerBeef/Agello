@@ -142,6 +142,8 @@ final class AppState {
   @ObservationIgnored private var optionsDirty = false
   /// Bumped by Stop: a reply still being prepared checks it before each step.
   @ObservationIgnored var stopCount = 0
+  /// True while `stopAndDrain()` is waiting for native GPU work to finish before ending `BackgroundWork`.
+  @ObservationIgnored var drainingBackgroundWork = false
 
   @ObservationIgnored private var memoryPressure: MemoryPressureMonitor?
 
@@ -557,7 +559,9 @@ final class AppState {
       isPreparing = false
       preparingThreadID = nil
       preparingStatus = nil
-      BackgroundWork.shared.end(success: generationError == nil)
+      if !drainingBackgroundWork {
+        BackgroundWork.shared.end(success: generationError == nil)
+      }
     }
     // A just-changed setting (e.g. the composer's Think toggle) applies to
     // this message, not after it.

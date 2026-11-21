@@ -11,8 +11,9 @@ final class BackgroundWork {
   static let shared = BackgroundWork()
   static let identifierPrefix = "com.patricedery.agello.continued."
 
-  /// Called when iOS or the user cancels the task.
-  var onExpire: (() -> Void)?
+  /// Called when iOS or the user cancels the task. Awaited before `setTaskCompleted` so the
+  /// background GPU entitlement stays held while Metal command buffers drain.
+  var onExpire: (@MainActor () async -> Void)?
   /// Why the last task didn't start (diagnostics and tests).
   private(set) var lastFailure: String?
 
@@ -27,8 +28,11 @@ final class BackgroundWork {
     BGTaskScheduler.supportedResources.contains(.gpu)
   }
 
-  /// A reply runs as a continued task (it keeps going in the background).
+  /// A continued task has been launched by iOS and is actively running.
   var isActive: Bool { task != nil }
+
+  /// A continued task has been submitted (pending launch) or is actively running.
+  var isPendingOrActive: Bool { task != nil || identifier != nil }
 
   /// Start a continued task for the reply the user just asked for.
   func begin(title: String, subtitle: String) {
@@ -41,30 +45,7 @@ final class BackgroundWork {
     let identifier = Self.identifierPrefix + UUID().uuidString
     self.identifier = identifier
     self.title = title
-    let registered = BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) {
-      [weak self] task in
-      guard let task = task as? BGContinuedProcessingTask else {
-        task.setTaskCompleted(success: false)
-        return
-      }
-      MainActor.assumeIsolated {
-        guard let self, self.identifier == identifier else {
-          task.setTaskCompleted(success: false)
-          return
-        }
-        task.progress.totalUnitCount = 100
-        task.expirationHandler = { [weak self] in
-          Task { @MainActor in
-            guard self?.identifier == identifier else { return }
-            self?.onExpire?()
-            task.setTaskCompleted(success: false)
-            self?.task = nil
-            self?.identifier = nil
-          }
-        }
-        self.task = task
-      }
-    }
+    let registered = Self.registerTask(identifier: identifier, owner: self)
     guard registered else {
       self.identifier = nil
       lastFailure = "registration refused"
@@ -75,13 +56,105 @@ final class BackgroundWork {
     request.requiredResources = .gpu
     // Run now or not at all: a queued task would start after the reply.
     request.strategy = .fail
-    do {
-      try BGTaskScheduler.shared.submit(request)
-    } catch {
-      self.identifier = nil
-      lastFailure = String(describing: error)
-      Log.lifecycle.error("continued task: \(error.localizedDescription, privacy: .public)")
+    Self.submitRequest(request, identifier: identifier, owner: self)
+  }
+
+  /// Submits the task request from a `nonisolated` context so its completion handler never
+  /// inherits `@MainActor` isolation when `BackgroundTasks` delivers it on an XPC queue.
+  private nonisolated static func submitRequest(
+    _ request: BGContinuedProcessingTaskRequest,
+    identifier: String,
+    owner: BackgroundWork
+  ) {
+    BGTaskScheduler.shared.submitTaskRequest(request) { [weak owner] error in
+      guard let error else { return }
+      let message = String(describing: error)
+      let localized = error.localizedDescription
+      Task { @MainActor in
+        owner?.handleSubmissionFailure(identifier: identifier, message: message, localized: localized)
+      }
     }
+  }
+
+  /// Registers the task and installs its expiration handler from a `nonisolated` context so
+  /// Swift 6 never attaches `@MainActor` isolation checks to Objective-C blocks that
+  /// `BackgroundTasks` invokes on its own XPC queue.
+  private nonisolated static func registerTask(
+    identifier: String,
+    owner: BackgroundWork
+  ) -> Bool {
+    BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: .main) {
+      [weak owner] task in
+      guard let continued = task as? BGContinuedProcessingTask else {
+        task.setTaskCompleted(success: false)
+        return
+      }
+      Self.attachExpirationHandler(to: continued, identifier: identifier, owner: owner)
+      nonisolated(unsafe) let launched = continued
+      MainActor.assumeIsolated {
+        guard let owner else {
+          launched.expirationHandler = nil
+          launched.setTaskCompleted(success: false)
+          return
+        }
+        owner.handleLaunch(launched, identifier: identifier)
+      }
+    }
+  }
+
+  private nonisolated static func attachExpirationHandler(
+    to task: BGContinuedProcessingTask,
+    identifier: String,
+    owner: BackgroundWork?
+  ) {
+    nonisolated(unsafe) let expiredTask = task
+    task.expirationHandler = { [weak owner] in
+      Task { @MainActor in
+        if let owner {
+          await owner.handleExpiration(identifier: identifier)
+        } else {
+          expiredTask.setTaskCompleted(success: false)
+        }
+      }
+    }
+  }
+
+  private func handleSubmissionFailure(identifier: String, message: String, localized: String) {
+    guard self.identifier == identifier else { return }
+    self.identifier = nil
+    lastFailure = message
+    Log.lifecycle.error("continued task: \(localized, privacy: .public)")
+  }
+
+  private func handleLaunch(_ task: BGContinuedProcessingTask, identifier: String) {
+    guard self.identifier == identifier else {
+      task.expirationHandler = nil
+      task.setTaskCompleted(success: false)
+      return
+    }
+    task.progress.totalUnitCount = 100
+    self.task = task
+  }
+
+  private func handleExpiration(identifier: String) async {
+    guard self.identifier == identifier else { return }
+    let handler = onExpire
+    onExpire = nil
+    await handler?()
+    completeTask(matching: identifier, success: false)
+  }
+
+  private func completeTask(matching id: String? = nil, success: Bool) {
+    if let id, identifier != id { return }
+    if let task {
+      self.task = nil
+      if success { task.progress.completedUnitCount = 100 }
+      task.setTaskCompleted(success: success)
+    } else if let identifier {
+      BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
+    }
+    identifier = nil
+    onExpire = nil
   }
 
   /// What's happening now (shown in the Live Activity).
@@ -104,14 +177,6 @@ final class BackgroundWork {
   }
 
   func end(success: Bool) {
-    if let task {
-      if success { task.progress.completedUnitCount = 100 }
-      task.setTaskCompleted(success: success)
-    } else if let identifier {
-      BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: identifier)
-    }
-    self.task = nil
-    identifier = nil
-    onExpire = nil
+    completeTask(success: success)
   }
 }

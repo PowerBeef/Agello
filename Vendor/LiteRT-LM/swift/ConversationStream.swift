@@ -122,6 +122,8 @@ final class StreamContext: @unchecked Sendable {
   private var nativeCancelScheduled = false
   private var toolRounds = 0
   private var pendingToolCalls: [[String: Any]] = []
+  private var toolRoundTask: Task<Void, Never>?
+  private var toolRoundGeneration: UInt64 = 0
 
   init(
     continuation: AsyncThrowingStream<Message, Error>.Continuation,
@@ -143,11 +145,14 @@ final class StreamContext: @unchecked Sendable {
   /// Ends the stream once; later calls do nothing. Returns whether this call ended it.
   @discardableResult
   func finish(throwing error: Error? = nil) -> Bool {
-    let first = lock.locked {
-      guard !finished else { return false }
+    let (first, task) = lock.locked { () -> (Bool, Task<Void, Never>?) in
+      guard !finished else { return (false, nil) }
       finished = true
-      return true
+      let running = toolRoundTask
+      toolRoundTask = nil
+      return (true, running)
     }
+    task?.cancel()
     // Outside the lock: finishing runs `onTermination` synchronously.
     guard first else { return false }
     if let error {
@@ -166,10 +171,41 @@ final class StreamContext: @unchecked Sendable {
   /// Marks the stream cancelled. Returns false when it already was, or had finished.
   @discardableResult
   func markCancelled() -> Bool {
-    lock.locked {
-      guard !cancelled, !finished else { return false }
+    let (changed, task) = lock.locked { () -> (Bool, Task<Void, Never>?) in
+      guard !cancelled, !finished else { return (false, nil) }
       cancelled = true
-      return true
+      let running = toolRoundTask
+      toolRoundTask = nil
+      return (true, running)
+    }
+    task?.cancel()
+    return changed
+  }
+
+  /// Starts tracking an async tool round; returns a generation token for pairing set/end.
+  func beginToolRoundGeneration() -> UInt64 {
+    lock.locked {
+      toolRoundGeneration &+= 1
+      return toolRoundGeneration
+    }
+  }
+
+  /// Stores the active async tool round task so `markCancelled()` / `finish()` can cancel it.
+  func setToolRoundTask(_ task: Task<Void, Never>, generation: UInt64) {
+    let cancelNow = lock.locked { () -> Bool in
+      guard toolRoundGeneration == generation else { return false }
+      if cancelled || finished { return true }
+      toolRoundTask = task
+      return false
+    }
+    if cancelNow { task.cancel() }
+  }
+
+  func clearToolRoundTask(generation: UInt64) {
+    lock.locked {
+      guard toolRoundGeneration == generation else { return }
+      toolRoundGeneration &+= 1
+      toolRoundTask = nil
     }
   }
 
@@ -227,6 +263,7 @@ final class StreamTable: @unchecked Sendable {
   private var nextID: UInt = 1
   private var nextOwner: UInt64 = 1
   private var streams: [UInt: StreamContext] = [:]
+  private var activeToolRounds: [ObjectIdentifier: StreamContext] = [:]
 
   func makeOwner() -> UInt64 {
     lock.locked {
@@ -254,16 +291,52 @@ final class StreamTable: @unchecked Sendable {
     lock.locked { streams.removeValue(forKey: id) }
   }
 
-  /// The streams of one conversation still waiting for LiteRT-LM.
-  func contexts(owner: UInt64) -> [StreamContext] {
-    lock.locked { streams.values.filter { $0.owner == owner } }
+  /// Keeps `context` visible to `contexts(owner:)` while async app tool code runs between rounds.
+  func beginToolRound(_ context: StreamContext) {
+    lock.locked { activeToolRounds[ObjectIdentifier(context)] = context }
   }
 
-  /// Forgets a deleted conversation's sends; returns their streams so they can be ended.
+  func endToolRound(_ context: StreamContext) {
+    lock.locked { _ = activeToolRounds.removeValue(forKey: ObjectIdentifier(context)) }
+  }
+
+  /// The streams of one conversation still waiting for LiteRT-LM or executing a tool round.
+  func contexts(owner: UInt64) -> [StreamContext] {
+    lock.locked {
+      var seen: Set<ObjectIdentifier> = []
+      var result: [StreamContext] = []
+      for ctx in streams.values where ctx.owner == owner {
+        if seen.insert(ObjectIdentifier(ctx)).inserted { result.append(ctx) }
+      }
+      for ctx in activeToolRounds.values where ctx.owner == owner {
+        if seen.insert(ObjectIdentifier(ctx)).inserted { result.append(ctx) }
+      }
+      return result
+    }
+  }
+
+  /// Forgets a deleted conversation's sends and active tool rounds; returns their streams.
   func retireAll(owner: UInt64) -> [StreamContext] {
     lock.locked {
+      var seen: Set<ObjectIdentifier> = []
+      var result: [StreamContext] = []
       let ids = streams.filter { $0.value.owner == owner }.map(\.key)
-      return ids.compactMap { streams.removeValue(forKey: $0) }
+      for id in ids {
+        if let ctx = streams.removeValue(forKey: id),
+          seen.insert(ObjectIdentifier(ctx)).inserted
+        {
+          result.append(ctx)
+        }
+      }
+      let toolKeys = activeToolRounds.filter { $0.value.owner == owner }.map(\.key)
+      for key in toolKeys {
+        if let ctx = activeToolRounds.removeValue(forKey: key),
+          seen.insert(ObjectIdentifier(ctx)).inserted
+        {
+          result.append(ctx)
+        }
+      }
+      return result
     }
   }
 
@@ -304,27 +377,44 @@ func handleStreamChunk(_ chunk: StreamChunk, id: UInt) {
   }
 
   guard chunk.isFinal else { return }
-  StreamTable.shared.retire(id)
   if context.isCancelled {
+    StreamTable.shared.retire(id)
     context.finish(throwing: CancellationError())
     return
   }
   switch context.takeNextRound() {
   case .none:
+    StreamTable.shared.retire(id)
     context.finish()
   case .limitReached:
+    StreamTable.shared.retire(id)
     context.finish(
       throwing: LiteRTLMError.conversation(
         .recurringToolCallLimitExceeded(limit: context.options.maxToolRounds)))
   case .toolCalls(let batch):
+    // Keep the stream visible to Conversation.cancel() before retiring the send ID (zero gap).
+    StreamTable.shared.beginToolRound(context)
+    StreamTable.shared.retire(id)
+    if context.isCancelled {
+      StreamTable.shared.endToolRound(context)
+      context.finish(throwing: CancellationError())
+      return
+    }
     // Off LiteRT-LM's thread: tools are app code, and the next round calls back into LiteRT-LM.
-    Task {
+    let generation = context.beginToolRoundGeneration()
+    let task = Task {
+      defer {
+        StreamTable.shared.endToolRound(context)
+        context.clearToolRoundTask(generation: generation)
+      }
       do {
+        if context.isCancelled { throw CancellationError() }
         try await context.effects.startToolRound(context, batch)
       } catch {
         context.finish(throwing: error)
       }
     }
+    context.setToolRoundTask(task, generation: generation)
   }
 }
 
@@ -350,12 +440,18 @@ func streamCallback(userData: UnsafeMutableRawPointer?, chunk: OpaquePointer?) {
   /// - Parameters:
   ///   - maxToolRounds: tool rounds allowed before the stream ends with an error.
   ///   - startsNextRound: whether a tool round registers a new send, as a live one does.
-  public init(maxToolRounds: Int = 25, startsNextRound: Bool = true) {
+  ///   - onToolRound: optional async work run before registering the next round (for cancel tests).
+  public init(
+    maxToolRounds: Int = 25, startsNextRound: Bool = true,
+    onToolRound: (@Sendable () async throws -> Void)? = nil
+  ) {
     let (stream, continuation) = AsyncThrowingStream<Message, Error>.makeStream()
     self.stream = stream
     let effects = StreamEffects(
       cancelNative: { [weak self] in self?.recordCancelNative() },
       startToolRound: { [weak self] context, batch in
+        if let onToolRound { try await onToolRound() }
+        if context.isCancelled { throw CancellationError() }
         self?.recordRound(batch.calls)
         if startsNextRound { self?.registerRound(context) }
       })
@@ -372,8 +468,12 @@ func streamCallback(userData: UnsafeMutableRawPointer?, chunk: OpaquePointer?) {
     handleStreamChunk(chunk, id: id ?? currentID)
   }
 
-  /// Marks the stream cancelled, as `Conversation.cancel()` does.
-  public func cancel() { context.markCancelled() }
+  /// Marks the stream cancelled through `StreamTable`, as `Conversation.cancel()` does.
+  public func cancel() {
+    for active in StreamTable.shared.contexts(owner: context.owner) {
+      active.markCancelled()
+    }
+  }
 
   public func isRegistered(_ id: UInt) -> Bool { StreamTable.shared.context(for: id) != nil }
   public var isFinished: Bool { context.isFinished }

@@ -73,6 +73,7 @@ actor LiteRTEmbedder: TextEmbedder {
   }
 
   func embed(documents: [(title: String, text: String)]) async throws -> [[Float]] {
+    guard GPUGate.isOpen else { throw GPUGate.closedError }
     let engine = try await loaded()
     var vectors: [[Float]] = []
     vectors.reserveCapacity(documents.count)
@@ -94,7 +95,9 @@ actor LiteRTEmbedder: TextEmbedder {
   }
 
   func embed(query: String, task: EmbeddingQueryTask) async throws -> [Float] {
+    guard GPUGate.isOpen else { throw GPUGate.closedError }
     let engine = try await loaded()
+    guard GPUGate.isOpen else { throw GPUGate.closedError }
     return try await engine.computeEmbedding(
       contents: [.text(Self.queryPrompt(query, task: task))], options: options
     ).embedding

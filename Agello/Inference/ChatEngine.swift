@@ -42,6 +42,9 @@ protocol ChatEngineProtocol: Sendable {
     text: String, imageData: Data?, audioFileURL: URL?
   ) -> AsyncThrowingStream<ChatEvent, Error>
   func cancel() async
+  /// Cancels any active generation or helper and waits until native C++ threads finish draining
+  /// in-flight GPU work.
+  func cancelAndDrain() async
   /// Run a structured helper prompt (JSON-schema constrained) in a throwaway
   /// conversation. The runtime keeps the main conversation beside it when
   /// memory allows (``lastHelperKeptConversation``). When it doesn't, the main
@@ -120,7 +123,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// Set by ``reseedSampling(history:seed:)``: the conversation samples (no MTP, this seed).
   private var samplingSeed: Int?
 
-  var isLoaded: Bool { engine != nil && conversation != nil }
+  var isLoaded: Bool { engine != nil && resolved != nil }
 
   /// Tokens the live conversation holds in the KV cache, as the runtime
   /// counts them (0 until the first send; device tests).
@@ -316,7 +319,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// iPhone returns the memory at once; probe 16 checks that none stays.
   private func unloadAndRecord() {
     guard engine != nil else { return }
-    weak var released = engine
+    weak let released = engine
     let before = MemoryProbe.footprintBytes()
     unloadLocked()
     let after = MemoryProbe.footprintBytes()
@@ -436,6 +439,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// A new conversation holding `history`, sampling or not as it is now.
   private func rebuild(history: [(role: ChatRole, text: String)]) async throws {
     guard let engine, let resolved, let options else { throw ChatError.engineNotReady }
+    guard GPUGate.isOpen else { throw GPUGate.closedError }
     let conversation = try await Self.makeConversation(
       engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
       history: history, samplingSeed: samplingSeed
@@ -476,7 +480,9 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     text: String, imageData: Data?, audioFileURL: URL?,
     history: [(role: ChatRole, text: String)]
   ) async throws -> Bool {
-    guard conversation != nil, let resolved else { throw ChatError.engineNotReady }
+    guard let resolved else { throw ChatError.engineNotReady }
+    if conversation == nil { try await rebuild(history: []) }
+    guard conversation != nil else { throw ChatError.engineNotReady }
     let window = resolved.maxNumTokens
     let thinking = resolved.thinkingBudget
     func fits(_ total: Int) -> Bool {
@@ -580,6 +586,12 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   ) async throws {
     helperConversation = nil
     helperActive = false
+    if !GPUGate.isOpen {
+      // Never trigger a Metal KV-restore blit or session setup while backgrounded: leave the
+      // main conversation untouched (kept or nil) and mark it for reseed on foreground return.
+      lastHelperKeptConversation = false
+      return
+    }
     lastHelperKeptConversation = keep
     if keep {
       // Switching the engine back to the kept conversation restores its KV
@@ -625,6 +637,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data {
     guard let engine, let resolved, let options else { throw ChatError.engineNotReady }
+    guard GPUGate.isOpen else { throw GPUGate.closedError }
     guard !generating else { throw ChatError.underlying(message: "Busy generating.") }
     generating = true
     defer {
@@ -666,6 +679,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     _ prompts: [String], maxOutputTokens: Int, progress: @Sendable (Int) async -> Void
   ) async throws -> [String] {
     guard let engine, let resolved, let options else { throw ChatError.engineNotReady }
+    guard GPUGate.isOpen else { throw GPUGate.closedError }
     guard !generating else { throw ChatError.underlying(message: "Busy generating.") }
     generating = true
     defer {
@@ -679,12 +693,14 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       for prompt in prompts {
         // Stop ends the run with the outputs so far.
         if Task.isCancelled || cancelRequested { break }
+        guard GPUGate.isOpen else { throw GPUGate.closedError }
         // No grammar here, so speculative decoding stays on for speed.
         helperConversation = nil
         let helper = try await engine.createConversation(
           with: ConversationConfig(enableSpeculativeDecoding: resolved.enableSpeculativeDecoding))
         helperConversation = helper
         if cancelRequested { break }
+        guard GPUGate.isOpen else { throw GPUGate.closedError }
         let reply = try await helper.sendMessage(
           LiteRTLM.Message(PromptText.neutralized(prompt)), maxOutputTokens: maxOutputTokens)
         outputs.append(reply.toString.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -708,6 +724,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 
   func transcribe(audioFileURL: URL) async throws -> String {
     guard let engine, let resolved, let options else { throw ChatError.engineNotReady }
+    guard GPUGate.isOpen else { throw GPUGate.closedError }
     guard resolved.enableAudio else {
       throw ChatError.underlying(message: "Audio input is off in this session.")
     }
@@ -801,6 +818,10 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     // Stopped while the message was being counted.
     if cancelRequested || Task.isCancelled {
       continuation.finish(throwing: ChatError.generationCancelled)
+      return
+    }
+    guard GPUGate.isOpen else {
+      continuation.finish(throwing: GPUGate.closedError)
       return
     }
     // `web_search` is registered on its own (automatic web search) even when
@@ -994,6 +1015,18 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       try? helperConversation?.cancel()
     } else {
       try? conversation?.cancel()
+    }
+  }
+
+  func cancelAndDrain() async {
+    let target: Conversation? = helperActive ? helperConversation : conversation
+    await cancel()
+    guard let target else { return }
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+      DispatchQueue.global(qos: .userInitiated).async {
+        _ = try? target.waitUntilDone()
+        continuation.resume()
+      }
     }
   }
 }
@@ -1203,9 +1236,16 @@ actor MockChatEngine: ChatEngineProtocol {
     if value { cancelRequested = false }
   }
 
+  private(set) var drainCount = 0
+
   func cancel() async {
     if generating { cancelRequested = true }
     if helperRunning { helperCancelRequested = true }
+  }
+
+  func cancelAndDrain() async {
+    drainCount += 1
+    await cancel()
   }
 
   /// Rich reply for UI checks of markdown rendering (prompt contains "markdown").

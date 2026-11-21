@@ -7,10 +7,11 @@ import Foundation
 final class BackgroundWork {
   static let shared = BackgroundWork()
 
-  var onExpire: (() -> Void)?
+  var onExpire: (@MainActor () async -> Void)?
   private var activity: NSObjectProtocol?
 
   var isActive: Bool { activity != nil }
+  var isPendingOrActive: Bool { activity != nil }
 
   func begin(title: String, subtitle: String) {
     guard activity == nil else { return }
