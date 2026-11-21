@@ -128,26 +128,51 @@ for f in "$MODELS"/*; do
       done
       row keep "$lab" "~/Models/agello/lab: lab models and probe suites (the #3913 exports were deleted on 2026-11-03; a new round's files are scratch once its numbers are recorded)" ;;
     cache)
-      # The Mac command line keeps one cache folder per runtime build (about 2.5 GB each), and
-      # every rebuilt runtime adds one. The two loaded last stay (what ships, and the build being
-      # compared with it); a folder for an older build is scratch: it recompiles in one load.
+      # The Mac command line keeps one cache folder per runtime build (about 2.5 GB each), across
+      # agello-cli/ and any custom --cache roots (agello-cli-*/), and every rebuilt runtime adds
+      # one. The two loaded last stay (what ships, and the build being compared with it); an older
+      # build's cache is scratch: it recompiles in one load.
       old=0
       count=0
+      seen="|"
       # shellcheck disable=SC2012 # the folders are named by build ids
-      builds="$(ls -td "$f"/agello-cli/*/kv-all-* 2>/dev/null)"
+      builds="$(ls -td "$f"/agello-cli/*/kv-all-* "$f"/agello-cli-*/*/kv-all-* "$f"/agello-cli/kv-all-* "$f"/agello-cli-*/kv-all-* 2>/dev/null)"
       saved_ifs="$IFS"
       IFS='
 '
       for g in $builds; do
-        count=$((count + 1))
-        [ "$count" -le 2 ] && continue
-        build_dir="$(dirname "$g")"
-        size="$(kb "$build_dir")"
-        old=$((old + ${size:-0}))
-        row scratch "$size" "~/Models/agello/cache/agello-cli/$(basename "$build_dir"): the Mac command line's GPU cache for an older runtime build" "$build_dir"
+        [ -d "$g" ] || continue
+        parent="$(dirname "$g")"
+        if [ "$(dirname "$parent")" = "$f" ]; then
+          # Direct child of agello-cli/ or agello-cli-*/ (AGELLO_ENGINE_CACHE_DIR set to the root).
+          count=$((count + 1))
+          [ "$count" -le 2 ] && continue
+          size="$(kb "$g")"
+          old=$((old + ${size:-0}))
+          row scratch "$size" "~/Models/agello/cache/${g#"$f"/}: the Mac command line's GPU cache for an older runtime build" "$g"
+          build_id="$(basename "$g")"
+          emb="$parent/embedding-${build_id#kv-all-}"
+          if [ -d "$emb" ]; then
+            emb_size="$(kb "$emb")"
+            old=$((old + ${emb_size:-0}))
+            row scratch "$emb_size" "~/Models/agello/cache/${emb#"$f"/}: the Mac command line's embedding cache for an older runtime build" "$emb"
+          fi
+        else
+          case "$seen" in
+            *"|$parent|"*) continue ;;
+          esac
+          seen="$seen$parent|"
+          count=$((count + 1))
+          [ "$count" -le 2 ] && continue
+          size="$(kb "$parent")"
+          old=$((old + ${size:-0}))
+          row scratch "$size" "~/Models/agello/cache/${parent#"$f"/}: the Mac command line's GPU cache for an older runtime build" "$parent"
+        fi
       done
       IFS="$saved_ifs"
-      row keep $(($(kb "$f") - old)) "~/Models/agello/cache: the GPU caches of agello-bench (--cache) and of the Mac command line (agello-cli/, one folder per runtime build; the two loaded last are kept)" ;;
+      kept_cache=$(($(kb "$f") - old))
+      [ "$kept_cache" -lt 0 ] && kept_cache=0
+      row keep "$kept_cache" "~/Models/agello/cache: the GPU caches of agello-bench (--cache) and of the Mac command line (agello-cli*/, one folder per runtime build; the two loaded last are kept)" ;;
     revisions.txt) ;;
     *_cache.bin | *.xnnpack_cache | *cache*)
       row scratch "$(kb "$f")" "~/Models/agello/$name: an engine cache written beside the models" "$f" ;;
