@@ -1,12 +1,12 @@
 # Roadmap
 
-What has shipped, what's next, and the manual checks still to do. Updated 2026-11-18.
+What has shipped, what's next, and the manual checks still to do. Updated 2026-11-21.
 
 ## Current status
 
 The handoff between work sessions: read this first, then the section of the plan it points to.
 
-- **Where it stands, and what's next** (2026-11-17, evening). The app ships our runtime, release `agello-one-20261115` (build `0c749789100a`), at 32K: 12 GB iPhones ask for 64K, and the published model file caps the window at 32,000 positions until the file opened to 128K ships. Since today the chat's system prompt is D8 ([SYSTEM-PROMPT.md](SYSTEM-PROMPT.md), "Round 4"). Everything is pushed: the app with this update, the fork up to `4318c4a1` (the reference's re-pin).
+- **Where it stands, and what's next** (2026-11-21). The app ships our runtime, release `agello-one-20261115` (build `0c749789100a`), at 32K: 12 GB iPhones ask for 64K, and the published model file caps the window at 32,000 positions until the file opened to 128K ships. Since 2026-11-17 the chat's system prompt is D8 ([SYSTEM-PROMPT.md](SYSTEM-PROMPT.md), "Round 4"). The fork is pushed up to `4318c4a1` (the reference's re-pin); on the app, workspace tooling (`AGENTS.md`, `.agents/skills/`, `.agents/hooks.json`, `scripts/storage.sh` sandbox guard) and docs updates are committed locally on `main` (not yet pushed).
   - **The fork's `main` past the release:**
     - fixes: the softmax at every window, a speculative round's last token, pending tokens' embeddings, the Gemma 4 tool boundary and a reply after a tool call that ended empty, and JSON with speculative decoding;
     - G1 (unknown Apple chips);

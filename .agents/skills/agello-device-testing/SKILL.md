@@ -221,7 +221,7 @@ can be built against any checkout of our LiteRT-LM. The iPhone still confirms wh
 ```sh
 swift build -c release --scratch-path build/cli/release            # then build/cli/release/release/agello
 scripts/cli-check.sh                                                # does it still build? (every harness run ends with it)
-scripts/cli-test.sh unit [Class[/method]]                           # ~299 unit tests, about a minute, no phone
+scripts/cli-test.sh unit [Class[/method]]                           # 311 unit tests, about a minute, no phone
 scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-model scenarios on this Mac's GPU
 build/cli/release/release/agello bench --only todo,explain --out build/cli/runs/x.jsonl
 scripts/cli-bench.sh release next -- --only explain                 # two runtime builds, in turns, with the comparison

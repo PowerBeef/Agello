@@ -29,7 +29,7 @@ patches, the docs and tools; renamed to `main`, so links to it redirect), `agell
 are archived). Older notes and the #3913 section below name those branches as history.
 
 `Vendor/LiteRT-LM` holds only the Swift package surface of our fork's
-`main`: `Package.swift` (with the checksummed
+`main` (`swift/` at `82b05ea1`): `Package.swift` (with the checksummed
 `CLiteRTLM.xcframework` download of our release, `agello-one-20261115` (`6da75396`, build
 `0c749789100a`) since 2026-11-15; `agello-next-20261024` from 2026-10-28), `swift/`, and `LICENSE`. It's vendored because upstream Git LFS
 breaks Swift Package Manager resolution.
@@ -233,10 +233,10 @@ source, Metal accelerator included, in one repository: `../LiteRT-LM`, branch
 docs are in `docs/agello/`: `reference/` (the verified reference for the
 runtime, the models and our changes; Agello's `docs/LITERT-LM.md` maps topics
 to its pages), `BUILD.md`, `AUDIT.md` (dated, v0.18.0), `PARITY.md` (against
-Google's nightly), `TELEMETRY.md`, and `tracks/` (one note per track). Some
-`reference/` pages (the build and maintenance pages) still describe the
-three-repository layout of before 2026-11-11: pins, overrides, re-pins. None of
-that applies now.
+Google's nightly), `TELEMETRY.md`, and `tracks/` (one note per track). The
+`reference/` pages were re-pinned to `main` `b7b856a0` on 2026-11-18 (fork
+`4318c4a1`); remaining loose ends are listed in `docs/ROADMAP.md` and
+`../LiteRT-LM/docs/agello/reference/_work/audits.md`.
 
 - **Build:** `agello/build-xcframework.sh` in `../LiteRT-LM` (run with
   `BypassSandbox: true`, backgrounded with `WaitMsBeforeAsync: 500`) writes

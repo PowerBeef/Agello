@@ -27,8 +27,8 @@ fast as the hardware allows, at the quality the model has today.
   `scripts/phone-bench.sh` (the same comparison, the builds installed in turns) with the bench
   ([HARNESS.md](HARNESS.md)) for the confirmation. When the Mac is busy, `phone-bench.sh` can
   lead: the Mac only builds for it.
-- **Claude judges output quality, by reading.** Replies that are identical token for token need
-  no judging. Where a change moves them, Claude reads both sides and gives the verdict: the same,
+- **Output quality is judged by reading.** Replies that are identical token for token need
+  no judging. Where a change moves them, read both sides and give the verdict: the same,
   better or worse. The answer checks (does the code run, did the reply end by itself) are
   evidence for that reading, not the verdict.
 - **One hardware class.** iOS 27, iPhones with 12 GB (A19 Pro and later), and the Apple silicon
@@ -236,11 +236,11 @@ again on the baseline, since these figures come from a busy Mac.
    turns. The run checks the Mac is quiet before it starts (`scripts/mac-ready.sh`), reads from
    its records which runs the Mac's load disturbed, adds rounds while a case lacks undisturbed
    ones, and compares on those ([CLI.md](CLI.md), "System load"). Leave the Mac alone while it
-   runs, the Claude session included. Read `compare.txt` and `load.txt`. A change inside the
+   runs, the agent session included. Read `compare.txt` and `load.txt`. A change inside the
    noise band isn't a change, and a build disturbed more often than the other is to be looked
    into, not filtered.
 3. **Quality:** `compare.txt` counts the replies identical to the base. For the others,
-   `scripts/cli-replies.py` shows where each parts, and Claude reads both sides, with the answer
+   `scripts/cli-replies.py` shows where each parts, and both sides are read with the answer
    checks' results beside them. The verdict and its reasons go in the ledger. "Worse" stops the
    change.
 4. **Confirmation, on the iPhone:** `scripts/phone-bench.sh release next` (the same reading as

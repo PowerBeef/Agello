@@ -14,7 +14,7 @@ The maintainer's correction of 2026-11-10 ([BACKEND.md](BACKEND.md) has the whol
 - **One backend: ours, on the GPU.** The tool measures builds of our runtime against each other.
   It doesn't measure Google's runtime or the CPU backend, and neither is built or kept on this
   Mac as a reference.
-- **The harness judges performance; Claude judges output quality, by reading the replies.** The
+- **The harness judges performance; output quality is judged by reading the replies.** The
   answer checks are evidence for that reading, not the verdict.
 - **The backend becomes a hard fork**, one repository of our own, and the app drops its code for
   Google's binary and for the CPU backend (done on 2026-11-11, with the tool's `--backend`).
@@ -150,7 +150,7 @@ QUIET=off scripts/cli-bench.sh release next -- --only email   # a run read only 
   disturbed much more often than the other. The builds take turns, so the Mac disturbs them
   alike: a build that is slow more often is slow by itself, and its slow runs are to be read,
   not filtered.
-- **Still: start it and leave the Mac alone,** the Claude session that started it included. A
+- **Still: start it and leave the Mac alone,** the agent session that started it included. A
   session streaming text takes the GPU. The harness now notices; it can't give the time back.
 
 What it changed on 2026-11-11's runs, read again (their records, `build/cli/runs/noise` and
@@ -172,7 +172,7 @@ agello bench --only email,todo --samples 10 --label next --out build/cli/runs/qu
 scripts/cli-report.py build/cli/runs/quality.jsonl
 ```
 
-- **Quality is judged by reading.** Claude reads the replies and gives the verdict: the same,
+- **Quality is judged by reading.** Read the replies and give the verdict: the same,
   better or worse. Nothing is compared with the CPU backend or with Google's runtime.
 - **Identical replies need no judging.** With the shipping settings a reply is decoded greedily,
   so two builds whose arithmetic agrees give the same tokens, and the comparison counts them.
@@ -193,7 +193,7 @@ scripts/cli-report.py build/cli/runs/quality.jsonl
 ## The tests, natively
 
 ```sh
-scripts/cli-test.sh unit                         # 299 unit tests on the scripted engine, about a minute
+scripts/cli-test.sh unit                         # 311 unit tests on the scripted engine, about a minute
 scripts/cli-test.sh unit AppStateTests           # one class, or Class/method
 scripts/cli-test.sh inference                    # the real-model scenarios on this Mac's GPU (also files, web, thinking, probes, calibrate)
 ```

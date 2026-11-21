@@ -4,12 +4,12 @@ Agello is tested on a physical iPhone, and on an Apple silicon Mac running the i
 
 ## The suites
 
-Test methods declared at `842ea9e` (2026-11-16). The dated iPhone runs and their results are in the [roadmap](ROADMAP.md#current-status).
+Test methods declared at `85f6b3e` (2026-11-21). The dated iPhone runs and their results are in the [roadmap](ROADMAP.md#current-status).
 
 | Target | Tests | Covers |
 | --- | --- | --- |
-| `AgelloTests` | 365 | Planner, context budgeting, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers and page extraction (recorded fixtures), dictation, voice-activity detection, deep links and intents, Spotlight, the share inbox, chat grouping and search, personalization, titles, downloads, and the whole app pipeline through a scripted engine |
-| `AgelloDeviceTests` | 69 | The real models, in-process: download, load, text, chat isolation, stop and continue, tools, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, voice turns, exact digits past 2,048 and 4,096 tokens, benchmark; files (EmbeddingGemma indexing, "summarize this 40-page PDF", cited follow-up, search chats by meaning); live web search, automatic search with the on-device tools off |
+| `AgelloTests` | 378 | Planner, context budgeting, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers and page extraction (recorded fixtures), dictation, voice-activity detection, deep links and intents, Spotlight, the share inbox, chat grouping and search, personalization, titles, downloads, and the whole app pipeline through a scripted engine |
+| `AgelloDeviceTests` | 82 | The real models, in-process: download, load, text, chat isolation, stop and continue, tools, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, voice turns, exact digits past 2,048 and 4,096 tokens, benchmark; files (EmbeddingGemma indexing, "summarize this 40-page PDF", cited follow-up, search chats by meaning); live web search, automatic search with the on-device tools off |
 | `AgelloUITests` | 28 | Real taps: send, no jumping while a reply streams, Stop, Home button mid-reply, leaving and returning mid-reply, rapid settings changes, drawer and search, pin / rename / delete, projects, attached files, web search, dictation, voice mode, deep links, a long summary in the background, regenerate / edit / versions, Think, memory settings, markdown, keyboard clearance, composer controls that fit at every text size, Models, the screen an iPhone below the 12 GB floor opens on, an accessibility audit of the main screens; plus the opt-in screenshot tour and the bench driver |
 
 The device scenarios include opt-in suites for work that's too slow or too specialized for every run: long Thinking answers, a **memory pressure simulation** (incompressible ballast shrinks usable memory to 6.0, 5.0, 4.0 and 3.5 GB, as when other apps hold memory; it once stood for 8 GB iPhones, which the app no longer runs on), **context calibration** (speed and memory at 4K–32K), and **LiteRT-LM probes** that test the runtime directly. The probes are how [#3913](ENGINEERING.md#long-context-digits-on-the-gpu-litert-lm-3913) was pinned to position 2,048 and its fix proven.
@@ -51,13 +51,13 @@ The first run registers the Mac for development with the signing team. Results l
 
 For work on the runtime, the app's engine also builds as a command line for macOS
 ([CLI.md](CLI.md)): `scripts/cli-test.sh unit` runs the unit tests that need no interface
-natively (299, about a minute), `scripts/cli-test.sh inference` the real-model scenarios on the
+natively (311, about a minute), `scripts/cli-test.sh inference` the real-model scenarios on the
 Mac's GPU, and `agello bench` the bench's cases with the runtime's telemetry, against any build
 of our LiteRT-LM. It's a development tool: what ships is confirmed on the iPhone.
 
 ### Looking at the iPhone
 
-With iPhone Mirroring on this Mac, the phone's screen is a window: you can look at the app and tap through it without picking up the phone, and so can Claude's computer use. The session pauses after a few minutes idle (click **Connect** to resume), and a test run takes over the phone: the mirror waits until the phone is locked again. Opening the mirror during a run locks the phone and stops the run. Look before or after a run, not during.
+The autonomous bench (`scripts/device-harness.sh bench`, [HARNESS.md](HARNESS.md)) and UI tests drive and verify the app on the phone, and `scripts/device-run.sh screenshot <name>` captures an unlocked phone's screen. iPhone Mirroring is for ad-hoc visual inspection only (dropped as a testing tool on 2026-11-10): it pauses after a few minutes idle, and opening it locks the phone and stops any harness run in progress. Keep iPhone Mirroring closed during harness runs.
 
 ### Tuning the model's behavior
 
