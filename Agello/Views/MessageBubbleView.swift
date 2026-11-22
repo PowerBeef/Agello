@@ -290,7 +290,9 @@ struct MessageBubbleView: View {
     }
     .padding(Theme.Spacing.md)
     .frame(maxWidth: .infinity, alignment: .leading)
-    if let link = source.url.flatMap(URL.init(string:)) {
+    if let link = source.url.flatMap(URL.init(string:)),
+      let scheme = link.scheme?.lowercased(), scheme == "http" || scheme == "https"
+    {
       Link(destination: link) { row }
         .accessibilityIdentifier("message.source")
     } else {

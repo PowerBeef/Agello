@@ -19,15 +19,18 @@ enum ChatStoreLoader {
   enum Failure: Equatable {
     /// Damaged: move it aside.
     case corrupt
+    /// Schema migration failed: move it aside.
+    case migrationFailed
     /// Saved by a build with a schema this one doesn't know.
     case newerVersion
-    /// Can't be read right now (disk full, file protection, permissions).
+    /// Can't be read right now (disk full, file protection, permissions, lock, timeout).
     case unavailable
-    /// Anything else, including a migration that failed: move it aside.
+    /// Unclassified error: leave a healthy SQLite store untouched and use an in-memory session.
     case other
   }
 
   static let keptBackups = 2
+  private static let sqliteMagic = Data("SQLite format 3\0".utf8)
 
   static func open(url: URL? = nil) -> Opened {
     let configuration =
@@ -53,7 +56,14 @@ enum ChatStoreLoader {
       case .unavailable:
         return inMemory(
           notice: String(localized: "Chat history is unavailable right now; chats won't be saved this session."))
-      case .corrupt, .other:
+      case .other:
+        // Only move aside an unclassified failure if the on-disk file is demonstrably not a
+        // SQLite database (e.g. SwiftData stripped the underlying SQLITE_NOTADB error).
+        guard hasCorruptHeader(configuration.url) else {
+          return inMemory(
+            notice: String(localized: "Chat history is unavailable right now; chats won't be saved this session."))
+        }
+      case .corrupt, .migrationFailed:
         break
       }
       let backup = moveAside(configuration.url)
@@ -85,12 +95,32 @@ enum ChatStoreLoader {
       container: try! makeContainer(memory), recoveryNotice: notice)
   }
 
-  /// Whether an existing store file can be read now (a missing one is fine: it gets created).
+  /// Whether an existing store and its SQLite sidecars can be read now (missing files are fine).
   static func isReadable(_ store: URL) -> Bool {
-    guard FileManager.default.fileExists(atPath: store.path) else { return true }
-    guard let handle = try? FileHandle(forReadingFrom: store) else { return false }
+    for suffix in ["", "-wal", "-shm"] {
+      let url = URL(fileURLWithPath: store.path + suffix)
+      guard FileManager.default.fileExists(atPath: url.path) else { continue }
+      guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+      defer { try? handle.close() }
+      do {
+        _ = try handle.read(upToCount: 16)
+      } catch {
+        return false
+      }
+    }
+    return true
+  }
+
+  /// True when an existing store file is readable, non-empty, and lacks SQLite's 16-byte header.
+  static func hasCorruptHeader(_ store: URL) -> Bool {
+    guard FileManager.default.fileExists(atPath: store.path),
+      let handle = try? FileHandle(forReadingFrom: store)
+    else { return false }
     defer { try? handle.close() }
-    return (try? handle.read(upToCount: 16)) != nil
+    guard let header = try? handle.read(upToCount: sqliteMagic.count), !header.isEmpty else {
+      return false
+    }
+    return header != sqliteMagic
   }
 
   // Core Data and SQLite codes behind a failed open.
@@ -98,14 +128,20 @@ enum ChatStoreLoader {
     134_100,  // NSPersistentStoreIncompatibleVersionHashError
     134_130,  // NSMigrationMissingSourceModelError: no stage knows the store's version
   ]
+  private static let migrationFailedCodes: Set<Int> = [
+    134_110,  // NSMigrationError
+    134_140,  // NSMigrationMissingMappingModelError
+  ]
   private static let unavailableCocoaCodes: Set<Int> = [
+    255,  // NSFileLockingError
     257,  // NSFileReadNoPermissionError
     513,  // NSFileWriteNoPermissionError
     640,  // NSFileWriteOutOfSpaceError
+    134_091,  // NSPersistentStoreTimeoutError
   ]
   private static let corruptSQLiteCodes: Set<Int> = [11, 26]  // SQLITE_CORRUPT, SQLITE_NOTADB
   private static let unavailableSQLiteCodes: Set<Int> = [
-    3, 5, 8, 10, 13, 14, 23,  // PERM, BUSY, READONLY, IOERR, FULL, CANTOPEN, AUTH
+    3, 5, 6, 7, 8, 10, 13, 14, 23,  // PERM, BUSY, LOCKED, NOMEM, READONLY, IOERR, FULL, CANTOPEN, AUTH
   ]
 
   /// Why `error` kept the store from opening, from the error and the errors it wraps.
@@ -117,8 +153,10 @@ enum ChatStoreLoader {
     while let next = pending.popLast(), seen < 16 {
       seen += 1
       if next.domain == NSCocoaErrorDomain { cocoaCodes.insert(next.code) }
-      if next.domain == "NSSQLiteErrorDomain" { sqliteCodes.insert(next.code) }
-      if let sqlite = next.userInfo["NSSQLiteErrorDomain"] as? Int { sqliteCodes.insert(sqlite) }
+      if next.domain == "NSSQLiteErrorDomain" { sqliteCodes.insert(next.code & 0xFF) }
+      if let sqlite = next.userInfo["NSSQLiteErrorDomain"] as? Int {
+        sqliteCodes.insert(sqlite & 0xFF)
+      }
       if let underlying = next.userInfo[NSUnderlyingErrorKey] as? NSError { pending.append(underlying) }
       // Core Data's NSDetailedErrorsKey.
       if let detailed = next.userInfo["NSDetailedErrors"] as? [NSError] { pending += detailed }
@@ -132,25 +170,26 @@ enum ChatStoreLoader {
     {
       return .unavailable
     }
+    if !cocoaCodes.isDisjoint(with: migrationFailedCodes) { return .migrationFailed }
     return .other
   }
 
-  /// Rename the store and its SQLite sidecar files; returns the new store URL.
+  /// Rename the store and its SQLite sidecar files; returns the new store URL. Aborts without
+  /// touching `-wal`/`-shm` if moving the primary store file fails so WAL frames stay paired.
   @discardableResult
   static func moveAside(_ store: URL) -> URL? {
     let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
     let backup = store.deletingLastPathComponent()
       .appendingPathComponent("\(store.lastPathComponent).unreadable-\(stamp)")
-    var moved = false
-    for suffix in ["", "-shm", "-wal"] {
+    guard FileManager.default.fileExists(atPath: store.path) else { return nil }
+    guard (try? FileManager.default.moveItem(at: store, to: backup)) != nil else { return nil }
+    for suffix in ["-shm", "-wal"] {
       let source = URL(fileURLWithPath: store.path + suffix)
       guard FileManager.default.fileExists(atPath: source.path) else { continue }
       let destination = URL(fileURLWithPath: backup.path + suffix)
-      if (try? FileManager.default.moveItem(at: source, to: destination)) != nil, suffix.isEmpty {
-        moved = true
-      }
+      _ = try? FileManager.default.moveItem(at: source, to: destination)
     }
-    return moved ? backup : nil
+    return backup
   }
 
   /// Delete set-aside copies beyond the ``keptBackups`` newest (their names sort by date).

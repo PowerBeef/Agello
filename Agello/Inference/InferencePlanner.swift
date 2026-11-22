@@ -73,11 +73,13 @@ enum ContextBudget {
   /// (``exportWindow(reported:)``): a file opened to the trained 131,072-token window (the fork's
   /// `tools/model-surgery/window_128k.py`) exports 131,101.
   static let exportWindow: Int = {
-    if let value = ProcessInfo.processInfo.environment["AGELLO_EXPORT_WINDOW"],
-      let window = Int(value), window > 256
-    {
-      return window
-    }
+    #if DEBUG || BENCH
+      if let value = ProcessInfo.processInfo.environment["AGELLO_EXPORT_WINDOW"],
+        let window = Int(value), window > 256
+      {
+        return window
+      }
+    #endif
     return 32_003
   }()
 

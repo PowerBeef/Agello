@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import NaturalLanguage
 import Synchronization
@@ -71,15 +72,33 @@ struct WebSearchSettings: Codable, Equatable, Sendable {
 /// Hosts the open web serves. Pages are read only from those: a search result or a shared link
 /// can't point the app at the user's own network (an external review, 2026-11-16).
 enum WebHost {
+  enum DNSVerdict: Equatable, Sendable {
+    case publicOnly
+    case privateOrLoopback
+    case unresolved
+  }
+
   static func isPublic(_ host: String) -> Bool {
-    var name = host.lowercased()
-    if name.hasSuffix(".") { name.removeLast() }
-    if name == "localhost" || name.contains(":") { return false }  // IPv6 literals included
+    var name = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    while name.hasSuffix(".") { name.removeLast() }
+    guard !name.isEmpty, name != "localhost", !name.contains(":") else { return false }
+    // Reject all IPv4 literal forms (decimal, hex-dotted `0x7f.0.0.1`, octal, shorthand `127.1`, integer).
+    var v4 = in_addr()
+    if inet_aton(name, &v4) != 0 { return false }
+    // Reject IPv6 literals even if bracketed.
+    var v6 = in6_addr()
+    let stripped = name.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+    if inet_pton(AF_INET6, stripped, &v6) == 1 { return false }
     let labels = name.split(separator: ".", omittingEmptySubsequences: false)
-    guard labels.count >= 2, !labels.contains(where: \.isEmpty) else { return false }  // an intranet name
-    if labels.allSatisfy({ $0.allSatisfy(\.isNumber) }) { return false }  // an IPv4 address
-    let local = ["localhost", "local", "internal", "lan", "home", "intranet", "corp", "arpa"]
-    return !local.contains(String(labels.last ?? ""))
+    guard labels.count >= 2, !labels.contains(where: \.isEmpty) else { return false }
+    // Require a valid public-looking alphabetic (or punycode `xn--`) TLD of length >= 2.
+    guard let tld = labels.last, tld.count >= 2,
+      tld.allSatisfy({ $0.isASCII && $0.isLetter }) || tld.hasPrefix("xn--")
+    else { return false }
+    let local: Set<String> = [
+      "localhost", "local", "localdomain", "internal", "lan", "home", "intranet", "corp", "arpa",
+    ]
+    return !local.contains(String(tld))
   }
 
   /// An http(s) URL on a public host, without credentials.
@@ -89,9 +108,81 @@ enum WebHost {
     else { return false }
     return isPublic(host)
   }
+
+  /// True if a host-byte-order IPv4 address is globally routable (not loopback, RFC1918, link-local,
+  /// CGNAT, multicast, or reserved).
+  static func isPublicIPv4(_ hostOrder: UInt32) -> Bool {
+    let a = (hostOrder >> 24) & 0xFF
+    let b = (hostOrder >> 16) & 0xFF
+    let c = (hostOrder >> 8) & 0xFF
+    if a == 0 || a == 10 || a == 127 || a >= 224 { return false }
+    if a == 100 && (b >= 64 && b <= 127) { return false }  // CGNAT 100.64.0.0/10
+    if a == 169 && b == 254 { return false }  // link-local
+    if a == 172 && (b >= 16 && b <= 31) { return false }  // RFC1918
+    if a == 192 && b == 168 { return false }  // RFC1918
+    if a == 192 && b == 0 && (c == 0 || c == 2) { return false }
+    if a == 198 && (b == 18 || b == 19) { return false }
+    if a == 198 && b == 51 && c == 100 { return false }
+    if a == 203 && b == 0 && c == 113 { return false }
+    return true
+  }
+
+  /// True if an IPv6 address (16 raw network-order bytes) is globally routable.
+  static func isPublicIPv6(_ bytes: [UInt8]) -> Bool {
+    guard bytes.count == 16 else { return false }
+    if bytes.allSatisfy({ $0 == 0 }) { return false }  // ::
+    if bytes[0..<15].allSatisfy({ $0 == 0 }) && bytes[15] == 1 { return false }  // ::1
+    if (bytes[0] & 0xFE) == 0xFC { return false }  // fc00::/7 ULA
+    if bytes[0] == 0xFE && (bytes[1] & 0xC0) == 0x80 { return false }  // fe80::/10 link-local
+    if bytes[0] == 0xFF { return false }  // ff00::/8 multicast
+    // IPv4-mapped ::ffff:0:0/96 or NAT64 64:ff9b::/96.
+    let isV4Mapped = bytes[0..<10].allSatisfy({ $0 == 0 }) && bytes[10] == 0xFF && bytes[11] == 0xFF
+    let isNAT64 = bytes[0] == 0x00 && bytes[1] == 0x64 && bytes[2] == 0xFF && bytes[3] == 0x9B
+      && bytes[4..<12].allSatisfy({ $0 == 0 })
+    if isV4Mapped || isNAT64 {
+      let ipv4 =
+        (UInt32(bytes[12]) << 24) | (UInt32(bytes[13]) << 16)
+        | (UInt32(bytes[14]) << 8) | UInt32(bytes[15])
+      return isPublicIPv4(ipv4)
+    }
+    return true
+  }
+
+  /// Resolves `host` via `getaddrinfo` off-thread and verifies every returned IP is public.
+  static func verifyResolvedAddresses(_ host: String) async -> DNSVerdict {
+    await Task.detached(priority: .utility) {
+      var hints = addrinfo()
+      hints.ai_family = AF_UNSPEC
+      hints.ai_socktype = SOCK_STREAM
+      var result: UnsafeMutablePointer<addrinfo>?
+      guard getaddrinfo(host, nil, &hints, &result) == 0, let head = result else {
+        return DNSVerdict.unresolved
+      }
+      defer { freeaddrinfo(head) }
+      var sawAddress = false
+      var cursor: UnsafeMutablePointer<addrinfo>? = head
+      while let current = cursor {
+        let info = current.pointee
+        if info.ai_family == AF_INET, let sa = info.ai_addr {
+          sawAddress = true
+          let addr = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }
+          if !isPublicIPv4(UInt32(bigEndian: addr.s_addr)) { return .privateOrLoopback }
+        } else if info.ai_family == AF_INET6, let sa = info.ai_addr {
+          sawAddress = true
+          var addr6 = sa.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) {
+            $0.pointee.sin6_addr
+          }
+          let bytes = withUnsafeBytes(of: &addr6) { Array($0) }
+          if !isPublicIPv6(bytes) { return .privateOrLoopback }
+        }
+        cursor = info.ai_next
+      }
+      return sawAddress ? .publicOnly : .unresolved
+    }.value
+  }
 }
 
-/// Follows a redirect only to a public page (``WebHost``).
+/// Follows a redirect only to a public page (``WebHost``) resolving exclusively to public IPs.
 final class PublicRedirects: NSObject, URLSessionTaskDelegate, Sendable {
   static let shared = PublicRedirects()
 
@@ -99,7 +190,8 @@ final class PublicRedirects: NSObject, URLSessionTaskDelegate, Sendable {
     _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
     newRequest request: URLRequest
   ) async -> URLRequest? {
-    guard let url = request.url, WebHost.isPublicPage(url) else { return nil }
+    guard let url = request.url, WebHost.isPublicPage(url), let host = url.host else { return nil }
+    guard await WebHost.verifyResolvedAddresses(host) == .publicOnly else { return nil }
     return request
   }
 }
@@ -314,7 +406,9 @@ struct WebClient: Sendable {
   /// A page's readable text, or nil (not HTML, too large, failed, slow). The type and declared
   /// size are checked before the body is read, which stops at ``maxPageBytes``.
   func readPage(_ url: URL) async -> ReadableText.Page? {
-    guard WebHost.isPublicPage(url) else { return nil }
+    guard WebHost.isPublicPage(url), let host = url.host,
+      await WebHost.verifyResolvedAddresses(host) == .publicOnly
+    else { return nil }
     var request = URLRequest(url: url, timeoutInterval: 7)
     request.setValue(Self.appAgent, forHTTPHeaderField: "User-Agent")
     request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
@@ -322,7 +416,7 @@ struct WebClient: Sendable {
     guard let (bytes, response) = try? await session.bytes(for: request, delegate: PublicRedirects.shared)
     else { return nil }
     guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
-      (http.value(forHTTPHeaderField: "Content-Type") ?? "text/html").contains("html"),
+      (http.value(forHTTPHeaderField: "Content-Type") ?? "text/html").lowercased().contains("html"),
       http.expectedContentLength <= Int64(Self.maxPageBytes)
     else {
       bytes.task.cancel()
@@ -355,13 +449,35 @@ struct WebClient: Sendable {
   }
 
   private func send(_ request: URLRequest) async throws -> Data {
+    guard let url = request.url, WebHost.isPublicPage(url), let host = url.host else {
+      throw WebSearchError.noResults
+    }
+    if await WebHost.verifyResolvedAddresses(host) == .privateOrLoopback {
+      throw WebSearchError.noResults
+    }
     do {
-      let (data, response) = try await session.data(for: request)
+      let (bytes, response) = try await session.bytes(for: request, delegate: PublicRedirects.shared)
       if let http = response as? HTTPURLResponse {
         if http.statusCode == 429 || http.statusCode == 403 || http.statusCode == 202 {
+          bytes.task.cancel()
           throw WebSearchError.blocked(request.url?.host() ?? "The search provider")
         }
-        guard (200...299).contains(http.statusCode) else { throw WebSearchError.noResults }
+        guard (200...299).contains(http.statusCode),
+          http.expectedContentLength <= Int64(Self.maxPageBytes)
+        else {
+          bytes.task.cancel()
+          throw WebSearchError.noResults
+        }
+      }
+      var data = Data()
+      let expected = (response as? HTTPURLResponse)?.expectedContentLength ?? 0
+      data.reserveCapacity(Int(min(max(0, expected), Int64(Self.maxPageBytes))))
+      for try await byte in bytes {
+        data.append(byte)
+        if data.count > Self.maxPageBytes {
+          bytes.task.cancel()
+          throw WebSearchError.noResults
+        }
       }
       return data
     } catch let error as URLError

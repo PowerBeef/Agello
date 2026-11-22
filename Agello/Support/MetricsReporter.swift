@@ -43,7 +43,9 @@ final class MetricsReporter: NSObject, MXMetricManagerSubscriber, @unchecked Sen
   }
 
   func start() {
-    MXMetricManager.shared.add(self)
+    // Agello targets iOS 27.0+: subscribe exclusively to the Swift `MetricManager` async streams
+    // (which include `.memoryException` diagnostics and structured `MetricReport`s) rather than
+    // double-subscribing to classic `MXMetricManager`.
     MetricKitStream.shared.start()
   }
 
@@ -63,11 +65,14 @@ final class MetricsReporter: NSObject, MXMetricManagerSubscriber, @unchecked Sen
     return folder
   }
 
-  /// Write a report and keep only the newest ``kept``.
+  /// Write a report and keep only the newest ``kept``. Appends a unique suffix so multi-report
+  /// bursts arriving within the same second never clobber earlier files.
   static func save(_ data: Data, kind: String, in folder: URL? = nil, now: Date = .now) {
     guard let folder = folder ?? (try? directory()) else { return }
     let stamp = ISO8601DateFormatter().string(from: now).replacingOccurrences(of: ":", with: "-")
-    try? data.write(to: folder.appendingPathComponent("\(stamp)-\(kind).json"), options: .atomic)
+    let suffix = String(UUID().uuidString.prefix(8))
+    try? data.write(
+      to: folder.appendingPathComponent("\(stamp)-\(suffix)-\(kind).json"), options: .atomic)
     let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
       .filter { $0.hasSuffix(".json") }
       .sorted(by: >)
@@ -97,8 +102,20 @@ final class MetricsReporter: NSObject, MXMetricManagerSubscriber, @unchecked Sen
       guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
         continue
       }
-      let isDiagnostic = name.contains("diagnostics") || json["result"] != nil
-        || json["crashDiagnostics"] != nil || json["memoryExceptionDiagnostics"] != nil
+      let isDiagnostic =
+        name.contains("diagnostics")
+        || json["result"] != nil
+        || json["crashDiagnostics"] != nil
+        || json["memoryExceptionDiagnostics"] != nil
+        || json["hangDiagnostics"] != nil
+        || json["cpuExceptionDiagnostics"] != nil
+        || json["diskWriteExceptionDiagnostics"] != nil
+        || json["memoryExceptionDiagnostic"] != nil
+        || json["crashDiagnostic"] != nil
+        || json["hangDiagnostic"] != nil
+        || json["cpuExceptionDiagnostic"] != nil
+        || json["diskWriteExceptionDiagnostic"] != nil
+        || json["appLaunchDiagnostic"] != nil
       if isDiagnostic {
         summary.diagnosticReportCount += 1
         accumulateDiagnostic(json, into: &summary)
@@ -118,13 +135,26 @@ final class MetricsReporter: NSObject, MXMetricManagerSubscriber, @unchecked Sen
     summary.diskWriteExceptionCount += (json["diskWriteExceptionDiagnostics"] as? [Any])?.count ?? 0
     summary.memoryExceptionCount += (json["memoryExceptionDiagnostics"] as? [Any])?.count ?? 0
 
-    // iOS 27 Swift DiagnosticReport (`result: { "memoryException": { ... } }`).
+    // iOS 27 Swift DiagnosticReport flattens `DiagnosticResult` directly at the root as `*Diagnostic`.
+    if json["memoryExceptionDiagnostic"] != nil { summary.memoryExceptionCount += 1 }
+    if json["crashDiagnostic"] != nil { summary.crashCount += 1 }
+    if json["hangDiagnostic"] != nil { summary.hangCount += 1 }
+    if json["cpuExceptionDiagnostic"] != nil { summary.cpuExceptionCount += 1 }
+    if json["diskWriteExceptionDiagnostic"] != nil { summary.diskWriteExceptionCount += 1 }
+
+    // Also tolerate legacy nested `result` envelope if present.
     if let result = json["result"] as? [String: Any] {
-      if result["memoryException"] != nil { summary.memoryExceptionCount += 1 }
-      if result["crash"] != nil { summary.crashCount += 1 }
-      if result["hang"] != nil { summary.hangCount += 1 }
-      if result["cpuException"] != nil { summary.cpuExceptionCount += 1 }
-      if result["diskWriteException"] != nil { summary.diskWriteExceptionCount += 1 }
+      if result["memoryException"] != nil || result["memoryExceptionDiagnostic"] != nil {
+        summary.memoryExceptionCount += 1
+      }
+      if result["crash"] != nil || result["crashDiagnostic"] != nil { summary.crashCount += 1 }
+      if result["hang"] != nil || result["hangDiagnostic"] != nil { summary.hangCount += 1 }
+      if result["cpuException"] != nil || result["cpuExceptionDiagnostic"] != nil {
+        summary.cpuExceptionCount += 1
+      }
+      if result["diskWriteException"] != nil || result["diskWriteExceptionDiagnostic"] != nil {
+        summary.diskWriteExceptionCount += 1
+      }
     }
   }
 
@@ -146,24 +176,34 @@ final class MetricsReporter: NSObject, MXMetricManagerSubscriber, @unchecked Sen
       summary.cpuTimeSeconds += seconds
     }
 
-    // iOS 27 Swift MetricReport (`intervalEntries` / `stateEntries` → `values: [{ "peakMemory": ... }]`).
-    let entries =
-      ((json["intervalEntries"] as? [[String: Any]]) ?? [])
-      + ((json["stateEntries"] as? [[String: Any]]) ?? [])
+    // iOS 27 Swift MetricReport: prefer the full-day interval entry (`states: []`) so state
+    // breakdowns never double-count the same day's cumulative GPU/CPU time.
+    let intervalEntries = (json["intervalEntries"] as? [[String: Any]]) ?? []
+    let fullDayEntries = intervalEntries.filter { entry in
+      (entry["states"] as? [Any])?.isEmpty ?? true
+    }
+    let entries: [[String: Any]]
+    if !fullDayEntries.isEmpty {
+      entries = fullDayEntries
+    } else if !intervalEntries.isEmpty {
+      entries = intervalEntries
+    } else {
+      entries = (json["stateEntries"] as? [[String: Any]]) ?? []
+    }
     for entry in entries {
       guard let values = entry["values"] as? [[String: Any]] else { continue }
       for item in values {
-        if let peakObj = item["peakMemory"] as? [String: Any],
+        if let peakObj = (item["peakMemoryMetric"] ?? item["peakMemory"]) as? [String: Any],
           let peakMB = parseMegabytes(peakObj["value"] ?? peakObj["_0"])
         {
           summary.peakMemoryMB = max(summary.peakMemoryMB ?? 0, peakMB)
         }
-        if let gpuObj = item["gpuTime"] as? [String: Any],
+        if let gpuObj = (item["gpuTimeMetric"] ?? item["gpuTime"]) as? [String: Any],
           let seconds = parseSeconds(gpuObj["value"] ?? gpuObj["_0"])
         {
           summary.gpuTimeSeconds += seconds
         }
-        if let cpuObj = item["cpuTime"] as? [String: Any],
+        if let cpuObj = (item["cpuTimeMetric"] ?? item["cpuTime"]) as? [String: Any],
           let seconds = parseSeconds(cpuObj["value"] ?? cpuObj["_0"])
         {
           summary.cpuTimeSeconds += seconds
@@ -176,7 +216,11 @@ final class MetricsReporter: NSObject, MXMetricManagerSubscriber, @unchecked Sen
     if let dict = raw as? [String: Any] {
       if let nested = dict["value"] as? [String: Any] { return parseMegabytes(nested) }
       guard let number = numericValue(dict["value"]) else { return nil }
-      let symbol = (dict["unit"] as? [String: Any])?["symbol"] as? String ?? "B"
+      // iOS 27 MetricKit encodes Measurement.unit as a plain String (e.g. "MB"); also accept nested symbol.
+      let symbol =
+        (dict["unit"] as? String)
+        ?? (dict["unit"] as? [String: Any])?["symbol"] as? String
+        ?? "B"
       return convertStorageToMB(number, unit: symbol)
     }
     if let text = raw as? String {
@@ -193,7 +237,10 @@ final class MetricsReporter: NSObject, MXMetricManagerSubscriber, @unchecked Sen
     if let dict = raw as? [String: Any] {
       if let nested = dict["value"] as? [String: Any] { return parseSeconds(nested) }
       guard let number = numericValue(dict["value"]) else { return nil }
-      let symbol = (dict["unit"] as? [String: Any])?["symbol"] as? String ?? "s"
+      let symbol =
+        (dict["unit"] as? String)
+        ?? (dict["unit"] as? [String: Any])?["symbol"] as? String
+        ?? "s"
       return convertDurationToSeconds(number, unit: symbol)
     }
     if let text = raw as? String {

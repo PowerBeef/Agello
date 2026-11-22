@@ -28,10 +28,14 @@ struct DeviceProfile: Sendable, Equatable {
   }
 
   /// Whether this device may run the app. `AGELLO_SIMULATE_MEMORY_GB` (UI tests) stands in for
-  /// the device's memory in this check only.
+  /// the device's memory in Debug and Bench builds only.
   static var isSupportedDevice: Bool {
-    let simulated = ProcessInfo.processInfo.environment["AGELLO_SIMULATE_MEMORY_GB"].flatMap(Double.init)
-    let memory = simulated.map { UInt64($0 * 1_000_000_000) } ?? ProcessInfo.processInfo.physicalMemory
+    #if DEBUG || BENCH
+      let simulated = ProcessInfo.processInfo.environment["AGELLO_SIMULATE_MEMORY_GB"].flatMap(Double.init)
+      let memory = simulated.map { UInt64($0 * 1_000_000_000) } ?? ProcessInfo.processInfo.physicalMemory
+    #else
+      let memory = ProcessInfo.processInfo.physicalMemory
+    #endif
     return meetsFloor(memoryBytes: memory, minimum: Platform.minimumMemoryBytes)
   }
 

@@ -1,6 +1,34 @@
 import Foundation
 import LiteRTLM
 
+/// Boundary sanitization for tool outputs so attacker-controlled strings (CSV headers, file names,
+/// web titles, Maps POIs, echoed expressions) can never inject Gemma 4 control tokens or blow up
+/// KV cache outside ``ToolBudget``.
+private enum ToolOutput {
+  static func text(_ value: String, maxChars: Int = 240) -> String {
+    let clean = PromptText.neutralized(value)
+    guard clean.count > maxChars else { return clean }
+    return String(clean.prefix(maxChars)) + "…"
+  }
+
+  static func boundedList(_ values: [String], maxItems: Int, maxCharsPerItem: Int = 80) -> [String] {
+    values.prefix(maxItems).map { text($0, maxChars: maxCharsPerItem) }
+  }
+
+  /// Strips an outer `<untrusted_data ...>...</untrusted_data>` envelope when present so
+  /// ``UntrustedContext/wrapFitted(_:source:limits:)`` can re-wrap with an intact closing tag.
+  static func unwrapOuterUntrusted(_ value: String) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.hasPrefix("<untrusted_data"), trimmed.hasSuffix("</untrusted_data>"),
+      let openEnd = trimmed.firstIndex(of: ">")
+    else { return value }
+    let bodyStart = trimmed.index(after: openEnd)
+    let bodyEnd = trimmed.index(trimmed.endIndex, offsetBy: -"</untrusted_data>".count)
+    guard bodyStart <= bodyEnd else { return "" }
+    return String(trimmed[bodyStart..<bodyEnd]).trimmingCharacters(in: .newlines)
+  }
+}
+
 // MARK: - Date / time tool
 
 /// Returns the device's current local date and time. Fully offline.
@@ -63,11 +91,9 @@ struct WebSearchTool: Tool {
     ToolActivity.record(Self.name, summary: "Searched the web for “\(trimmed)”")
     let subject = SearchTopic(rawValue: topic.trimmingCharacters(in: .whitespaces).lowercased()) ?? .general
     let result = await handler(trimmed, subject, limits.maxResultTokens)
-    // Spotlight external web pages inside <untrusted_data> and fit the tool budget.
-    let spotlighted = result.hasPrefix("<untrusted_data")
-      ? PromptText.neutralized(result)
-      : UntrustedContext.wrap(result, source: Self.name)
-    return ["sources": ToolBudget.fit(spotlighted, limits)]
+    // Spotlight external web pages inside <untrusted_data> and fit the body *before* closing tag.
+    let inner = ToolOutput.unwrapOuterUntrusted(result)
+    return ["sources": UntrustedContext.wrapFitted(inner, source: Self.name, limits: limits)]
   }
 }
 
@@ -286,18 +312,21 @@ struct CalculatorTool: Tool {
   /// act on, never thrown: LiteRT-LM would end the reply on a thrown error.
   func run() async throws -> Any {
     guard let limits = ToolBudget.claim() else { return ToolBudget.limitReachedResult }
-    let shown = ToolBudget.fit(expression, limits)
+    let shown = ToolBudget.fit(PromptText.neutralized(expression), limits)
     do {
       let value = try ArithmeticParser.evaluate(expression)
+      let rounded = Double(String(format: "%.12g", value)) ?? value
+      guard rounded.isFinite else { throw CalculatorError.notFinite }
       ToolActivity.record(Self.name, summary: "Calculated \(shown)")
       // 12 significant digits: no 0.30000000000000004 for the model to echo.
-      return ["expression": shown, "result": Double(String(format: "%.12g", value)) ?? value]
+      return ["expression": shown, "result": rounded == 0 ? 0.0 : rounded]
     } catch {
       ToolActivity.record(Self.name, summary: "Couldn't calculate \(shown)")
       let reason = (error as? LocalizedError)?.errorDescription ?? "Couldn't evaluate it."
       return [
         "expression": shown,
-        "error": "\(reason) Use only numbers, + - * /, ^ for powers, % for percent and parentheses.",
+        "error": ToolOutput.text(
+          "\(reason) Use only numbers, + - * /, ^ for powers, % for percent and parentheses."),
       ]
     }
   }
@@ -325,19 +354,20 @@ struct ConvertUnitsTool: Tool {
     guard ToolBudget.claim() != nil else { return ToolBudget.limitReachedResult }
     do {
       let res = try UnitConverter.convert(value: value, from: fromUnit, to: toUnit)
+      guard res.outputValue.isFinite else { return ["error": "Conversion result is out of range."] }
       ToolActivity.record(
         Self.name, summary: "Converted \(value) \(res.fromSymbol) to \(res.toSymbol)")
       return [
         "result": res.outputValue,
-        "formatted": res.formatted,
-        "from": res.fromSymbol,
-        "to": res.toSymbol,
-        "category": res.category,
+        "formatted": ToolOutput.text(res.formatted),
+        "from": ToolOutput.text(res.fromSymbol, maxChars: 40),
+        "to": ToolOutput.text(res.toSymbol, maxChars: 40),
+        "category": ToolOutput.text(res.category, maxChars: 40),
       ]
     } catch {
       ToolActivity.record(Self.name, summary: "Couldn't convert \(fromUnit) to \(toUnit)")
       let reason = (error as? LocalizedError)?.errorDescription ?? "Conversion failed."
-      return ["error": reason]
+      return ["error": ToolOutput.text(reason)]
     }
   }
 }
@@ -367,9 +397,10 @@ struct SearchFilesTool: Tool {
       return ["error": "File search is unavailable."]
     }
     let outcome = await handler(trimmed, fileName, limit)
+    let safeAvailable = ToolOutput.boundedList(outcome.availableFiles, maxItems: 32)
     if let error = outcome.error {
       ToolActivity.record(Self.name, summary: "Searched files for “\(trimmed)”")
-      return ["error": error, "available_files": outcome.availableFiles]
+      return ["error": ToolOutput.text(error), "available_files": safeAvailable]
     }
     ToolActivity.record(Self.name, summary: "Searched files for “\(trimmed)”")
     let formatted = outcome.matches.map { match in
@@ -377,9 +408,9 @@ struct SearchFilesTool: Tool {
     }.joined(separator: "\n\n")
     let content = formatted.isEmpty
       ? "No matching passages found."
-      : ToolBudget.fit(UntrustedContext.wrap(formatted, source: Self.name), limits)
+      : UntrustedContext.wrapFitted(formatted, source: Self.name, limits: limits)
     return [
-      "available_files": outcome.availableFiles,
+      "available_files": safeAvailable,
       "match_count": outcome.matches.count,
       "excerpts": content,
     ]
@@ -410,18 +441,18 @@ struct ReadDocumentPagesTool: Tool {
     let outcome = await handler(fileName, startPage, endPage)
     if let error = outcome.error {
       ToolActivity.record(Self.name, summary: "Tried reading \(fileName)")
-      return ["error": error]
+      return ["error": ToolOutput.text(error)]
     }
     let unit = outcome.isPaged ? "pp." : "lines"
     let rangeLabel = outcome.start == outcome.end ? "\(outcome.start)" : "\(outcome.start)–\(outcome.end)"
     ToolActivity.record(Self.name, summary: "Read \(outcome.fileName) (\(unit) \(rangeLabel))")
     return [
-      "file_name": outcome.fileName,
+      "file_name": ToolOutput.text(outcome.fileName, maxChars: 120),
       "unit": outcome.isPaged ? "page" : "line",
       "start": outcome.start,
       "end": outcome.end,
       "total": outcome.totalUnits,
-      "content": ToolBudget.fit(UntrustedContext.wrap(outcome.content, source: outcome.fileName), limits),
+      "content": UntrustedContext.wrapFitted(outcome.content, source: outcome.fileName, limits: limits),
     ]
   }
 }
@@ -459,7 +490,7 @@ struct SearchPastChatsTool: Tool {
     }.joined(separator: "\n\n")
     return [
       "match_count": outcome.matches.count,
-      "results": ToolBudget.fit(UntrustedContext.wrap(formatted, source: Self.name), limits),
+      "results": UntrustedContext.wrapFitted(formatted, source: Self.name, limits: limits),
     ]
   }
 }
@@ -506,7 +537,7 @@ struct QueryTableOrJsonTool: Tool {
       guard let lookup = WorkspaceTools.lookupDocumentTextHandler,
         let doc = await lookup(fileName)
       else {
-        return ["error": "Attached file '\(fileName)' was not found."]
+        return ["error": ToolOutput.text("Attached file '\(fileName)' was not found.")]
       }
       raw = doc.text
       label = doc.fileName
@@ -523,18 +554,24 @@ struct QueryTableOrJsonTool: Tool {
         groupBy: groupBy, sortBy: sortBy, descending: descending, limit: limit)
       let output = try StructuredDataQuery.execute(raw: raw, request: request)
       ToolActivity.record(Self.name, summary: "Queried \(label) (\(operation))")
+      // Bound and neutralize column names so hostile CSV/JSON headers cannot inject control
+      // tokens or overflow KV outside ToolBudget.
+      let safeColumns = ToolOutput.boundedList(output.columns, maxItems: 64)
+      let columnsBudget = ToolBudget.Limits(
+        maxResultTokens: min(limits.maxResultTokens / 4, 256), maxCalls: limits.maxCalls)
+      _ = ToolBudget.fit(safeColumns.joined(separator: ", "), columnsBudget)
       return [
-        "source": label,
+        "source": ToolOutput.text(label, maxChars: 120),
         "format": output.format,
         "total_rows": output.totalRows,
         "matched_rows": output.matchedRows,
-        "columns": output.columns,
-        "result": ToolBudget.fit(UntrustedContext.wrap(output.summary, source: label), limits),
+        "columns": safeColumns,
+        "result": UntrustedContext.wrapFitted(output.summary, source: label, limits: limits),
       ]
     } catch {
       ToolActivity.record(Self.name, summary: "Couldn't query \(label)")
       let reason = (error as? LocalizedError)?.errorDescription ?? "Query failed."
-      return ["error": reason]
+      return ["error": ToolOutput.text(reason)]
     }
   }
 }
@@ -574,7 +611,7 @@ struct SearchCalendarEventsTool: Tool {
       let body = PersonalToolsLogic.formatEvents(events)
       return [
         "count": events.count,
-        "events": ToolBudget.fit(UntrustedContext.wrap(body, source: Self.name), limits),
+        "events": UntrustedContext.wrapFitted(body, source: Self.name, limits: limits),
       ]
     }
   }
@@ -686,10 +723,10 @@ struct CreateCalendarEventTool: Tool {
       return [
         "executed": true,
         "status": "created",
-        "title": saved.title,
+        "title": ToolOutput.text(saved.title),
         "start": PersonalToolsLogic.formatISO(saved.startDate),
         "end": PersonalToolsLogic.formatISO(saved.endDate),
-        "calendar": saved.calendarName ?? "Default",
+        "calendar": ToolOutput.text(saved.calendarName ?? "Default", maxChars: 80),
       ]
     }
   }
@@ -718,7 +755,7 @@ struct ListRemindersTool: Tool {
       let body = PersonalToolsLogic.formatReminders(items)
       return [
         "count": items.count,
-        "reminders": ToolBudget.fit(UntrustedContext.wrap(body, source: Self.name), limits),
+        "reminders": UntrustedContext.wrapFitted(body, source: Self.name, limits: limits),
       ]
     }
   }
@@ -786,9 +823,9 @@ struct CreateReminderTool: Tool {
       return [
         "executed": true,
         "status": "created",
-        "title": saved.title,
+        "title": ToolOutput.text(saved.title),
         "due": saved.dueDate.map { PersonalToolsLogic.formatISO($0) } ?? "",
-        "list": saved.listName ?? "Default",
+        "list": ToolOutput.text(saved.listName ?? "Default", maxChars: 80),
       ]
     }
   }
@@ -820,7 +857,7 @@ struct SearchContactsTool: Tool {
       let body = PersonalToolsLogic.formatContacts(contacts)
       return [
         "count": contacts.count,
-        "contacts": ToolBudget.fit(UntrustedContext.wrap(body, source: Self.name), limits),
+        "contacts": UntrustedContext.wrapFitted(body, source: Self.name, limits: limits),
       ]
     }
   }
@@ -856,7 +893,7 @@ struct SearchPlacesTool: Tool {
       let body = PersonalToolsLogic.formatPlaces(places)
       return [
         "count": places.count,
-        "places": ToolBudget.fit(UntrustedContext.wrap(body, source: Self.name), limits),
+        "places": UntrustedContext.wrapFitted(body, source: Self.name, limits: limits),
       ]
     }
   }
@@ -879,22 +916,23 @@ struct EstimateTravelTimeTool: Tool {
   var transport: String = "driving"
 
   func run() async throws -> Any {
-    guard ToolBudget.claim() != nil else { return ToolBudget.limitReachedResult }
+    guard let limits = ToolBudget.claim() else { return ToolBudget.limitReachedResult }
     switch await PersonalTools.activeBackend.estimateTravelTime(
       origin: origin, destination: destination, transport: transport)
     {
     case .error(let message):
       ToolActivity.record(Self.name, summary: "Couldn't estimate travel time")
-      return ["error": message]
+      return ["error": ToolOutput.text(message)]
     case .success(let est):
       ToolActivity.record(Self.name, summary: "Estimated \(est.transport) time to \(est.destination)")
+      let summary = PersonalToolsLogic.formatTravel(est)
       return [
-        "origin": est.origin,
-        "destination": est.destination,
-        "transport": est.transport,
+        "origin": ToolOutput.text(est.origin, maxChars: 120),
+        "destination": ToolOutput.text(est.destination, maxChars: 120),
+        "transport": ToolOutput.text(est.transport, maxChars: 40),
         "distance_km": Double(String(format: "%.2f", est.distanceMeters / 1_000.0)) ?? 0,
         "minutes": max(1, Int((est.expectedTravelSeconds / 60.0).rounded())),
-        "summary": PersonalToolsLogic.formatTravel(est),
+        "summary": UntrustedContext.wrapFitted(summary, source: Self.name, limits: limits),
       ]
     }
   }

@@ -494,6 +494,7 @@ struct ChatComposerView: View {
       Button("Scan document", systemImage: "doc.viewfinder") { showScanner = true }
         .disabled(!CaptureSources.scannerAvailable)
       Button("Voice message", systemImage: "waveform") {
+        onStopReading()
         dictating = false
         Task { await recorder.toggle() }
       }
@@ -593,6 +594,7 @@ struct ChatComposerView: View {
       recorder.stop()  // transcribed in onChange(of: isRecording)
       return
     }
+    onStopReading()
     let baseDraft = draft
     Task {
       let startedLive = await liveDictation.start(baseDraft: baseDraft) { updated in

@@ -5,12 +5,12 @@ import SwiftUI
 struct VoiceModeView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var session: VoiceSession
+  let session: VoiceSession
 
   private let tint = Theme.Mode.voice.tint
 
   init(session: VoiceSession) {
-    _session = State(initialValue: session)
+    self.session = session
   }
 
   var body: some View {
@@ -36,6 +36,14 @@ struct VoiceModeView: View {
         .contentTransition(.opacity)
         .accessibilityIdentifier("voice.state")
       captions
+      if let confirmation = session.pendingToolConfirmation {
+        ToolConfirmationCard(
+          request: confirmation,
+          onApprove: { session.resolveToolConfirmation(id: confirmation.id, approved: true) },
+          onDeny: { session.resolveToolConfirmation(id: confirmation.id, approved: false) }
+        )
+        .padding(.horizontal, Theme.Spacing.lg)
+      }
       Spacer()
       controls
     }
@@ -44,9 +52,14 @@ struct VoiceModeView: View {
     .ambientBackdrop(tint, intensity: .loud)
     .task { await session.start() }
     .onDisappear { session.end() }
-    // Only failures are spoken: speech in voice mode would reach the microphone.
+    // Only failures and explicit tool confirmations are announced: speech would reach the mic.
     .onChange(of: session.state) { _, state in
       if case .failed(let message) = state { Haptics.announce(message) }
+    }
+    .onChange(of: session.pendingToolConfirmation?.id) { _, newID in
+      if newID != nil, let confirmation = session.pendingToolConfirmation {
+        Haptics.announce(confirmation.summary)
+      }
     }
     .preferredColorScheme(.dark)
   }

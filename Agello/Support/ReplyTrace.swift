@@ -12,12 +12,17 @@ import Synchronization
 /// written otherwise, and nothing is ever sent anywhere. Steps are recorded per stage,
 /// never per token, so tracing doesn't move the speeds it reports.
 enum ReplyTrace {
-  static let isEnabled = ProcessInfo.processInfo.arguments.contains("--trace") || externalDirectory != nil
-  /// A folder given from outside for the trace files, instead of Documents/traces.
-  static let externalDirectory: URL? = {
-    guard let path = ProcessInfo.processInfo.environment["AGELLO_TRACE_DIR"], !path.isEmpty else { return nil }
-    return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
-  }()
+  #if DEBUG || BENCH
+    static let isEnabled = ProcessInfo.processInfo.arguments.contains("--trace") || externalDirectory != nil
+    /// A folder given from outside for the trace files, instead of Documents/traces.
+    static let externalDirectory: URL? = {
+      guard let path = ProcessInfo.processInfo.environment["AGELLO_TRACE_DIR"], !path.isEmpty else { return nil }
+      return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+    }()
+  #else
+    static let isEnabled = false
+    static let externalDirectory: URL? = nil
+  #endif
   static let kept = 40
 
   /// A value an event carries.

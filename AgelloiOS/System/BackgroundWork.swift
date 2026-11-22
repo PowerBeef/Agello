@@ -14,6 +14,9 @@ final class BackgroundWork {
   /// Called when iOS or the user cancels the task. Awaited before `setTaskCompleted` so the
   /// background GPU entitlement stays held while Metal command buffers drain.
   var onExpire: (@MainActor () async -> Void)?
+  /// Called when `submitTaskRequest` asynchronously rejects the request (e.g. `.immediateRunIneligible`
+  /// after the app already moved to the background). Callers close `GPUGate` and drain if backgrounded.
+  var onSubmissionFailure: (@MainActor () async -> Void)?
   /// Why the last task didn't start (diagnostics and tests).
   private(set) var lastFailure: String?
   /// Latest Live Activity progress state (synced even if updates arrive before task launch).
@@ -44,12 +47,12 @@ final class BackgroundWork {
   /// Start a continued task for long synthesis or multi-step agentic work.
   func begin(title: String, subtitle: String, totalSteps: Int = 1) {
     let steps = max(1, totalSteps)
-    progressState = BackgroundWorkPlan.ProgressState(
-      title: title, subtitle: subtitle, completedUnits: 0, completedSteps: 0, totalSteps: steps)
     guard identifier == nil else {
       update(title: title, subtitle: subtitle)
       return
     }
+    progressState = BackgroundWorkPlan.ProgressState(
+      title: title, subtitle: subtitle, completedUnits: 0, completedSteps: 0, totalSteps: steps)
     guard Self.supportsBackgroundGPU else {
       lastFailure = "no background GPU"
       return
@@ -136,7 +139,14 @@ final class BackgroundWork {
     guard self.identifier == identifier else { return }
     self.identifier = nil
     lastFailure = message
+    progressState = nil
+    let failureHandler = onSubmissionFailure
+    onExpire = nil
+    onSubmissionFailure = nil
     Log.lifecycle.error("continued task: \(localized, privacy: .public)")
+    if let failureHandler {
+      Task { @MainActor in await failureHandler() }
+    }
   }
 
   private func handleLaunch(_ task: BGContinuedProcessingTask, identifier: String) {
@@ -172,6 +182,7 @@ final class BackgroundWork {
     }
     identifier = nil
     onExpire = nil
+    onSubmissionFailure = nil
     progressState = nil
   }
 

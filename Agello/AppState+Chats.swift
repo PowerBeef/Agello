@@ -84,13 +84,16 @@ extension AppState {
     }
     guard case .finished(let output) = outcome else { return false }
     guard let output else { return true }
+    guard !thread.isDeleted, thread.modelContext != nil else { return true }
     let learned = HelperTasks.newMemories(HelperTasks.parseMemories(output), existing: all)
     guard !learned.isEmpty else { return true }
     for text in learned { context.insert(MemoryItem(text: text, sourceThreadID: thread.id)) }
-    var parts = reply.parts
-    parts.toolActivity.append(
-      ToolActivityRecord(name: "memory", summary: learned.joined(separator: " · ")))
-    reply.parts = parts
+    if !reply.isDeleted, reply.modelContext != nil {
+      var parts = reply.parts
+      parts.toolActivity.append(
+        ToolActivityRecord(name: "memory", summary: learned.joined(separator: " · ")))
+      reply.parts = parts
+    }
     try? context.save()
     Log.engine.info("memory: saved \(learned.count)")
     memoriesChanged()

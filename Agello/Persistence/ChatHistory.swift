@@ -102,17 +102,33 @@ extension SchemaV3.ChatThread {
   /// Show the branch through `turn`, continuing down its most recent replies.
   func selectBranch(through turn: ChatTurn) {
     var leaf = turn
-    while let next = turns.filter({ $0.parentID == leaf.id }).max(by: { $0.createdAt < $1.createdAt })
+    var seen: Set<UUID> = [turn.id]
+    while let next = turns.filter({ $0.parentID == leaf.id && !seen.contains($0.id) })
+      .max(by: { $0.createdAt < $1.createdAt })
     {
+      seen.insert(next.id)
       leaf = next
     }
     activeLeafID = leaf.id
   }
 
-  /// Detach `turn` (a leaf) from the visible branch before deleting it.
+  /// Detach `turn` (a leaf) from the visible branch before deleting it. If an alternative version
+  /// (sibling with the same parent and role, e.g. the previous reply when stopping Regenerate)
+  /// remains, select that branch instead of hiding it behind the parent.
   func removeLeaf(_ turn: ChatTurn) {
-    if activeLeafID == turn.id { activeLeafID = turn.parentID }
+    let wasActive = activeLeafID == turn.id
+    let parentID = turn.parentID
+    let roleRaw = turn.roleRaw
     turns.removeAll { $0.id == turn.id }
+    guard wasActive else { return }
+    if let sibling = turns
+      .filter({ $0.parentID == parentID && $0.roleRaw == roleRaw })
+      .max(by: { $0.createdAt < $1.createdAt })
+    {
+      selectBranch(through: sibling)
+    } else {
+      activeLeafID = parentID
+    }
   }
 }
 

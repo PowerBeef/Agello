@@ -14,7 +14,8 @@ extension AppState {
   }
 
   func runBenchmarkLocked() async {
-    guard !isBenchmarking, !isGenerating else { return }
+    guard !isBenchmarking, !isGenerating, !isPreparing, !isTranscribing, isInForeground, GPUGate.isOpen
+    else { return }
     let spec = store.activeSpec
     guard store.isDownloaded(spec), let url = store.localURL(for: spec) else {
       generationError = "\(spec.displayName) is not downloaded."
@@ -22,8 +23,15 @@ extension AppState {
     }
     isBenchmarking = true
     await unloadEngine()
+    guard isInForeground, GPUGate.isOpen else {
+      isBenchmarking = false
+      engineState = .idle
+      return
+    }
     engineState = .loading(progress: "Benchmarking \(spec.displayName)…")
+    let benchGuard = BackgroundTaskGuard.begin(name: "AgelloBenchmark")
     defer {
+      benchGuard.end()
       isBenchmarking = false
       engineState = .idle
     }

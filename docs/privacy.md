@@ -4,15 +4,17 @@ title: Agello privacy policy
 
 # Agello privacy policy
 
-*Effective November 15, 2026*
+*Effective November 22, 2026*
 
 Agello runs Google's Gemma models entirely on your iPhone. Your conversations, files, photos,
-recordings and memories stay on your device. The developer of Agello doesn't collect, receive,
-store or share any of your data. There are no accounts, analytics, advertising or tracking.
+recordings, personal tool results and memories stay on your device. The developer of Agello doesn't
+collect, receive, store or share any of your data. There are no accounts, analytics, advertising or
+tracking.
 
 ## What stays on your iPhone
 
-- **Chats**, including the replies, their versions and reasoning, and chat titles.
+- **Chats and projects**, including the replies, their versions and reasoning, chat titles, and
+  project instructions.
 - **Files and photos** you attach, the text read from them, and the index used to search them.
 - **Voice**: voice messages, dictation and voice mode are recorded and understood on the device.
   Recordings are deleted once they're sent, and replies are read aloud with the system's
@@ -20,8 +22,11 @@ store or share any of your data. There are no accounts, analytics, advertising o
 - **Camera**: pictures and document scans are processed on the device.
 - **Memories** Agello saves about you (you can review and delete them in Settings → Memory), your
   personalization, and your settings.
-- **Spotlight**: chat titles and short snippets are added to the iPhone's on-device search index.
-  You can turn this off in Settings, which clears them.
+- **Personal tools (opt-in)**: Calendar events, Reminders, and Contacts data you allow Agello to
+  read or create are processed exclusively on your iPhone and are never sent off the device. Creating
+  a new Calendar event or Reminder always requires your explicit tap on an in-chat confirmation card.
+- **Spotlight**: chat titles and short snippets, project names, and attached document names are added
+  to the iPhone's on-device search index. You can turn this off in Settings, which clears them.
 - **Diagnostics**: iOS gives Agello its crash and performance reports, and Agello keeps a log of
   its recent activity. Both stay on your iPhone; you can share them yourself from Settings →
   Help → Share diagnostics (the log can include parts of your questions).
@@ -63,12 +68,21 @@ anything to the developer.
 - **Camera**: taking photos and scanning documents, and showing the model what your camera sees
   in voice mode.
 - **Photos**: attaching photos you pick.
-- **Location** (while you use the app): only when you ask about places or weather near you, to
-  search Apple Maps and Apple Weather around you. It isn't stored or sent anywhere else. You can
-  turn it off in Settings → Agello → Location.
+- **Location** (while you use the app): only when you ask about places, travel times, or weather
+  near you, to search Apple Maps and Apple Weather around you. It isn't stored or sent anywhere
+  else. You can turn it off in Settings → Agello → Location.
+- **Calendar** (opt-in, off by default): only when you enable Calendar in Settings → Personal tools,
+  to check your schedule, find free slots, or create events on your iPhone after you explicitly
+  approve an in-chat confirmation card. Your calendar data never leaves your device.
+- **Reminders** (opt-in, off by default): only when you enable Reminders in Settings → Personal
+  tools, to list your reminders or add new ones on your iPhone after you explicitly approve an
+  in-chat confirmation card. Your reminders never leave your device.
+- **Contacts** (opt-in, off by default): only when you enable Contacts in Settings → Personal
+  tools, to look up names, phone numbers, email addresses, and organizations locally on your
+  iPhone. Your contacts never leave your device.
 
-Each is used only when you start the matching feature, and you can change them in the iPhone's
-Settings at any time.
+Each is used only when you enable or start the matching feature, and you can change them in
+Agello's Settings or the iPhone's Settings at any time.
 
 ## Children
 

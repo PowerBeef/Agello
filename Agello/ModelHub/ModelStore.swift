@@ -106,10 +106,14 @@ final class ModelStore: NSObject {
 
   /// A models folder given from outside (`AGELLO_MODELS_DIR`), for development tools that run
   /// the engine on a Mac with models already on disk (docs/CLI.md). The store then only reads
-  /// it: no download, no deletion, no cleanup of files it doesn't know. Never set in the app.
+  /// it: no download, no deletion, no cleanup of files it doesn't know. Never active in Release.
   nonisolated static let externalModelsDirectory: URL? = {
-    guard let path = ProcessInfo.processInfo.environment["AGELLO_MODELS_DIR"], !path.isEmpty else { return nil }
-    return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+    #if DEBUG || BENCH
+      guard let path = ProcessInfo.processInfo.environment["AGELLO_MODELS_DIR"], !path.isEmpty else { return nil }
+      return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+    #else
+      return nil
+    #endif
   }()
 
   nonisolated static func modelsDirectory() throws -> URL {

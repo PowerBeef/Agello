@@ -143,7 +143,33 @@ final class ChatSchemaTests: XCTestCase {
       .newerVersion)
     XCTAssertEqual(ChatStoreLoader.classify(error(NSCocoaErrorDomain, 134_110, sqlite: 13)), .unavailable)
     XCTAssertEqual(ChatStoreLoader.classify(error(NSCocoaErrorDomain, 640)), .unavailable)
-    XCTAssertEqual(ChatStoreLoader.classify(error(NSCocoaErrorDomain, 134_110)), .other)
+    // Extended SQLite codes (SQLITE_BUSY_SNAPSHOT=517, SQLITE_IOERR_LOCK=3850) & Cocoa lock/timeout.
+    XCTAssertEqual(ChatStoreLoader.classify(error("NSSQLiteErrorDomain", 517)), .unavailable)
+    XCTAssertEqual(ChatStoreLoader.classify(error("NSSQLiteErrorDomain", 3850)), .unavailable)
+    XCTAssertEqual(ChatStoreLoader.classify(error("NSSQLiteErrorDomain", 6)), .unavailable)
+    XCTAssertEqual(ChatStoreLoader.classify(error("NSSQLiteErrorDomain", 7)), .unavailable)
+    XCTAssertEqual(ChatStoreLoader.classify(error(NSCocoaErrorDomain, 255)), .unavailable)
+    XCTAssertEqual(ChatStoreLoader.classify(error(NSCocoaErrorDomain, 134_091)), .unavailable)
+    // Explicit Core Data migration failures classify as .migrationFailed; unknown errors stay .other.
+    XCTAssertEqual(ChatStoreLoader.classify(error(NSCocoaErrorDomain, 134_110)), .migrationFailed)
+    XCTAssertEqual(ChatStoreLoader.classify(error(NSCocoaErrorDomain, 134_140)), .migrationFailed)
+    XCTAssertEqual(ChatStoreLoader.classify(error("SwiftData", 1)), .other)
+  }
+
+  func testMoveAsideDoesNotOrphanWALWhenMainStoreMissing() throws {
+    let wal = URL(fileURLWithPath: storeURL.path + "-wal")
+    try Data("wal-frames".utf8).write(to: wal)
+    XCTAssertNil(ChatStoreLoader.moveAside(storeURL))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: wal.path))
+  }
+
+  func testUnreadableWALBlocksOpening() throws {
+    let wal = URL(fileURLWithPath: storeURL.path + "-wal")
+    try Data("SQLite format 3\0".utf8).write(to: storeURL)
+    try Data("wal".utf8).write(to: wal)
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: wal.path)
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: wal.path) }
+    XCTAssertFalse(ChatStoreLoader.isReadable(storeURL))
   }
 
   /// A store that can't be read right now (file protection before the first unlock, here a
@@ -262,6 +288,32 @@ final class ChatSchemaTests: XCTestCase {
     thread.removeLeaf(empty)
     XCTAssertEqual(thread.activeLeafID, q.id)
     XCTAssertEqual(thread.orderedTurns.map(\.text), ["Q"])
+  }
+
+  func testStoppingRegenerateKeepsOriginalReplyVisible() throws {
+    let (_, thread) = try makeThread()
+    let q = ChatTurn(role: .user, text: "Q")
+    thread.append(q)
+    let original = ChatTurn(role: .model, text: "Original answer")
+    thread.append(original)
+    let cancelled = ChatTurn(role: .model)
+    cancelled.createdAt = original.createdAt.addingTimeInterval(1)
+    thread.addVersion(cancelled, of: original)
+
+    thread.removeLeaf(cancelled)
+    XCTAssertEqual(thread.activeLeafID, original.id)
+    XCTAssertEqual(thread.orderedTurns.map(\.text), ["Q", "Original answer"])
+  }
+
+  func testSelectBranchGuardsAgainstParentCycles() throws {
+    let (_, thread) = try makeThread()
+    let a = ChatTurn(role: .user, text: "A")
+    let b = ChatTurn(role: .model, text: "B")
+    a.parentID = b.id
+    b.parentID = a.id
+    thread.turns = [a, b]
+    thread.selectBranch(through: a)
+    XCTAssertNotNil(thread.activeLeafID)
   }
 
   func testMessagePartsRoundTrip() throws {

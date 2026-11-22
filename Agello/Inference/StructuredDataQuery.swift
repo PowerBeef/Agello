@@ -169,7 +169,12 @@ enum StructuredDataQuery {
         entries.append((key: key, score: stats.primaryValue, line: "\(key): \(stats.line)"))
       }
       entries.sort { lhs, rhs in
-        if lhs.score != rhs.score { return descending ? lhs.score > rhs.score : lhs.score < rhs.score }
+        let lNaN = lhs.score.isNaN
+        let rNaN = rhs.score.isNaN
+        if lNaN != rNaN { return !lNaN }
+        if !lNaN, lhs.score != rhs.score {
+          return descending ? lhs.score > rhs.score : lhs.score < rhs.score
+        }
         return lhs.key.localizedCaseInsensitiveCompare(rhs.key) == .orderedAscending
       }
       let shown = entries.prefix(limit)
@@ -205,16 +210,19 @@ enum StructuredDataQuery {
       return (Double(rows.count), "count=\(rows.count)")
     }
     let numbers = rows.compactMap { row -> Double? in
-      guard let raw = row[column] else { return nil }
-      return parseNumber(raw)
+      guard let raw = row[column], let parsed = parseNumber(raw), parsed.isFinite else { return nil }
+      return parsed
     }
     if metric == "count" {
       let nonEmpty = rows.filter { !($0[column]?.trimmingCharacters(in: .whitespaces).isEmpty ?? true) }.count
       return (Double(nonEmpty), "count=\(nonEmpty) (rows=\(rows.count))")
     }
     guard !numbers.isEmpty else { throw QueryError.noNumericValues(column) }
-    let sum = numbers.reduce(0, +)
-    let avg = sum / Double(numbers.count)
+    let rawSum = numbers.reduce(0, +)
+    let sum = rawSum.isFinite ? rawSum : numbers.reduce(0.0) { $0 + $1 }
+    let avg = rawSum.isFinite
+      ? rawSum / Double(numbers.count)
+      : numbers.reduce(0.0) { $0 + $1 / Double(numbers.count) }
     let minVal = numbers.min() ?? 0
     let maxVal = numbers.max() ?? 0
     switch metric {
@@ -322,21 +330,33 @@ enum StructuredDataQuery {
     throw QueryError.unknownColumn(trimmed, available: columns)
   }
 
+  /// Strict weak ordering over mixed columns: all finite numeric values sort before non-numeric
+  /// strings, preventing transitive 3-cycles (e.g. `"2" < "10" < "15a" < "2"`) in `Array.sort`.
   private static func compareValues(_ a: String, _ b: String) -> ComparisonResult {
-    if let numA = parseNumber(a), let numB = parseNumber(b) {
-      if numA < numB { return .orderedAscending }
-      if numA > numB { return .orderedDescending }
+    let numA = parseNumber(a).flatMap { $0.isFinite ? $0 : nil }
+    let numB = parseNumber(b).flatMap { $0.isFinite ? $0 : nil }
+    switch (numA, numB) {
+    case let (x?, y?):
+      if x < y { return .orderedAscending }
+      if x > y { return .orderedDescending }
       return .orderedSame
+    case (_?, nil):
+      return .orderedAscending
+    case (nil, _?):
+      return .orderedDescending
+    case (nil, nil):
+      return a.localizedCaseInsensitiveCompare(b)
     }
-    return a.localizedCaseInsensitiveCompare(b)
   }
 
   /// Parses plain, currency-prefixed, comma-grouped (US & European), or percent numbers.
   static func parseNumber(_ raw: String) -> Double? {
-    LanguageSupport.parseLocalizedNumber(raw)
+    guard let value = LanguageSupport.parseLocalizedNumber(raw), value.isFinite else { return nil }
+    return value
   }
 
   private static func fmt(_ value: Double) -> String {
+    guard value.isFinite else { return value.isNaN ? "undefined" : (value > 0 ? "∞" : "-∞") }
     let rounded = Double(String(format: "%.10g", value)) ?? value
     let clean = rounded == 0 ? 0 : rounded
     if clean.rounded() == clean, abs(clean) < 1e12 {

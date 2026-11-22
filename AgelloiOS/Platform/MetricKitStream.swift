@@ -10,6 +10,8 @@ final class MetricKitStream: Sendable {
 
   private struct State: Sendable {
     var started = false
+    /// Retained strongly so ARC never tears down `MetricManager`'s async subscriptions under `-O`.
+    var manager: MetricManager?
     var diagnosticTask: Task<Void, Never>?
     var metricTask: Task<Void, Never>?
   }
@@ -44,6 +46,7 @@ final class MetricKitStream: Sendable {
       }
     }
     state.withLock { current in
+      current.manager = manager
       current.diagnosticTask = diagTask
       current.metricTask = metricTask
     }

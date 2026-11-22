@@ -111,7 +111,7 @@ enum ShareInbox {
     switch item.kind {
     case .image: return String(localized: "What's in this image?")
     case .text where (item.text?.count ?? 0) <= ShareInbox.inlineTextLimit:
-      return item.text ?? ""
+      return String(localized: "Answer or summarize this shared text.")
     default: return String(localized: "Summarize this.")
     }
   }

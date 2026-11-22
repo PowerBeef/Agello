@@ -21,29 +21,51 @@ enum UntrustedContext {
     return "<untrusted_data source=\"\(safeSource)\">\n\(safeBody)\n</untrusted_data>"
   }
 
-  /// Escapes closing/opening `untrusted_data` tags inside untrusted bodies so injected text
-  /// cannot break out of its data sandbox.
+  /// Fits `text` inside `limits` *before* wrapping in `<untrusted_data>` so the closing
+  /// `</untrusted_data>` delimiter is never truncated by ``ToolBudget/fit(_:_:)``.
+  static func wrapFitted(_ text: String, source: String, limits: ToolBudget.Limits) -> String {
+    let safeSource = escapeAttribute(source)
+    let open = "<untrusted_data source=\"\(safeSource)\">\n"
+    let close = "\n</untrusted_data>"
+    let overhead = ContextBudget.estimateTextTokens(open) + ContextBudget.estimateTextTokens(close)
+    let bodyLimit = ToolBudget.Limits(
+      maxResultTokens: max(1, limits.maxResultTokens - overhead), maxCalls: limits.maxCalls)
+    let safeBody = escapeBody(PromptText.neutralized(text))
+    let fittedBody = ToolBudget.fit(safeBody, bodyLimit)
+    return open + fittedBody + close
+  }
+
+  private static let invisible = "\u{200B}\u{200C}\u{200D}\u{200E}\u{200F}\u{2060}\u{FEFF}"
+  private static let ws = #"[\s\#(invisible)]*"#
+
+  /// Escapes closing/opening `untrusted_data` tags (including whitespace or zero-width variants)
+  /// inside untrusted bodies so injected text cannot break out of its data sandbox or terminate
+  /// ``stripUntrustedBlocks(_:)`` early.
   static func escapeBody(_ text: String) -> String {
-    text
-      .replacingOccurrences(of: "</untrusted_data", with: "<\u{200D}/untrusted_data", options: .caseInsensitive)
-      .replacingOccurrences(of: "<untrusted_data", with: "<\u{200D}untrusted_data", options: .caseInsensitive)
+    text.replacingOccurrences(
+      of: #"(?i)<(\#(ws)/?\#(ws)untrusted_data\b)"#,
+      with: "‹$1",
+      options: .regularExpression)
   }
 
   private static func escapeAttribute(_ value: String) -> String {
-    value
+    PromptText.neutralized(value)
       .replacingOccurrences(of: "\"", with: "'")
       .replacingOccurrences(of: "<", with: "‹")
       .replacingOccurrences(of: ">", with: "›")
   }
 
   /// Removes any `<untrusted_data>`, `<file>`, `<summary>`, `<excerpts>`, or `<sources>` blocks
-  /// so persistent memory extraction only ever inspects direct user-authored text.
+  /// (including truncated unclosed tails) so persistent memory extraction only inspects direct
+  /// user-authored text.
   static func stripUntrustedBlocks(_ text: String) -> String {
     let tags = ["untrusted_data", "file", "summary", "excerpts", "sources"]
     var cleaned = text
     for tag in tags {
-      let pattern = #"(?is)<\s*\#(tag)\b[^>]*>.*?<\s*/\s*\#(tag)\s*>"#
-      cleaned = cleaned.replacingOccurrences(of: pattern, with: " ", options: .regularExpression)
+      let closed = #"(?is)<\#(ws)\#(tag)\b[^>]*>.*?<\#(ws)/\#(ws)\#(tag)\#(ws)>"#
+      cleaned = cleaned.replacingOccurrences(of: closed, with: " ", options: .regularExpression)
+      let unclosed = #"(?is)<\#(ws)\#(tag)\b[^>]*>.*$"#
+      cleaned = cleaned.replacingOccurrences(of: unclosed, with: " ", options: .regularExpression)
     }
     return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
   }

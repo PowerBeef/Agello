@@ -52,8 +52,14 @@ final class AppState {
 
   /// Pending pre-execution confirmation card shown inline in the chat stream for mutating tools.
   var pendingToolConfirmation: ToolConfirmationRequest?
+  /// The thread that owns `pendingToolConfirmation` (so switching chats never renders Thread A's
+  /// approval card inside Thread B).
+  var pendingToolConfirmationThreadID: UUID?
   @ObservationIgnored var pendingToolConfirmationContinuation:
     CheckedContinuation<ToolConfirmationDecision, Never>?
+  /// `stopCount` at the start of the active generation, so a multi-mutation batch immediately
+  /// denies subsequent tool calls after `stop()` without popping a phantom confirmation card.
+  @ObservationIgnored var activeGenerationStopCount: Int?
 
   /// Web search settings (provider, automatic mode, master switch).
   var webSettings = WebSearchSettings() {
@@ -154,9 +160,9 @@ final class AppState {
   @ObservationIgnored private var conversationIsEmpty = true
   /// Tail of the engine-lifecycle queue (see ``serialized(_:)``).
   @ObservationIgnored private var lifecycleTail: Task<Void, Never>?
-  @ObservationIgnored private var applyOptionsTask: Task<Void, Never>?
+  @ObservationIgnored var applyOptionsTask: Task<Void, Never>?
   /// Settings changed mid-reply; applied once the reply finishes.
-  @ObservationIgnored private var pendingOptionsApply = false
+  @ObservationIgnored var pendingOptionsApply = false
   /// A settings change is waiting for its debounced apply.
   @ObservationIgnored private var optionsDirty = false
   /// Bumped by Stop: a reply still being prepared checks it before each step.
@@ -533,10 +539,13 @@ final class AppState {
     guard canRegenerate(reply, in: thread), let prompt = promptTurn(of: reply, in: thread) else {
       return false
     }
+    // Regenerate re-runs an existing prompt; pass an empty `remembering` string so
+    // untrusted shared text stored on the turn is never extracted into persistent memories.
     return await generate(
       prompt: prompt.text, imageData: prompt.imageData, audioFileURL: nil, in: thread,
       history: thread.textHistory(before: prompt), replacing: reply,
-      webSearch: prompt.parts.webSearch, samplingSeed: seed ?? Int.random(in: 1...Int(Int32.max))
+      webSearch: prompt.parts.webSearch, samplingSeed: seed ?? Int.random(in: 1...Int(Int32.max)),
+      remembering: ""
     ) {}
   }
 
@@ -599,6 +608,7 @@ final class AppState {
       preparingStatus = nil
       if !drainingBackgroundWork {
         BackgroundWork.shared.end(success: generationError == nil)
+        if !isInForeground { GPUGate.set(false) }
       }
     }
     // A just-changed setting (e.g. the composer's Think toggle) applies to
@@ -641,8 +651,7 @@ final class AppState {
     if webSearch, webSettings.allowed {
       guard await ensureEngineLoaded() else { return false }
       if !BackgroundWork.shared.isPendingOrActive {
-        BackgroundWork.shared.onExpire = { [weak self] in await self?.stopAndDrain() }
-        BackgroundWork.shared.begin(
+        beginBackgroundWork(
           title: String(localized: "Researching"),
           subtitle: String(localized: "Planning the search…"),
           totalSteps: 4)
@@ -761,6 +770,7 @@ final class AppState {
     ReplyTrace.reply(id: reply.id, sources: sources.count)
 
     isGenerating = true
+    activeGenerationStopCount = stopsAtStart
     isPreparing = false
     generatingThreadID = threadID
     engineState = .generating
@@ -774,16 +784,29 @@ final class AppState {
       voiceModeActive && audioFileURL != nil
       ? thread.turns.first { $0.id == reply.parentID && $0.isUser } : nil
     await consume(stream, into: reply, context: context, voiceTurn: voiceTurn)
-    ReplyTrace.end(reply: reply.isDeleted ? nil : reply, error: generationError, notice: notice)
+    await finishGeneration(
+      reply: reply, thread: thread, context: context, filesFollowUp: filesFollowUp,
+      samplingSeed: samplingSeed, rememberMessage: remembering ?? voiceTurn?.text ?? prompt)
+    return true
+  }
+
+  private func finishGeneration(
+    reply: ChatTurn, thread: ChatThread, context: ModelContext,
+    filesFollowUp: (key: String, prompt: String)?, samplingSeed: Int?, rememberMessage: String
+  ) async {
+    activeGenerationStopCount = nil
+    let replyAlive = !reply.isDeleted && reply.modelContext != nil
+    let threadAlive = !thread.isDeleted && thread.modelContext != nil
+    ReplyTrace.end(reply: replyAlive ? reply : nil, error: generationError, notice: notice)
     // A sampling conversation (Regenerate) serves only this reply.
     if samplingSeed != nil { conversationThreadID = nil }
     // The conversation read the files with this message: the next ones send only the question.
-    if let filesFollowUp, generationError == nil, conversationThreadID == threadID {
-      heldFiles = (threadID, filesFollowUp.key)
+    if let filesFollowUp, generationError == nil, conversationThreadID == thread.id {
+      heldFiles = (thread.id, filesFollowUp.key)
     }
     // Sources found by the automatic web_search tool during the reply.
     let toolSources = WebSourcesRecorder.drain()
-    if !toolSources.isEmpty {
+    if !toolSources.isEmpty, replyAlive {
       var parts = reply.parts
       parts.sources += toolSources
       reply.parts = parts
@@ -793,13 +816,16 @@ final class AppState {
     isGenerating = false
     generatingThreadID = nil
     engineState = .ready
-    if pendingOptionsApply {
+    if pendingOptionsApply, isInForeground, GPUGate.isOpen {
       pendingOptionsApply = false
       await applyCurrentOptions()
     }
-    queueHelpers(after: reply, message: remembering ?? voiceTurn?.text ?? prompt, in: thread)
-    SpotlightIndex.index([thread])
-    return true
+    if replyAlive, threadAlive {
+      queueHelpers(after: reply, message: rememberMessage, in: thread)
+    }
+    if threadAlive {
+      SpotlightIndex.index([thread])
+    }
   }
 
   /// The conversation step of a send, run as one serialized operation.
@@ -870,6 +896,7 @@ final class AppState {
         maxOutputTokens: HelperTasks.titleMaxOutputTokens)
     }
     guard case .finished(let output) = outcome else { return false }
+    guard !thread.isDeleted, thread.modelContext != nil else { return true }
     guard let output, let title = HelperTasks.parseTitle(output), thread.title == provisional
     else {
       Log.engine.error(
@@ -929,7 +956,7 @@ final class AppState {
   /// Runs the waiting helpers once the chat has been quiet for a while.
   func scheduleHelpers() {
     helperTimer?.cancel()
-    guard hasPendingHelpers else { return }
+    guard hasPendingHelpers, isInForeground else { return }
     let delay = HelperTasks.idleDelay
     helperTimer = Task { [weak self] in
       try? await Task.sleep(for: delay)

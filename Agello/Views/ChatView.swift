@@ -177,12 +177,17 @@ struct ChatView: View {
                 actions: actions(for: turn))
             }
             if let confirmation = appState.pendingToolConfirmation,
-              thread?.id == appState.generatingThreadID || thread?.id == appState.selectedThreadID
+              let ownerID = appState.generatingThreadID ?? appState.pendingToolConfirmationThreadID,
+              thread?.id == ownerID
             {
               ToolConfirmationCard(
                 request: confirmation,
-                onApprove: { appState.resolvePendingToolConfirmation(approved: true) },
-                onDeny: { appState.resolvePendingToolConfirmation(approved: false) })
+                onApprove: {
+                  appState.resolvePendingToolConfirmation(id: confirmation.id, approved: true)
+                },
+                onDeny: {
+                  appState.resolvePendingToolConfirmation(id: confirmation.id, approved: false)
+                })
                 .id(confirmation.id)
             }
           }
@@ -215,6 +220,15 @@ struct ChatView: View {
           guard new > old, let latest = turns.last?.id else { return }
           followsLatest = true
           withAppAnimation(Theme.Motion.easeOut) { scrollPosition.scrollTo(id: latest, anchor: .bottom) }
+        }
+        .onChange(of: appState.pendingToolConfirmation?.id) { _, newID in
+          guard let newID, let confirmation = appState.pendingToolConfirmation,
+            let ownerID = appState.generatingThreadID ?? appState.pendingToolConfirmationThreadID,
+            thread?.id == ownerID
+          else { return }
+          followsLatest = true
+          withAppAnimation(Theme.Motion.easeOut) { scrollPosition.scrollTo(id: newID, anchor: .bottom) }
+          Haptics.announce(confirmation.summary)
         }
       }
     }
@@ -375,7 +389,9 @@ struct ChatView: View {
   }
 
   private func openVoiceMode(startWithCamera: Bool) {
+    reader.stop()
     composerBridge.send(.cancelDictation)
+    voiceSession?.end()
     voiceSession = VoiceSession(
       appState: appState, thread: thread, startWithCamera: startWithCamera, makeThread: newThread)
   }

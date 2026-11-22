@@ -402,4 +402,57 @@ final class WebTests: XCTestCase {
     XCTAssertEqual(NSDictionary(dictionary: schema), NSDictionary(dictionary: branches[1]))
   }
 
+  /// Hostile nested `<pre>` blocks trying to trigger exponential "Billion Laughs" expansion via
+  /// placeholder markers stay bounded and linear in time.
+  func testReadableTextResistsBillionLaughsExpansion() {
+    var pres = ""
+    for i in 0..<10 {
+      let body =
+        i < 9
+        ? String(repeating: "AGELLOCODEBLOCK\(i + 1)AGELLOCODEBLOCK", count: 10)
+        : String(repeating: "A", count: 1_024)
+      pres += "<pre>\(body)</pre>"
+    }
+    let html = "<html><body><article><p>" + String(repeating: "Article text. ", count: 20) + "</p>\(pres)</article></body></html>"
+    let started = ContinuousClock.now
+    let page = ReadableText.extract(html: html, maxCharacters: 4_000)
+    XCTAssertLessThan(ContinuousClock.now - started, .seconds(1))
+    XCTAssertLessThanOrEqual(page.text.count, 4_000)
+
+    // Direct call to restoreCode with self-referencing blocks must also stay bounded & single-pass.
+    let nestedBlocks = (0..<10).map { i in
+      i < 9
+        ? String(repeating: "AGELLOCODEBLOCK\(i + 1)AGELLOCODEBLOCK", count: 10)
+        : String(repeating: "B", count: 1_024)
+    }
+    let restored = ReadableText.restoreCode("AGELLOCODEBLOCK0AGELLOCODEBLOCK", nestedBlocks, maxCharacters: 500)
+    XCTAssertLessThanOrEqual(restored.count, 500)
+  }
+
+  /// Hex-dotted / octal / shorthand IPv4 literals, `.localdomain`, private IP ranges, and bad
+  /// schemes in SearXNG results are rejected.
+  func testWebHostRejectsHexOctalIPv4AndPrivateRanges() {
+    for blocked in [
+      "http://0x7f.0.0.1/", "http://127.0.0.0x1/", "http://0x7f.1/", "http://169.254.0xa9fe/",
+      "http://0177.0.0.1/", "http://2130706433/", "http://host.localdomain/",
+    ] {
+      XCTAssertFalse(WebHost.isPublicPage(URL(string: blocked)!), blocked)
+    }
+    XCTAssertFalse(WebHost.isPublicIPv4(0x7F00_0001))  // 127.0.0.1
+    XCTAssertFalse(WebHost.isPublicIPv4(0x0A00_0001))  // 10.0.0.1
+    XCTAssertFalse(WebHost.isPublicIPv4(0xAC10_0001))  // 172.16.0.1
+    XCTAssertFalse(WebHost.isPublicIPv4(0xC0A8_0101))  // 192.168.1.1
+    XCTAssertFalse(WebHost.isPublicIPv4(0xA9FE_A9FE))  // 169.254.169.254
+    XCTAssertFalse(WebHost.isPublicIPv4(0x6440_0001))  // 100.64.0.1 CGNAT
+    XCTAssertTrue(WebHost.isPublicIPv4(0x0101_0101))   // 1.1.1.1
+    XCTAssertFalse(WebHost.isPublicIPv6([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]))  // ::1
+    XCTAssertFalse(WebHost.isPublicIPv6([0xFC, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]))  // ULA
+    XCTAssertFalse(WebHost.isPublicIPv6([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 127, 0, 0, 1]))  // ::ffff:127.0.0.1
+    XCTAssertTrue(WebHost.isPublicIPv6([0x26, 0x06, 0x47, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11]))
+
+    let searx = Data(
+      #"{"results":[{"title":"OK","url":"https://en.wikipedia.org/wiki/Swift","content":"a"},{"title":"BadScheme","url":"httpx://example.com","content":"b"},{"title":"Private","url":"http://127.0.0.1/secret","content":"c"}]}"#
+        .utf8)
+    XCTAssertEqual(SearchParsers.searxng(json: searx).map(\.title), ["OK"])
+  }
 }

@@ -31,19 +31,27 @@ enum AudioSessionControl {
       false, options: resumingOthers ? .notifyOthersOnDeactivation : [])
   }
 
-  /// A call or another app takes the audio (`began`) and gives it back (`ended`), or media
-  /// services restart (`reset`). The handlers run on the main queue; remove the observers with
-  /// NotificationCenter.
+  /// A call or another app takes the audio (`began`) and gives it back (`ended`, only when iOS
+  /// recommends resuming), or media services restart (`reset`). The handlers run on the main
+  /// queue; remove the observers with NotificationCenter.
   static func observeInterruptions(
     began: @escaping @Sendable () -> Void, ended: @escaping @Sendable () -> Void,
     reset: @escaping @Sendable () -> Void
   ) -> [NSObjectProtocol] {
     let center = NotificationCenter.default
     return [
-      center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { note in
-        let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt)
-          .flatMap(AVAudioSession.InterruptionType.init(rawValue:))
-        if type == .began { began() } else { ended() }
+      center.addObserver(
+        forName: AVAudioSession.didBecomeInactiveNotification, object: nil, queue: .main
+      ) { _ in began() },
+      center.addObserver(
+        forName: AVAudioSession.resumptionRecommendationNotification, object: nil, queue: .main
+      ) { note in
+        guard
+          let context = note.userInfo?[AVAudioSession.resumptionContextKey]
+            as? AVAudioSession.ResumptionContext,
+          context.recommendation == .shouldResume
+        else { return }
+        ended()
       },
       center.addObserver(
         forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main

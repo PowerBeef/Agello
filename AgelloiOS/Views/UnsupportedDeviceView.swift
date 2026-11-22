@@ -5,9 +5,13 @@ import SwiftUI
 /// downloaded behind it.
 struct UnsupportedDeviceView: View {
   private var deviceMemory: String {
-    let bytes = ProcessInfo.processInfo.environment["AGELLO_SIMULATE_MEMORY_GB"].flatMap(Double.init)
-      .map { $0 * 1_000_000_000 } ?? Double(ProcessInfo.processInfo.physicalMemory)
-    return String(format: "%.0f", bytes / 1_000_000_000)
+    #if DEBUG || BENCH
+      if let simulated = ProcessInfo.processInfo.environment["AGELLO_SIMULATE_MEMORY_GB"].flatMap(Double.init) {
+        return String(format: "%.0f", simulated)
+      }
+    #endif
+    let bytes = Double(ProcessInfo.processInfo.physicalMemory)
+    return String(format: "%.0f", bytes / 1_073_741_824)
   }
 
   var body: some View {

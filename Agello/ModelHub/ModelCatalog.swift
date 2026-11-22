@@ -62,7 +62,7 @@ enum ModelCatalog {
     repo: "PowerBeef02/embeddinggemma-2-text-270m-coreai-ane",
     fileName: "embeddinggemma-2-text-270m-ane.aar",
     sizeBytes: 128_245_086,
-    revision: "964dc1c0d594cb3bdbe9efef8429df88712ef94b",
+    revision: "41026d1cbf50d4825e0b2c91f2cc131f7433f071",
     sha256: "122c2d86657c20aa567fb778801a46e3aec786eec7bbabff618f1c4a531b2ece",
     engineCacheBytes: 180_000_000,
     extractedDirectoryName: CoreAIEmbedder.bundleDirectoryName

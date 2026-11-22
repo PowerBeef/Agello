@@ -60,7 +60,7 @@ final class ModelCatalogTests: XCTestCase {
     XCTAssertEqual(ModelCatalog.embeddingGemma.sizeBytes, 128_245_086)
     XCTAssertEqual(
       ModelCatalog.embeddingGemma.downloadURL.absoluteString,
-      "https://huggingface.co/PowerBeef02/embeddinggemma-2-text-270m-coreai-ane/resolve/964dc1c0d594cb3bdbe9efef8429df88712ef94b/embeddinggemma-2-text-270m-ane.aar"
+      "https://huggingface.co/PowerBeef02/embeddinggemma-2-text-270m-coreai-ane/resolve/41026d1cbf50d4825e0b2c91f2cc131f7433f071/embeddinggemma-2-text-270m-ane.aar"
     )
   }
 }

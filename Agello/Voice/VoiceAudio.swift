@@ -33,6 +33,7 @@ final class VoiceAudio: @unchecked Sendable {
   private let playbackFormat = AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1)!
 
   private var inputConverter: AVAudioConverter?
+  private var inputConverterSourceFormat: AVAudioFormat?
   private var file: AVAudioFile?
   private var fileURL: URL?
   /// Recent converted audio, so an utterance includes its first syllable.
@@ -40,10 +41,23 @@ final class VoiceAudio: @unchecked Sendable {
   private var prerollFrames: AVAudioFrameCount = 0
   private let prerollLimit: AVAudioFrameCount = 8_000  // 0.5 s at 16 kHz
   private var pendingSpeech = 0
+  /// Incremented on stop/pause/restart so late `synthesizer.write` or `scheduleBuffer` callbacks
+  /// from a cancelled utterance never schedule onto a detached player or decrement a newer reply.
+  private var speechGeneration: UInt64 = 0
+  /// True only while `engine` is started and `player` is attached & connected.
+  private var engineRunning = false
+  /// Suppresses re-entrant `.AVAudioEngineConfigurationChange` notifications fired by `restart()`.
+  private var restarting = false
+  private var pendingRestartWorkItem: DispatchWorkItem?
   private(set) var echoCancellation = false
   /// Utterance files are written here, not on the real-time audio thread (a blocking disk write
   /// there can glitch the microphone and echo cancellation).
   private let writer = DispatchQueue(label: "agello.voice.writer", qos: .userInitiated)
+
+  deinit {
+    pendingRestartWorkItem?.cancel()
+    for observer in observers { NotificationCenter.default.removeObserver(observer) }
+  }
 
   // MARK: Lifecycle
 
@@ -66,35 +80,54 @@ final class VoiceAudio: @unchecked Sendable {
       Log.lifecycle.error("voice: no echo cancellation: \(error.localizedDescription, privacy: .public)")
     }
     engine.attach(player)
-    engine.connect(player, to: engine.mainMixerNode, format: playbackFormat)
+    try engine.connectNode(player, to: engine.mainMixerNode, format: playbackFormat)
 
     let input = engine.inputNode
     let inputFormat = input.outputFormat(forBus: 0)
-    let converter = AVAudioConverter(from: inputFormat, to: recordFormat)
-    lock.withLock { inputConverter = converter }
-    input.installTap(onBus: 0, bufferSize: 1_024, format: inputFormat) { [weak self] buffer, _ in
-      self?.process(buffer)
+    // Bluetooth HFP / route switches can transiently report 0 Hz / 0 channels; pass `nil` so
+    // AVAudioEngine supplies the live hardware format once active and build the converter lazily.
+    let tapFormat: AVAudioFormat? =
+      inputFormat.sampleRate > 0 && inputFormat.channelCount > 0 ? inputFormat : nil
+    let converter = tapFormat.flatMap { AVAudioConverter(from: $0, to: recordFormat) }
+    lock.withLock {
+      inputConverter = converter
+      inputConverterSourceFormat = tapFormat
+    }
+    try input.installAudioTap(onBus: 0, bufferSize: 1_024, format: tapFormat) { [weak self] buffer, _ in
+      self?.process(AVAudioPCMBuffer(copying: buffer))
     }
     engine.prepare()
     try engine.start()
-    player.play()
+    try player.playAudio()
+    lock.withLock { engineRunning = true }
   }
 
   func stop() {
+    pendingRestartWorkItem?.cancel()
+    pendingRestartWorkItem = nil
     for observer in observers { NotificationCenter.default.removeObserver(observer) }
     observers = []
     synthesizer.stopSpeaking(at: .immediate)
     stopEngine()
     // An utterance cut off by the end of the session is never sent.
     cancelUtterance()
-    lock.withLock { preroll = [] }
+    lock.withLock {
+      preroll = []
+      prerollFrames = 0
+    }
     AudioSessionControl.deactivate(resumingOthers: true)
   }
 
   private func stopEngine() {
-    player.stop()
-    engine.inputNode.removeTap(onBus: 0)
-    engine.stop()
+    let (activeEngine, activePlayer) = lock.withLock { () -> (AVAudioEngine, AVAudioPlayerNode) in
+      engineRunning = false
+      speechGeneration &+= 1
+      pendingSpeech = 0
+      return (engine, player)
+    }
+    activePlayer.stop()
+    activeEngine.inputNode.removeTap(onBus: 0)
+    activeEngine.stop()
   }
 
   // MARK: Interruptions
@@ -110,34 +143,52 @@ final class VoiceAudio: @unchecked Sendable {
       NotificationCenter.default.addObserver(
         forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main
       ) { [weak self] note in
-        guard let self, (note.object as? AVAudioEngine) === self.engine else { return }
-        self.restart(newEngine: false)
+        guard let self, !self.restarting, (note.object as? AVAudioEngine) === self.engine else {
+          return
+        }
+        self.scheduleConfigRestart()
       })
   }
 
+  private func scheduleConfigRestart() {
+    pendingRestartWorkItem?.cancel()
+    let work = DispatchWorkItem { [weak self] in
+      guard let self, !self.observers.isEmpty else { return }
+      self.restart(newEngine: false)
+    }
+    pendingRestartWorkItem = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(120), execute: work)
+  }
+
   private func pause() {
+    pendingRestartWorkItem?.cancel()
+    pendingRestartWorkItem = nil
     synthesizer.stopSpeaking(at: .immediate)
     stopEngine()
     cancelUtterance()
-    lock.withLock { pendingSpeech = 0 }
     onAvailabilityChanged?(false)
   }
 
   /// Audio again, on the current route, after a pause or change; a new engine after a reset.
   private func restart(newEngine: Bool) {
+    pendingRestartWorkItem?.cancel()
+    pendingRestartWorkItem = nil
+    restarting = true
+    defer { restarting = false }
+    synthesizer.stopSpeaking(at: .immediate)
     stopEngine()
     cancelUtterance()
-    synthesizer.stopSpeaking(at: .immediate)
     lock.withLock {
-      pendingSpeech = 0
       preroll = []
       prerollFrames = 0
-    }
-    if newEngine {
-      engine = AVAudioEngine()
-      player = AVAudioPlayerNode()
-    } else {
-      engine.detach(player)
+      inputConverter = nil
+      inputConverterSourceFormat = nil
+      if newEngine {
+        engine = AVAudioEngine()
+        player = AVAudioPlayerNode()
+      } else if player.engine === engine {
+        engine.detach(player)
+      }
     }
     do {
       try activateSession()
@@ -188,9 +239,17 @@ final class VoiceAudio: @unchecked Sendable {
   }
 
   private func process(_ buffer: AVAudioPCMBuffer) {
+    guard buffer.format.sampleRate > 0, buffer.frameLength > 0 else { return }
     let duration = Double(buffer.frameLength) / buffer.format.sampleRate
     onLevel?(Self.level(buffer), duration)
-    guard let converter = lock.withLock({ inputConverter }),
+    let converter: AVAudioConverter? = lock.withLock {
+      if inputConverter == nil || inputConverterSourceFormat != buffer.format {
+        inputConverterSourceFormat = buffer.format
+        inputConverter = AVAudioConverter(from: buffer.format, to: recordFormat)
+      }
+      return inputConverter
+    }
+    guard let converter,
       let converted = convert(buffer, with: converter, to: recordFormat)
     else { return }
     onAudioBuffer?(converted)
@@ -238,22 +297,42 @@ final class VoiceAudio: @unchecked Sendable {
 
   /// Queue a sentence; it plays after the ones before it.
   func speak(_ text: String, language: String?) {
+    let generation: UInt64? = lock.withLock {
+      guard engineRunning else { return nil }
+      pendingSpeech += 1
+      return speechGeneration
+    }
+    guard let generation else { return }
     let utterance = AVSpeechUtterance(string: text)
     utterance.voice = VoiceText.voice(for: language)
-    lock.withLock { pendingSpeech += 1 }
     var converter: AVAudioConverter?
     let format = playbackFormat
     synthesizer.write(utterance) { [weak self] buffer in
       guard let self, let pcm = buffer as? AVAudioPCMBuffer else { return }
       guard pcm.frameLength > 0 else {
-        // End of this sentence: a marker that completes after its audio.
-        self.player.scheduleBuffer(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1)!) {
-          self.sentenceDone()
+        // End of this sentence: a marker that completes only after the speaker finishes playing.
+        guard let marker = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1) else {
+          self.sentenceDone(generation: generation)
+          return
+        }
+        self.lock.withLock {
+          guard self.speechGeneration == generation, self.engineRunning, self.engine.isRunning,
+            self.player.engine === self.engine
+          else { return }
+          self.player.scheduleBuffer(marker, completionCallbackType: .dataPlayedBack) { _ in
+            self.sentenceDone(generation: generation)
+          }
         }
         return
       }
       if converter == nil { converter = AVAudioConverter(from: pcm.format, to: format) }
-      if let converter, let converted = self.convert(pcm, with: converter, to: format) {
+      guard let converter, let converted = self.convert(pcm, with: converter, to: format) else {
+        return
+      }
+      self.lock.withLock {
+        guard self.speechGeneration == generation, self.engineRunning, self.engine.isRunning,
+          self.player.engine === self.engine
+        else { return }
         self.player.scheduleBuffer(converted, completionHandler: nil)
       }
     }
@@ -262,15 +341,22 @@ final class VoiceAudio: @unchecked Sendable {
   /// Stop speaking now (barge-in, end of session).
   func stopSpeaking() {
     synthesizer.stopSpeaking(at: .immediate)
-    player.stop()
-    lock.withLock { pendingSpeech = 0 }
-    player.play()
+    let (activePlayer, shouldPlay) = lock.withLock { () -> (AVAudioPlayerNode, Bool) in
+      speechGeneration &+= 1
+      pendingSpeech = 0
+      return (player, engineRunning && engine.isRunning && player.engine === engine)
+    }
+    activePlayer.stop()
+    if shouldPlay {
+      try? activePlayer.playAudio()
+    }
   }
 
   var isSpeaking: Bool { lock.withLock { pendingSpeech > 0 } }
 
-  private func sentenceDone() {
+  private func sentenceDone(generation: UInt64) {
     let finished: Bool = lock.withLock {
+      guard speechGeneration == generation else { return false }
       pendingSpeech = max(0, pendingSpeech - 1)
       return pendingSpeech == 0
     }

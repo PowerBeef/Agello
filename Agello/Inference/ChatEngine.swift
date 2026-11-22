@@ -112,6 +112,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// The helper conversation running now, so ``cancel()`` stops it rather
   /// than the kept main conversation.
   private var helperConversation: Conversation?
+  /// The throwaway validation probe running during ``load(...)``, so backgrounding cancels and drains it.
+  private var loadingConversation: Conversation?
   /// A helper runs (from ``beginHelper()`` to ``endHelper``): Stop cancels it, never the main
   /// conversation, even before its own conversation exists.
   private var helperActive = false
@@ -267,7 +269,15 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         let started = Date()
         do {
           let engine = try await Self.makeEngine(modelURL: modelURL, resolved: attempt)
-          try await Self.validate(engine)
+          guard GPUGate.isOpen else {
+            loadLog.append("stopped: the app is in the background")
+            throw GPUGate.closedError
+          }
+          try await validate(engine)
+          guard GPUGate.isOpen else {
+            loadLog.append("stopped: the app is in the background")
+            throw GPUGate.closedError
+          }
           let conversation = try await Self.makeConversation(
             engine: engine, resolved: attempt, options: options, toolsEnabled: enableTools,
             history: []
@@ -293,6 +303,10 @@ actor LiteRTChatEngine: ChatEngineProtocol {
           let entry = "failed \(label) (try \(trial)): \(error)"
           loadLog.append(entry)
           Log.engine.error("load \(spec.id.rawValue, privacy: .public): \(entry, privacy: .public)")
+          // Stop immediately if backgrounding closed the GPU gate mid-load.
+          if (error as? ChatError) == GPUGate.closedError || !GPUGate.isOpen {
+            throw GPUGate.closedError
+          }
           // A broken-but-"successful" engine usually means a section failed
           // to map while a previous engine's mappings were still alive: give
           // them a moment to be released and retry the same configuration.
@@ -334,6 +348,9 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   }
 
   private func unloadLocked() {
+    loadingConversation = nil
+    helperConversation = nil
+    helperActive = false
     conversation = nil
     engine = nil // native handle is released in Engine.deinit
     resolved = nil
@@ -388,11 +405,16 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// mappings are alive); every generation then fails ("No per-layer
   /// embeddings found"). A one-token generation on a throwaway conversation
   /// proves the engine actually works before the app commits to it.
-  private static func validate(_ engine: Engine) async throws {
+  private func validate(_ engine: Engine) async throws {
+    guard GPUGate.isOpen else { throw GPUGate.closedError }
     let probe = try await engine.createConversation(with: ConversationConfig())
+    loadingConversation = probe
+    defer { loadingConversation = nil }
+    guard GPUGate.isOpen else { throw GPUGate.closedError }
     do {
       _ = try await probe.sendMessage(LiteRTLM.Message("Hi"), maxOutputTokens: 1)
     } catch {
+      if !GPUGate.isOpen { throw GPUGate.closedError }
       throw EngineValidationError(underlying: String(describing: error))
     }
   }
@@ -699,8 +721,12 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// states stopped sharing one matcher across a speculative round in fork `1382157b` (shipped
   /// since `agello-one-20261122`), so JSON helpers speculate by default; set `AGELLO_JSON_MTP=0`
   /// to turn it off for debugging.
-  nonisolated static let jsonHelpersSpeculate =
-    ProcessInfo.processInfo.environment["AGELLO_JSON_MTP"] != "0"
+  #if DEBUG || BENCH
+    nonisolated static let jsonHelpersSpeculate =
+      ProcessInfo.processInfo.environment["AGELLO_JSON_MTP"] != "0"
+  #else
+    nonisolated static let jsonHelpersSpeculate = true
+  #endif
 
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data {
     guard let engine, let resolved, let options else { throw ChatError.engineNotReady }
@@ -1077,6 +1103,9 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 
   func cancel() async {
     Log.generation.info("cancel requested (generating=\(self.generating))")
+    if let probe = loadingConversation {
+      try? probe.cancel()
+    }
     guard generating else { return }
     cancelRequested = true
     if helperActive {
@@ -1089,7 +1118,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   }
 
   func cancelAndDrain() async {
-    let target: Conversation? = helperActive ? helperConversation : conversation
+    let target: Conversation? =
+      loadingConversation ?? (helperActive ? helperConversation : conversation)
     await cancel()
     guard let target else { return }
     await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in

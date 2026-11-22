@@ -260,4 +260,35 @@ final class WorkspaceToolsTests: XCTestCase {
     let convOut = try await conv.run() as? [String: Any]
     XCTAssertEqual(convOut?["result"] as? Double, 212)
   }
+
+  func testStructuredDataQueryStrictWeakOrderingOnMixedAndExtremeValues() throws {
+    // Mixed numeric + alphanumeric values previously formed a 3-cycle ("2" < "10" < "15a" < "2").
+    let rows = (0..<40).map { i -> String in
+      switch i % 3 {
+      case 0: return "r\(i),2"
+      case 1: return "r\(i),10"
+      default: return "r\(i),15a"
+      }
+    }
+    let csv = "id,val\n" + rows.joined(separator: "\n")
+    let asc = try StructuredDataQuery.execute(
+      raw: csv, request: .init(operation: "filter", sortBy: "val", descending: false, limit: 50))
+    XCTAssertEqual(asc.matchedRows, 40)
+    let desc = try StructuredDataQuery.execute(
+      raw: csv, request: .init(operation: "filter", sortBy: "val", descending: true, limit: 50))
+    XCTAssertEqual(desc.matchedRows, 40)
+
+    // Extreme values that overflow sum to ±Inf / NaN must not trap grouped sort.
+    let extremeCSV = """
+      grp,n
+      A,1e308
+      A,1e308
+      A,-1e308
+      A,-1e308
+      B,42
+      """
+    let grouped = try StructuredDataQuery.execute(
+      raw: extremeCSV, request: .init(operation: "sum", column: "n", groupBy: "grp"))
+    XCTAssertEqual(grouped.matchedRows, 5)
+  }
 }

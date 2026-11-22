@@ -10,7 +10,11 @@ struct AppBootstrap {
   /// (1.1-1.9 GB that device runs measured as memory left after unloading,
   /// probe 16), answer the share inbox or open chats while tests run. UI tests
   /// launch the app normally, without this variable.
-  static let hostsTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+  #if DEBUG
+    static let hostsTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+  #else
+    static let hostsTests = false
+  #endif
 
   let container: ModelContainer
   let appState: AppState
@@ -18,13 +22,15 @@ struct AppBootstrap {
 
   init() {
     // `--mock-engine` launch arg (or AGELLO_MOCK_ENGINE=1 env) runs the scripted
-    // engine: full UI without a 2 GB model. Used for simulator smoke tests.
+    // engine: full UI without a model download (Debug/Bench only).
     let args = ProcessInfo.processInfo.arguments
     let env = ProcessInfo.processInfo.environment
     // Debug and Bench builds only (2026-11-17): an App Store build carries no test hooks.
     #if DEBUG || BENCH
       let useMock = args.contains("--mock-engine") || env["AGELLO_MOCK_ENGINE"] != nil
     #else
+      _ = args
+      _ = env
       let useMock = false
     #endif
 

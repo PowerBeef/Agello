@@ -65,7 +65,7 @@ enum SearchParsers {
     }
     return (node as? [[String: Any]] ?? []).compactMap { item in
       guard let rawTitle = item[title] as? String, let link = item[url] as? String,
-        let parsed = URL(string: link), parsed.scheme?.hasPrefix("http") == true
+        let parsed = URL(string: link), WebHost.isPublicPage(parsed)
       else { return nil }
       return WebResult(
         title: HTMLText.plain(rawTitle), url: parsed,

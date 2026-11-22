@@ -97,20 +97,31 @@ final class ShellModel {
   /// Carry out a request from Siri, Shortcuts, widgets, Spotlight, or a link. Settings and a
   /// project close first; the shell also closes its own panels.
   func perform(_ action: AppRouter.Action) {
+    let wasPresentingSheet = showSettings || openProject != nil
     showSettings = false
     openProject = nil
+    func presentCover(_ request: @escaping @MainActor () -> Void) {
+      guard wasPresentingSheet else {
+        request()
+        return
+      }
+      Task { @MainActor in
+        try? await Task.sleep(for: .milliseconds(350))
+        request()
+      }
+    }
     switch action {
     case .newChat:
       newChat()
     case .voice:
       newChat()
-      AppRouter.shared.voiceRequested = true
+      presentCover { AppRouter.shared.voiceRequested = true }
     case .voiceWithCamera:
       newChat()
-      AppRouter.shared.voiceWithCameraRequested = true
+      presentCover { AppRouter.shared.voiceWithCameraRequested = true }
     case .snapAndAsk:
       newChat()
-      AppRouter.shared.cameraRequested = true
+      presentCover { AppRouter.shared.cameraRequested = true }
     case .openChat(let id):
       appState.newChatProjectID = nil
       if threadExists(id) { appState.selectedThreadID = id }

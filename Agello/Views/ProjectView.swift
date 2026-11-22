@@ -109,9 +109,11 @@ struct ProjectView: View {
             .accessibilityIdentifier("project.file")
           }
           .onDelete { offsets in
+            guard !appState.isBusy else { return }
             for index in offsets { appState.knowledge.delete(files[index]) }
             reloadFiles()
           }
+          .deleteDisabled(appState.isBusy)
           if readingFiles > 0 {
             HStack {
               ProgressView().controlSize(.small)

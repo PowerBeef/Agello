@@ -8,6 +8,7 @@ final class BackgroundWork {
   static let shared = BackgroundWork()
 
   var onExpire: (@MainActor () async -> Void)?
+  var onSubmissionFailure: (@MainActor () async -> Void)?
   private(set) var progressState: BackgroundWorkPlan.ProgressState?
   private var activity: NSObjectProtocol?
 
@@ -15,10 +16,13 @@ final class BackgroundWork {
   var isPendingOrActive: Bool { activity != nil }
 
   func begin(title: String, subtitle: String, totalSteps: Int = 1) {
+    guard activity == nil else {
+      update(title: title, subtitle: subtitle)
+      return
+    }
     progressState = BackgroundWorkPlan.ProgressState(
       title: title, subtitle: subtitle, completedUnits: 0, completedSteps: 0,
       totalSteps: max(1, totalSteps))
-    guard activity == nil else { return }
     activity = ProcessInfo.processInfo.beginActivity(
       options: [.userInitiated, .idleSystemSleepDisabled], reason: title)
   }
@@ -76,6 +80,7 @@ final class BackgroundWork {
     if let activity { ProcessInfo.processInfo.endActivity(activity) }
     activity = nil
     onExpire = nil
+    onSubmissionFailure = nil
     progressState = nil
   }
 }

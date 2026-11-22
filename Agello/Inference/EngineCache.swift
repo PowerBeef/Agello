@@ -70,11 +70,13 @@ enum EngineCache {
   /// Library/Caches persists across launches (unlike tmp), so compiled GPU
   /// kernels survive restarts and warm loads stay fast.
   private static func defaultRoot() throws -> URL {
-    // A root given from outside (`AGELLO_ENGINE_CACHE_DIR`), for development tools on a Mac
-    // (docs/CLI.md). It must be a folder of its own: other builds' folders in it are deleted.
-    if let path = ProcessInfo.processInfo.environment["AGELLO_ENGINE_CACHE_DIR"], !path.isEmpty {
-      return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
-    }
+    #if DEBUG || BENCH
+      // A root given from outside (`AGELLO_ENGINE_CACHE_DIR`), for development tools on a Mac
+      // (docs/CLI.md). It must be a folder of its own: other builds' folders in it are deleted.
+      if let path = ProcessInfo.processInfo.environment["AGELLO_ENGINE_CACHE_DIR"], !path.isEmpty {
+        return URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+      }
+    #endif
     return try FileManager.default.url(
       for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true
     )

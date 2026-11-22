@@ -49,9 +49,9 @@ extension AppState {
           ExtractedDocument(
             name: page.title ?? link.host() ?? link.absoluteString, kind: .text,
             byteCount: Int64(page.text.utf8.count), pages: [page.text]))
-        question += "\n\n(\(link.absoluteString))"
+        question += "\n\n\(UntrustedContext.wrap(link.absoluteString, source: "shared_url"))"
       } else if let link {
-        question += "\n\n\(link.absoluteString)"
+        question += "\n\n\(UntrustedContext.wrap(link.absoluteString, source: "shared_url"))"
       }
     case .text:
       let text = item.text ?? ""
@@ -60,7 +60,7 @@ extension AppState {
           ExtractedDocument(
             name: String(localized: "Shared text"), kind: .text, byteCount: Int64(text.utf8.count),
             pages: [text]))
-      } else if question != text {
+      } else if !text.isEmpty {
         question += "\n\n\(UntrustedContext.wrap(text, source: "shared_text"))"
       }
     }

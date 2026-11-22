@@ -43,46 +43,69 @@ extension AppState {
     }
   }
 
-  /// Presents a pre-execution confirmation card in the active chat stream and suspends
-  /// until the user approves, denies, stops the reply, or backgrounds the app.
+  /// Presents a pre-execution confirmation card in the active chat stream (or Voice Mode overlay)
+  /// and suspends until the user approves, denies, stops the reply, or backgrounds the app.
   func requestToolConfirmation(_ request: ToolConfirmationRequest) async -> ToolConfirmationDecision {
     guard isInForeground, GPUGate.isOpen else {
       return .denied(reason: "Foreground confirmation is required before running \(request.toolName).")
     }
+    if let expectedStops = activeGenerationStopCount, stopCount != expectedStops {
+      return .denied(reason: "Stopped by the user.")
+    }
+    guard !Task.isCancelled else {
+      return .denied(reason: "Cancelled before approval.")
+    }
     // Fail-close any stale request before displaying the new one.
     cancelPendingToolConfirmation(reason: "Superseded by a new action.")
+    let ownerThreadID = generatingThreadID ?? preparingThreadID ?? selectedThreadID
     return await withTaskCancellationHandler {
       await withCheckedContinuation { continuation in
+        if Task.isCancelled
+          || (activeGenerationStopCount != nil && stopCount != activeGenerationStopCount)
+          || !isInForeground || !GPUGate.isOpen
+        {
+          continuation.resume(returning: .denied(reason: "Cancelled before approval."))
+          return
+        }
         pendingToolConfirmation = request
+        pendingToolConfirmationThreadID = ownerThreadID
         pendingToolConfirmationContinuation = continuation
         Haptics.selection()
       }
     } onCancel: {
       Task { @MainActor [weak self] in
-        self?.cancelPendingToolConfirmation(reason: "Cancelled before approval.")
+        self?.cancelPendingToolConfirmation(id: request.id, reason: "Cancelled before approval.")
       }
     }
   }
 
   /// Resolves the inline confirmation card in the chat stream when the user taps Approve or Deny.
-  func resolvePendingToolConfirmation(approved: Bool) {
+  /// When `id` is provided, ignores taps that race with a superseded request (TOCTOU protection).
+  func resolvePendingToolConfirmation(id: UUID? = nil, approved: Bool) {
+    if let id, pendingToolConfirmation?.id != id { return }
     guard let continuation = pendingToolConfirmationContinuation else {
       pendingToolConfirmation = nil
+      pendingToolConfirmationThreadID = nil
       return
     }
     pendingToolConfirmation = nil
+    pendingToolConfirmationThreadID = nil
     pendingToolConfirmationContinuation = nil
     continuation.resume(
       returning: approved ? .approved : .denied(reason: "Denied by the user."))
   }
 
-  /// Cancels any pending confirmation card with a fail-closed `.denied` decision.
-  func cancelPendingToolConfirmation(reason: String) {
+  /// Cancels any pending confirmation card (or only the card matching `id`) with a fail-closed
+  /// `.denied` decision.
+  func cancelPendingToolConfirmation(id: UUID? = nil, reason: String) {
+    if let id, pendingToolConfirmation?.id != id { return }
     guard let continuation = pendingToolConfirmationContinuation else {
       pendingToolConfirmation = nil
+      pendingToolConfirmationThreadID = nil
       return
     }
     pendingToolConfirmation = nil
+    pendingToolConfirmationThreadID = nil
     pendingToolConfirmationContinuation = nil
     continuation.resume(returning: .denied(reason: reason))
   }

@@ -283,4 +283,15 @@ extension MarkdownTests {
       parsing: "## Plan\n\n- **Buy** milk\n- Call [Sam](https://x.y)\n\n```swift\nlet x = 1\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |")
     XCTAssertEqual(document.plainText, "Plan\nBuy milk\nCall Sam\nA, B\n1, 2")
   }
+
+  /// Only `http` and `https` links become tappable; deep links like `agello://` or `tel:` stay plain text.
+  func testMarkdownLinksAllowlistOnlyHTTPAndHTTPS() {
+    let document = MarkdownDocument(
+      parsing: "[Self](agello://ask?q=evil) [Phone](tel:5551234) [Docs](https://example.com/a) [Plain](http://example.org)")
+    guard case .paragraph(let text) = document.blocks.first else {
+      return XCTFail("Expected paragraph block")
+    }
+    let links = text.runs.compactMap(\.link).map(\.absoluteString)
+    XCTAssertEqual(links, ["https://example.com/a", "http://example.org"])
+  }
 }

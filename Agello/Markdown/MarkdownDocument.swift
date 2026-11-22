@@ -153,7 +153,11 @@ struct MarkdownDocument: Equatable, Sendable {
       next.intent.insert(.code)
       return run(code.code, next)
     case let link as Markdown.Link:
-      next.link = link.destination.flatMap(URL.init(string:))
+      if let url = link.destination.flatMap(URL.init(string:)),
+        let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
+      {
+        next.link = url
+      }
       let label = children(link, next)
       return label.characters.isEmpty ? run(link.destination ?? "", next) : label
     case let image as Markdown.Image:

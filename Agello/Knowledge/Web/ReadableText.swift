@@ -20,8 +20,10 @@ enum ReadableText {
       ?? HTMLText.firstMatch(#"<title[^>]*>(.*?)</title>"#, in: html)?.first.map(HTMLText.plain)
 
     // Code samples keep their lines and indentation: set aside before the page is flattened.
+    // A per-call nonce marker prevents hostile pages from colliding with placeholders.
+    let marker = "AGELLOCODEBLOCK_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))_"
     var code: [String] = []
-    var body = setAsideCode(in: html, into: &code)
+    var body = setAsideCode(in: html, into: &code, marker: marker)
     body = remove(
       ["script", "style", "noscript", "svg", "nav", "header", "footer", "aside", "form", "button",
         "iframe", "template", "select"],
@@ -38,7 +40,7 @@ enum ReadableText {
     // Figures are illustrations and captions, unless they hold code (many sites wrap it in one).
     let figures = body as NSString
     body = HTMLScan.replacing(HTMLScan.elements("figure", in: figures), in: figures) { figure in
-      guard let content = figure.content, figures.range(of: codeMarker, range: content).location == NSNotFound
+      guard let content = figure.content, figures.range(of: marker, range: content).location == NSNotFound
       else { return nil }
       return " "
     }
@@ -46,7 +48,7 @@ enum ReadableText {
     body = HTMLScan.replacing(HTMLScan.spans(open: "<!--", close: "-->", in: comments), in: comments) { _ in "" }
     let region = largest("article", in: body) ?? largest("main", in: body)
       ?? HTMLText.firstMatch(#"<body[^>]*>(.*)</body>"#, in: body)?.first ?? body
-    let text = restoreCode(toText(region), code)
+    let text = restoreCode(toText(region), code, marker: marker, maxCharacters: maxCharacters)
     return Page(
       title: title?.isEmpty == false ? title : nil, text: String(text.prefix(maxCharacters)))
   }
@@ -56,7 +58,9 @@ enum ReadableText {
   /// `<pre>` blocks, highlighting spans and all, as fenced code (`language-…` classes become the
   /// fence's language), each replaced by a marker paragraph until the page is text again. Flattened
   /// with the rest, code lost its line breaks and indentation (2026-11-02).
-  static func setAsideCode(in html: String, into blocks: inout [String]) -> String {
+  static func setAsideCode(
+    in html: String, into blocks: inout [String], marker: String = codeMarker
+  ) -> String {
     let page = html as NSString
     var found: [String] = []
     let output = HTMLScan.replacing(HTMLScan.elements("pre", in: page), in: page) { pre in
@@ -73,18 +77,60 @@ enum ReadableText {
       ).replacingOccurrences(of: "\r\n", with: "\n").trimmingCharacters(in: .newlines)
       guard !code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "" }
       found.append("```\(language)\n\(code)\n```")
-      return "\n\n<p>\(codeMarker)\(blocks.count + found.count - 1)\(codeMarker)</p>\n\n"
+      return "\n\n<p>\(marker)\(blocks.count + found.count - 1)\(marker)</p>\n\n"
     }
     blocks += found
     return output
   }
 
-  static func restoreCode(_ text: String, _ blocks: [String]) -> String {
-    var text = text
-    for (index, block) in blocks.enumerated() {
-      text = text.replacingOccurrences(of: "\(codeMarker)\(index)\(codeMarker)", with: block)
+  /// Restores placeholder tokens in a single bounded forward pass so substituted code blocks are
+  /// never re-scanned (prevents exponential "Billion Laughs" expansion).
+  static func restoreCode(
+    _ text: String, _ blocks: [String], marker: String = codeMarker,
+    maxCharacters: Int = maxCharacters
+  ) -> String {
+    guard !blocks.isEmpty, !marker.isEmpty, maxCharacters > 0 else {
+      return String(text.prefix(max(0, maxCharacters)))
     }
-    return text
+    var output = ""
+    output.reserveCapacity(min(text.count, maxCharacters))
+    var cursor = text.startIndex
+    var count = 0
+
+    func appendBounded(_ slice: Substring) -> Bool {
+      let remaining = maxCharacters - count
+      guard remaining > 0 else { return false }
+      let piece = slice.prefix(remaining)
+      output.append(contentsOf: piece)
+      count += piece.count
+      return count < maxCharacters
+    }
+
+    while cursor < text.endIndex, count < maxCharacters {
+      guard let open = text.range(of: marker, range: cursor..<text.endIndex) else {
+        _ = appendBounded(text[cursor...])
+        break
+      }
+      if open.lowerBound > cursor, !appendBounded(text[cursor..<open.lowerBound]) { break }
+      let digitsStart = open.upperBound
+      var digitsEnd = digitsStart
+      while digitsEnd < text.endIndex, text[digitsEnd].isASCII, text[digitsEnd].isNumber {
+        digitsEnd = text.index(after: digitsEnd)
+      }
+      if digitsEnd > digitsStart,
+        text[digitsEnd...].hasPrefix(marker),
+        let index = Int(text[digitsStart..<digitsEnd]),
+        index >= 0, index < blocks.count
+      {
+        let closeEnd = text.index(digitsEnd, offsetBy: marker.count)
+        cursor = closeEnd
+        if !appendBounded(Substring(blocks[index])) { break }
+      } else {
+        if !appendBounded(text[open]) { break }
+        cursor = open.upperBound
+      }
+    }
+    return output
   }
 
   /// Remove whole elements (with content, across lines) by tag name; an unclosed or

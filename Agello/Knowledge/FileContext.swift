@@ -34,6 +34,10 @@ enum FileContext {
     max(512, Int(Double(window) * windowShare) - ContextBudget.estimateTokens(question))
   }
 
+  private static let tableQueryHint =
+    "For any count, sum, average, min/max, filter, or calculation on the attached table "
+    + "(in any language), call query_table_or_json instead of computing by hand.\n\n"
+
   /// The prompt sent to the model: instructions, the file material, then
   /// the user's question.
   static func prompt(question: String, materials: [Material]) -> String {
@@ -62,20 +66,23 @@ enum FileContext {
       + UntrustedContext.escapeBody(innerBlocks.joined(separator: "\n\n"))
       + "\n</untrusted_data>"
     let hasTableFile = materials.contains { material in
-      let name: String
       switch material {
-      case .full(let n, _, _), .summary(let n, _, _): name = n
-      case .excerpts(let items): name = items.first?.label ?? ""
+      case .full(let name, _, _), .summary(let name, _, _):
+        return Self.isTableFileName(name)
+      case .excerpts(let items):
+        return items.contains { Self.isTableFileName($0.label) }
       }
-      let ext = (name as NSString).pathExtension.lowercased()
-      return ext == "csv" || ext == "tsv" || ext == "json"
     }
-    let tableHint =
-      hasTableFile
-      ? "For any count, sum, average, min/max, filter, or calculation on the attached table (in any language), call query_table_or_json instead of computing by hand.\n\n"
-      : ""
+    let tableHint = hasTableFile ? Self.tableQueryHint : ""
     let ask = "\(tableHint)Message: \(question.isEmpty ? "Describe the attached files." : question)"
     return [header, dataBlock, ask].joined(separator: "\n\n")
+  }
+
+  private static func isTableFileName(_ label: String) -> Bool {
+    // Excerpt labels may carry a page/line suffix like "sales.csv, p. 1".
+    let base = label.split(separator: ",", maxSplits: 1).first.map(String.init) ?? label
+    let ext = (base as NSString).pathExtension.lowercased()
+    return ext == "csv" || ext == "tsv" || ext == "json"
   }
 
   /// What identifies `materials` once a conversation has read them: whole files and summaries,
@@ -97,28 +104,40 @@ enum FileContext {
   /// message: only the question goes, with a reminder of what's above (2026-11-16, "Files sent
   /// once"; before, every message sent the files again and each copy stayed in the context).
   static func followUpPrompt(question: String, names: [String]) -> String {
-    let list = names.map(attribute).joined(separator: ", ")
+    let list = names.map { attribute(PromptText.neutralized($0)) }.joined(separator: ", ")
+    let tableHint = names.contains(where: Self.isTableFileName) ? Self.tableQueryHint : ""
     return "The files the user attached (\(list)) are earlier in this conversation. Answer from them as "
       + "before, citing them the same way; if the message asks about something they don't contain, say so."
-      + "\n\nMessage: \(question.isEmpty ? "Describe the attached files." : question)"
+      + "\n\n\(tableHint)Message: \(question.isEmpty ? "Describe the attached files." : question)"
   }
 
   /// A file name as an attribute value: quotes and angle brackets can't close the tag (a shared
   /// page's name is its title, chosen by whoever wrote the page).
   static func attribute(_ name: String) -> String {
-    name.replacingOccurrences(of: "\"", with: "'").replacingOccurrences(of: "<", with: "‹")
+    PromptText.neutralized(name)
+      .replacingOccurrences(of: "\"", with: "'")
+      .replacingOccurrences(of: "<", with: "‹")
       .replacingOccurrences(of: ">", with: "›")
+      .replacingOccurrences(of: "\n", with: " ")
+      .replacingOccurrences(of: "\r", with: " ")
   }
 
-  /// A file's text can't close its own block or start the user's message: a joiner inside
-  /// `</file>` and the like, and a line starting "Message:" (an external review, 2026-11-16; the
-  /// chat markers are ``PromptText``'s).
+  private static let invisible = "\u{200B}\u{200C}\u{200D}\u{200E}\u{200F}\u{2060}\u{FEFF}"
+  private static let ws = #"[\s\#(invisible)]*"#
+
+  /// A file's text can't close its own block or start the user's message: escapes `</file>` /
+  /// `</summary>` / `</excerpts>` (including whitespace or zero-width variants) and any line
+  /// starting with `Message:` (case-insensitive, with optional leading whitespace).
   static func body(_ text: String) -> String {
     var text = text
     for tag in ["file", "summary", "excerpts"] {
-      text = text.replacingOccurrences(of: "</\(tag)", with: "<\u{200D}/\(tag)", options: .caseInsensitive)
+      text = text.replacingOccurrences(
+        of: #"(?i)<(\#(ws)/?\#(ws)\#(tag)\b)"#,
+        with: "‹$1",
+        options: .regularExpression)
     }
-    return text.replacingOccurrences(of: "(?m)^Message:", with: "Message\u{200D}:", options: .regularExpression)
+    return text.replacingOccurrences(
+      of: #"(?im)^(\s*Message)(\s*:)"#, with: "$1\u{200D}$2", options: .regularExpression)
   }
 
   // MARK: - Summaries of long files
@@ -212,13 +231,15 @@ enum FileContext {
   }
 
   static func sectionPrompt(_ section: Section, of name: String) -> String {
-    """
-    Summarize this part of the document "\(name)" (\(section.label.lowercased())) in 4 to 8 \
-    short bullet points. Keep key facts, numbers, names, decisions and conclusions. Write in \
-    the document's language. Output only the bullet points.
+    let safeName = attribute(name)
+    let spotlighted = UntrustedContext.wrap(section.text, source: "attached_file")
+    return """
+      Summarize this part of the document "\(safeName)" (\(section.label.lowercased())) in 4 to 8 \
+      short bullet points. Keep key facts, numbers, names, decisions and conclusions. Write in \
+      the document's language. Output only the bullet points. \(UntrustedContext.dataBoundaryInstruction)
 
-    \(section.text)
-    """
+      \(spotlighted)
+      """
   }
 
   /// A document summary from its section summaries, labelled by pages.

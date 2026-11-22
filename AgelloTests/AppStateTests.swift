@@ -549,4 +549,28 @@ extension AppStateTests {
     XCTAssertEqual(appState.resolved, before)
     XCTAssertEqual(appState.resolved?.backendLabel, "GPU")
   }
+
+  func testBackgroundWorkExpirationAndSubmissionFailureCloseGPUGate() async {
+    defer {
+      appState.isInForeground = true
+      GPUGate.set(true)
+    }
+    // Expiration while backgrounded must close GPUGate so no unentitled GPU work runs afterward.
+    appState.isInForeground = false
+    GPUGate.set(true)
+    await appState.stopAndDrain()
+    XCTAssertFalse(GPUGate.isOpen)
+
+    // Submission failure while foregrounded leaves GPUGate open (foreground reply continues).
+    appState.isInForeground = true
+    GPUGate.set(true)
+    await appState.handleBackgroundWorkSubmissionFailure()
+    XCTAssertTrue(GPUGate.isOpen)
+
+    // Submission failure while backgrounded closes GPUGate and drains GPU.
+    appState.isInForeground = false
+    GPUGate.set(true)
+    await appState.handleBackgroundWorkSubmissionFailure()
+    XCTAssertFalse(GPUGate.isOpen)
+  }
 }

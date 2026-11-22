@@ -117,7 +117,16 @@ final class VoiceSession: Identifiable {
     }
   }
 
+  /// Pending mutating-tool confirmation card surfaced directly inside Voice Mode so hands-free
+  /// actions never deadlock behind the full-screen cover.
+  var pendingToolConfirmation: ToolConfirmationRequest? { appState.pendingToolConfirmation }
+
+  func resolveToolConfirmation(id: UUID, approved: Bool) {
+    appState.resolvePendingToolConfirmation(id: id, approved: approved)
+  }
+
   func end() {
+    appState.cancelPendingToolConfirmation(reason: "Voice mode closed.")
     // Stop the reply first: cancelling only the turn's task would leave the engine busy.
     if appState.isBusy { appState.stop() }
     monitorStartTask?.cancel()
@@ -261,7 +270,15 @@ final class VoiceSession: Identifiable {
 
   /// A call took the audio (paused, "Starting…"), or it came back on the current route.
   private func audioAvailabilityChanged(_ available: Bool) {
-    if state == .speaking || state == .thinking || state == .hearing { stopReply() }
+    if state == .speaking || state == .thinking || state == .hearing {
+      if available {
+        stopReply()
+      } else {
+        // `VoiceAudio.pause()` already stopped the engine; stop inference without restarting playback.
+        silenced = true
+        if appState.isBusy { appState.stop() }
+      }
+    }
     let neuralActive = vad.neuralActive
     vad = NeuralTurnDetector()
     vad.setNeuralActive(neuralActive)

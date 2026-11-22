@@ -335,8 +335,9 @@ final class KnowledgeBase {
     guard let embedder = currentEmbedder(),
       let queryVector = try? await embedder.embed(query: query)
     else { return [] }
-    let candidates = threads.compactMap { thread in
-      thread.searchEmbedding.map { (thread, VectorIndex.decode($0)) }
+    let candidates = threads.compactMap { thread -> (ChatThread, [Float])? in
+      guard !thread.isDeleted, thread.modelContext != nil else { return nil }
+      return thread.searchEmbedding.map { (thread, VectorIndex.decode($0)) }
     }
     return VectorIndex.top(candidates.count, query: queryVector, candidates: candidates)
       .map { (thread: $0.item, score: $0.score) }

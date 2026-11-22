@@ -37,27 +37,32 @@ extension AppState {
     }
 
     let total = documents.reduce(0) { $0 + ContextBudget.estimateTokens($1.text) }
+    var docNames: [String] = []
     if total <= budget {
       for document in documents {
+        guard !document.isDeleted, document.modelContext != nil else { continue }
         materials.append(.full(name: document.name, pageCount: document.pageCount, text: document.text))
         cite(document.name)
+        docNames.append(document.name)
       }
     } else if FileContext.wantsSummary(question) {
       let share = budget / documents.count
       let longDocuments = documents.filter {
-        ContextBudget.estimateTokens($0.text) > share && $0.summary == nil
+        !$0.isDeleted && $0.modelContext != nil && ContextBudget.estimateTokens($0.text) > share && $0.summary == nil
       }
       if longDocuments.count > 1 {
-        BackgroundWork.shared.onExpire = { [weak self] in await self?.stopAndDrain() }
-        BackgroundWork.shared.begin(
+        beginBackgroundWork(
           title: String(localized: "Synthesizing \(longDocuments.count) documents"),
           subtitle: String(localized: "Reading \(longDocuments[0].name)"),
           totalSteps: longDocuments.count)
       }
       var longIndex = 0
       for document in documents {
+        guard !document.isDeleted, document.modelContext != nil else { continue }
+        let docName = document.name
+        let docPages = document.pageCount
         if ContextBudget.estimateTokens(document.text) <= share {
-          materials.append(.full(name: document.name, pageCount: document.pageCount, text: document.text))
+          materials.append(.full(name: docName, pageCount: docPages, text: document.text))
         } else {
           let needsWork = document.summary == nil
           let docIndex = needsWork ? longIndex : 0
@@ -68,22 +73,24 @@ extension AppState {
           else { return nil }
           materials.append(
             .summary(
-              name: document.name, pageCount: document.pageCount,
+              name: docName, pageCount: docPages,
               text: FileContext.truncate(summary, tokens: share)))
         }
-        cite(document.name)
+        cite(docName)
+        docNames.append(docName)
       }
     } else {
       if documents.count > 1 {
-        BackgroundWork.shared.onExpire = { [weak self] in await self?.stopAndDrain() }
-        BackgroundWork.shared.begin(
+        beginBackgroundWork(
           title: String(localized: "Researching \(documents.count) documents"),
           subtitle: String(localized: "Searching your files…"),
           totalSteps: 3)
       }
       preparingStatus = "Searching your files…"
+      let liveDocs = documents.filter { !$0.isDeleted && $0.modelContext != nil }
+      docNames = liveDocs.map(\.name)
       let passages = FileContext.fit(
-        await knowledge.search(question, in: documents, limit: 24), budget: budget)
+        await knowledge.search(question, in: liveDocs, limit: 24), budget: budget)
       if Task.isCancelled { return nil }
       if documents.count > 1 {
         BackgroundWork.shared.stepProgress(
@@ -95,7 +102,7 @@ extension AppState {
     return FileContextResult(
       prompt: FileContext.prompt(question: question, materials: materials), sources: sources,
       followUp: FileContext.heldKey(materials).map {
-        ($0, FileContext.followUpPrompt(question: question, names: documents.map(\.name)))
+        ($0, FileContext.followUpPrompt(question: question, names: docNames))
       })
   }
 
@@ -103,22 +110,23 @@ extension AppState {
   func summary(
     of document: ChatDocument, documentIndex: Int = 0, documentCount: Int = 1
   ) async -> String? {
+    guard !document.isDeleted, document.modelContext != nil else { return nil }
     if let summary = document.summary { return summary }
     let chunks = document.chunks.sorted { $0.index < $1.index }.map {
       ChunkDraft(index: $0.index, text: $0.text, pageStart: $0.pageStart, pageEnd: $0.pageEnd)
     }
     let sections = FileContext.sections(chunks)
-    let prompts = sections.map { FileContext.sectionPrompt($0, of: document.name) }
     let name = document.name
+    let prompts = sections.map { FileContext.sectionPrompt($0, of: name) }
     let count = sections.count
     // Long document synthesis requests background GPU + inference time.
-    BackgroundWork.shared.onExpire = { [weak self] in await self?.stopAndDrain() }
     if documentCount == 1 {
-      BackgroundWork.shared.begin(
+      beginBackgroundWork(
         title: String(localized: "Summarizing \(name)"),
         subtitle: String(localized: "Reading \(count) sections"),
         totalSteps: count)
     } else {
+      configureBackgroundWorkHandlers()
       BackgroundWork.shared.update(
         subtitle: BackgroundWorkPlan.documentSubtitle(
           name: name, documentIndex: documentIndex, documentCount: documentCount,
@@ -164,8 +172,10 @@ extension AppState {
     }
     guard !Task.isCancelled, outputs.count == sections.count else { return nil }
     let summary = FileContext.joinSummaries(outputs, sections: sections)
-    document.summary = summary
-    try? modelContext?.save()
+    if !document.isDeleted, document.modelContext != nil {
+      document.summary = summary
+      try? modelContext?.save()
+    }
     return summary
   }
 
@@ -221,8 +231,7 @@ extension AppState {
             toolStatus = latest.summary
             toolSteps += 1
             if !BackgroundWork.shared.isPendingOrActive, options.enableThinking {
-              BackgroundWork.shared.onExpire = { [weak self] in await self?.stopAndDrain() }
-              BackgroundWork.shared.begin(
+              beginBackgroundWork(
                 title: String(localized: "Researching"),
                 subtitle: latest.summary,
                 totalSteps: 4)
@@ -292,10 +301,34 @@ extension AppState {
     reply.markIncomplete()
   }
 
+  func configureBackgroundWorkHandlers() {
+    BackgroundWork.shared.onExpire = { [weak self] in await self?.stopAndDrain() }
+    BackgroundWork.shared.onSubmissionFailure = { [weak self] in
+      await self?.handleBackgroundWorkSubmissionFailure()
+    }
+  }
+
+  func beginBackgroundWork(title: String, subtitle: String, totalSteps: Int = 1) {
+    configureBackgroundWorkHandlers()
+    BackgroundWork.shared.begin(title: title, subtitle: subtitle, totalSteps: totalSteps)
+  }
+
+  /// If `BGTaskScheduler` asynchronously rejects our continued task after the app already moved
+  /// into the background, immediately close `GPUGate` and drain GPU under a short UIKit assertion.
+  func handleBackgroundWorkSubmissionFailure() async {
+    guard !isInForeground else { return }
+    GPUGate.set(false)
+    let drainGuard = BackgroundTaskGuard.begin(name: "AgelloGPUDrain")
+    notice = String(localized: "Reply stopped because Agello moved to the background.")
+    await stopAndDrain()
+    drainGuard.end()
+  }
+
   func stop() {
     cancelPendingToolConfirmation(reason: "Stopped by the user.")
     if BackgroundWork.shared.isPendingOrActive {
       stopCount &+= 1
+      drainingBackgroundWork = true
       preparationTask?.cancel()
       webTask?.cancel()
       Task { await self.stopAndDrain() }
@@ -314,9 +347,11 @@ extension AppState {
     cancelPendingToolConfirmation(reason: "Stopped by the user.")
     stopCount &+= 1
     drainingBackgroundWork = true
+    if !isInForeground { GPUGate.set(false) }
     defer {
       drainingBackgroundWork = false
       BackgroundWork.shared.end(success: false)
+      if !isInForeground { GPUGate.set(false) }
     }
     preparationTask?.cancel()
     webTask?.cancel()
@@ -329,6 +364,7 @@ extension AppState {
   /// command buffers fail or the app be terminated.
   func enterBackground() {
     isInForeground = false
+    applyOptionsTask?.cancel()
     cancelPendingToolConfirmation(reason: "Cancelled because Agello moved to the background.")
     // A continued task with background GPU access (submitted or running) lets the reply finish.
     let continuing = BackgroundWork.shared.isPendingOrActive
@@ -358,6 +394,10 @@ extension AppState {
   func enterForeground() {
     isInForeground = true
     GPUGate.set(true)
+    if pendingOptionsApply, !isBusy, !isBenchmarking {
+      pendingOptionsApply = false
+      Task { await self.applyCurrentOptions() }
+    }
     knowledge.indexPendingIfAvailable()
     scheduleHelpers()
   }
