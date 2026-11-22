@@ -121,7 +121,7 @@ protocol PersonalContextBackend: Sendable {
   ) async -> PersonalToolResult<[ContactSummary]>
 
   func searchPlaces(
-    query: String, limit: Int
+    query: String, near: String?, limit: Int
   ) async -> PersonalToolResult<[PlaceSummary]>
 
   func estimateTravelTime(

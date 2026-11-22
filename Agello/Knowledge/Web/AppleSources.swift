@@ -29,8 +29,21 @@ enum PlaceSearch {
   @MainActor
   static func search(_ query: String, limit: Int = 5) async throws -> (places: [Place], area: String?) {
     let (what, place) = split(query)
+    return try await search(what: what, near: place, originalQuery: query, limit: limit)
+  }
+
+  /// Structured place search taking explicit `what` and optional `near` area (landmark, city, or
+  /// current-location token), bypassing natural-language preposition parsing across all languages.
+  @MainActor
+  static func search(
+    what rawWhat: String, near rawPlace: String?, originalQuery: String? = nil, limit: Int = 5
+  ) async throws -> (places: [Place], area: String?) {
+    let what = rawWhat.trimmingCharacters(in: .whitespacesAndNewlines)
+    let place = rawPlace?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let resolvedPlace = (place?.isEmpty == false) ? place : nil
+
     // Around the user, nearest first ("the nearest gas station").
-    if let place, CurrentLocation.meansHere(place) {
+    if let resolvedPlace, CurrentLocation.meansHere(resolvedPlace) {
       guard let here = await CurrentLocation.fetch() else { throw WebSearchError.locationUnavailable }
       let request = MKLocalSearch.Request()
       request.resultTypes = [.pointOfInterest, .address]
@@ -43,7 +56,7 @@ enum PlaceSearch {
       }
       return (Array(found.sorted { ($0.meters ?? 0) < ($1.meters ?? 0) }.prefix(limit)), nil)
     }
-    if let place, let area = await find(place, types: [.pointOfInterest, .address]) {
+    if let resolvedPlace, let area = await find(resolvedPlace, types: [.pointOfInterest, .address]) {
       let request = MKLocalSearch.Request()
       request.resultTypes = [.pointOfInterest, .address]
       request.naturalLanguageQuery = what
@@ -51,19 +64,20 @@ enum PlaceSearch {
         center: area.location.coordinate, latitudinalMeters: 2_000, longitudinalMeters: 2_000)
       request.regionPriority = .required
       if let found = try? await MKLocalSearch(request: request).start().mapItems, !found.isEmpty {
-        return (found.prefix(limit).map(entry(from:)), place)
+        return (found.prefix(limit).map(entry(from:)), resolvedPlace)
       }
     }
+    let fallbackQuery = originalQuery ?? (resolvedPlace.map { "\(what) \($0)" } ?? what)
     let request = MKLocalSearch.Request()
     request.resultTypes = [.pointOfInterest, .address]
-    request.naturalLanguageQuery = query
+    request.naturalLanguageQuery = fallbackQuery
     let found = (try? await MKLocalSearch(request: request).start().mapItems) ?? []
-    if found.isEmpty, place == nil {
-      // "Walmart closing time November 12 2026" found nothing: the store, around the user.
-      let store = WeatherLookup.placeName(in: query).split(whereSeparator: \.isWhitespace)
-        .filter { !["closing", "close", "closes", "opening", "open", "hours", "time", "at", "what", "does"].contains($0.lowercased()) }
-        .joined(separator: " ")
-      if !store.isEmpty { return try await search("\(store) near me", limit: limit) }
+    if found.isEmpty, resolvedPlace == nil {
+      // "Walmart closing time November 12 2026" / "Heures d'ouverture Walmart": the store, around the user.
+      let store = LanguageSupport.stripPlaceHoursNoise(fallbackQuery)
+      if !store.isEmpty, store.caseInsensitiveCompare(fallbackQuery) != .orderedSame {
+        return try await search(what: store, near: "me", limit: limit)
+      }
     }
     if found.isEmpty { throw WebSearchError.noResults }
     return (found.prefix(limit).map(entry(from:)), nil)
@@ -89,21 +103,10 @@ enum PlaceSearch {
     return try? await MKGeocodingRequest(addressString: text)?.mapItems.first
   }
 
-  /// "pharmacy near Place des Arts, Montreal" (or French "pharmacie près de …") as
-  /// ("pharmacy", "Place des Arts, Montreal"); a query without a proximity connector is all what.
+  /// Splits proximity place queries across languages ("pharmacy near Place des Arts",
+  /// "farmacia cerca de …", "渋谷駅近くの薬局") into `(what, place)`.
   static func split(_ query: String) -> (what: String, place: String?) {
-    let connectors = [
-      " near ", " près de ", " près du ", " près des ", " près d'",
-      " pres de ", " pres du ", " pres des ", " pres d'", " proche de ",
-    ]
-    for connector in connectors {
-      if let range = query.range(of: connector, options: .caseInsensitive) {
-        let what = query[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
-        let place = query[range.upperBound...].trimmingCharacters(in: .whitespaces)
-        if !what.isEmpty, !place.isEmpty { return (what, place) }
-      }
-    }
-    return (query, nil)
+    LanguageSupport.splitPlaceQuery(query)
   }
 
   /// "MKPOICategoryPharmacy" as "pharmacy".
@@ -195,21 +198,10 @@ enum WeatherLookup {
     return (name, item.location, item.timeZone ?? .current)
   }
 
-  /// Words of a weather query that aren't the place ("Montreal weather tomorrow"): the place
-  /// search read them as an address and found Morris, Manitoba (2026-11-12).
+  /// Words of a weather query that aren't the place ("Montreal weather tomorrow",
+  /// "Wetter Berlin morgen", "天気 東京 明日"), stripped across languages.
   static func placeName(in query: String) -> String {
-    let noise: Set = [
-      "weather", "forecast", "temperature", "today", "tomorrow", "tonight", "this", "week", "weekend",
-      "rain", "snow", "will", "it", "météo", "prévisions", "demain", "aujourd'hui", "pluie", "neige", "ce",
-    ]
-    let months = Set(Calendar(identifier: .gregorian).monthSymbols.map { $0.lowercased() })
-    return query.split(whereSeparator: \.isWhitespace)
-      .filter { word in
-        let plain = word.lowercased().trimmingCharacters(in: .punctuationCharacters)
-        // "Montreal weather forecast November 13 2026": the date isn't the place either.
-        return !noise.contains(plain) && !months.contains(plain) && Int(plain) == nil
-      }
-      .joined(separator: " ").trimmingCharacters(in: .punctuationCharacters.union(.whitespaces))
+    LanguageSupport.stripWeatherNoise(query)
   }
 
   /// The weather at `place` (where the user is for "here"): now, the next 12 hours and the next

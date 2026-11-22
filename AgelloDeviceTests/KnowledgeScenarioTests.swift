@@ -472,6 +472,86 @@ final class KnowledgeScenarioTests: DeviceTestCase {
     XCTAssertTrue(answer.text.contains("93.5"), answer.text)
   }
 
+  /// Multilingual natural-language intent: users ask naturally in French, Spanish, and German
+  /// without naming any tool, and E4B selects the right on-device tools and answers accurately
+  /// in the user's language.
+  func test07_MultilingualNaturalToolIntent() async throws {
+    try await requireLoadedModel()
+
+    // 1) French natural unit conversion (no tool name mentioned)
+    let frCursor = ToolActivity.cursor
+    let frReply = await harness.ask(
+      "À combien de kilomètres par heure correspondent exactement 75 milles par heure ?",
+      in: harness.newThread())
+    let frInvoked = ToolActivity.invocations(since: frCursor)
+
+    // 2) Spanish natural CSV aggregation over a realistic European semicolon/comma CSV (no tool name mentioned)
+    let esThread = harness.newThread()
+    let euroCSV = """
+      ciudad;producto;ventas
+      Madrid;Alpha;1 250,50 €
+      Barcelona;Alpha;2 100,25 €
+      Madrid;Beta;749,50 €
+      Valencia;Alpha;615,00 €
+      Madrid;Gamma;412,30 €
+      Sevilla;Beta;890,10 €
+      Madrid;Delta;587,70 €
+      Bilbao;Gamma;320,40 €
+      Barcelona;Delta;1 405,00 €
+      Madrid;Epsilon;1 000,00 €
+      """
+    let csvDoc = ExtractedDocument(
+      name: "ventas.csv", kind: .text, byteCount: Int64(euroCSV.utf8.count), pages: [euroCSV]).prepared()
+    appState.knowledge.add(csvDoc, threadID: esThread.id)
+    let esCursor = ToolActivity.cursor
+    let esReply = await harness.ask(
+      "¿Cuál es la suma exacta de ventas en Madrid según el archivo ventas.csv?",
+      in: esThread)
+    let esInvoked = ToolActivity.invocations(since: esCursor)
+
+    // 2b) Same realistic CSV question in English (no tool name mentioned)
+    let enCsvThread = harness.newThread()
+    appState.knowledge.add(csvDoc, threadID: enCsvThread.id)
+    let enCursor = ToolActivity.cursor
+    let enReply = await harness.ask(
+      "What is the exact total of ventas for Madrid in ventas.csv?",
+      in: enCsvThread)
+    let enInvoked = ToolActivity.invocations(since: enCursor)
+
+    // 3) German natural calculation (no tool name mentioned)
+    let deCursor = ToolActivity.cursor
+    let deReply = await harness.ask(
+      "Was ist genau 18,5 % Trinkgeld auf eine Rechnung von 142,80 Euro?",
+      in: harness.newThread())
+    let deInvoked = ToolActivity.invocations(since: deCursor)
+
+    harness.record(
+      "knowledge07_multilingualNaturalTools",
+      [
+        "frReply": frReply.text, "frInvoked": frInvoked,
+        "esReply": esReply.text, "esInvoked": esInvoked,
+        "enCsvReply": enReply.text, "enCsvInvoked": enInvoked,
+        "deReply": deReply.text, "deInvoked": deInvoked,
+      ], in: self)
+
+    XCTAssertTrue(frReply.accepted, appState.generationError ?? "")
+    XCTAssertTrue(frReply.text.contains("120,7") || frReply.text.contains("120.7"), frReply.text)
+
+    XCTAssertTrue(esReply.accepted, appState.generationError ?? "")
+    XCTAssertTrue(
+      esReply.text.contains("4000") || esReply.text.contains("4.000") || esReply.text.contains("4,000")
+        || esReply.text.contains("4 000"),
+      esReply.text)
+
+    XCTAssertTrue(enReply.accepted, appState.generationError ?? "")
+    XCTAssertTrue(
+      enReply.text.contains("4000") || enReply.text.contains("4,000") || enReply.text.contains("4 000"),
+      enReply.text)
+
+    XCTAssertTrue(deReply.accepted, appState.generationError ?? "")
+    XCTAssertTrue(deReply.text.contains("26,4") || deReply.text.contains("26.4"), deReply.text)
+  }
+
   private static func embedAll(
     documents: [(title: String, text: String)], queries: [String], using embedder: any TextEmbedder
   ) async throws -> [[Float]] {

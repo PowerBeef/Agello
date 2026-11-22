@@ -37,10 +37,17 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     .error("Contacts access is only available in the iOS app.")
   }
 
-  func searchPlaces(query: String, limit: Int) async -> PersonalToolResult<[PlaceSummary]> {
+  func searchPlaces(
+    query: String, near: String?, limit: Int
+  ) async -> PersonalToolResult<[PlaceSummary]> {
     let capped = max(1, min(10, limit))
     do {
-      let (places, _) = try await PlaceSearch.search(query, limit: capped)
+      let (places, _): ([PlaceSearch.Place], String?)
+      if let near, !near.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        (places, _) = try await PlaceSearch.search(what: query, near: near, limit: capped)
+      } else {
+        (places, _) = try await PlaceSearch.search(query, limit: capped)
+      }
       let summaries = places.map { p in
         var comps = URLComponents(string: "https://maps.apple.com/")
         comps?.queryItems = [
@@ -73,9 +80,9 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     else {
       return .error("Could not locate those places on Apple Maps.")
     }
-    let mode = transport.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let mode = LanguageSupport.normalizeTransportMode(transport)
     let transportType: MKDirectionsTransportType =
-      mode == "walking" || mode == "walk" ? .walking : mode == "transit" ? .transit : .automobile
+      mode == "walking" ? .walking : mode == "transit" ? .transit : .automobile
     let request = MKDirections.Request()
     request.source = sourceItem
     request.destination = destItem

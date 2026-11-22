@@ -95,9 +95,7 @@ enum WebContext {
     kind: String?, question: String, history: [(role: ChatRole, text: String)]
   ) -> Bool {
     guard !history.isEmpty, kind == "answered" || kind == "arithmetic" else { return false }
-    let difference =
-      #"\b(by how (much|many|far|long)|how (much|many) (more|less|fewer|longer|shorter|faster|slower|bigger|smaller|older|younger|higher|lower)|difference|margin|gap|ahead of|behind)\b"#
-    return question.range(of: difference, options: [.regularExpression, .caseInsensitive]) != nil
+    return LanguageSupport.isDifferenceFollowUp(question)
   }
 
   /// Kinds of message that search: the rest need nothing from the web. One word each: on our
@@ -162,7 +160,9 @@ enum WebContext {
       pronouns from the conversation, and give a follow-up the subject it's about (after a \
       question about the newest iPhone, "How much is it?" searches for that iPhone's price). A short \
       follow-up asks more about the user's previous question (after "Who won the election?", "By \
-      how much?" searches for the winner's margin of victory). Use the language of the message.
+      how much?" searches for the winner's margin of victory). Use the language of the message for \
+      encyclopedia queries, and use the structured formats above for place, weather, and currency \
+      queries (keeping local place names intact).
       """
   }
 

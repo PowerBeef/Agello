@@ -72,7 +72,9 @@ final class AgentSecurityTests: XCTestCase {
       return .success(Array(items.prefix(limit)))
     }
 
-    func searchPlaces(query: String, limit: Int) async -> PersonalToolResult<[PlaceSummary]> {
+    func searchPlaces(
+      query: String, near: String?, limit: Int
+    ) async -> PersonalToolResult<[PlaceSummary]> {
       .success(state.withLock { Array($0.places.prefix(limit)) })
     }
 

@@ -214,10 +214,17 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
 
   // MARK: - Maps & Places (MapKit)
 
-  func searchPlaces(query: String, limit: Int) async -> PersonalToolResult<[PlaceSummary]> {
+  func searchPlaces(
+    query: String, near: String?, limit: Int
+  ) async -> PersonalToolResult<[PlaceSummary]> {
     let capped = max(1, min(10, limit))
     do {
-      let (places, _) = try await PlaceSearch.search(query, limit: capped)
+      let (places, _): ([PlaceSearch.Place], String?)
+      if let near, !near.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        (places, _) = try await PlaceSearch.search(what: query, near: near, limit: capped)
+      } else {
+        (places, _) = try await PlaceSearch.search(query, limit: capped)
+      }
       let summaries = places.map { p in
         var comps = URLComponents(string: "https://maps.apple.com/")
         comps?.queryItems = [
@@ -261,11 +268,11 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
       return .error("Provide an origin address or enable Location access to estimate travel from here.")
     }
 
-    let mode = transport.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let mode = LanguageSupport.normalizeTransportMode(transport)
     let transportType: MKDirectionsTransportType
     switch mode {
-    case "walking", "walk": transportType = .walking
-    case "transit", "public transit": transportType = .transit
+    case "walking": transportType = .walking
+    case "transit": transportType = .transit
     default: transportType = .automobile
     }
 

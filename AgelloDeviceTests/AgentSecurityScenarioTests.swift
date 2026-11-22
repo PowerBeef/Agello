@@ -61,7 +61,9 @@ final class AgentSecurityScenarioTests: DeviceTestCase {
       return .success(Array(results.prefix(limit)))
     }
 
-    func searchPlaces(query: String, limit: Int) async -> PersonalToolResult<[PlaceSummary]> {
+    func searchPlaces(
+      query: String, near: String?, limit: Int
+    ) async -> PersonalToolResult<[PlaceSummary]> {
       .success([])
     }
 

@@ -331,16 +331,9 @@ enum StructuredDataQuery {
     return a.localizedCaseInsensitiveCompare(b)
   }
 
-  /// Parses plain, currency-prefixed, comma-grouped, or percent numbers (`$1,250.50` -> `1250.5`).
+  /// Parses plain, currency-prefixed, comma-grouped (US & European), or percent numbers.
   static func parseNumber(_ raw: String) -> Double? {
-    var cleaned = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !cleaned.isEmpty else { return nil }
-    let isPercent = cleaned.hasSuffix("%")
-    if isPercent { cleaned.removeLast() }
-    cleaned = cleaned.replacingOccurrences(of: "[$€£¥,]", with: "", options: .regularExpression)
-      .replacingOccurrences(of: " ", with: "")
-    guard let val = Double(cleaned), val.isFinite else { return nil }
-    return isPercent ? val / 100.0 : val
+    LanguageSupport.parseLocalizedNumber(raw)
   }
 
   private static func fmt(_ value: Double) -> String {

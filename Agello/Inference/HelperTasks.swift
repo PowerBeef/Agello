@@ -89,10 +89,14 @@ enum HelperTasks {
     " eu ", " meu ", " minha ", " meus ", " minhas ", " sou ", " moro ", "lembra",
     " ik ", " mijn ", " mij ", "onthoud",
     " ja ", " moj ", " moja ", " moje ", " mnie ", " mam ", "zapamietaj", "pamietaj",
+    " я ", " мой ", " моя ", " мои ", " меня ", " мне ", "запомни",
   ]
 
-  /// Japanese, Chinese and Korean: no spaces between words, matched anywhere.
-  private static let memoryCharacters = ["私", "僕", "俺", "覚えて", "我", "记住", "記住", "저는", "제가", "나는", "내가", "기억해"]
+  /// Japanese, Chinese, Korean and Arabic: matched anywhere without space boundaries.
+  private static let memoryCharacters = [
+    "私", "僕", "俺", "覚えて", "我", "记住", "記住", "저는", "제가", "나는", "내가", "기억해",
+    "أنا", "انا", "تذكر",
+  ]
 
   /// Instructions first, with examples: measured on device, Gemma otherwise
   /// tends to return an empty list for messages full of facts.

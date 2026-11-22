@@ -110,12 +110,12 @@ enum ArithmeticParser {
     return value
   }
 
-  /// What models write around numbers: currency symbols, thousands
-  /// separators and typographic operators ("$1,250 × 2" is "1250 * 2").
+  /// What models write around numbers: currency symbols, thousands separators (including
+  /// French thin/non-breaking spaces) and typographic operators ("$1,250 × 2" is "1250 * 2").
   static func normalize(_ input: String) -> String {
-    var text = input.replacingOccurrences(of: "[$€£¥]", with: "", options: .regularExpression)
+    var text = input.replacingOccurrences(of: "[$€£¥₹₩]", with: "", options: .regularExpression)
     text = text.replacingOccurrences(
-      of: #"(?<=\d),(?=\d{3}(?!\d))"#, with: "", options: .regularExpression)
+      of: #"(?<=\d)[,\u00A0\u202F](?=\d{3}(?!\d))"#, with: "", options: .regularExpression)
     return text.replacingOccurrences(of: "×", with: "*")
       .replacingOccurrences(of: "÷", with: "/")
       .replacingOccurrences(of: "\u{2212}", with: "-")
@@ -469,7 +469,7 @@ struct QueryTableOrJsonTool: Tool {
   static let name = "query_table_or_json"
   static let isReadOnly = true
   static let description =
-    "Inspect, filter, sort, or compute exact aggregations (count, sum, avg, min, max, aggregate) over a CSV, TSV, or JSON attached file or inline snippet."
+    "Run exact schema, filter, sort, count, sum, avg, min, max, or grouped aggregations on attached or inline CSV/TSV/JSON data. Always use this instead of mental math when aggregating or filtering tabular or JSON data."
 
   @ToolParam(description: "Operation: 'schema', 'filter', 'count', 'sum', 'avg', 'min', 'max', or 'aggregate'.")
   var operation: String
@@ -833,8 +833,11 @@ struct SearchPlacesTool: Tool {
   static let description =
     "Search Apple Maps for places, businesses, addresses, coordinates, and phone numbers."
 
-  @ToolParam(description: "Place or business query, e.g. 'coffee shop near Old Port, Montreal'.")
+  @ToolParam(description: "Place type, business name, or address, e.g. 'pharmacy' or 'coffee shop'.")
   var query: String
+
+  @ToolParam(description: "Optional landmark, neighborhood, city, or 'here' to search around, e.g. 'Place des Arts, Montreal'.")
+  var near: String? = nil
 
   @ToolParam(description: "Maximum places to return (1 to 10). Default is 5.")
   var limit: Int = 5
@@ -843,12 +846,13 @@ struct SearchPlacesTool: Tool {
     guard let limits = ToolBudget.claim() else { return ToolBudget.limitReachedResult }
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return ["error": "Query cannot be empty."] }
-    switch await PersonalTools.activeBackend.searchPlaces(query: trimmed, limit: limit) {
+    switch await PersonalTools.activeBackend.searchPlaces(query: trimmed, near: near, limit: limit) {
     case .error(let message):
       ToolActivity.record(Self.name, summary: "Maps search failed")
       return ["error": message]
     case .success(let places):
-      ToolActivity.record(Self.name, summary: "Searched Apple Maps for “\(trimmed)”")
+      let label = near.map { "\(trimmed) near \($0)" } ?? trimmed
+      ToolActivity.record(Self.name, summary: "Searched Apple Maps for “\(label)”")
       let body = PersonalToolsLogic.formatPlaces(places)
       return [
         "count": places.count,

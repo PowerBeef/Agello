@@ -148,28 +148,115 @@ enum ExchangeRates {
     var to: [String]
   }
 
-  /// Currency names the planner may write instead of codes.
+  /// Multilingual currency names the planner or user may write instead of ISO codes (diacritic-folded).
   private static let names: [String: String] = [
-    "euro": "EUR", "euros": "EUR", "dollar": "USD", "dollars": "USD", "pound": "GBP", "pounds": "GBP",
-    "sterling": "GBP", "yen": "JPY", "franc": "CHF", "francs": "CHF", "yuan": "CNY", "renminbi": "CNY",
-    "rupee": "INR", "rupees": "INR", "won": "KRW", "real": "BRL", "reais": "BRL", "peso": "MXN",
-    "pesos": "MXN", "krona": "SEK", "kronor": "SEK", "zloty": "PLN", "lira": "TRY",
+    "euro": "EUR", "euros": "EUR", "eur": "EUR",
+    "dollar": "USD", "dollars": "USD", "dolar": "USD", "dolares": "USD",
+    "pound": "GBP", "pounds": "GBP", "sterling": "GBP", "livre": "GBP", "livres": "GBP",
+    "libra": "GBP", "libras": "GBP", "pfund": "GBP", "sterlina": "GBP", "sterline": "GBP",
+    "yen": "JPY", "yens": "JPY", "yenes": "JPY",
+    "franc": "CHF", "francs": "CHF", "franco": "CHF", "francos": "CHF", "franken": "CHF",
+    "yuan": "CNY", "yuans": "CNY", "renminbi": "CNY",
+    "rupee": "INR", "rupees": "INR", "roupie": "INR", "roupies": "INR", "rupia": "INR", "rupie": "INR",
+    "won": "KRW", "wons": "KRW",
+    "real": "BRL", "reais": "BRL",
+    "peso": "MXN", "pesos": "MXN",
+    "krona": "SEK", "kronor": "SEK", "couronne": "SEK", "couronnes": "SEK", "krone": "NOK",
+    "zloty": "PLN", "zlotys": "PLN", "lira": "TRY",
   ]
 
-  /// "100 USD to EUR", "convert 250 euros to yen and CAD": an amount (1 when none) and the
-  /// currencies in order, codes the ECB publishes. Nil without two currencies.
+  /// Qualified multi-word currency phrases checked before bare "dollar"/"pound"/"franc".
+  private static let qualifiedPhrases: [(phrase: String, code: String)] = [
+    ("canadian dollar", "CAD"), ("dollar canadien", "CAD"), ("dollars canadiens", "CAD"),
+    ("dolar canadiense", "CAD"), ("kanadischer dollar", "CAD"),
+    ("australian dollar", "AUD"), ("dollar australien", "AUD"), ("dolar australiano", "AUD"),
+    ("new zealand dollar", "NZD"), ("hong kong dollar", "HKD"), ("singapore dollar", "SGD"),
+    ("us dollar", "USD"), ("dollar americain", "USD"), ("dollars americains", "USD"),
+    ("british pound", "GBP"), ("livre sterling", "GBP"), ("swiss franc", "CHF"), ("franc suisse", "CHF"),
+  ]
+
+  /// Currency symbols & CJK names recognized inline even without surrounding spaces.
+  private static let inlineMarkers: [(marker: String, code: String)] = [
+    ("€", "EUR"), ("£", "GBP"), ("¥", "JPY"), ("₹", "INR"), ("₩", "KRW"), ("$", "USD"),
+    ("ユーロ", "EUR"), ("ドル", "USD"), ("円", "JPY"), ("ポンド", "GBP"),
+    ("欧元", "EUR"), ("歐元", "EUR"), ("美元", "USD"), ("日元", "JPY"), ("人民币", "CNY"), ("人民幣", "CNY"),
+    ("유로", "EUR"), ("달러", "USD"), ("엔", "JPY"), ("원", "KRW"),
+    ("евро", "EUR"), ("доллар", "USD"), ("фунт", "GBP"), ("иен", "JPY"),
+  ]
+
+  /// "100 USD to EUR", "100,50 € en dollars canadiens", "convert 250 euros to yen and CAD":
+  /// an amount (1 when none) and the currencies in order, codes the ECB publishes. Nil without two.
   static func request(_ text: String, known: Set<String>) -> Request? {
-    let words = text.replacingOccurrences(of: ",", with: "").split { !$0.isLetter && !$0.isNumber && $0 != "." }
+    var working = text
     var amount: Double?
-    var codes: [String] = []
-    for word in words {
-      if amount == nil, let number = Double(word) {
-        amount = number
+    var indexedCodes: [(offset: Int, code: String)] = []
+
+    // 1. Capture qualified multi-word phrases first and blank them out so "dollar" doesn't also add USD.
+    for entry in qualifiedPhrases {
+      if let range = working.range(of: entry.phrase, options: [.caseInsensitive, .diacriticInsensitive]),
+        known.contains(entry.code)
+      {
+        let offset = working.distance(from: working.startIndex, to: range.lowerBound)
+        indexedCodes.append((offset, entry.code))
+        let count = working.distance(from: range.lowerBound, to: range.upperBound)
+        working.replaceSubrange(range, with: String(repeating: " ", count: count))
+      }
+    }
+
+    // 2. Scan tokens (preserving order) for amount, 3-letter ISO codes, and multilingual currency names.
+    var cursor = working.startIndex
+    while cursor < working.endIndex {
+      let c = working[cursor]
+      if c.isNumber {
+        var end = cursor
+        while end < working.endIndex {
+          let ch = working[end]
+          if ch.isNumber || ch == "." || ch == "," { end = working.index(after: end) } else { break }
+        }
+        let rawNum = String(working[cursor..<end]).trimmingCharacters(in: CharacterSet(charactersIn: ".,"))
+        if amount == nil, let parsed = LanguageSupport.parseLocalizedNumber(rawNum) {
+          amount = parsed
+        }
+        cursor = end
         continue
       }
-      let upper = word.uppercased()
-      let code = known.contains(upper) && word.count == 3 ? upper : names[word.lowercased()]
-      if let code, !codes.contains(code) { codes.append(code) }
+      if c.isLetter {
+        var end = cursor
+        while end < working.endIndex, working[end].isLetter { end = working.index(after: end) }
+        let word = String(working[cursor..<end])
+        let upper = word.uppercased()
+        let key = LanguageSupport.fold(word)
+        let code = known.contains(upper) && word.count == 3 ? upper : names[key]
+        if let code, known.contains(code) {
+          let offset = working.distance(from: working.startIndex, to: cursor)
+          indexedCodes.append((offset, code))
+        }
+        cursor = end
+        continue
+      }
+      cursor = working.index(after: cursor)
+    }
+
+    // 3. Scan inline symbols / CJK currency names when not already covered by an explicit ISO code
+    //    (e.g. "$100 CAD to EUR" shouldn't inject USD if CAD is already present beside "$").
+    let explicitCodes = Set(indexedCodes.map(\.code))
+    for marker in inlineMarkers where known.contains(marker.code) {
+      if marker.marker == "$",
+        explicitCodes.contains(where: { ["CAD", "AUD", "NZD", "HKD", "SGD", "MXN", "USD"].contains($0) })
+      {
+        continue
+      }
+      if let range = working.range(of: marker.marker, options: [.caseInsensitive, .diacriticInsensitive]) {
+        let offset = working.distance(from: working.startIndex, to: range.lowerBound)
+        indexedCodes.append((offset, marker.code))
+      }
+    }
+
+    // Sort by earliest appearance and deduplicate while preserving order.
+    indexedCodes.sort { $0.offset < $1.offset }
+    var codes: [String] = []
+    for item in indexedCodes where !codes.contains(item.code) {
+      codes.append(item.code)
     }
     guard codes.count >= 2 else { return nil }
     return Request(amount: amount ?? 1, from: codes[0], to: Array(codes.dropFirst()))

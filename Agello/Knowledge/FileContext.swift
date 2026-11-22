@@ -61,7 +61,20 @@ enum FileContext {
       "<untrusted_data source=\"attached_files\">\n"
       + UntrustedContext.escapeBody(innerBlocks.joined(separator: "\n\n"))
       + "\n</untrusted_data>"
-    let ask = "Message: \(question.isEmpty ? "Describe the attached files." : question)"
+    let hasTableFile = materials.contains { material in
+      let name: String
+      switch material {
+      case .full(let n, _, _), .summary(let n, _, _): name = n
+      case .excerpts(let items): name = items.first?.label ?? ""
+      }
+      let ext = (name as NSString).pathExtension.lowercased()
+      return ext == "csv" || ext == "tsv" || ext == "json"
+    }
+    let tableHint =
+      hasTableFile
+      ? "For any count, sum, average, min/max, filter, or calculation on the attached table (in any language), call query_table_or_json instead of computing by hand.\n\n"
+      : ""
+    let ask = "\(tableHint)Message: \(question.isEmpty ? "Describe the attached files." : question)"
     return [header, dataBlock, ask].joined(separator: "\n\n")
   }
 
@@ -135,10 +148,11 @@ enum FileContext {
     text.split { !$0.isLetter && !$0.isNumber && $0 != "'" && $0 != "’" }.map(String.init)
   }
 
-  /// Word starts: summary, summarise, Zusammenfassung, riassunto, resumen, resumo, synthèse…
+  /// Word starts: summary, summarise, Zusammenfassung, riassunto, resumen, resumo, synthèse, резюме…
   private static let summaryStems = [
     "summar", "overview", "takeaway", "outlin", "zusammenfass", "uberblick", "riassun", "resumen",
     "resumir", "resumo", "synthes", "sintes", "samenvat", "podsumow",
+    "резюм", "кратк", "итог", "пересказ",
   ]
   /// Accented starts, so the English "resume" isn't one: résumé, résumer, resúmelo.
   private static let accentedStems = ["résum", "resúm"]
@@ -148,10 +162,12 @@ enum FileContext {
     "tl dr", "key point", "key points", "main point", "main points", "main idea", "main ideas",
     "what is this about", "what's this about", "what is it about", "what is the document about",
     "what is this document", "de quoi parle", "en bref", "points cles", "idees principales",
-    "de que trata", "worum geht",
+    "de que trata", "worum geht", "о чем этот", "о чём этот", "главные мысли",
   ]
-  /// Scripts without spaces between words: matched anywhere.
-  private static let summaryCharacters = ["要約", "まとめ", "概要", "总结", "總結", "摘要", "概括", "요약"]
+  /// Scripts without spaces between words (plus Arabic): matched anywhere.
+  private static let summaryCharacters = [
+    "要約", "まとめ", "概要", "总结", "總結", "摘要", "概括", "요약", "ملخص", "تلخيص", "لخص",
+  ]
 
   /// Tokens of document text per summarized section.
   static let sectionTokens = 2_400

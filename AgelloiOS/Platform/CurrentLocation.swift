@@ -28,9 +28,8 @@ enum CurrentLocation {
     }
   }
 
-  /// Words that mean "where I am" in a planner's query ("gas station near me").
+  /// Words that mean "where I am" in a planner's query ("gas station near me", "ici", "aquí", "ここ").
   static func meansHere(_ place: String) -> Bool {
-    let words: Set = ["me", "here", "my location", "moi", "ici"]
-    return words.contains(place.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    LanguageSupport.meansCurrentLocation(place)
   }
 }
