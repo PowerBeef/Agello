@@ -53,8 +53,9 @@ through the harness scripts below, not raw `mobilebuildmcp` tools.
 ```sh
 scripts/device-harness.sh unit        # ~3 min, scripted engine
 scripts/device-harness.sh inference   # real E4B engine scenarios
-scripts/device-harness.sh files       # EmbeddingGemma, 40-page PDF, citations
+scripts/device-harness.sh files       # ANE EmbeddingGemma, 40-page PDF, citations, workspace & multilingual tools
 scripts/device-harness.sh web         # live web search (needs internet)
+scripts/device-harness.sh security    # 6-vector adversarial prompt-injection gate (0% breach)
 scripts/device-harness.sh ui          # real-tap flows; needs E4B downloaded
 scripts/device-harness.sh all         # unit, then inference+files+web, then ui
 # Opt-in:

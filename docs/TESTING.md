@@ -4,12 +4,12 @@ Agello is tested on a physical iPhone, and on an Apple silicon Mac running the i
 
 ## The suites
 
-Test methods declared at `c71dcda` (2026-11-22). The dated iPhone runs and their results are in the [roadmap](ROADMAP.md#current-status).
+Test methods declared at `6864e2b` (2026-11-22). The dated iPhone and M6 runs and their results are in the [roadmap](ROADMAP.md#current-status).
 
 | Target | Tests | Covers |
 | --- | --- | --- |
-| `AgelloTests` | 384 | Planner, context budgeting, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers and page extraction (recorded fixtures), dictation, voice-activity detection, deep links and intents, Spotlight, the share inbox, chat grouping and search, personalization, titles, downloads, and the whole app pipeline through a scripted engine |
-| `AgelloDeviceTests` | 82 | The real models, in-process: download, load, text, chat isolation, stop and continue, tools, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, voice turns, exact digits past 2,048 and 4,096 tokens, benchmark; files (EmbeddingGemma indexing, "summarize this 40-page PDF", cited follow-up, search chats by meaning); live web search, automatic search with the on-device tools off |
+| `AgelloTests` | 428 | Planner, context budgeting, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers and page extraction (recorded fixtures), workspace & structured CSV/JSON tools (`WorkspaceToolsTests`), language-agnostic parsing across 13 languages (`LanguageSupportTests`), deterministic agentic security & confirmation gate (`AgentSecurityTests`), Core AI ANE embedder & SentencePiece (`CoreAIEmbedderTests`), dictation, voice-activity & neural turn detection, deep links and intents, Spotlight, the share inbox, chat grouping and search, personalization, titles, downloads, and the whole app pipeline through a scripted engine |
+| `AgelloDeviceTests` | 89 | The real models, in-process: download, load, text, chat isolation, stop and continue, tools, multi-word JSON enums under MTP, Think + tool continuity, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, voice turns, exact digits past 2,048 and 4,096 tokens, benchmark; files (ANE EmbeddingGemma 2 indexing & FP32 parity, "summarize this 40-page PDF", cited follow-up, search chats by meaning, workspace CSV/page/unit tools, parallel read-only tool calls, natural-language multilingual tool intent); live web search, automatic search with on-device tools off; and the 6-vector adversarial prompt-injection evaluation suite (`security`, gated at 0% unauthorized tool execution) |
 | `AgelloUITests` | 28 | Real taps: send, no jumping while a reply streams, Stop, Home button mid-reply, leaving and returning mid-reply, rapid settings changes, drawer and search, pin / rename / delete, projects, attached files, web search, dictation, voice mode, deep links, a long summary in the background, regenerate / edit / versions, Think, memory settings, markdown, keyboard clearance, composer controls that fit at every text size, Models, the screen an iPhone below the 12 GB floor opens on, an accessibility audit of the main screens; plus the opt-in screenshot tour and the bench driver |
 
 The device scenarios include opt-in suites for work that's too slow or too specialized for every run: long Thinking answers, a **memory pressure simulation** (incompressible ballast shrinks usable memory to 6.0, 5.0, 4.0 and 3.5 GB, as when other apps hold memory; it once stood for 8 GB iPhones, which the app no longer runs on), **context calibration** (speed and memory at 4K–32K), and **LiteRT-LM probes** that test the runtime directly. The probes are how [#3913](ENGINEERING.md#long-context-digits-on-the-gpu-litert-lm-3913) was pinned to position 2,048 and its fix proven.
@@ -23,8 +23,9 @@ cp .mobilebuildmcp/config.example.yaml .mobilebuildmcp/config.yaml
 
 scripts/device-harness.sh unit        # unit tests (~3 min, scripted engine)
 scripts/device-harness.sh inference   # engine scenarios with the real model
-scripts/device-harness.sh files       # files and search with the real models
+scripts/device-harness.sh files       # files, ANE retrieval, and workspace/multilingual tools
 scripts/device-harness.sh web         # live web search (needs internet)
+scripts/device-harness.sh security    # 6-vector adversarial prompt-injection gate (0% breach)
 scripts/device-harness.sh ui          # real-tap UI flows
 scripts/device-harness.sh all         # unit, inference + files + web, then UI
 scripts/device-harness.sh thinking | memory | calibrate | probes   # opt-in
@@ -51,9 +52,10 @@ The first run registers the Mac for development with the signing team. Results l
 
 For work on the runtime, the app's engine also builds as a command line for macOS
 ([CLI.md](CLI.md)): `scripts/cli-test.sh unit` runs the unit tests that need no interface
-natively (317, about a minute), `scripts/cli-test.sh inference` the real-model scenarios on the
-Mac's GPU, and `agello bench` the bench's cases with the runtime's telemetry, against any build
-of our LiteRT-LM. It's a development tool: what ships is confirmed on the iPhone.
+natively (361, about 20 seconds), `scripts/cli-test.sh inference|files|web|security` runs the
+real-model scenarios on the Mac's GPU (`SIM_GPU=Apple_A19_Pro`), and `agello bench` runs the bench's
+cases with the runtime's telemetry, against any build of our LiteRT-LM. It's a development tool:
+what ships is confirmed on the iPhone.
 
 ### Looking at the iPhone
 

@@ -58,16 +58,15 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   `ContextBudget.allocatedPositions` (the app's 64K request gets the full
   65,536 with the shipped v2 128K model, or 32,000 with older 32K files). The
   64-token margin is what keeps an MTP / `verify_8` round inside.
-- With tools offered, the room is split (`ToolBudget.plan`): an eighth per
-  tool result (budgeted in estimated tokens), at most two calls; the first
-  round, where nearly every reply is answered, gets half the room plus Think's
-  reasoning budget on top; the two later rounds share what's left, at least a
-  sixteenth each, or their reasoning budget plus 256 answer tokens when that
-  fits (tool rounds reason with the conversation's budget: the wrapper sends
-  them no thinking config). Each reply sends its own reasoning budget that
-  leaves the answer room (`ToolBudget.reasoning`). Until 2026-11-02 the first
-  round got a quarter with the reasoning inside it: probe 23 measured every
-  long answer with Think cut at about 1,960 tokens in an 8K chat. A streaming guard (only with tools) ends the reply
+- With tools offered, the room is split (`ToolBudget.plan`): below `16,384`
+  tokens of room, an eighth per tool result with at most 2 calls; at `>= 16,384`
+  tokens (typical 64K chats), a sixteenth per tool result (1,000–4,000 tokens
+  each) with up to 4 calls for multi-step Think + parallel read-only rounds.
+  The first round, where nearly every reply is answered, gets half the room plus
+  Think's reasoning budget on top; later rounds share what's left, at least
+  their floor or reasoning budget plus 256 answer tokens when that fits. Each
+  reply sends its own reasoning budget that leaves the answer room
+  (`ToolBudget.reasoning`). A streaming guard (only with tools) ends the reply
   (`replyTruncated`) before output plus tool results exceed the room; without
   tools the runtime's cap is exact. Don't loosen these limits.
 - Counts are exact (probe 17): `Conversation.renderMessageIntoString`
@@ -194,19 +193,60 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
     then `build_v2.sh` (see `agello-litert-update`), then run
     `test15_LongContextDigitFidelity`, `test27_NeedleTable`, and
     `test28_WindowPositions`.
-- Speculative decoding (MTP) breaks JSON-schema constrained decoding on
-  device: the draft and verify states share
-  one grammar matcher, so verify masks come from the wrong position and a
-  rejected draft stays committed (reference `troubleshooting.md`).
-  `helperJSON` turns MTP off; plain-text helpers keep it. Fixed in the fork's
-  `1382157b` (each state its own matcher, each mask kept): with a runtime that
-  has it, `AGELLO_JSON_MTP=1` lets JSON helpers speculate
-  (`LiteRTChatEngine.jsonHelpersSpeculate`); the default flips when a release
-  with it is vendored.
-- JSON-schema enums take one-word values: on our runtime a space inside an
-  enum or const value fails the grammar ("Failed to commit token: ▁talk",
-  the tokenizer's word-start marker read as its own bytes; 2026-11-02, the
-  Search plan's `kind`). Free strings are fine.
+- **JSON-schema constrained decoding & MTP (P5.1):**
+  - Fork `1382157b` fixed MTP + JSON grammar state sharing (each verify state
+    keeps its own matcher/mask), and `LiteRT-LM@7d80c7ec` fixed
+    `LlgConstraintProvider`'s `TokTrie` byte/special-token encoding (`▁` →
+    `0x20`, `<0xXX>` → raw byte, `0xFF` on control/pipe tokens), unlocking
+    multi-word JSON schema enums (`test16_MultiWordJsonEnumWithMTP`).
+  - `LiteRTChatEngine.jsonHelpersSpeculate` now defaults ON (`AGELLO_JSON_MTP`
+    != `"0"`). Note: until a dual-slice runtime release incorporating
+    `7d80c7ec` is vendored into `Vendor/LiteRT-LM`, single-word enum values in
+    existing shipped schemas remain compatible with `agello-one-20261122-2`.
+- **Tool safety & mutability (`AgentSecurity.swift`):**
+  - Spotlight every untrusted external text (attached files, web search results,
+    shared text, and external tool outputs) inside `<untrusted_data>` after
+    `PromptText.neutralized`, and strip untrusted blocks before memory
+    extraction (`UntrustedContext.stripUntrustedBlocks`).
+  - Mark every `Tool` struct with explicit `static let isReadOnly` (`true` for
+    read-only tools eligible for parallel `withTaskGroup` execution; `false`
+    for side-effectful tools like `create_calendar_event` and
+    `create_reminder`). Every `isReadOnly == false` tool MUST call
+    `ToolConfirmationGate.confirm(...)` before mutating state — fail-closed by
+    default when backgrounded, stopped, or without an active UI presenter.
+  - Never throw from `Tool.run()`: return an actionable `["error": "..."]`
+    dictionary so LiteRT-LM lets the model recover instead of aborting the turn.
+
+## Language-agnostic tools and prompts
+
+Gemma 4 E4B covers 140+ languages, with English as its strongest structured and
+tool-calling tier. Keep multilingual behavior seamless without degrading English
+speed, token budget, or output quality:
+
+- **Natural language in, user's language out.** Never require users to phrase
+  requests in a special syntax or name tools to trigger features.
+- **Keep machine-to-code boundaries structured or canonical.** Prefer explicit
+  structured tool arguments (e.g. `SearchPlacesTool.near`) over parsing
+  natural-language prepositions in Swift. In `WebContext.queryPrompt`, keep
+  encyclopedia queries in the user's language while instructing structured API
+  topics (`place`, `weather`, `currency`) to emit canonical formats with local
+  place names intact.
+- **Defense in depth via `LanguageSupport.swift`.** E4B can still emit localized
+  terms even on English messages containing non-English proper nouns (e.g.
+  `"Place des Arts"` → `"pharmacie près de Place des Arts"`). Route all
+  Swift-side multilingual parsing through `Agello/Inference/LanguageSupport.swift`
+  (`meansCurrentLocation`, `splitPlaceQuery`, `stripWeatherNoise`,
+  `stripPlaceHoursNoise`, `normalizeTransportMode`, `parseLocalizedNumber`,
+  `isDifferenceFollowUp`, `fold` including German `ß → ss`). Never add
+  English-only regexes or splitters, and never strip bare month names or
+  articles inside city names (`"Rio de Janeiro"`, `"La Paz"`).
+- **Zero-cost conditional tool hints.** Don't bloat `SystemPrompt.base` (tuned
+  against 142 checks in `docs/SYSTEM-PROMPT.md`). When non-English turns need
+  stronger tool-selection grounding (e.g. E4B attempting mental math on an
+  inlined CSV in Spanish), emit a crisp 1-line hint *only* when that context is
+  present (`FileContext.prompt` for `.csv`/`.tsv`/`.json` files) and verify
+  both English (`WebScenarioTests`) and natural multilingual prompts
+  (`KnowledgeScenarioTests/test07_MultilingualNaturalToolIntent`).
 - Don't trust the model file's `thinking` or `functionCalling` flags: Gemma 4
   files report both as unsupported, yet both work.
 - With MTP on, `agello-one-20261115` used to rewrite a reply's last token in

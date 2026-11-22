@@ -35,7 +35,7 @@ Once per machine: `cp .mobilebuildmcp/config.example.yaml .mobilebuildmcp/config
 
 ```sh
 scripts/device-harness.sh unit      # AgelloTests, ~3 min, scripted engine (iPhone)
-PLATFORM=mac scripts/device-harness.sh unit        # all 384 unit tests in real iOS binary on Mac (no phone)
+PLATFORM=mac scripts/device-harness.sh unit        # all 428 unit tests in real iOS binary on Mac (no phone)
 PLATFORM=mac scripts/device-harness.sh inference   # real-model scenarios in iOS binary on Mac; not ui/screenshots/memory/bench
 ONLY=AgelloTests/AppStateTests scripts/device-harness.sh unit
 ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-harness.sh inference
@@ -49,8 +49,9 @@ swift build -c release --scratch-path build/cli/release   # Mac CLI (docs/CLI.md
 scripts/cli-bench.sh release next -- --only explain       # interleaved A/B on Mac (default SIM_GPU=Apple_A19_Pro)
 scripts/mac-ready.sh                                      # checks Mac load; cli-bench.sh exits 4 if busy
 scripts/phone-bench.sh release next                       # batched iPhone 17 Pro hardware gate (Mac only builds)
-scripts/cli-test.sh unit                                  # 317 unit tests natively on Mac, ~1 min, no phone
+scripts/cli-test.sh unit                                  # 361 unit tests natively on Mac, ~20 s, no phone
 scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-model scenarios on Mac (SIM_GPU=Apple_A19_Pro)
+scripts/cli-test.sh security                              # 6-vector adversarial prompt-injection gate on Mac
 ```
 
 `ONLY` takes `Target/Class[/method]` entries within the chosen suite (not with `all`):
@@ -58,7 +59,7 @@ scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-mo
 | Suite | Scope |
 | --- | --- |
 | `unit` / `ui` | `AgelloTests` / `AgelloUITests` |
-| `inference` / `files` / `web` | `AgelloDeviceTests/` `InferenceScenarioTests` / `KnowledgeScenarioTests` / `WebScenarioTests` |
+| `inference` / `files` / `web` / `security` | `AgelloDeviceTests/` `InferenceScenarioTests` / `KnowledgeScenarioTests` / `WebScenarioTests` / `AgentSecurityScenarioTests` |
 | `thinking` / `memory` / `probes` / `calibrate` (opt-in) | `AgelloDeviceTests/` `ThinkingScenarioTests` / `MemoryEnvelopeScenarioTests` / `ProbeScenarioTests` / `CalibrationScenarioTests` |
 | `screenshots` (opt-in) | `AgelloUITests/ScreenshotTourUITests` (guided real-model tour, one screenshot per screen) |
 | `bench` (opt-in, iPhone) | `AgelloUITests/BenchUITests` ([HARNESS.md](docs/HARNESS.md)): Bench build through real UI, traced replies, report in `build/device-harness/bench/` vs `scripts/bench/baseline.json`; `BENCH_RESUME=1` finishes interrupted runs |
@@ -88,12 +89,13 @@ scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-mo
 
 ## Architecture
 
-- **`AppState`** (`Agello/AppState.swift`, `+Reply`, `+Web`, `+Chats`, `+Benchmark`; `@MainActor @Observable`) owns the engine, `KnowledgeBase`, and `ModelStore`, persists settings to UserDefaults in `didSet`, and unifies `send`, `regenerate`, and `edit` (plus voice and ShareInbox) through one `generate` path: pending settings → file context → web search → bind conversation → `fitContext` → save user turn + placeholder → `engine.send` → `consume` (throttled ≤ 100 ms to SwiftData `ChatTurn`) → helpers (memories, title) + Spotlight.
+- **`AppState`** (`Agello/AppState.swift`, `+Reply`, `+Tools`, `+Web`, `+Chats`, `+Benchmark`; `@MainActor @Observable`) owns the engine, `KnowledgeBase`, and `ModelStore`, persists settings to UserDefaults in `didSet`, and unifies `send`, `regenerate`, and `edit` (plus voice and ShareInbox) through one `generate` path: pending settings → file context → web search → bind conversation → `fitContext` → save user turn + placeholder → `engine.send` → `consume` (throttled ≤ 100 ms to SwiftData `ChatTurn`) → helpers (memories, title) + Spotlight.
 - **Engine boundary.** `ChatEngineProtocol` (`Inference/ChatEngine.swift`) has two actors: `LiteRTChatEngine` (sole owner of LiteRT-LM `Engine` & `Conversation`) and `MockChatEngine` (unit tests, `--mock-engine`). Keep `import LiteRTLM` confined to `ChatEngine.swift`, `Inference/Tools.swift`, `Knowledge/Embedding.swift`, and `AppState+Benchmark.swift`.
 - **One live conversation per engine.** `conversationThreadID` tracks the bound chat; cancellation or switching leaves it unbound so the next send reseeds from SwiftData. Helper prompts use throwaway conversations, keeping the main conversation's KV snapshot aside when memory allows (`DeviceProfile.keepsConversationAcrossHelpers`, `lastHelperKeptConversation`). `serialized { }` serializes engine operations — never nest it.
-- **Settings → engine.** `InferenceOptions` (`Inference/ChatTypes.swift`) → `InferencePlanner.resolve` → `ResolvedInference`. `requiresEngineReload` picks reload vs reseed; `scheduleApplyOptions` debounces 600 ms. Put pure decision logic in unit-tested enums (`InferencePlanner`, `ContextBudget`, `SystemPrompt`, `FileContext`, `HelperTasks`, `ToolBudget`, `Dictation`), not in `AppState` or views.
+- **Settings → engine.** `InferenceOptions` (`Inference/ChatTypes.swift`) → `InferencePlanner.resolve` → `ResolvedInference`. `requiresEngineReload` picks reload vs reseed; `scheduleApplyOptions` debounces 600 ms. Put pure decision logic in unit-tested enums (`InferencePlanner`, `ContextBudget`, `SystemPrompt`, `FileContext`, `HelperTasks`, `ToolBudget`, `Dictation`, `LanguageSupport`, `StructuredDataQuery`, `UnitConverter`, `PersonalToolsLogic`, `UntrustedContext`), not in `AppState` or views.
+- **Tools, security & language-agnostic design.** Users write natural language in any language without special phrasing. Keep user-facing replies in the user's language, keep machine-to-code boundaries structured or canonical (e.g. `SearchPlacesTool.near`, canonical `place`/`weather`/`currency` formats with local place names intact), and route all Swift-side multilingual normalization/parsing through `Inference/LanguageSupport.swift` (13 languages: EN/FR/ES/DE/IT/PT/NL/PL/RU/AR/JA/ZH/KO) — never add English-only splitters or bloat `SystemPrompt.base` in ways that hurt English quality or latency. Spotlight all untrusted external inputs inside `<untrusted_data>` (`AgentSecurity.swift`), quarantine persistent memories from untrusted blocks, and gate every mutating tool (`isReadOnly == false`) behind fail-closed `ToolConfirmationGate` + inline `ToolConfirmationCard`.
 - **Persistence.** SwiftData `VersionedSchema`s in `Persistence/Schema/` (current: V3) with `ChatMigrationPlan` and typealiases in `Persistence/ChatHistory.swift`. Turns form a tree (`parentID`) with `activeLeafID` selecting the visible branch (edit/regenerate/version switcher).
-- **Knowledge.** `DocumentIngestor` (PDFKit, Vision OCR) → `Chunker` (page-aware passages) → `LiteRTEmbedder` (EmbeddingGemma, 768 dims) → float16 vectors in SwiftData searched by `VectorIndex` (BM25 fallback). `FileContext` chooses whole files, cached summary, or cited passages. `Knowledge/Web/` (`WebResearch`) queries only terms-permitted, key-free sources by `SearchTopic` (Wikimedia, Wikidata, Apple Weather/Maps, ECB, Crossref, PubMed) plus `WebSearchTool`.
+- **Knowledge.** `DocumentIngestor` (PDFKit, Vision OCR) → `Chunker` (page-aware passages) → `CoreAIEmbedder` on 16-core ANE (EmbeddingGemma 2, 768 dims, `usesGPU = false`; `LiteRTEmbedder` fallback) → float16 vectors in SwiftData searched by `VectorIndex` (BM25 fallback). `FileContext` chooses whole files, cached summary, or cited passages (adding a targeted `query_table_or_json` hint only for `.csv`/`.tsv`/`.json` files). `Knowledge/Web/` (`WebResearch`) queries only terms-permitted, key-free sources by `SearchTopic` (Wikimedia, Wikidata, Apple Weather/Maps, ECB, Crossref, PubMed) plus `WebSearchTool`.
 - **Outside the app.** Extensions cannot run models: App Intents & `agello://` → `AppRouter.shared.pending` → `ShellModel.perform`; Share extension writes to App Group `ShareInbox`. Only long document summaries use `BackgroundWork` (`BGContinuedProcessingTask` with background GPU); other replies stop when backgrounded.
 - **Design system.** `Support/Theme/`: forced dark palette (warm neutrals on navy) with four mode accents (Chat glacier, Think lavender, Search teal, Voice gold). Liquid Glass only on chrome (`chromeSurface`, solid fallback under Reduce Transparency); content uses `surfaceCard`; primary buttons use `LitButtonStyle` / `LitCircleButtonStyle`; motion via `Theme.Motion` & `appAnimation`. No system blue, no literal sizes.
 - **Models.** `ModelHub/ModelCatalog.swift` pins HF repo, revision, file, exact byte size, and SHA-256. `ModelStore` downloads in background `URLSession`, verifies size, and deletes unlisted files in its folder (renaming a catalog file forces every user to re-download).
@@ -107,7 +109,8 @@ scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-mo
 - **Schema changes** require a frozen `SchemaV4` (new properties optional/defaulted), migration stage, repointed typealiases + `ChatStore.schema`, and an on-disk migration test (`ChatSchemaTests`). `ChatStoreLoader` moves an unopenable store aside, so a broken migration wipes history instead of crashing. New `MessageParts` fields need no schema bump (`decodeIfPresent`).
 - **Chat streaming scroll uses scroll anchors, never per-chunk `scrollTo`.** Keep `.defaultScrollAnchor(.bottom, for: .sizeChanges)` (tracked via `onScrollGeometryChange`), top alignment for short chats, and animated `scrollTo(id:anchor: .bottom)` only when a message is added (`testStreamingNeverJumps` and bench `mockup-os-search` guard this).
 - **No Advanced settings screen** (removed 2026-11-11). Engine choices (MTP, Think budget, sampler, vision, audio, image detail, system prompt) belong to the app — never re-expose them in Settings (`InferenceOptions.launch` preserves only Think). Five taps on Settings' version line opens `DeveloperSettingsView` (`showPerformanceDetails`, benchmark, loaded engine info).
-- **Accessibility identifiers** follow `screen.element` (`chat.stop`, `composer.think`, `models.ready.<id>`); UI tests depend on them — keep stable.
+- **Multilingual tool & parser hygiene.** Never write English-only preposition splitters, currency/number parsers, transport maps, or keyword heuristics in Swift. Prefer structured tool parameters (`SearchPlacesTool.near`), reuse `LanguageSupport` (`Inference/LanguageSupport.swift`), guard month/preposition stripping so real city names (`"Rio de Janeiro"`, `"La Paz"`) are never mangled, and test natural non-English prompts with no tool names mentioned (`LanguageSupportTests`, `KnowledgeScenarioTests/test07_MultilingualNaturalToolIntent`).
+- **Accessibility identifiers** follow `screen.element` (`chat.stop`, `composer.think`, `models.ready.<id>`, `tool.confirm.approve`); UI tests depend on them — keep stable.
 
 ## Style
 

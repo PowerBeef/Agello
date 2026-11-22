@@ -23,27 +23,28 @@ flowchart TB
   Router["AppRouter<br/>Siri · Shortcuts · widgets · Spotlight · links · share inbox"] --> AppState
 
   Engine --> LiteRT["LiteRT-LM<br/>Engine + Conversation"]
-  Knowledge --> Embed["LiteRTEmbedder<br/>EmbeddingGemma"]
+  Knowledge --> Embed["CoreAIEmbedder (ANE)<br/>EmbeddingGemma 2"]
   LiteRT --> GPU["Metal GPU"]
-  Embed --> GPU
+  Embed --> ANE["16-Core ANE"]
 ```
 
 ## Components
 
 | Component | Responsibility |
 | --- | --- |
-| `AppState` | The hub. Runs every engine operation (load, settings change, benchmark, delete, helpers) one at a time; binds the native conversation to the open chat; drives send, regenerate and edit through one generation path; streams replies into SwiftData about ten times a second; persists settings. |
-| `LiteRTChatEngine` | The single owner of a LiteRT-LM `Engine` and `Conversation`. Loads on the GPU through a multimodal → text-only ladder, validates each engine, keeps every request inside the KV cache, and runs JSON-constrained helper prompts. `MockChatEngine` implements the same `ChatEngineProtocol` with a script, for tests and `--mock-engine`. |
+| `AppState` | The hub (`+Reply`, `+Tools`, `+Web`, `+Chats`, `+Benchmark`). Runs every engine operation (load, settings change, benchmark, delete, helpers) one at a time; binds the native conversation to the open chat; drives send, regenerate and edit through one generation path; streams replies into SwiftData about ten times a second; manages inline tool confirmations and persists settings. |
+| `LiteRTChatEngine` | The single owner of a LiteRT-LM `Engine` and `Conversation`. Loads on the GPU through a multimodal → text-only ladder, validates each engine, keeps every request inside the KV cache, and runs JSON-constrained helper prompts (with MTP on by default). `MockChatEngine` implements the same `ChatEngineProtocol` with a script, for tests and `--mock-engine`. |
 | `InferencePlanner`, `ContextBudget` | Pure, tested resolution of options and device memory into KV-cache size, sampler, thinking and visual-token budgets, and speculative decoding; token estimates, token-budgeted history trimming, evicted-turn recall formatting, and reply caps. Decides when a settings change needs an engine rebuild. |
-| `ToolBudget`, tools | Date/time, calculator and web search tools, each generation round's share of the remaining context, and the live tool status. |
+| `ToolBudget`, tools & security | Offline tools (date/time, calculator, `convert_units`, `search_files`, `read_document_pages`, `search_past_chats`, `query_table_or_json`), automatic `web_search`, and opt-in native iOS personal tools (`EventKit` Calendar & Reminders, `Contacts`, `MapKit` Places & ETA). Parallel read-only tool dispatch (`Tool.isReadOnly`), `<untrusted_data>` spotlighting & memory quarantine (`UntrustedContext`), and fail-closed pre-execution confirmation cards (`ToolConfirmationGate`, `ToolConfirmationCard`) for every mutating tool. |
+| `LanguageSupport` | Pure, zero-latency multilingual normalization across 13 languages (EN/FR/ES/DE/IT/PT/NL/PL/RU/AR/JA/ZH/KO) for current-location detection, European + CJK proximity place splitting, weather/store-hours noise stripping, MapKit transport modes, US + European localized numbers, and comparative follow-ups. |
 | Chat history | A SwiftData `VersionedSchema` (V1 → V3) with a migration plan: threads, turns, projects, documents and their passages, memories. |
 | `MarkdownDocument`, `MarkdownView` | Pure, tested parsing (swift-markdown) into typed blocks, with display math split out and inline LaTeX converted to Unicode; rendering with syntax-highlighted code and SwiftMath typesetting. |
-| `KnowledgeBase` | Stores attached files as page-aware passages, embeds them (and chats) with EmbeddingGemma in the background, and finds relevant passages, related chats, and evicted-turn recall snippets. |
-| `DocumentIngestor`, `Chunker`, `FileContext` | Pure, tested file reading (PDFKit, Vision text recognition, text formats), splitting into ~400-token passages with page numbers, and the choice of what the model reads within half the context window. |
-| `SystemPrompt` | Composes the base prompt, personalization, memories, project instructions and voice mode; any change rebuilds the conversation before the next message. |
-| `WebResearch` | Sources chosen by the planner's topic (`SearchTopic`): Wikipedia, Wikidata, Wikivoyage, Wiktionary, Wikiquote and Current events (`ReferenceSources.swift`), Apple Weather and Apple Maps (`AppleSources.swift`), the ECB's rates, Crossref, PubMed; a structured answer pinned first, pages read in parallel with a built-in readable-text extractor, passages ranked with EmbeddingGemma, numbered sources. Only sources whose terms permit the app, no API keys (2026-11-12). `WebSearchTool` exposes it to the model in automatic mode. |
-| `Dictation`, `VoiceSession` | Transcription through Gemma's audio input; hands-free conversation with voice-activity turn detection, one audio engine for echo-cancelled capture and sentence-by-sentence speech, barge-in, and a camera frame per utterance. |
-| `AppRouter`, App Intents | "Ask Agello", "New Chat", "Talk to Agello", widgets, Control Center, Spotlight and `agello://` links all hand off to the app, which does the work in the foreground. |
+| `KnowledgeBase` | Stores attached files as page-aware passages, embeds them (and chats) on the 16-core ANE with `CoreAIEmbedder` (`EmbeddingGemma 2`, zero Metal GPU contention; `LiteRTEmbedder` fallback), and finds relevant passages, related chats, and evicted-turn recall snippets. |
+| `DocumentIngestor`, `Chunker`, `FileContext` | Pure, tested file reading (PDFKit, Vision text recognition, text formats), splitting into ~400-token passages with page numbers, and the choice of what the model reads within half the context window (with a targeted `query_table_or_json` hint only for `.csv`/`.tsv`/`.json` files). |
+| `SystemPrompt` | Composes the base prompt, personalization, memories, project instructions, voice mode, and `<untrusted_data>` data-boundary rules; any change rebuilds the conversation before the next message. |
+| `WebResearch` | Sources chosen by the planner's topic (`SearchTopic`): Wikipedia, Wikidata, Wikivoyage, Wiktionary, Wikiquote and Current events (`ReferenceSources.swift`), Apple Weather and Apple Maps (`AppleSources.swift`), the ECB's rates, Crossref, PubMed; a structured answer pinned first, pages read in parallel with a built-in readable-text extractor, passages ranked on ANE with EmbeddingGemma 2, numbered sources. Only sources whose terms permit the app, no API keys (2026-11-12). `WebSearchTool` exposes it to the model in automatic mode. |
+| `Dictation`, `LiveSpeechTranscriber`, `VoiceSession` | Instant ANE streaming dictation via iOS 27 `SpeechAnalyzer` (falling back to Gemma's audio input), and hands-free conversation with hybrid acoustic+neural end-of-utterance detection, echo-cancelled capture and sentence-by-sentence speech, barge-in, and a camera frame per utterance. |
+| `AppRouter`, App Intents | "Ask Agello", "New Chat", "Talk to Agello" (locked behind `IntentAuthenticationPolicy.requiresAuthentication`), widgets, Control Center, Spotlight and `agello://` links all hand off to the app, which does the work in the foreground. |
 | `ShareInbox`, `SpotlightIndex` | Items shared from other apps wait in an App Group inbox for the app to answer; chats are indexed for system search. |
 | `BackgroundWork` | A continued processing task (background GPU) around long document summaries, with system progress UI that can cancel it. |
 | `ModelStore`, `ModelCatalog` | Pinned model downloads in a background `URLSession`, size verification, storage, and cleanup of retired files. |
@@ -64,6 +65,14 @@ flowchart TB
 ## Data model
 
 Turns form a tree through `parentID`. Each thread stores its active leaf, and the visible conversation is the path from that leaf to the root. Editing or regenerating adds a sibling version, and the ‹ 2/3 › switcher moves the active leaf. Regenerate and edit rebuild the model's context from the turns before the changed one, so abandoned branches never reach the model.
+
+## Multilingual design
+
+Users write naturally in their own language with no special syntax or tool names required, while English — E4B's strongest reasoning and tool-calling tier — stays completely unaffected in quality and speed:
+
+1. **User-facing conversation stays in the user's language.** Gemma 4 E4B (140+ languages) and ANE `EmbeddingGemma 2` (100+ languages) handle replies and semantic retrieval natively; `NLLanguageRecognizer` routes Wikipedia and sister projects to the message's language with English fallback.
+2. **Machine-to-code boundaries stay structured or canonical.** Tools accept structured parameters (such as `SearchPlacesTool.near`), and `WebContext.queryPrompt` keeps encyclopedia queries in the user's language while guiding structured API topics (`place`, `weather`, `currency`) toward canonical formats with local place names intact.
+3. **Deterministic defense-in-depth in Swift (`LanguageSupport.swift`).** Whenever localized terms still appear (even inside English prompts mentioning non-English landmarks like `"Place des Arts"`), `LanguageSupport`, `ExchangeRates`, `UnitConverter`, `StructuredDataQuery`, `FileContext`, and `HelperTasks` parse them cleanly in Swift at zero token cost.
 
 ## Concurrency
 

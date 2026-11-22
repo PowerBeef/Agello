@@ -299,10 +299,10 @@ The research placed these elsewhere; each is a separate change with its own chec
 | --- | --- |
 | Comma-list citations such as "[4, 22]" get past the out-of-range check | **Done** (`d159ad1`): one pattern for single markers and lists, on screen, in spoken text, `test06` and `bench-report.py` |
 | The web prompt's wording leaks ("Based on the reference material…") and replies discuss sources that don't bear on the question | `WebContext.instructions` |
-| A web or file page could plant a memory that rides in every later system prompt | **Checked:** the memory helper reads only the typed message, never the material. **Done** for shared items (`c02d942`): their text was sent as the message, so only what the user typed is remembered |
-| No tool parameter is marked required (`calculate.expression`, `web_search.query` reach the model as optional) | Swift signatures without defaults (about 6 tokens a tool) |
+| A web or file page could plant a memory that rides in every later system prompt | **Done** (`c02d942`, `fc3d375`): shared items send only what the user typed to memory extraction, and `UntrustedContext.stripUntrustedBlocks` strips all `<untrusted_data>`/`<file>`/`<sources>` blocks before memory extraction (guarded by `AgentSecurityScenarioTests`) |
+| No tool parameter is marked required (`calculate.expression`, `web_search.query` reach the model as optional) | **Done** (`a96bd87`, P5.1): required `@ToolParam` arguments are non-optional without defaults across all tools |
 | The date tool went unused in `web02` | the tool's description: when to call it |
 | A weather answer said "tomorrow, Sunday, November 22" with the date given | **Done** (`45c7ebe`): the forecast names Today and Tomorrow in the place's calendar |
-| The planner wrote a French query for an English message and planned a store's closing time without "near me" | `queryPrompt`, and the message's language detected in code |
-| The app puts the image after the text; Google's card puts it before | `ChatEngine.runSend`, tested on its own |
-| Thoughts are removed before a tool's response, against Google's rule to keep them within a tool-calling turn | the runtime, tested on its own |
+| The planner wrote a French query for an English message and planned a store's closing time without "near me" | **Done** (`6864e2b`): `WebContext.queryPrompt` guides structured topics (`place`, `weather`, `currency`) to canonical formats while keeping local place names intact, backed by `LanguageSupport.swift` (13 languages for proximity splitting, store-hours & weather noise stripping, current-location detection, localized numbers, and follow-up margin detection) plus structured `SearchPlacesTool.near` |
+| The app puts the image after the text; Google's card puts it before | **Done** (`8382f04`, P4.2): `ChatEngine.runSend` places image tokens before text |
+| Thoughts are removed before a tool's response, against Google's rule to keep them within a tool-calling turn | **Done** (`LiteRT-LM@7d80c7ec`, P5.1): `Conversation` keeps `<thought>` live in KV across intermediate tool steps and strips once after the final user-visible answer (`test17_ThinkToolCallContinuity`) |
