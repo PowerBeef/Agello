@@ -229,6 +229,7 @@ case "$SUITE" in
   inference) scopes="$DEVICE_TESTS/InferenceScenarioTests" ;;
   files) scopes="$DEVICE_TESTS/KnowledgeScenarioTests" ;;
   web) scopes="$DEVICE_TESTS/WebScenarioTests" ;;
+  security) scopes="$DEVICE_TESTS/AgentSecurityScenarioTests" ;;
   ui) scopes="AgelloUITests" ;;
   thinking)
     export TEST_RUNNER_HARNESS_THINKING=1

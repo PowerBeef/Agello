@@ -9,6 +9,7 @@ struct NewChatIntent: AppIntent {
   static let title: LocalizedStringResource = "New Chat"
   static let description = IntentDescription("Start a new chat in Agello.")
   static let supportedModes: IntentModes = .foreground(.immediate)
+  static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
   func perform() async throws -> some IntentResult {
     #if !WIDGET_EXTENSION
@@ -18,11 +19,13 @@ struct NewChatIntent: AppIntent {
   }
 }
 
-/// Talk hands-free (voice mode).
+/// Talk hands-free (voice mode). Requires device unlock so voice queries cannot access
+/// personal-context tools from a locked screen.
 struct StartVoiceModeIntent: AppIntent {
   static let title: LocalizedStringResource = "Talk to Agello"
   static let description = IntentDescription("Start a hands-free voice conversation.")
   static let supportedModes: IntentModes = .foreground(.immediate)
+  static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
   func perform() async throws -> some IntentResult {
     #if !WIDGET_EXTENSION

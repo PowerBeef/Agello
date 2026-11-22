@@ -33,6 +33,60 @@ extension AppState {
     }
   }
 
+  /// Registers the fail-closed UI confirmation presenter for mutating tools (`isReadOnly == false`).
+  func installToolConfirmationGate() {
+    ToolConfirmationGate.installPresenter { [weak self] request in
+      guard let self else {
+        return .denied(reason: "Agello is unavailable; action was not executed.")
+      }
+      return await self.requestToolConfirmation(request)
+    }
+  }
+
+  /// Presents a pre-execution confirmation card in the active chat stream and suspends
+  /// until the user approves, denies, stops the reply, or backgrounds the app.
+  func requestToolConfirmation(_ request: ToolConfirmationRequest) async -> ToolConfirmationDecision {
+    guard isInForeground, GPUGate.isOpen else {
+      return .denied(reason: "Foreground confirmation is required before running \(request.toolName).")
+    }
+    // Fail-close any stale request before displaying the new one.
+    cancelPendingToolConfirmation(reason: "Superseded by a new action.")
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        pendingToolConfirmation = request
+        pendingToolConfirmationContinuation = continuation
+        Haptics.selection()
+      }
+    } onCancel: {
+      Task { @MainActor [weak self] in
+        self?.cancelPendingToolConfirmation(reason: "Cancelled before approval.")
+      }
+    }
+  }
+
+  /// Resolves the inline confirmation card in the chat stream when the user taps Approve or Deny.
+  func resolvePendingToolConfirmation(approved: Bool) {
+    guard let continuation = pendingToolConfirmationContinuation else {
+      pendingToolConfirmation = nil
+      return
+    }
+    pendingToolConfirmation = nil
+    pendingToolConfirmationContinuation = nil
+    continuation.resume(
+      returning: approved ? .approved : .denied(reason: "Denied by the user."))
+  }
+
+  /// Cancels any pending confirmation card with a fail-closed `.denied` decision.
+  func cancelPendingToolConfirmation(reason: String) {
+    guard let continuation = pendingToolConfirmationContinuation else {
+      pendingToolConfirmation = nil
+      return
+    }
+    pendingToolConfirmation = nil
+    pendingToolConfirmationContinuation = nil
+    continuation.resume(returning: .denied(reason: reason))
+  }
+
   /// Documents visible to the currently generating or selected thread (thread files + project files).
   func activeWorkspaceDocuments() -> [ChatDocument] {
     guard let context = modelContext,

@@ -36,6 +36,7 @@ case "$SUITE" in
   inference) bundle=AgelloDeviceTests; classes="InferenceScenarioTests" ;;
   files) bundle=AgelloDeviceTests; classes="KnowledgeScenarioTests" ;;
   web) bundle=AgelloDeviceTests; classes="WebScenarioTests" ;;
+  security) bundle=AgelloDeviceTests; classes="AgentSecurityScenarioTests" ;;
   thinking) bundle=AgelloDeviceTests; classes="ThinkingScenarioTests"; export HARNESS_THINKING=1 ;;
   probes) bundle=AgelloDeviceTests; classes="ProbeScenarioTests"; export HARNESS_PROBES=1 ;;
   calibrate) bundle=AgelloDeviceTests; classes="CalibrationScenarioTests"; export HARNESS_CALIBRATE=1 ;;

@@ -235,6 +235,7 @@ extension AppState {
   }
 
   func stop() {
+    cancelPendingToolConfirmation(reason: "Stopped by the user.")
     if BackgroundWork.shared.isPendingOrActive {
       stopCount &+= 1
       preparationTask?.cancel()
@@ -252,6 +253,7 @@ extension AppState {
   /// Cancels active work and waits for in-flight GPU work to drain before completing any
   /// continued processing task (keeps `.gpu` entitlement held during drain).
   func stopAndDrain() async {
+    cancelPendingToolConfirmation(reason: "Stopped by the user.")
     stopCount &+= 1
     drainingBackgroundWork = true
     defer {
@@ -269,6 +271,7 @@ extension AppState {
   /// command buffers fail or the app be terminated.
   func enterBackground() {
     isInForeground = false
+    cancelPendingToolConfirmation(reason: "Cancelled because Agello moved to the background.")
     // A continued task with background GPU access (submitted or running) lets the reply finish.
     let continuing = BackgroundWork.shared.isPendingOrActive
     GPUGate.set(continuing)

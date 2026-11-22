@@ -154,14 +154,19 @@ enum SystemPrompt {
   }
 
   /// Base prompt, personalization, saved memories, then the project's
-  /// instructions.
+  /// instructions, plus untrusted-data boundary guidance when agentic tools are enabled.
   static func compose(
     base: String, personalization: Personalization, project: ProjectContext?,
-    memories: [String] = [], today: Date = .now, current: CurrentInfo = .none
+    memories: [String] = [], today: Date = .now, current: CurrentInfo = .none,
+    dataSecurity: Bool = false
   ) -> String {
-    composeText(
+    var prompt = composeText(
       base: base, personalization: personalization, project: project, memories: memories,
       today: today, current: current)
+    if dataSecurity {
+      prompt += "\n\n" + UntrustedContext.dataBoundaryInstruction
+    }
+    return prompt
   }
 
   private static func composeText(

@@ -63,8 +63,11 @@ struct WebSearchTool: Tool {
     ToolActivity.record(Self.name, summary: "Searched the web for “\(trimmed)”")
     let subject = SearchTopic(rawValue: topic.trimmingCharacters(in: .whitespaces).lowercased()) ?? .general
     let result = await handler(trimmed, subject, limits.maxResultTokens)
-    // Web pages can't close the tool response or open a turn.
-    return ["sources": ToolBudget.fit(PromptText.neutralized(result), limits)]
+    // Spotlight external web pages inside <untrusted_data> and fit the tool budget.
+    let spotlighted = result.hasPrefix("<untrusted_data")
+      ? PromptText.neutralized(result)
+      : UntrustedContext.wrap(result, source: Self.name)
+    return ["sources": ToolBudget.fit(spotlighted, limits)]
   }
 }
 
@@ -374,7 +377,7 @@ struct SearchFilesTool: Tool {
     }.joined(separator: "\n\n")
     let content = formatted.isEmpty
       ? "No matching passages found."
-      : ToolBudget.fit(PromptText.neutralized(formatted), limits)
+      : ToolBudget.fit(UntrustedContext.wrap(formatted, source: Self.name), limits)
     return [
       "available_files": outcome.availableFiles,
       "match_count": outcome.matches.count,
@@ -418,7 +421,7 @@ struct ReadDocumentPagesTool: Tool {
       "start": outcome.start,
       "end": outcome.end,
       "total": outcome.totalUnits,
-      "content": ToolBudget.fit(PromptText.neutralized(outcome.content), limits),
+      "content": ToolBudget.fit(UntrustedContext.wrap(outcome.content, source: outcome.fileName), limits),
     ]
   }
 }
@@ -456,7 +459,7 @@ struct SearchPastChatsTool: Tool {
     }.joined(separator: "\n\n")
     return [
       "match_count": outcome.matches.count,
-      "results": ToolBudget.fit(PromptText.neutralized(formatted), limits),
+      "results": ToolBudget.fit(UntrustedContext.wrap(formatted, source: Self.name), limits),
     ]
   }
 }
@@ -526,12 +529,369 @@ struct QueryTableOrJsonTool: Tool {
         "total_rows": output.totalRows,
         "matched_rows": output.matchedRows,
         "columns": output.columns,
-        "result": ToolBudget.fit(PromptText.neutralized(output.summary), limits),
+        "result": ToolBudget.fit(UntrustedContext.wrap(output.summary, source: label), limits),
       ]
     } catch {
       ToolActivity.record(Self.name, summary: "Couldn't query \(label)")
       let reason = (error as? LocalizedError)?.errorDescription ?? "Query failed."
       return ["error": reason]
+    }
+  }
+}
+
+// MARK: - Opt-in native iOS personal context tools (EventKit, Contacts, MapKit)
+
+/// Lists Calendar events in a date range. Read-only; offered only when Calendar tool is opted in.
+struct SearchCalendarEventsTool: Tool {
+  static let name = "search_calendar_events"
+  static let isReadOnly = true
+  static let description =
+    "Search the user's on-device Calendar events between startDate and endDate (ISO-8601 or YYYY-MM-DD)."
+
+  @ToolParam(description: "Start of range, e.g. '2026-11-22' or '2026-11-22T09:00:00'.")
+  var startDate: String
+
+  @ToolParam(description: "End of range, e.g. '2026-11-22' or '2026-11-23T18:00:00'.")
+  var endDate: String
+
+  @ToolParam(description: "Optional text filter matched against event title, location, or notes.")
+  var query: String? = nil
+
+  func run() async throws -> Any {
+    guard let limits = ToolBudget.claim() else { return ToolBudget.limitReachedResult }
+    guard let start = PersonalToolsLogic.parseDate(startDate, endOfDay: false),
+      let end = PersonalToolsLogic.parseDate(endDate, endOfDay: true),
+      end >= start
+    else {
+      return ["error": "Invalid date range. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS."]
+    }
+    switch await PersonalTools.activeBackend.searchCalendarEvents(start: start, end: end, query: query) {
+    case .error(let message):
+      ToolActivity.record(Self.name, summary: "Calendar unavailable")
+      return ["error": message]
+    case .success(let events):
+      ToolActivity.record(Self.name, summary: "Checked calendar (\(events.count) events)")
+      let body = PersonalToolsLogic.formatEvents(events)
+      return [
+        "count": events.count,
+        "events": ToolBudget.fit(UntrustedContext.wrap(body, source: Self.name), limits),
+      ]
+    }
+  }
+}
+
+/// Finds free daytime slots in the user's Calendar. Read-only.
+struct FindFreeSlotsTool: Tool {
+  static let name = "find_free_slots"
+  static let isReadOnly = true
+  static let description =
+    "Find available free time slots in the user's Calendar between startDate and endDate."
+
+  @ToolParam(description: "Start of range, e.g. '2026-11-22' or '2026-11-22T09:00:00'.")
+  var startDate: String
+
+  @ToolParam(description: "End of range, e.g. '2026-11-22' or '2026-11-24T18:00:00'.")
+  var endDate: String
+
+  @ToolParam(description: "Minimum free slot length in minutes. Default is 30.")
+  var minDurationMinutes: Int = 30
+
+  func run() async throws -> Any {
+    guard let limits = ToolBudget.claim() else { return ToolBudget.limitReachedResult }
+    guard let start = PersonalToolsLogic.parseDate(startDate, endOfDay: false),
+      let end = PersonalToolsLogic.parseDate(endDate, endOfDay: true),
+      end > start
+    else {
+      return ["error": "Invalid date range. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS."]
+    }
+    switch await PersonalTools.activeBackend.searchCalendarEvents(start: start, end: end, query: nil) {
+    case .error(let message):
+      ToolActivity.record(Self.name, summary: "Calendar unavailable")
+      return ["error": message]
+    case .success(let events):
+      let slots = PersonalToolsLogic.computeFreeSlots(
+        busyEvents: events, windowStart: start, windowEnd: end,
+        minDurationMinutes: minDurationMinutes)
+      ToolActivity.record(Self.name, summary: "Found \(slots.count) free calendar slots")
+      return [
+        "count": slots.count,
+        "slots": ToolBudget.fit(PersonalToolsLogic.formatFreeSlots(slots), limits),
+      ]
+    }
+  }
+}
+
+/// Creates a new Calendar event ONLY after deterministic pre-execution user confirmation.
+struct CreateCalendarEventTool: Tool {
+  static let name = "create_calendar_event"
+  static let isReadOnly = false
+  static let description =
+    "Create a new event in the user's Calendar. Always asks the user for explicit confirmation before saving."
+
+  @ToolParam(description: "Event title.")
+  var title: String
+
+  @ToolParam(description: "Event start date and time, e.g. '2026-11-23T14:00:00'.")
+  var startDate: String
+
+  @ToolParam(description: "Event end date and time, e.g. '2026-11-23T15:00:00'.")
+  var endDate: String
+
+  @ToolParam(description: "Optional event location.")
+  var location: String? = nil
+
+  @ToolParam(description: "Optional event notes.")
+  var notes: String? = nil
+
+  func run() async throws -> Any {
+    guard ToolBudget.claim() != nil else { return ToolBudget.limitReachedResult }
+    let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanTitle.isEmpty else { return ["error": "Event title cannot be empty."] }
+    guard let start = PersonalToolsLogic.parseDate(startDate, endOfDay: false),
+      let end = PersonalToolsLogic.parseDate(endDate, endOfDay: false),
+      end > start
+    else {
+      return ["error": "Invalid startDate/endDate. Use YYYY-MM-DDTHH:MM:SS with endDate after startDate."]
+    }
+
+    var params: [ToolConfirmationRequest.Parameter] = [
+      .init(name: "title", value: cleanTitle),
+      .init(name: "start", value: PersonalToolsLogic.formatISO(start)),
+      .init(name: "end", value: PersonalToolsLogic.formatISO(end)),
+    ]
+    if let location, !location.isEmpty { params.append(.init(name: "location", value: location)) }
+    if let notes, !notes.isEmpty { params.append(.init(name: "notes", value: String(notes.prefix(200)))) }
+
+    let request = ToolConfirmationRequest(
+      toolName: Self.name,
+      title: String(localized: "Create calendar event"),
+      summary: "Add “\(cleanTitle)” to your Calendar.",
+      parameters: params)
+    let decision = await ToolConfirmationGate.confirm(request)
+    guard case .approved = decision else {
+      let reason: String
+      if case .denied(let detail) = decision { reason = detail } else { reason = "Denied by user." }
+      ToolActivity.record(Self.name, summary: "Cancelled creating “\(cleanTitle)”")
+      return ["executed": false, "status": "cancelled", "message": reason]
+    }
+
+    switch await PersonalTools.activeBackend.createCalendarEvent(
+      title: cleanTitle, start: start, end: end, location: location, notes: notes)
+    {
+    case .error(let message):
+      ToolActivity.record(Self.name, summary: "Couldn't create event “\(cleanTitle)”")
+      return ["executed": false, "error": message]
+    case .success(let saved):
+      ToolActivity.record(Self.name, summary: "Created calendar event “\(saved.title)”")
+      return [
+        "executed": true,
+        "status": "created",
+        "title": saved.title,
+        "start": PersonalToolsLogic.formatISO(saved.startDate),
+        "end": PersonalToolsLogic.formatISO(saved.endDate),
+        "calendar": saved.calendarName ?? "Default",
+      ]
+    }
+  }
+}
+
+/// Lists the user's Reminders. Read-only.
+struct ListRemindersTool: Tool {
+  static let name = "list_reminders"
+  static let isReadOnly = true
+  static let description = "List the user's on-device Reminders (incomplete by default)."
+
+  @ToolParam(description: "Include completed reminders when true. Default is false.")
+  var includeCompleted: Bool = false
+
+  @ToolParam(description: "Optional text filter matched against reminder title or notes.")
+  var query: String? = nil
+
+  func run() async throws -> Any {
+    guard let limits = ToolBudget.claim() else { return ToolBudget.limitReachedResult }
+    switch await PersonalTools.activeBackend.listReminders(includeCompleted: includeCompleted, query: query) {
+    case .error(let message):
+      ToolActivity.record(Self.name, summary: "Reminders unavailable")
+      return ["error": message]
+    case .success(let items):
+      ToolActivity.record(Self.name, summary: "Checked reminders (\(items.count))")
+      let body = PersonalToolsLogic.formatReminders(items)
+      return [
+        "count": items.count,
+        "reminders": ToolBudget.fit(UntrustedContext.wrap(body, source: Self.name), limits),
+      ]
+    }
+  }
+}
+
+/// Creates a new Reminder ONLY after deterministic pre-execution user confirmation.
+struct CreateReminderTool: Tool {
+  static let name = "create_reminder"
+  static let isReadOnly = false
+  static let description =
+    "Create a new item in the user's Reminders. Always asks the user for explicit confirmation before saving."
+
+  @ToolParam(description: "Reminder title.")
+  var title: String
+
+  @ToolParam(description: "Optional due date/time, e.g. '2026-11-23T09:00:00' or '2026-11-23'.")
+  var dueDate: String? = nil
+
+  @ToolParam(description: "Optional reminder notes.")
+  var notes: String? = nil
+
+  func run() async throws -> Any {
+    guard ToolBudget.claim() != nil else { return ToolBudget.limitReachedResult }
+    let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanTitle.isEmpty else { return ["error": "Reminder title cannot be empty."] }
+    var parsedDue: Date?
+    if let dueDate, !dueDate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      guard let parsed = PersonalToolsLogic.parseDate(dueDate, endOfDay: false) else {
+        return ["error": "Invalid dueDate. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS."]
+      }
+      parsedDue = parsed
+    }
+
+    var params: [ToolConfirmationRequest.Parameter] = [
+      .init(name: "title", value: cleanTitle)
+    ]
+    if let parsedDue {
+      params.append(.init(name: "due", value: PersonalToolsLogic.formatISO(parsedDue)))
+    }
+    if let notes, !notes.isEmpty {
+      params.append(.init(name: "notes", value: String(notes.prefix(200))))
+    }
+
+    let request = ToolConfirmationRequest(
+      toolName: Self.name,
+      title: String(localized: "Create reminder"),
+      summary: "Add “\(cleanTitle)” to Reminders.",
+      parameters: params)
+    let decision = await ToolConfirmationGate.confirm(request)
+    guard case .approved = decision else {
+      let reason: String
+      if case .denied(let detail) = decision { reason = detail } else { reason = "Denied by user." }
+      ToolActivity.record(Self.name, summary: "Cancelled reminder “\(cleanTitle)”")
+      return ["executed": false, "status": "cancelled", "message": reason]
+    }
+
+    switch await PersonalTools.activeBackend.createReminder(
+      title: cleanTitle, dueDate: parsedDue, notes: notes)
+    {
+    case .error(let message):
+      ToolActivity.record(Self.name, summary: "Couldn't create reminder “\(cleanTitle)”")
+      return ["executed": false, "error": message]
+    case .success(let saved):
+      ToolActivity.record(Self.name, summary: "Created reminder “\(saved.title)”")
+      return [
+        "executed": true,
+        "status": "created",
+        "title": saved.title,
+        "due": saved.dueDate.map { PersonalToolsLogic.formatISO($0) } ?? "",
+        "list": saved.listName ?? "Default",
+      ]
+    }
+  }
+}
+
+/// Searches the user's Contacts locally on-device. Read-only.
+struct SearchContactsTool: Tool {
+  static let name = "search_contacts"
+  static let isReadOnly = true
+  static let description =
+    "Look up a person's phone number, email, or organization in the user's on-device Contacts."
+
+  @ToolParam(description: "Person's name, company, email, or phone fragment to search for.")
+  var query: String
+
+  @ToolParam(description: "Maximum contacts to return (1 to 10). Default is 5.")
+  var limit: Int = 5
+
+  func run() async throws -> Any {
+    guard let limits = ToolBudget.claim() else { return ToolBudget.limitReachedResult }
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return ["error": "Query cannot be empty."] }
+    switch await PersonalTools.activeBackend.searchContacts(query: trimmed, limit: limit) {
+    case .error(let message):
+      ToolActivity.record(Self.name, summary: "Contacts unavailable")
+      return ["error": message]
+    case .success(let contacts):
+      ToolActivity.record(Self.name, summary: "Searched contacts for “\(trimmed)”")
+      let body = PersonalToolsLogic.formatContacts(contacts)
+      return [
+        "count": contacts.count,
+        "contacts": ToolBudget.fit(UntrustedContext.wrap(body, source: Self.name), limits),
+      ]
+    }
+  }
+}
+
+/// Searches Apple Maps POIs and addresses locally via MapKit. Read-only.
+struct SearchPlacesTool: Tool {
+  static let name = "search_places"
+  static let isReadOnly = true
+  static let description =
+    "Search Apple Maps for places, businesses, addresses, coordinates, and phone numbers."
+
+  @ToolParam(description: "Place or business query, e.g. 'coffee shop near Old Port, Montreal'.")
+  var query: String
+
+  @ToolParam(description: "Maximum places to return (1 to 10). Default is 5.")
+  var limit: Int = 5
+
+  func run() async throws -> Any {
+    guard let limits = ToolBudget.claim() else { return ToolBudget.limitReachedResult }
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return ["error": "Query cannot be empty."] }
+    switch await PersonalTools.activeBackend.searchPlaces(query: trimmed, limit: limit) {
+    case .error(let message):
+      ToolActivity.record(Self.name, summary: "Maps search failed")
+      return ["error": message]
+    case .success(let places):
+      ToolActivity.record(Self.name, summary: "Searched Apple Maps for “\(trimmed)”")
+      let body = PersonalToolsLogic.formatPlaces(places)
+      return [
+        "count": places.count,
+        "places": ToolBudget.fit(UntrustedContext.wrap(body, source: Self.name), limits),
+      ]
+    }
+  }
+}
+
+/// Estimates distance and travel time between two places using MapKit directions. Read-only.
+struct EstimateTravelTimeTool: Tool {
+  static let name = "estimate_travel_time"
+  static let isReadOnly = true
+  static let description =
+    "Estimate travel distance and time between an origin (or current location) and destination via Apple Maps."
+
+  @ToolParam(description: "Destination place or address, e.g. 'Montreal-Trudeau Airport'.")
+  var destination: String
+
+  @ToolParam(description: "Optional starting address or place; omit or use 'here' for current location.")
+  var origin: String? = nil
+
+  @ToolParam(description: "Mode of transport: 'driving', 'walking', or 'transit'. Default is 'driving'.")
+  var transport: String = "driving"
+
+  func run() async throws -> Any {
+    guard ToolBudget.claim() != nil else { return ToolBudget.limitReachedResult }
+    switch await PersonalTools.activeBackend.estimateTravelTime(
+      origin: origin, destination: destination, transport: transport)
+    {
+    case .error(let message):
+      ToolActivity.record(Self.name, summary: "Couldn't estimate travel time")
+      return ["error": message]
+    case .success(let est):
+      ToolActivity.record(Self.name, summary: "Estimated \(est.transport) time to \(est.destination)")
+      return [
+        "origin": est.origin,
+        "destination": est.destination,
+        "transport": est.transport,
+        "distance_km": Double(String(format: "%.2f", est.distanceMeters / 1_000.0)) ?? 0,
+        "minutes": max(1, Int((est.expectedTravelSeconds / 60.0).rounded())),
+        "summary": PersonalToolsLogic.formatTravel(est),
+      ]
     }
   }
 }

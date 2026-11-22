@@ -65,10 +65,13 @@ enum HelperTasks {
   static let memoryMaxOutputTokens = 96
   static let maxMemoryLength = 120
 
-  /// Only messages about the user can hold facts worth remembering; skips
-  /// the helper (and the conversation rebuild it causes) for the rest.
+  /// Only direct user-authored messages about the user can hold facts worth remembering;
+  /// strips any untrusted external blocks (files, web sources, tool outputs) first so
+  /// untrusted content can never poison persistent memories.
   static func shouldLookForMemories(_ message: String) -> Bool {
-    let folded = message.lowercased().folding(options: .diacriticInsensitive, locale: nil)
+    let sanitized = UntrustedContext.stripUntrustedBlocks(message)
+    guard !sanitized.isEmpty else { return false }
+    let folded = sanitized.lowercased().folding(options: .diacriticInsensitive, locale: nil)
     // Words, with punctuation as spaces ("Ich heiße Anna." ends on " anna ").
     let text = " " + folded.map { $0.isLetter || $0 == "'" ? $0 : " " }.reduce(into: "") { $0.append($1) } + " "
     return memoryCues.contains { text.contains($0) } || memoryCharacters.contains { folded.contains($0) }
@@ -94,6 +97,7 @@ enum HelperTasks {
   /// Instructions first, with examples: measured on device, Gemma otherwise
   /// tends to return an empty list for messages full of facts.
   static func memoryPrompt(user: String, existing: [String]) -> String {
+    let sanitizedUser = UntrustedContext.stripUntrustedBlocks(user)
     let known = existing.isEmpty ? "(none)" : existing.prefix(25).map { "- \($0)" }.joined(separator: "\n")
     return """
       You keep a short memory about the user for future conversations.
@@ -107,7 +111,7 @@ enum HelperTasks {
       Already remembered (don't repeat):
       \(known)
 
-      User's message: "\(ContextBudget.prefix(user, maxBytes: 1_200))"
+      User's message: "\(ContextBudget.prefix(sanitizedUser, maxBytes: 1_200))"
       """
   }
 

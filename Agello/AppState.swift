@@ -34,11 +34,26 @@ final class AppState {
     var effective = options
     effective.systemPrompt = SystemPrompt.compose(
       base: options.systemPrompt, personalization: personalization, project: activeProject,
-      memories: memoryEnabled ? memoryTexts() : [], current: SystemPrompt.CurrentInfo(webSettings: webSettings))
+      memories: memoryEnabled ? memoryTexts() : [], current: SystemPrompt.CurrentInfo(webSettings: webSettings),
+      dataSecurity: enableTools || webSettings.allowed)
     effective.webSearchTool = webSettings.allowed && webSettings.automatic
     effective.workspaceFileTools = activeThreadHasDocuments
+    effective.personalTools = personalTools
     return effective
   }
+
+  /// Opt-in native iOS personal context tools (Calendar, Reminders, Contacts, Maps). Off by default.
+  var personalTools = PersonalToolsSettings() {
+    didSet {
+      UserDefaults.standard.set(try? JSONEncoder().encode(personalTools), forKey: "personalTools")
+      if oldValue != personalTools { scheduleApplyOptions() }
+    }
+  }
+
+  /// Pending pre-execution confirmation card shown inline in the chat stream for mutating tools.
+  var pendingToolConfirmation: ToolConfirmationRequest?
+  @ObservationIgnored var pendingToolConfirmationContinuation:
+    CheckedContinuation<ToolConfirmationDecision, Never>?
 
   /// Web search settings (provider, automatic mode, master switch).
   var webSettings = WebSearchSettings() {
@@ -165,6 +180,9 @@ final class AppState {
     if let decoded = UserDefaults.standard.decoded(WebSearchSettings.self, forKey: "webSearch") {
       self.webSettings = decoded
     }
+    if let decoded = UserDefaults.standard.decoded(PersonalToolsSettings.self, forKey: "personalTools") {
+      self.personalTools = decoded
+    }
     if let decoded = UserDefaults.standard.decoded(Personalization.self, forKey: "personalization") {
       self.personalization = decoded
     }
@@ -181,6 +199,7 @@ final class AppState {
     // when memory is actually nearly exhausted (also checked while streaming).
     installWebSearchTool()
     installWorkspaceTools()
+    installToolConfirmationGate()
     // Files attached before the embedding model arrived get indexed once it does.
     self.store.onModelReady = { [weak self] model in
       if model == ModelCatalog.embeddingGemma.id { self?.knowledge.indexPending() }

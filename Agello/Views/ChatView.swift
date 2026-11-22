@@ -273,6 +273,15 @@ struct ChatView: View {
                 showsStats: showStats,
                 actions: actions(for: turn))
             }
+            if let confirmation = appState.pendingToolConfirmation,
+              thread?.id == appState.generatingThreadID || thread?.id == appState.selectedThreadID
+            {
+              ToolConfirmationCard(
+                request: confirmation,
+                onApprove: { appState.resolvePendingToolConfirmation(approved: true) },
+                onDeny: { appState.resolvePendingToolConfirmation(approved: false) })
+                .id(confirmation.id)
+            }
           }
           // The rows are scroll targets: a new message is scrolled to by its id (below).
           .scrollTargetLayout()

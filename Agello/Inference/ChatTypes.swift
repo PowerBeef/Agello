@@ -122,10 +122,12 @@ struct InferenceOptions: Codable, Sendable, Equatable {
   /// Offer file-inspection tools (`search_files`, `read_document_pages`) when the
   /// active chat or project has attached files (runtime only, never saved).
   var workspaceFileTools: Bool = false
+  /// Opt-in native iOS personal context tools (Calendar, Reminders, Contacts, Maps; runtime only).
+  var personalTools: PersonalToolsSettings = PersonalToolsSettings()
 
   /// Identifies the runtime tool configuration that alters conversation tool schemas.
   var toolSetKey: String {
-    "web=\(webSearchTool),files=\(workspaceFileTools)"
+    "web=\(webSearchTool),files=\(workspaceFileTools),\(personalTools.toolSetKey)"
   }
 
   /// Stored keys (runtime tool flags are decided per conversation, never saved).

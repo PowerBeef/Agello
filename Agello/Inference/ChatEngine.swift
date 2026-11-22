@@ -409,6 +409,22 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         tools.append(SearchFilesTool())
         tools.append(ReadDocumentPagesTool())
       }
+      if options.personalTools.calendar {
+        tools.append(SearchCalendarEventsTool())
+        tools.append(FindFreeSlotsTool())
+        tools.append(CreateCalendarEventTool())
+      }
+      if options.personalTools.reminders {
+        tools.append(ListRemindersTool())
+        tools.append(CreateReminderTool())
+      }
+      if options.personalTools.contacts {
+        tools.append(SearchContactsTool())
+      }
+      if options.personalTools.maps {
+        tools.append(SearchPlacesTool())
+        tools.append(EstimateTravelTimeTool())
+      }
     }
     if options.webSearchTool { tools.append(WebSearchTool()) }
     return tools

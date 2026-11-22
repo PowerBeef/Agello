@@ -1,11 +1,13 @@
 import AppIntents
 
-/// Ask a question: opens Agello in a new chat and sends it.
+/// Ask a question: opens Agello in a new chat and sends it. Requires device unlock so
+/// lock-screen Siri/Shortcuts invocations cannot trigger personal-context tools unauthenticated.
 struct AskAgelloIntent: AppIntent {
   static let title: LocalizedStringResource = "Ask Agello"
   static let description = IntentDescription(
     "Ask the on-device assistant a question in a new chat.")
   static let supportedModes: IntentModes = .foreground(.immediate)
+  static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
   @Parameter(title: "Question", requestValueDialog: "What would you like to ask?")
   var question: String

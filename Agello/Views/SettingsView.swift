@@ -169,12 +169,31 @@ struct SettingsView: View {
       }
       .themedRow()
       .accessibilityIdentifier("settings.tools")
+      NavigationLink {
+        PersonalToolsSettingsView()
+      } label: {
+        RowLabel(
+          title: String(localized: "Personal tools"), symbol: "person.badge.shield.checkmark.fill",
+          tint: Theme.Brand.gold, value: personalToolsSummary)
+      }
+      .themedRow()
+      .disabled(!appState.enableTools)
+      .accessibilityIdentifier("settings.personalTools")
     } header: {
       Text("Model").eyebrowStyle()
     } footer: {
-      Text("Tools let the assistant check the date and calculate, fully on this \(Platform.deviceName).")
-        .foregroundStyle(Theme.Text.tertiary)
+      Text(
+        "Tools let the assistant check the date, calculate, convert units, query files and tables, and optionally access Calendar, Reminders, Contacts, and Maps on this \(Platform.deviceName)."
+      )
+      .foregroundStyle(Theme.Text.tertiary)
     }
+  }
+
+  private var personalToolsSummary: String {
+    guard appState.enableTools, appState.personalTools.anyEnabled else {
+      return String(localized: "Off")
+    }
+    return String(localized: "\(appState.personalTools.enabledCount) on")
   }
 
   private var helpSection: some View {

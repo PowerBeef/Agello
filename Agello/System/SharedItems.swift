@@ -61,7 +61,7 @@ extension AppState {
             name: String(localized: "Shared text"), kind: .text, byteCount: Int64(text.utf8.count),
             pages: [text]))
       } else if question != text {
-        question += "\n\n\(text)"
+        question += "\n\n\(UntrustedContext.wrap(text, source: "shared_text"))"
       }
     }
     // Removed once it's sent: a send that fails leaves it for the next launch.
