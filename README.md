@@ -37,7 +37,7 @@ Chats, photos, files and recordings stay on the phone. The network is used only 
 <img src="docs/images/readme/icons/fast.svg" width="40" height="40" alt="">
 
 **Fast**<br>
-On an iPhone 17 Pro: about **0.6 s** to the first word, **48 to 54 tokens a second** in normal chat (**83+ tok/s** on edits/rewrites), up to **1,440+ tok/s** prefill on long files, and a full **64K context window** at **3.2–3.5 GB** peak RAM. A 40-page PDF is indexed in under a second (`0.86 s`) on the Neural Engine.
+On an iPhone 17 Pro: under a second to the first word (**0.6–0.85 s**), **51 to 58 tokens a second** in Think and normal chat (**83+ tok/s** on edits/rewrites), **1,650+ tok/s** prefill on long files, and a full **64K context window** at **3.2–3.5 GB** peak RAM (`1.5–1.7 GB` kernel peak in normal and file chats). A 40-page PDF is indexed in under a second (`0.86 s`) on the Neural Engine.
 
 </td>
 <td width="33%" valign="top">
@@ -67,7 +67,7 @@ Agello's color follows what you're doing. Each mode has its own accent, and it l
 - **Web search with sources.** One tap lets Agello look things up when your message needs it: for a question or something to build, it searches, reads the top pages, picks the relevant parts and answers with `[1]`-style citations; a greeting or a translation is answered right away. It picks the sources by what you ask (Wikipedia and Wikidata, Wikivoyage, Wiktionary, Wikiquote, Apple Weather and Apple Maps, the European Central Bank's rates, Crossref and PubMed, Wikipedia's Current events): only sources whose terms allow it, and no API keys.
 - **Voice and vision.** Show it a photo (encoded on the GPU Neural Accelerators), dictate live in your language with iOS 27 `SpeechAnalyzer` on the Neural Engine, send voice messages Gemma listens to directly, or start **voice mode**: a hands-free conversation with live captions, neural turn detection, and an optional camera. Talk over it to interrupt.
 - **Personal.** Tell Agello about yourself and how to answer. Opt-in memory keeps lasting facts ("Lives in Montreal"), and you can see and edit every one.
-- **At home on iOS.** Liquid Glass, VoiceOver and Dynamic Type; Siri and Shortcuts ("Ask Agello", "Talk to Agello"), the Action Button, Home and Lock Screen widgets, Control Center, Spotlight, the share sheet and `agello://` links. Model downloads continue in the background and are checked when they finish.
+- **At home on iOS.** Liquid Glass, VoiceOver and Dynamic Type; Siri and Shortcuts ("Ask Agello", "Talk to Agello", "Snap & Ask Agello", "Voice with Camera"), `IndexedEntity` Spotlight search across chats, projects, and documents, the Action Button, Home and Lock Screen widgets, Control Center controls, the share sheet and `agello://` links. Model downloads and long multi-document/research Live Activities continue in the background where supported.
 
 → The [user guide](docs/USER_GUIDE.md) covers every screen and setting.
 

@@ -301,11 +301,8 @@ scripts/phone-bench.sh release again=release           # the shipped build again
   on a cool phone: explain (Think, 1,666 tokens) 46 tok/s, email 48.6, file-report 50.5 with a
   4,879-token prompt at 1,225 tok/s (first token 4.1 s). A decode step costs 41 to 43 ms on the
   GPU and 9.5 on the host.
-- **Heat isn't the thermal state.** The phone said "nominal" for every reply but one, while
-  explain's decode fell from 46 to 37 tok/s over the run on both builds, all of it on the GPU's
-  side (+25 %). Cooling to nominal is enough for the short cases (5 of 6 runs undisturbed) but
-  not for a long one, where the build that runs first in a round wins. A long case needs a
-  longer rest, or the builds alternating case by case.
+- **Heat isn't the thermal state — solved by case-alternating thermal rest rules (2026-11-22, `P6.2`).**
+  On 2026-11-12 the phone said "nominal" while a long case lost a quarter of its decode speed on the GPU's side over the run because heavy cases ran back-to-back in fixed order. `scripts/phone-bench.py schedule` now interleaves heavy and light cases (`explain` / `file-report` separated by `email`) and reverses case order on even rounds alongside build order, while `scripts/phone-bench.py rest` enforces explicit cooldowns (`CASE_REST=15 s` after light nominal cases, `HEAVY_REST=45 s` after heavy or ≥20 s runs, `WARM_REST=90 s` if thermal state rose above nominal; `REST=off` disables). Validated on iPhone 17 Pro (`release again=release`, 4 rounds, `build/phone/runs/20261122-152247`): **24/24 launches stayed `nominal`**, **23/24 (95.8%) undisturbed**, with **0.5% median decode** (`0.7%` max) and **1.1% median prefill** noise bands (`again vs release` cool best: `+0.2%` decode, `−0.2%` prefill, `−0.1%` TTFT). Every trace also records `memory` (`footprintGB`, `peakFootprintGB`, `peakDeltaMB`, `graphicsGB`, `neuralGB`).
 - **What the first starts caught,** fixed before the run that counts: Think set without marking
   the options changed, so each case ran with the previous launch's Think (the pill also calls
   `scheduleApplyOptions()`); an app built for the shipped runtime carrying the pruned one,
