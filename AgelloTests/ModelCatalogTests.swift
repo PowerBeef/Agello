@@ -26,7 +26,7 @@ final class ModelCatalogTests: XCTestCase {
     XCTAssertEqual(spec.downloadURL.host, "huggingface.co")
     XCTAssertEqual(
       spec.downloadURL.absoluteString,
-      "https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope/resolve/\(spec.revision)/gemma-4-E4B-it-fp16-rope.litertlm"
+      "https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope/resolve/\(spec.revision)/gemma-4-E4B-it-agello-v2.litertlm"
     )
   }
 
@@ -50,7 +50,10 @@ final class ModelCatalogTests: XCTestCase {
 
   func testVerifiedSize() {
     // Byte counts verified against the Hugging Face content-length header.
-    XCTAssertEqual(ModelCatalog.e4b.sizeBytes, 3_660_726_272)
+    XCTAssertEqual(ModelCatalog.e4b.sizeBytes, 3_686_465_536)
+    XCTAssertEqual(
+      ModelCatalog.e4b.sha256,
+      "7d63a4d8efee11108933c28e9f9a0a17804998379b5fd58ae03031130dac7e7b")
     XCTAssertEqual(ModelCatalog.embeddingGemma.sizeBytes, 164_626_432)
     XCTAssertEqual(
       ModelCatalog.embeddingGemma.downloadURL.absoluteString,

@@ -30,21 +30,21 @@ struct ModelSpec: Identifiable, Sendable, Equatable {
 }
 
 enum ModelCatalog {
-  /// litert-community's Gemma 4 E4B build with float16-exact rotary positions:
-  /// the original corrupts digits past 2,048 context tokens with 16-bit GPU
-  /// activations (LiteRT-LM #3913). Positions split in 512-token blocks, exact
-  /// on M1-class GPUs too. Same weights; reproducible from the original with
-  /// the fork's `patch_rope.py --split --block 512` (sha256
-  /// 6353a23321e46624e0fa1b038d23370e8e0af84032d24d30ef53be3b116f655c).
+  /// Agello v2 Gemma 4 E4B artifact: 1,536-slot local KV rings, 128K global
+  /// window with shared unshifted Dual-GATHER float16-exact rotary tables
+  /// (<0.001 rad across 0..131,071; fixes LiteRT-LM #3913), and `verify_8`
+  /// speculative signature. Same weights; reproducible from the patched base
+  /// with `tools/model-surgery/build_v2.sh` (sha256
+  /// 7d63a4d8efee11108933c28e9f9a0a17804998379b5fd58ae03031130dac7e7b).
   static let e4b = ModelSpec(
     id: .e4b,
     displayName: "Gemma 4 E4B",
     tagline: "Private, on-device. Text, vision, audio and reasoning.",
     repo: "PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope",
-    fileName: "gemma-4-E4B-it-fp16-rope.litertlm",
-    sizeBytes: 3_660_726_272,
-    revision: "a1693e22a3439b0d36570cc7844d7b572336a85d",
-    sha256: "6353a23321e46624e0fa1b038d23370e8e0af84032d24d30ef53be3b116f655c",
+    fileName: "gemma-4-E4B-it-agello-v2.litertlm",
+    sizeBytes: 3_686_465_536,
+    revision: "9935a8114c3a10920bbd5e85be92087727246254",
+    sha256: "7d63a4d8efee11108933c28e9f9a0a17804998379b5fd58ae03031130dac7e7b",
     engineCacheBytes: 2_500_000_000
   )
 

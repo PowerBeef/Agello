@@ -165,7 +165,7 @@ final class ModelStoreTests: XCTestCase {
   }
 
   func testResumeDataReportsHowFarTheDownloadGot() throws {
-    let plist: [String: Any] = ["NSURLSessionResumeBytesReceived": NSNumber(value: Int64(915_181_568))]
+    let plist: [String: Any] = ["NSURLSessionResumeBytesReceived": NSNumber(value: ModelCatalog.e4b.sizeBytes / 4)]
     let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0)
     XCTAssertEqual(
       ModelStore.progress(ofResumeData: data, size: ModelCatalog.e4b.sizeBytes), 0.25, accuracy: 0.001)

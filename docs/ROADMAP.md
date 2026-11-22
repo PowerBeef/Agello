@@ -9,8 +9,9 @@ Updated 2026-11-22. Technical backing: [RUNTIME-AUDIT-2026-11-21.md](RUNTIME-AUD
 The handoff between work sessions (injected automatically at startup by `.agents/hooks/session-start.sh`).
 
 - **Baseline (2026-11-22):**
-  - **Runtime (`../LiteRT-LM`):** `main` at `17f74284` (`origin/main` at `2ef011cd`; 1 local Apple10 `ConvAppleMPP` tuning commit ahead, dual-slice `ios-arm64` + `macos-arm64` `Build id: 47b132c0cbd6`, privacy manifest `nm -u` clean: `_stat`/`_fstat`/`_lstat`/`_mach_absolute_time` only); app vendors `agello-one-20261115` (`0c749789100a`) until release cut. Sparse Metal 4 KV caches (`MTLBufferSparseTier1`), per-prefill transient pool release, D8 system prompt (`141/142`), and `EmbeddingGemma 2` at 768 dims are in place.
-  - **App (`iRT`):** `main` at `origin/main` (`3da5779`) + local harness fixes (`phone-bench.py`/`phone-bench.sh`/`bench-direct.sh`) and gate record. Phases 1–3 complete and **verified on physical iPhone 17 Pro (`iPhone18,1`, Apple A19 Pro, 12 GB, iOS 27.2.1)**.
+  - **Runtime (`../LiteRT-LM`):** `main` at `17f74284` (pushed; release `agello-one-20261122`, dual-slice `ios-arm64` + `macos-arm64` `Build id: 47b132c0cbd6`, SwiftPM checksum `02548ce5…ff569b`, privacy manifest `nm -u` clean: `_stat`/`_fstat`/`_lstat`/`_mach_absolute_time` only); vendored into `Vendor/LiteRT-LM`.
+  - **Chat model:** `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` (`gemma-4-E4B-it-agello-v2.litertlm`, revision `9935a811`, `3,686,465,536` bytes, SHA-256 `7d63a4d8…dac7e7b`: 1,536-slot local KV rings, 128K Dual-`GATHER` RoPE, `verify_8`), pinned in `ModelCatalog.e4b` (`gemma-4-E4B-it-fp16-rope.litertlm` kept untouched on HF `main` for #3913 / stock LiteRT-LM users).
+  - **App (`iRT`):** Phases 1–3 complete, **verified on physical iPhone 17 Pro (`iPhone18,1`, Apple A19 Pro, 12 GB, iOS 27.2.1)**, vendored with `agello-one-20261122`, and pinned to the v2 64K model.
   - **Phase 1 complete on M6 `SIM_GPU=Apple_A19_Pro` workbench (`P1.1`–`P1.3`, pushed):**
     - [x] `P1.1` (`P0`, `LiteRT-LM@517ab613` + `iRT@f05184e`): `nonisolated` `BGContinuedProcessingTask` handlers (`submitTaskRequest` iOS 27 API), synchronous `beginBackgroundTask` + `wait_until_done` drain, intra-MTP & post-Think cancel, `GPUGate` helper & embedder guards, inter-tool `activeToolRounds` cancel (314 CLI + 381 `PLATFORM=mac` iOS binary unit tests pass).
     - [x] `P1.2` (`P0`, `LiteRT-LM@73000de4`): Zero-copy ARM64 NEON FP16 greedy sampling (`GreedyHalf` + direct `DSHWBC4` `GreedyHalfDSHWBC4` on `verify`/`verify_8`, `LocksInPlace` direct linear shared Metal buffers), per-turn `ContextDrafts` bandit reset, `<= size` boundary fix, `telemetry.py` `max_us` fix (`0` host read copies / `0.0 KB/tok` across all cases, down from `>2.0 GB` on `explain`).
@@ -29,8 +30,7 @@ The handoff between work sessions (injected automatically at startup by `.agents
       - **Hardware suites on `47b132c0cbd6`:** `inference` **22/23** (`193 s`; `test05b` known pre-Phase-1 double-quote tool-call syntax), `files` **5/5** (`54.8 s`), `memory` **4/4** (`91.0 s`, **0** memory warnings: `6.0 GB` → `32K` `0.93 GB` net peak / `5.07 GB` free, `5.0 GB` → `32K` `1.71 GB` net peak / `3.29 GB` free, `4.0 GB` → `16K`, `3.5 GB` → `8K`), `ui` **26/26** (`921.8 s`, 2 opt-in skipped, 0 failures — including `testBackgroundDuringGeneration`, `testLongSummarySurvivesBackgrounding`, `testStopMidReply`, `testStreamingNeverJumps`, `testMainScreensPassTheAudit`).
       - **v2 64K artifact on physical 12 GB iPhone 17 Pro (`65,536` context):** `test27_NeedleTable` **90/90** (`18/18` at `21K`, `33K`, `45K`, `52K`, `59K` with `verify_8`, `3.45 GB` footprint / `2.99 GB` free below jetsam); `test28_WindowPositions` **12/12 bit-exact** 48-digit copies up to position `65,534` (`3.18 GB` footprint / `3.26 GB` free below jetsam).
 - **Next milestone:**
-  - On user go: push `LiteRT-LM@17f74284` + `iRT` gate commits, cut & vendor a new `CLiteRTLM.xcframework` release tag (`agello-one-20261122`), and publish the verified v2 64K `.litertlm` model to Hugging Face + update `ModelCatalog.e4b`.
-  - Then begin **Phase 4 (`P4.1` ANE `EmbeddingGemma 2`, `P4.2` Vision/Audio, `P4.3` iOS 27 `SpeechAnalyzer`)**.
+  - Begin **Phase 4 (`P4.1` ANE `EmbeddingGemma 2`, `P4.2` Vision/Audio, `P4.3` iOS 27 `SpeechAnalyzer`)**.
 
 ---
 
