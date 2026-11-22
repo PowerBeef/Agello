@@ -244,6 +244,28 @@ final class AppStateTests: XCTestCase {
     XCTAssertEqual(reseedsAfter, reseedsBefore)
   }
 
+  /// A cancelled or failed helper on a kept conversation leaves the old chat's KV
+  /// cache loaded while reporting `lastHelperKeptConversation == false`. Switching
+  /// to a brand-new empty chat must still reseed so the previous chat never bleeds in.
+  func testCancelledHelperDoesNotLeakContextIntoNewChat() async {
+    await mock.setHelpersKeepConversation(true)
+    let threadA = appState.newThread(in: context)
+    await appState.send(text: "Secret from chat A", imageData: nil, audioFileURL: nil, in: threadA)
+    await mock.holdNextHelper()
+    let helperTask = Task { await appState.runPendingHelpers() }
+    for _ in 0..<200 where await !mock.helperWaiting {
+      try? await Task.sleep(for: .milliseconds(5))
+    }
+    await mock.cancel()
+    await mock.releaseHelper()
+    await helperTask.value
+
+    let threadB = appState.newThread(in: context)
+    await appState.send(text: "Hello in chat B", imageData: nil, audioFileURL: nil, in: threadB)
+    let seen = await mock.heldAtSend.last
+    XCTAssertEqual(seen, [], "Previous chat leaked into a brand-new chat after a cancelled helper")
+  }
+
   /// Titles and memories wait for a quiet moment: a helper takes the GPU, and short of memory it
   /// empties the chat's conversation, so one between messages made the next reply re-read the chat.
   func testHelpersWaitForAQuietMoment() async {

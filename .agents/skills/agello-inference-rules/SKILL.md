@@ -35,7 +35,11 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   Otherwise it releases the main conversation *before* the helper and leaves
   an **empty** one, and the caller must reseed history before the next send.
   Callers ask `lastHelperKeptConversation` (`AppState.afterHelper`) and
-  unbind the chat only when it's false; a failed helper reports false.
+  unbind the chat only when it's false; a failed helper reports false, and
+  `afterHelper` sets `conversationIsEmpty = false` (never `true`) because a
+  helper that failed or was cancelled with `keep = true` (or before starting)
+  leaves the old chat's KV cache loaded, so even a brand-new empty chat must
+  reseed cleanly.
 - While a helper runs, `cancel()` cancels the helper's conversation, never
   the kept main one (a cancelled conversation rejects the next message), even
   before the helper's conversation exists (`helperActive`). A helper that

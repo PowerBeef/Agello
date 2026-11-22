@@ -257,13 +257,15 @@ final class AppState {
     return await task.value
   }
 
-  /// After a helper: unless it kept the engine's conversation (our runtime,
-  /// memory allowing), it left an empty one, so the chat is rebuilt from
-  /// history on its next message.
+  /// After a helper: unless it confirmed the main conversation stayed intact,
+  /// unbind the chat and never assume the engine's conversation is empty — a
+  /// helper that failed or was cancelled with `keep = true` (or before starting)
+  /// can still leave the previous chat's KV cache loaded, so even a brand-new
+  /// empty chat must reseed cleanly.
   func afterHelper() async {
     guard await !engine.lastHelperKeptConversation else { return }
     conversationThreadID = nil
-    conversationIsEmpty = true
+    conversationIsEmpty = false
   }
 
   /// Load the active model if needed. Returns true when ready to generate.

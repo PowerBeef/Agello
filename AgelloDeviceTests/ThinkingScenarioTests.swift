@@ -109,8 +109,10 @@ final class ThinkingScenarioTests: DeviceTestCase {
     await appState.applyCurrentOptions()
     defer { appState.options.enableThinking = false }
 
-    // Straight to the engine: AppState's helpers (titles) would empty the
-    // conversation between turns and reseed it from history.
+    // Straight to the engine: flush any queued title helpers from earlier tests
+    // so they don't race against direct engine calls below, and unbind AppState's
+    // thread tracking afterwards so the multi-turn chat below starts clean.
+    await appState.runPendingHelpers()
     let engine = try XCTUnwrap(harness.liveEngine)
     try await engine.reseed(history: [])
     let first = try await Self.collect(
@@ -146,6 +148,8 @@ final class ThinkingScenarioTests: DeviceTestCase {
       growth, floorIfKept, "The first reasoning stayed in the cache (grew \(growth), floor \(floorIfKept))")
     XCTAssertTrue(second.text.contains("400"), "Expected 400: \(second.text)")
 
+    try await engine.reseed(history: [])
+    appState.conversationThreadID = nil
     let thread = harness.newThread()
     let turns = [
       ("What is 17 * 23? Think it through, then give the number.", "391"),
