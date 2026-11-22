@@ -37,7 +37,7 @@ Chats, photos, files and recordings stay on the phone. The network is used only 
 <img src="docs/images/readme/icons/fast.svg" width="40" height="40" alt="">
 
 **Fast**<br>
-On an iPhone 17 Pro: about **0.6 s** to the first word, **48 to 54 tokens a second** in normal chat (**83+ tok/s** on edits/rewrites), up to **1,440+ tok/s** prefill on long files, and a full **64K context window** at **3.2–3.5 GB** peak RAM. A 40-page PDF is indexed in under 2 seconds.
+On an iPhone 17 Pro: about **0.6 s** to the first word, **48 to 54 tokens a second** in normal chat (**83+ tok/s** on edits/rewrites), up to **1,440+ tok/s** prefill on long files, and a full **64K context window** at **3.2–3.5 GB** peak RAM. A 40-page PDF is indexed in under a second (`0.86 s`) on the Neural Engine.
 
 </td>
 <td width="33%" valign="top">
@@ -45,7 +45,7 @@ On an iPhone 17 Pro: about **0.6 s** to the first word, **48 to 54 tokens a seco
 <img src="docs/images/readme/icons/complete.svg" width="40" height="40" alt="">
 
 **Complete**<br>
-Text, vision and audio in one model: reasoning, tools, documents with page citations, web search with sources, memory, hands-free voice, Siri, widgets and the share sheet.
+Text, vision and audio in one model: reasoning, offline and opt-in personal tools with in-chat confirmation, documents with page citations, web search with sources, memory, hands-free voice, Siri, widgets and the share sheet.
 
 </td>
 </tr>
@@ -65,7 +65,7 @@ Agello's color follows what you're doing. Each mode has its own accent, and it l
 - **Rich answers & on-device tools.** Live streaming with headings, tables, task lists, highlighted code with a Copy button, and typeset math. **Think** shows step-by-step reasoning in a card you can open. Built-in offline tools check the date, calculate, convert units, search attached files and past chats, inspect specific document pages, and query CSV/TSV/JSON tables — triggered from natural language across languages, plus opt-in Calendar, Reminders, Contacts, and Apple Maps tools gated by explicit in-chat confirmation before creating events or reminders.
 - **Documents.** Attach PDFs, text, Markdown, code, CSV, JSON or RTF, or scan paper with the camera. Answers cite their pages, like *(report.pdf, p. 23)*. "Summarize this" reads a long document section by section, and keeps going in the background on iPhones that support it.
 - **Web search with sources.** One tap lets Agello look things up when your message needs it: for a question or something to build, it searches, reads the top pages, picks the relevant parts and answers with `[1]`-style citations; a greeting or a translation is answered right away. It picks the sources by what you ask (Wikipedia and Wikidata, Wikivoyage, Wiktionary, Wikiquote, Apple Weather and Apple Maps, the European Central Bank's rates, Crossref and PubMed, Wikipedia's Current events): only sources whose terms allow it, and no API keys.
-- **Voice and vision.** Show it a photo, dictate in your language, send voice messages Gemma listens to directly, or start **voice mode**: a hands-free conversation with captions and an optional camera. Talk over it to interrupt.
+- **Voice and vision.** Show it a photo (encoded on the GPU Neural Accelerators), dictate live in your language with iOS 27 `SpeechAnalyzer` on the Neural Engine, send voice messages Gemma listens to directly, or start **voice mode**: a hands-free conversation with live captions, neural turn detection, and an optional camera. Talk over it to interrupt.
 - **Personal.** Tell Agello about yourself and how to answer. Opt-in memory keeps lasting facts ("Lives in Montreal"), and you can see and edit every one.
 - **At home on iOS.** Liquid Glass, VoiceOver and Dynamic Type; Siri and Shortcuts ("Ask Agello", "Talk to Agello"), the Action Button, Home and Lock Screen widgets, Control Center, Spotlight, the share sheet and `agello://` links. Model downloads continue in the background and are checked when they finish.
 
@@ -88,7 +88,7 @@ The image above shows our runtime on an iPhone 17 Pro on 2026-11-17, with the 32
 - **The device suites, in Debug builds:** a 40-page PDF indexed in 1.9 s (EmbeddingGemma 2 at 768 dimensions), and a voice turn spoke its first sentence after 1.2 s.
 - **The build:** the runs used the fork's `main`, which decodes within 1 % of the release on the phone.
 
-The table below is Google's runtime in October 2026. Since 2026-10-28 the app runs our own build of the runtime (`agello-next-20261024`, then `agello-one-20261115`, now `agello-one-20261122`, build `47b132c0cbd6`: MSL 4.1 FlashAttention, zero-copy NEON greedy sampling, Metal 4 `copyBufferMappingsFromBuffer:` helper snapshots, `verify_8` speculative rounds, and Apple10-tuned prefill — `+9.2%` `file-report` prefill / `−9.3%` TTFT and `0` host read copies over `agello-one-20261115` on iPhone 17 Pro). Since 2026-11-22, the app ships the v2 128K/ring-KV/`verify_8` model (`gemma-4-E4B-it-agello-v2.litertlm`), giving 12 GB iPhones a full **64K (65,536-token)** context window (`3.18–3.45 GB` peak footprint at 64K on iPhone 17 Pro). On an iPhone 17 Pro with the first build:
+The table below is Google's runtime in October 2026. Since 2026-10-28 the app runs our own build of the runtime (`agello-next-20261024`, `agello-one-20261115`, `agello-one-20261122`, `agello-one-20261122-2`, and now `agello-one-20261122-3`, build `4712b414941a`: MSL 4.1 FlashAttention, zero-copy NEON greedy sampling, Metal 4 `copyBufferMappingsFromBuffer:` helper snapshots, `verify_8` speculative rounds, Apple10-tuned prefill, GPU Vision MPP kernels, lazy `AudioExecutor` + `USER_INTERACTIVE` QoS, multi-word JSON enums under MTP, Think + tool continuity, parallel read-only tool dispatch, and a recursive-descent FC parser — `+9.2%` `file-report` prefill / `−9.3%` TTFT and `0` host read copies over `agello-one-20261115` on iPhone 17 Pro). Since 2026-11-22, the app ships the v2 128K/ring-KV/`verify_8` model (`gemma-4-E4B-it-agello-v2.litertlm`), giving 12 GB iPhones a full **64K (65,536-token)** context window (`3.18–3.45 GB` peak footprint at 64K on iPhone 17 Pro), alongside the 4-bucket INT4 Core AI ANE `EmbeddingGemma 2` bundle (`0.86 s` 40-page PDF index with 0% GPU contention). On an iPhone 17 Pro with the first build:
 
 - On 2026-11-10, in a Release build with the 32K window, a 4,517-token reply decoded at 43.3 tok/s with the phone's thermal state at "fair". A hand run on a cool phone the day before gave about 49 ([harness notes](docs/HARNESS.md#h3-done-on-2026-11-10)).
 - The calibration of 2026-11-02 (a Debug build, thermal state nominal throughout) decoded a one-sentence reply at 39 / 42 / 42 tok/s with 8K / 16K / 32K windows, so the window hardly changes the speed any more. A 32K engine peaks at about 3.5 GB ([roadmap](docs/ROADMAP.md#next)).
@@ -200,7 +200,7 @@ Chat history is a versioned SwiftData schema whose turns form a tree. Edit, rege
 <img src="docs/images/readme/icons/documents.svg" width="40" height="40" alt="">
 
 **On-device RAG with citations**<br>
-Files are read with PDFKit and Vision OCR, split into page-aware, token-sized passages, and embedded in the background with EmbeddingGemma. Search ranks float16 vectors with one matrix product, and falls back to keywords for any file that can't be embedded. The model reads whole files, cited excerpts or a cached summary, whichever fits, and answers cite pages.
+Files are read with PDFKit and Vision OCR, split into page-aware, token-sized passages, and embedded on the 16-core Apple Neural Engine via Core AI (`EmbeddingGemma 2`, `0.86 s` for a 40-page PDF on iPhone 17 Pro with zero GPU contention). Search ranks float16 vectors with one matrix product, and falls back to keywords for any file that can't be embedded. The model reads whole files, cited excerpts, a cached summary, or inspects specific pages and CSV/JSON tables with tools, and answers cite pages.
 
 </td>
 </tr>
@@ -210,7 +210,7 @@ Files are read with PDFKit and Vision OCR, split into page-aware, token-sized pa
 <img src="docs/images/readme/icons/voice.svg" width="40" height="40" alt="">
 
 **Hands-free voice with barge-in**<br>
-Voice-activity turn detection, and one audio engine for echo-cancelled capture and sentence-by-sentence speech. The first spoken sentence arrives ~1.3 s after you stop talking, and you can interrupt at any time.
+Hybrid acoustic + neural turn detection (`SpeechAnalyzer` on ANE) and one audio engine for echo-cancelled capture and sentence-by-sentence speech. Live dictation partials stream in ~32 ms, follow-up spoken replies start in ~0.9 s on iPhone 17 Pro, and you can interrupt at any time.
 
 </td>
 <td valign="top">
@@ -246,6 +246,7 @@ Run the tests with the device harness, on the iPhone or on an Apple silicon Mac 
 ```sh
 scripts/device-harness.sh unit                      # unit tests, scripted engine, ~3 min
 scripts/device-harness.sh inference                 # the real model on the iPhone
+scripts/device-harness.sh security                  # 6-vector adversarial prompt-injection gate
 PLATFORM=mac scripts/device-harness.sh inference    # the same on this Mac
 ```
 

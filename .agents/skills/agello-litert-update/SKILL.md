@@ -49,9 +49,9 @@ separate `AGENTS.md` or `.agents/` folder):
 | --- | --- |
 | `origin` | `PowerBeef/agello-litert-lm` (push here) |
 | `upstream` | `google-ai-edge/LiteRT-LM` (fetch only; push is disabled) |
-| `main` branch | The only branch: the runtime (upstream's 0.19.0 nightly source, tag `agello-base-20261013`, plus our commits, LiteRT and ML Drift in tree), `docs/agello/`, `tools/`. The app vendors its releases: `agello-one-20261122` (`17f74284`) since 2026-11-22. |
+| `main` branch | The only branch: the runtime (upstream's 0.19.0 nightly source, tag `agello-base-20261013`, plus our commits, LiteRT and ML Drift in tree), `docs/agello/`, `tools/`. The app vendors its releases: `agello-one-20261122-3` (`8f9e7142`) since 2026-11-22. |
 | `research/3913` tag | The #3913 research (below); a branch until 2026-10-15, so links to `tree/research/3913` still resolve |
-| Release tags | `agello-next-20261024`, `agello-one-20261115`, `agello-one-20261122`; Google's are on upstream's `release/vX.Y.Z` branches (fetch from `upstream`) |
+| Release tags | `agello-next-20261024`, `agello-one-20261115`, `agello-one-20261122`, `agello-one-20261122-2`, `agello-one-20261122-3`; Google's are on upstream's `release/vX.Y.Z` branches (fetch from `upstream`) |
 
 Branch policy (the user's choice, 2026-11-15): one branch per repository, ours. Don't recreate
 an upstream mirror or side branches on GitHub, and don't create a branch named `agello`: it would
