@@ -1,14 +1,13 @@
 # Vendored LiteRT-LM (Swift package surface only)
 
 `Vendor/LiteRT-LM` is a pruned copy of our LiteRT-LM fork,
-https://github.com/PowerBeef/agello-litert-lm (one branch, `main`): its `swift/` at commit
-**82b05ea1**, and the binary of release `agello-one-20261115`, built from **6da75396** (Google's
-LiteRT-LM 0.19.0-nightly.20261013 plus our commits, with LiteRT and ML Drift as folders of the same
-repository; the wrapper's later commits change only `swift/`). It contains only what the Xcode build
-needs:
+https://github.com/PowerBeef/agello-litert-lm (one branch, `main`): its `swift/` and the binary of
+release `agello-one-20261122`, built from **17f74284** (Google's LiteRT-LM
+0.19.0-nightly.20261013 plus our commits, with LiteRT and ML Drift as folders of the same
+repository). It contains only what the Xcode build needs:
 
 - `Package.swift` (pins the `CLiteRTLM.xcframework.zip` of our release
-  [`agello-one-20261115`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-one-20261115),
+  [`agello-one-20261122`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-one-20261122),
   checksummed)
 - `swift/` (the `LiteRTLM` Swift wrapper sources)
 - `LICENSE` (Apache 2.0, Google LLC)
@@ -19,25 +18,30 @@ The release's `CLiteRTLM.xcframework` has an iPhone slice and a Mac slice (a
 versioned framework), both on Metal. It's built from the same commit, with LiteRT and ML Drift
 linked statically (folders of the same repository since 2026-11-11, `agello/litert` and
 `agello/ml_drift`; our earlier forks `PowerBeef/LiteRT` and `PowerBeef/ml-drift` were archived
-on 2026-11-15): build id `0c749789100a`, whose `BUILD-INFO.txt` in the release names every commit. Its
+on 2026-11-15): build id `47b132c0cbd6`, whose `BUILD-INFO.txt` in the release names every commit. Its
 third-party notices are in `NOTICE`. Besides the Swift patches below, it carries our runtime
 fixes:
 
-- speculative decoding (MTP) never drafts past the end of the KV cache;
-- a conversation send ends with exactly one final chunk, for every binding;
-- the sampler follows the active session, so a chat's sampler settings and
-  Regenerate's seeds apply;
-- build information (`LiteRTLM.BuildInfo`, which `EngineCache` keys its
-  folders by) and telemetry (`LiteRTLM.Telemetry`), which gives Agello its
-  reply stats without benchmark mode;
-- the global KV caches are Metal placement sparse buffers, mapped 4,096 positions ahead of
-  the fill, and helper snapshots are copied on the GPU, so a short chat in a 64K window costs
-  less than one in today's 32K did; prefill graphs' memory pools are released after each
-  prompt;
-- the model's window is read from its file (a 32K file gets 32,000 positions, the 128K file
-  the app's 65,536); ring caches survive a long rewind, and prefill can stop between its runs;
-- train 1's speedups (prefill +13.8 % and the first token −16.6 % on the iPhone 17 Pro against
-  `agello-next-20261024`, decode the same, replies identical).
+- speculative decoding (MTP) never drafts past the end of the KV cache and enables 7-draft
+  `verify_8` ContextDrafts rounds when the model supplies a `verify_8` signature;
+- a conversation send ends with exactly one final chunk, for every binding, with intra-MTP and
+  post-Think cancellation plus `litert_lm_conversation_wait_until_done` background GPU drain;
+- zero-copy ARM64 NEON FP16 greedy sampling directly from shared Metal logits buffers (`0` host
+  read copies), and the sampler follows the active session;
+- build information (`LiteRTLM.BuildInfo`, which `EngineCache` keys its folders by) and telemetry
+  (`LiteRTLM.Telemetry`), which gives Agello its reply stats without benchmark mode;
+- process-wide PSO deduplication with a persistent `MTLBinaryArchive`, MSL 4.1 cooperative-tensor
+  `agello_flash_attention` (`D=256/512`), fused FP32 `RMSNorm + gamma/beta`, SWAR weight conversion,
+  and Apple10-tuned `ConvAppleMPP`;
+- the global KV caches are Metal placement sparse buffers, mapped 4,096 positions ahead of the fill,
+  trimmed immediately on reset/rewind, with Metal 4 `copyBufferMappingsFromBuffer:` zero-blit helper
+  snapshots; prefill graphs' memory pools are released after each prompt and `verify_8` shares its
+  intermediate pool with `verify` and `decode`;
+- the model's window is read from its file (128K v2 model runs at 65,536 tokens on 12 GB iPhones);
+  ring caches survive a long rewind, and prefill can stop between its runs;
+- verified on iPhone 17 Pro (A19 Pro, 12 GB, iOS 27.2.1): `file-report` prefill +9.2 % (`1,443`
+  tok/s, TTFT −9.3 %), `email` +5.5 %, `typo-fix` +4.8 % prefill / +2.9 % decode, 85 % undisturbed
+  runs (vs 60 % on `agello-one-20261115`), and v2 64K exact to position 65,534 at `3.18–3.45 GB`.
 
 ## Swift patches
 

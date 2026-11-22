@@ -16,11 +16,13 @@ This product includes software developed by Google LLC:
   input-overflow option and its activation type; build information and telemetry; speculative
   decoding stays within the KV cache, each message ends with one final event,
   and the sampler follows the active conversation; KV caches in Metal sparse
-  buffers mapped as they fill, snapshots copied on the GPU, ring caches kept
-  across rewinds, prefill stoppable between its runs, and the model's window
-  read from its file; sources the Apple build doesn't use removed; from
+  buffers mapped as they fill and trimmed on reset/rewind, snapshots detached
+  via Metal 4 copyBufferMappingsFromBuffer:, zero-copy NEON greedy sampling,
+  verify_8 speculative rounds, ring caches kept across rewinds, prefill
+  stoppable between its runs, background GPU drain, and the model's window read
+  from its file; sources the Apple build doesn't use removed; from
   https://github.com/PowerBeef/agello-litert-lm (branch main, release
-  agello-one-20261115)
+  agello-one-20261122)
 
   LiteRT and ML Drift (linked into the CLiteRTLM runtime) — Copyright Google
   LLC
@@ -164,8 +166,9 @@ At runtime, the app downloads model weights that are not distributed
 with this repository:
 
   Gemma 4 E4B (LiteRT-LM build by litert-community, based on
-  google/gemma-4-E4B-it), modified: the rotary-position computation is
-  rewritten to stay exact with 16-bit activations; weights unchanged
+  google/gemma-4-E4B-it), modified: 1,536-slot local KV ring buffers, 128K
+  global window with shared Dual-GATHER float16-exact rotary tables, and
+  verify_8 speculative signature; weights unchanged
   Licensed under the Apache License, Version 2.0
   https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope
   (original: https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm)
