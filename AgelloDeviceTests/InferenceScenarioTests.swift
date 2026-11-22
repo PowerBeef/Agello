@@ -592,6 +592,60 @@ final class InferenceScenarioTests: DeviceTestCase {
     }
   }
 
+  /// P5.1: multi-word JSON schema enums with speculative decoding (MTP) enabled by default.
+  /// Previously failed with "Failed to commit token: ▁talk" because LlgConstraintProvider
+  /// passed raw SentencePiece `▁` instead of 0x20.
+  func test16_MultiWordJsonEnumWithMTP() async throws {
+    try await requireLoadedModel()
+    XCTAssertTrue(LiteRTChatEngine.jsonHelpersSpeculate, "AGELLO_JSON_MTP should default to on")
+    let schema = #"{"type":"object","properties":{"action":{"type":"string","enum":["search web","talk now","save note"]},"reason":{"type":"string"}},"required":["action","reason"],"additionalProperties":false}"#
+    let prompt = """
+      Classify the user request into one action: "search web" (needs current info), \
+      "talk now" (conversational reply), or "save note" (record a memo).
+      User request: "What is the current weather in Montreal today?"
+      Return JSON with action and a short reason.
+      """
+    let data = try await appState.engine.helperJSON(prompt: prompt, schemaJSON: schema, maxOutputTokens: 64)
+    let raw = String(decoding: data, as: UTF8.self)
+    let parsed = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    let action = parsed?["action"] as? String ?? ""
+    let reason = parsed?["reason"] as? String ?? ""
+    harness.record("16_multiWordJsonEnum", ["raw": raw, "action": action, "reason": reason], in: self)
+    XCTAssertEqual(action, "search web", "Unexpected enum value: \(raw)")
+    XCTAssertFalse(reason.isEmpty, "Empty reason: \(raw)")
+  }
+
+  /// P5.1: Think + tool call keeps `<thought>` live across the tool step, enforces first-token
+  /// stop suppression on the post-thought visible answer, and strips thoughts once done.
+  func test17_ThinkToolCallContinuity() async throws {
+    try await requireLoadedModel()
+    let previousThinking = appState.options.enableThinking
+    appState.options.enableThinking = true
+    await appState.applyCurrentOptions()
+    defer {
+      appState.options.enableThinking = previousThinking
+    }
+    let cursor = ToolActivity.cursor
+    let thread = harness.newThread()
+    let exchange = await harness.ask(
+      "Use the calculator tool to compute 7384 * 2917, then give only the exact number.",
+      in: thread)
+    let invoked = ToolActivity.invocations(since: cursor)
+    let cached = await (appState.engine as? LiteRTChatEngine)?.cachedTokenCount() ?? -1
+    let digits = exchange.text.filter(\.isNumber)
+    harness.record(
+      "17_thinkToolCall",
+      [
+        "reply": exchange.text, "thoughtChars": exchange.reply?.thought.count ?? 0,
+        "invoked": invoked, "cachedTokens": cached, "seconds": exchange.seconds,
+      ], in: self)
+    XCTAssertTrue(exchange.accepted, appState.generationError ?? "")
+    XCTAssertFalse(exchange.text.isEmpty, "Empty post-thought answer after tool response")
+    XCTAssertFalse(exchange.text.hasPrefix(ChatTurn.errorPrefix), exchange.text)
+    XCTAssertTrue(invoked.contains(CalculatorTool.name), "Invoked: \(invoked)")
+    XCTAssertTrue(digits.contains("21539128"), "Expected 21539128 in \(exchange.text)")
+  }
+
   func test90_Benchmark() async throws {
     _ = try await harness.ensureDownloaded(ModelCatalog.e4b, timeout: 5400)
     await appState.runBenchmark()

@@ -664,9 +664,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   }
 
   /// Whether JSON helpers keep speculative decoding (PERFORMANCE.md, B4). Our runtime's grammar
-  /// states stopped sharing one matcher across a speculative round in fork `1382157b`; until a release
-  /// with it is vendored, `AGELLO_JSON_MTP=1` turns it on for a runtime that has it.
-  nonisolated static let jsonHelpersSpeculate = ProcessInfo.processInfo.environment["AGELLO_JSON_MTP"] == "1"
+  /// states stopped sharing one matcher across a speculative round in fork `1382157b` (shipped
+  /// since `agello-one-20261122`), so JSON helpers speculate by default; set `AGELLO_JSON_MTP=0`
+  /// to turn it off for debugging.
+  nonisolated static let jsonHelpersSpeculate =
+    ProcessInfo.processInfo.environment["AGELLO_JSON_MTP"] != "0"
 
   func helperJSON(prompt: String, schemaJSON: String, maxOutputTokens: Int) async throws -> Data {
     guard let engine, let resolved, let options else { throw ChatError.engineNotReady }

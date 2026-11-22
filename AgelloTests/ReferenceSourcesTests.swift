@@ -175,6 +175,8 @@ final class ReferenceSourcesTests: XCTestCase {
     XCTAssertTrue(place?.content?.contains("Within about 1 km of Place des Arts, Montreal") == true)
     XCTAssertEqual(PlaceSearch.split("pharmacy near Place des Arts, Montreal").what, "pharmacy")
     XCTAssertEqual(PlaceSearch.split("pharmacy near Place des Arts, Montreal").place, "Place des Arts, Montreal")
+    XCTAssertEqual(PlaceSearch.split("pharmacie près de Place des Arts Montréal").what, "pharmacie")
+    XCTAssertEqual(PlaceSearch.split("pharmacie près de Place des Arts Montréal").place, "Place des Arts Montréal")
     XCTAssertNil(PlaceSearch.split("Pharmaprix Montreal").place)
     XCTAssertEqual(PlaceSearch.categoryName(.pharmacy), "pharmacy")
     XCTAssertEqual(PlaceSearch.categoryName(.publicTransport), "public transport")

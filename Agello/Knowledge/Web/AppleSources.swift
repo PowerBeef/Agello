@@ -89,13 +89,21 @@ enum PlaceSearch {
     return try? await MKGeocodingRequest(addressString: text)?.mapItems.first
   }
 
-  /// "pharmacy near Place des Arts, Montreal" as ("pharmacy", "Place des Arts, Montreal"); a
-  /// query without "near" is all what.
+  /// "pharmacy near Place des Arts, Montreal" (or French "pharmacie près de …") as
+  /// ("pharmacy", "Place des Arts, Montreal"); a query without a proximity connector is all what.
   static func split(_ query: String) -> (what: String, place: String?) {
-    guard let range = query.range(of: " near ", options: .caseInsensitive) else { return (query, nil) }
-    let what = query[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
-    let place = query[range.upperBound...].trimmingCharacters(in: .whitespaces)
-    return what.isEmpty || place.isEmpty ? (query, nil) : (what, place)
+    let connectors = [
+      " near ", " près de ", " près du ", " près des ", " près d'",
+      " pres de ", " pres du ", " pres des ", " pres d'", " proche de ",
+    ]
+    for connector in connectors {
+      if let range = query.range(of: connector, options: .caseInsensitive) {
+        let what = query[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
+        let place = query[range.upperBound...].trimmingCharacters(in: .whitespaces)
+        if !what.isEmpty, !place.isEmpty { return (what, place) }
+      }
+    }
+    return (query, nil)
   }
 
   /// "MKPOICategoryPharmacy" as "pharmacy".

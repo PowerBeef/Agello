@@ -313,7 +313,7 @@ final class WebScenarioTests: DeviceTestCase {
       let answer = await harness.ask(item.message, in: harness.newThread(), webSearch: true)
       let sources = answer.reply?.parts.sources ?? []
       let described = sources.map { "\($0.index) \($0.title) \($0.url ?? "")" }
-      let notice = appState.generationError ?? ""
+      let notice = appState.notice ?? appState.generationError ?? ""
       rows.append([
         "message": item.message, "seconds": answer.seconds, "reply": answer.text, "sources": described,
         "notice": notice, "topic": appState.lastWebPlan?.topic.rawValue ?? "",

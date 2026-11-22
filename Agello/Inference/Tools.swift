@@ -43,7 +43,7 @@ struct WebSearchTool: Tool {
     "Look things up in Wikipedia and other reference sources: facts, recent events, travel, word meanings, quotations, weather, places, exchange rates, scientific and medical papers. Returns numbered sources to cite like [1]."
 
   @ToolParam(description: "A short, self-contained query naming the subject, like \"2026 Tour de France\". For weather, the place; for currency, like \"100 USD to EUR\".")
-  var query: String = ""
+  var query: String
 
   @ToolParam(description: "What it's about: general, travel, word, quote, weather, place, currency, research, health or news.")
   var topic: String = "general"
@@ -274,7 +274,7 @@ struct CalculatorTool: Tool {
     "Evaluate an arithmetic expression: numbers, + - * /, ^ for powers (x^0.5 is a square root), % for percent (18% is 0.18) and parentheses. Use it for any exact computation instead of mental math."
 
   @ToolParam(description: "The expression to evaluate, e.g. '(12.5 * 3) + 4' or '1000 * 1.05^10'.")
-  var expression: String = ""
+  var expression: String
 
   /// Expressions it can't evaluate are answered with an error the model can
   /// act on, never thrown: LiteRT-LM would end the reply on a thrown error.

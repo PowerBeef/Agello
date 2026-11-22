@@ -121,4 +121,21 @@ final class CalculatorToolTests: XCTestCase {
     XCTAssertFalse(CalculatorTool.description.isEmpty)
     XCTAssertEqual(CurrentDateTimeTool.name, "get_current_date_time")
   }
+
+  func testRequiredToolParametersAreMarkedRequiredInSchema() throws {
+    let calcSchema = CalculatorTool().getSchema()
+    let calcFn = try XCTUnwrap(calcSchema["function"] as? [String: Any])
+    let calcParams = try XCTUnwrap(calcFn["parameters"] as? [String: Any])
+    XCTAssertEqual(calcParams["required"] as? [String], ["expression"])
+
+    let webSchema = WebSearchTool().getSchema()
+    let webFn = try XCTUnwrap(webSchema["function"] as? [String: Any])
+    let webParams = try XCTUnwrap(webFn["parameters"] as? [String: Any])
+    XCTAssertEqual(webParams["required"] as? [String], ["query"])
+
+    let dateSchema = CurrentDateTimeTool().getSchema()
+    let dateFn = try XCTUnwrap(dateSchema["function"] as? [String: Any])
+    let dateParams = try XCTUnwrap(dateFn["parameters"] as? [String: Any])
+    XCTAssertNil(dateParams["required"])
+  }
 }
