@@ -2,12 +2,12 @@
 
 `Vendor/LiteRT-LM` is a pruned copy of our LiteRT-LM fork,
 https://github.com/PowerBeef/agello-litert-lm (one branch, `main`): its `swift/` and the binary of
-release `agello-one-20261122-2`, built from **9d2e15ab** (Google's LiteRT-LM
+release `agello-one-20261122-3`, built from **8f9e7142** (Google's LiteRT-LM
 0.19.0-nightly.20261013 plus our commits, with LiteRT and ML Drift as folders of the same
 repository). It contains only what the Xcode build needs:
 
 - `Package.swift` (pins the `CLiteRTLM.xcframework.zip` of our release
-  [`agello-one-20261122-2`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-one-20261122-2),
+  [`agello-one-20261122-3`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-one-20261122-3),
   checksummed)
 - `swift/` (the `LiteRTLM` Swift wrapper sources)
 - `LICENSE` (Apache 2.0, Google LLC)
@@ -18,7 +18,7 @@ The release's `CLiteRTLM.xcframework` has an iPhone slice and a Mac slice (a
 versioned framework), both on Metal. It's built from the same commit, with LiteRT and ML Drift
 linked statically (folders of the same repository since 2026-11-11, `agello/litert` and
 `agello/ml_drift`; our earlier forks `PowerBeef/LiteRT` and `PowerBeef/ml-drift` were archived
-on 2026-11-15): build id `f4f0ec25e764`, whose `BUILD-INFO.txt` in the release names every commit. Its
+on 2026-11-15): build id `4712b414941a`, whose `BUILD-INFO.txt` in the release names every commit. Its
 third-party notices are in `NOTICE`. Besides the Swift patches below, it carries our runtime
 fixes:
 
@@ -43,10 +43,19 @@ fixes:
   `VisionAdapter` on GPU, `OneHot` rank fix), lazy load/unload for static `AudioExecutor`
   (`3.2–4.3 ms` warm reload on iPhone 17 Pro, `0.0 ms` `session.create`), and Apple
   `QOS_CLASS_USER_INTERACTIVE` promotion for XNNPACK audio workers;
+- `LlgConstraintProvider` `TokTrie` byte/special-token encoding (`▁` → `0x20`, `<0xXX>` → raw
+  byte, `0xFF` special-token marker) unlocking multi-word JSON enums under default MTP,
+  `SuppressTokensConstraint` wrapped inside `ThinkingBudgetConstraint`, live `<thought>`
+  continuity across intermediate tool calls with one post-answer rewind+refill, parallel
+  `withTaskGroup` read-only tool dispatch (`Tool.isReadOnly`), and a self-contained
+  recursive-descent FC parser supporting paired `<|"|>`/`<escape>`/`ctrl46` delimiters alongside
+  RFC 8259 JSON double-quoted strings/keys;
 - verified on iPhone 17 Pro (A19 Pro, 12 GB, iOS 27.2.1): `file-report` prefill +9.2 % (`1,443`
   tok/s, TTFT −9.3 %), `email` +5.5 %, `typo-fix` +4.8 % prefill / +2.9 % decode, 85 % undisturbed
   runs (vs 60 % on `agello-one-20261115`), v2 64K exact to position 65,534 at `3.18–3.45 GB`,
-  warm GPU ViT init `0.90 s`, and `memory` 4/4 with 0 warnings (`0.83 GB` net footprint at `65K`).
+  warm GPU ViT init `0.90 s`, `memory` 4/4 with 0 warnings (`0.83 GB` net footprint at `65K`), and
+  Phase 5 hardware gate 100 % pass (`security` 100 %, `files` 8/8, `web` 2/2 [21/21 + 13/13],
+  targeted `inference` 6/6, `thinking` 3/3).
 
 ## Swift patches
 

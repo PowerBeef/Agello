@@ -29,9 +29,10 @@ patches, the docs and tools; renamed to `main`, so links to it redirect), `agell
 are archived). Older notes and the #3913 section below name those branches as history.
 
 `Vendor/LiteRT-LM` holds only the Swift package surface of our fork's
-`main` (`swift/` at `9d2e15ab`): `Package.swift` (with the checksummed
-`CLiteRTLM.xcframework` download of our release, `agello-one-20261122-2` (`9d2e15ab`, build
-`f4f0ec25e764`) since 2026-11-22; previously `agello-one-20261122`, `agello-one-20261115`, and `agello-next-20261024`),
+`main` (`swift/` at `8f9e7142`): `Package.swift` (with the checksummed
+`CLiteRTLM.xcframework` download of our release, `agello-one-20261122-3` (`8f9e7142`, build
+`4712b414941a`) since 2026-11-22; previously `agello-one-20261122-2`, `agello-one-20261122`,
+`agello-one-20261115`, and `agello-next-20261024`),
 `swift/`, and `LICENSE`. It's vendored because upstream Git LFS
 breaks Swift Package Manager resolution.
 

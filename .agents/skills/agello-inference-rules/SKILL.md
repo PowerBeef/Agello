@@ -204,9 +204,11 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
     `0x20`, `<0xXX>` → raw byte, `0xFF` on control/pipe tokens), unlocking
     multi-word JSON schema enums (`test16_MultiWordJsonEnumWithMTP`).
   - `LiteRTChatEngine.jsonHelpersSpeculate` now defaults ON (`AGELLO_JSON_MTP`
-    != `"0"`). Note: until a dual-slice runtime release incorporating
-    `7d80c7ec` is vendored into `Vendor/LiteRT-LM`, single-word enum values in
-    existing shipped schemas remain compatible with `agello-one-20261122-2`.
+    != `"0"`), backed by the vendored `agello-one-20261122-3` release
+    (`LiteRT-LM@8f9e7142`, build `4712b414941a`), which also replaces the
+    generated ANTLR FC parser with a recursive-descent LL(1) parser supporting
+    both native `<|"|>`/`<escape>`/`ctrl46` delimiters and RFC 8259 JSON
+    double-quoted strings/keys.
 - **Tool safety & mutability (`AgentSecurity.swift`):**
   - Spotlight every untrusted external text (attached files, web search results,
     shared text, and external tool outputs) inside `<untrusted_data>` after

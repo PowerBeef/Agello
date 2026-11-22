@@ -406,34 +406,92 @@ public final class Conversation: Sendable {
   /// invented, arguments that don't decode into the tool's parameters, or a
   /// tool that throws) is answered with an `error` response, so the model
   /// can correct the call or answer without it instead of the turn ending.
+  /// When a round contains multiple calls and all of them are read-only
+  /// (`Tool.isReadOnly`), they run concurrently via `withTaskGroup` and their
+  /// results are returned in original call order for a single batched prefill.
   fileprivate func handleToolCalls(_ toolCalls: [[String: Any]]) async throws -> [String: Any] {
-    var toolResponses: [[String: Any]] = []
+    struct ParsedCall {
+      let index: Int
+      let name: String
+      let argumentsData: Data?
+    }
 
-    for toolCall in toolCalls {
+    var parsed: [ParsedCall] = []
+    for (index, toolCall) in toolCalls.enumerated() {
       guard let function = toolCall["function"] as? [String: Any],
         let name = function["name"] as? String
       else {
         continue
       }
-      let response: Any
+      let argsData: Data?
       if let argsObject = Conversation.toolArguments(function["arguments"]) {
-        do {
-          response = try await toolManager.execute(name: name, arguments: argsObject)
-        } catch {
-          logger.warning("Tool call \(name, privacy: .public) failed: \(String(describing: error), privacy: .public)")
-          response = ["error": Conversation.toolErrorMessage(name: name, error: error)]
-        }
+        argsData = try? JSONSerialization.data(withJSONObject: argsObject)
       } else {
-        response = ["error": "The arguments for '\(name)' must be a JSON object."]
+        argsData = nil
       }
-      toolResponses.append([
-        "type": "tool_response",
-        "name": name,
-        "response": response,
-      ])
+      parsed.append(ParsedCall(index: index, name: name, argumentsData: argsData))
     }
 
+    let canRunInParallel =
+      parsed.count > 1 && parsed.allSatisfy { toolManager.isReadOnly(name: $0.name) }
+
+    if canRunInParallel {
+      let manager = self.toolManager
+      let log = self.logger
+      let results: [(Int, Data)] = await withTaskGroup(of: (Int, Data).self) { group in
+        for call in parsed {
+          group.addTask {
+            let entry = await Conversation.executeSingleToolCall(
+              name: call.name, argumentsData: call.argumentsData, toolManager: manager, logger: log)
+            let data = (try? JSONSerialization.data(withJSONObject: entry)) ?? Data()
+            return (call.index, data)
+          }
+        }
+        var collected: [(Int, Data)] = []
+        collected.reserveCapacity(parsed.count)
+        for await item in group {
+          collected.append(item)
+        }
+        return collected
+      }
+      let ordered: [[String: Any]] = results.sorted { $0.0 < $1.0 }.compactMap { _, data in
+        (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+      }
+      return ["role": "tool", "content": ordered]
+    }
+
+    var toolResponses: [[String: Any]] = []
+    toolResponses.reserveCapacity(parsed.count)
+    for call in parsed {
+      let entry = await Conversation.executeSingleToolCall(
+        name: call.name, argumentsData: call.argumentsData, toolManager: toolManager, logger: logger)
+      toolResponses.append(entry)
+    }
     return ["role": "tool", "content": toolResponses]
+  }
+
+  private static func executeSingleToolCall(
+    name: String, argumentsData: Data?, toolManager: ToolManager, logger: Logger
+  ) async -> [String: Any] {
+    let response: Any
+    if let argumentsData,
+      let argsObject = (try? JSONSerialization.jsonObject(with: argumentsData)) as? [String: Any]
+    {
+      do {
+        response = try await toolManager.execute(name: name, arguments: argsObject)
+      } catch {
+        logger.warning(
+          "Tool call \(name, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+        response = ["error": Conversation.toolErrorMessage(name: name, error: error)]
+      }
+    } else {
+      response = ["error": "The arguments for '\(name)' must be a JSON object."]
+    }
+    return [
+      "type": "tool_response",
+      "name": name,
+      "response": response,
+    ]
   }
 
   /// A tool call's arguments as an object: missing means none, and a JSON

@@ -38,8 +38,8 @@ let package = Package(
     // Metal accelerator linked statically (agello/build-xcframework.sh writes dist/).
     .binaryTarget(
       name: "CLiteRTLM",
-      url: "https://github.com/PowerBeef/agello-litert-lm/releases/download/agello-one-20261122-2/CLiteRTLM.xcframework.zip",
-      checksum: "704c9457a213ef28c8f76f8cf670947ce267c61a81cbb3f14ae3bdd9cb8ae58f"
+      url: "https://github.com/PowerBeef/agello-litert-lm/releases/download/agello-one-20261122-3/CLiteRTLM.xcframework.zip",
+      checksum: "a1c7242c8f752b61689a9e8d24b955beebc63958edd8627d19f59b7fb5b722c0"
     ),
     // The Swift Wrapper Target
     .target(

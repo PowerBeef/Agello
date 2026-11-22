@@ -59,6 +59,12 @@ public final class ToolManager: Sendable {
     }
   }
 
+  /// Whether the registered tool named `name` declares itself read-only and safe for
+  /// concurrent execution within a single tool round.
+  public func isReadOnly(name: String) -> Bool {
+    toolRegistry[name]?.isReadOnly ?? false
+  }
+
   /// Executes a tool based on the name and JSON arguments provided by the model.
   ///
   /// - Parameters:

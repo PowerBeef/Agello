@@ -11,6 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
+// added Tool.isReadOnly for safe parallel tool execution within a single round.
 
 import Foundation
 
@@ -213,6 +216,9 @@ public protocol Tool: Decodable {
   static var name: String { get }
   /// A description of what the tool does.
   static var description: String { get }
+  /// Whether this tool is read-only and safe to execute concurrently with other read-only tools
+  /// in the same model round. Mutating tools should return `false`.
+  static var isReadOnly: Bool { get }
 
   /// A required zero-argument initializer.
   init()
@@ -221,6 +227,8 @@ public protocol Tool: Decodable {
 }
 
 extension Tool {
+  public static var isReadOnly: Bool { true }
+
   /// Generates an OpenAPI-compliant JSON schema for the tool.
   public func getSchema() -> [String: Any] {
     var properties: [String: Any] = [:]
