@@ -6,7 +6,7 @@ extension View {
   /// and widgets through ``AppRouter``, each handed to `perform` once.
   func routesExternalRequests(perform: @escaping (AppRouter.Action) -> Void) -> some View {
     onContinueUserActivity(CSSearchableItemActionType) { activity in
-      if let id = SpotlightIndex.chatID(from: activity) { AppRouter.shared.handle(.openChat(id)) }
+      if let action = SpotlightIndex.action(from: activity) { AppRouter.shared.handle(action) }
     }
     .onOpenURL { url in
       if let action = AppRouter.action(for: url) { AppRouter.shared.handle(action) }

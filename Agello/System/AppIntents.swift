@@ -34,5 +34,21 @@ struct AgelloShortcuts: AppShortcutsProvider {
       intent: NewChatIntent(),
       phrases: ["New chat in \(.applicationName)", "Start a new \(.applicationName) chat"],
       shortTitle: "New Chat", systemImageName: "square.and.pencil")
+    AppShortcut(
+      intent: SnapAndAskIntent(),
+      phrases: [
+        "Snap and ask \(.applicationName)",
+        "Take a photo with \(.applicationName)",
+        "Show a photo to \(.applicationName)",
+      ],
+      shortTitle: "Snap & Ask", systemImageName: "camera.viewfinder")
+    AppShortcut(
+      intent: VoiceWithCameraIntent(),
+      phrases: [
+        "Voice with camera in \(.applicationName)",
+        "Show \(.applicationName) my camera",
+        "Look and talk with \(.applicationName)",
+      ],
+      shortTitle: "Voice & Camera", systemImageName: "video.fill")
   }
 }

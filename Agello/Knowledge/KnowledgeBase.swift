@@ -135,6 +135,7 @@ final class KnowledgeBase {
     }
     context.insert(document)
     try? context.save()
+    SpotlightIndex.indexDocuments([document])
     index(document)
     return document
   }
@@ -152,8 +153,10 @@ final class KnowledgeBase {
   }
 
   func delete(_ document: ChatDocument) {
-    indexTasks[document.id]?.cancel()
-    vectorCache[document.id] = nil
+    let id = document.id
+    indexTasks[id]?.cancel()
+    vectorCache[id] = nil
+    SpotlightIndex.removeDocuments([id])
     modelContext?.delete(document)
     try? modelContext?.save()
   }

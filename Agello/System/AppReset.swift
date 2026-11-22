@@ -27,6 +27,7 @@ enum AppReset {
     }
     // Shared with the installed app; unit tests leave them alone.
     guard systemStores else { return }
-    CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [SpotlightIndex.domain])
+    CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: SpotlightIndex.allDomains)
+    EntityIndexing.deleteAll()
   }
 }

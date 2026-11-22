@@ -3,18 +3,22 @@ import Foundation
 import SwiftData
 import UniformTypeIdentifiers
 
-/// Chats in system search: title and a short snippet; tapping a result opens
-/// the chat. Can be turned off in Settings (the index is then cleared).
+/// Chats, projects, and attached documents in system search (Spotlight & AppIntents
+/// `IndexedEntity`): tapping a result opens the chat, project, or document owner. Can be turned
+/// off in Settings (the index is then cleared).
 @MainActor
 enum SpotlightIndex {
   static let domain = "com.patricedery.agello.chats"
+  static let projectDomain = "com.patricedery.agello.projects"
+  static let documentDomain = "com.patricedery.agello.documents"
+  static let allDomains = [domain, projectDomain, documentDomain]
   static let enabledKey = "spotlightEnabled"
 
   static var isEnabled: Bool {
     UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true
   }
 
-  /// Most recent chats indexed at launch.
+  /// Most recent items indexed per kind at launch.
   static let limit = 300
 
   /// What Spotlight shows for a chat. Pure (unit-tested).
@@ -23,6 +27,24 @@ enum SpotlightIndex {
     var title: String
     var snippet: String
     var updatedAt: Date
+  }
+
+  /// What Spotlight and `ProjectEntity` show for a project.
+  struct ProjectEntry: Equatable, Sendable {
+    var id: UUID
+    var name: String
+    var instructions: String
+    var updatedAt: Date
+  }
+
+  /// What Spotlight and `DocumentEntity` show for an attached document.
+  struct DocumentEntry: Equatable, Sendable {
+    var id: UUID
+    var name: String
+    var kindRaw: String
+    var pageCount: Int
+    var snippet: String
+    var createdAt: Date
   }
 
   static func entry(for thread: ChatThread) -> Entry? {
@@ -41,49 +63,127 @@ enum SpotlightIndex {
       updatedAt: thread.updatedAt)
   }
 
+  static func projectEntry(for project: Project) -> ProjectEntry {
+    ProjectEntry(
+      id: project.id, name: project.name,
+      instructions: project.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
+      updatedAt: project.updatedAt)
+  }
+
+  static func documentEntry(for document: ChatDocument) -> DocumentEntry {
+    let source = document.summary ?? document.text
+    let compact = source
+      .replacingOccurrences(of: "\n", with: " ")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return DocumentEntry(
+      id: document.id, name: document.name, kindRaw: document.kindRaw,
+      pageCount: document.pageCount, snippet: String(compact.prefix(300)),
+      createdAt: document.createdAt)
+  }
+
   static func item(for entry: Entry) -> CSSearchableItem {
     let attributes = CSSearchableItemAttributeSet(contentType: .text)
     attributes.title = entry.title
     attributes.contentDescription = entry.snippet
     attributes.contentModificationDate = entry.updatedAt
-    let item = CSSearchableItem(
+    return CSSearchableItem(
       uniqueIdentifier: entry.id.uuidString, domainIdentifier: domain, attributeSet: attributes)
-    return item
   }
 
-  /// (Re)index these chats.
+  static func item(for entry: ProjectEntry) -> CSSearchableItem {
+    let attributes = CSSearchableItemAttributeSet(contentType: .folder)
+    attributes.title = entry.name
+    attributes.contentDescription = entry.instructions.isEmpty ? nil : String(entry.instructions.prefix(300))
+    attributes.contentModificationDate = entry.updatedAt
+    return CSSearchableItem(
+      uniqueIdentifier: "project:\(entry.id.uuidString)", domainIdentifier: projectDomain,
+      attributeSet: attributes)
+  }
+
+  static func item(for entry: DocumentEntry) -> CSSearchableItem {
+    let attributes = CSSearchableItemAttributeSet(contentType: .content)
+    attributes.title = entry.name
+    attributes.contentDescription = entry.snippet
+    attributes.contentCreationDate = entry.createdAt
+    if entry.pageCount > 0 { attributes.pageCount = NSNumber(value: entry.pageCount) }
+    return CSSearchableItem(
+      uniqueIdentifier: "document:\(entry.id.uuidString)", domainIdentifier: documentDomain,
+      attributeSet: attributes)
+  }
+
+  /// (Re)index these chats in CoreSpotlight and AppIntents `IndexedEntity` storage.
   static func index(_ threads: [ChatThread]) {
     guard isEnabled else { return }
-    let items = threads.compactMap(entry(for:)).map(item(for:))
-    guard !items.isEmpty else { return }
+    let entries = threads.compactMap(entry(for:))
+    guard !entries.isEmpty else { return }
+    let items = entries.map(item(for:))
     CSSearchableIndex.default().indexSearchableItems(items) { error in
       if let error { Log.lifecycle.error("spotlight: \(error.localizedDescription, privacy: .public)") }
     }
+    EntityIndexing.indexChats(entries)
+  }
+
+  /// (Re)index these projects in CoreSpotlight and AppIntents `IndexedEntity` storage.
+  static func indexProjects(_ projects: [Project]) {
+    guard isEnabled, !projects.isEmpty else { return }
+    let entries = projects.map(projectEntry(for:))
+    let items = entries.map(item(for:))
+    CSSearchableIndex.default().indexSearchableItems(items) { error in
+      if let error { Log.lifecycle.error("spotlight projects: \(error.localizedDescription, privacy: .public)") }
+    }
+    EntityIndexing.indexProjects(entries)
+  }
+
+  /// (Re)index these documents in CoreSpotlight and AppIntents `IndexedEntity` storage.
+  static func indexDocuments(_ documents: [ChatDocument]) {
+    guard isEnabled, !documents.isEmpty else { return }
+    let entries = documents.map(documentEntry(for:))
+    let items = entries.map(item(for:))
+    CSSearchableIndex.default().indexSearchableItems(items) { error in
+      if let error { Log.lifecycle.error("spotlight documents: \(error.localizedDescription, privacy: .public)") }
+    }
+    EntityIndexing.indexDocuments(entries)
   }
 
   static func remove(_ ids: [UUID]) {
     guard !ids.isEmpty else { return }
     CSSearchableIndex.default().deleteSearchableItems(withIdentifiers: ids.map(\.uuidString))
+    EntityIndexing.removeChats(ids)
+  }
+
+  static func removeProjects(_ ids: [UUID]) {
+    guard !ids.isEmpty else { return }
+    CSSearchableIndex.default().deleteSearchableItems(
+      withIdentifiers: ids.map { "project:\($0.uuidString)" })
+    EntityIndexing.removeProjects(ids)
+  }
+
+  static func removeDocuments(_ ids: [UUID]) {
+    guard !ids.isEmpty else { return }
+    CSSearchableIndex.default().deleteSearchableItems(
+      withIdentifiers: ids.map { "document:\($0.uuidString)" })
+    EntityIndexing.removeDocuments(ids)
   }
 
   /// When the index last caught up with the store.
   static let refreshedAtKey = "spotlightRefreshedAt"
 
-  /// Index the chats changed since the last refresh (launch), all of them (`full`, when turned
-  /// on), or clear the index when off. Each reply and new title index their chat as they happen,
-  /// so a launch only catches up: building entries for 300 chats took 0.4 s on the main thread
-  /// on a Mac, more on an iPhone.
+  /// Index chats, projects, and documents changed since the last refresh (launch), all of them
+  /// (`full`, when turned on), or clear the index when off.
   static func refresh(
     in context: ModelContext, full: Bool = false, defaults: UserDefaults = .standard
   ) {
     guard isEnabled else {
-      CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [domain])
+      CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: allDomains)
+      EntityIndexing.deleteAll()
       defaults.removeObject(forKey: refreshedAtKey)
       return
     }
     let since = full ? nil : defaults.object(forKey: refreshedAtKey) as? Date
     let now = Date()
     index(threadsToIndex(in: context, changedSince: since))
+    indexProjects(projectsToIndex(in: context, changedSince: since))
+    indexDocuments(documentsToIndex(in: context, changedSince: since))
     defaults.set(now, forKey: refreshedAtKey)
   }
 
@@ -95,8 +195,38 @@ enum SpotlightIndex {
     return (try? context.fetch(descriptor)) ?? []
   }
 
-  /// The chat a Spotlight result points at.
+  /// The most recent projects, or those changed since `date`.
+  static func projectsToIndex(in context: ModelContext, changedSince date: Date?) -> [Project] {
+    var descriptor = FetchDescriptor<Project>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
+    if let date { descriptor.predicate = #Predicate { $0.updatedAt > date } }
+    descriptor.fetchLimit = limit
+    return (try? context.fetch(descriptor)) ?? []
+  }
+
+  /// The most recent attached documents, or those added since `date`.
+  static func documentsToIndex(in context: ModelContext, changedSince date: Date?) -> [ChatDocument] {
+    var descriptor = FetchDescriptor<ChatDocument>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+    if let date { descriptor.predicate = #Predicate { $0.createdAt > date } }
+    descriptor.fetchLimit = limit
+    return (try? context.fetch(descriptor)) ?? []
+  }
+
+  /// The chat a legacy Spotlight result points at.
   static func chatID(from activity: NSUserActivity) -> UUID? {
     (activity.userInfo?[CSSearchableItemActivityIdentifier] as? String).flatMap(UUID.init(uuidString:))
+  }
+
+  /// Resolves a Spotlight user activity into an ``AppRouter/Action`` (chat, project, or document).
+  static func action(from activity: NSUserActivity) -> AppRouter.Action? {
+    guard let raw = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else {
+      return nil
+    }
+    if raw.hasPrefix("project:"), let id = UUID(uuidString: String(raw.dropFirst("project:".count))) {
+      return .openProject(id)
+    }
+    if raw.hasPrefix("document:"), let id = UUID(uuidString: String(raw.dropFirst("document:".count))) {
+      return .openDocument(id)
+    }
+    return UUID(uuidString: raw).map(AppRouter.Action.openChat)
   }
 }

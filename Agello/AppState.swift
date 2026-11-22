@@ -640,6 +640,13 @@ final class AppState {
     // Web search the user asked for: plan queries, search, read, rank.
     if webSearch, webSettings.allowed {
       guard await ensureEngineLoaded() else { return false }
+      if !BackgroundWork.shared.isPendingOrActive {
+        BackgroundWork.shared.onExpire = { [weak self] in await self?.stopAndDrain() }
+        BackgroundWork.shared.begin(
+          title: String(localized: "Researching"),
+          subtitle: String(localized: "Planning the search…"),
+          totalSteps: 4)
+      }
       let filePrompt = documents.isEmpty ? nil : enginePrompt
       let firstIndex = sources.count + 1
       // Files and web results share the room for material instead of each taking it all.

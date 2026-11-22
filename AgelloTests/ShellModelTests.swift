@@ -29,6 +29,8 @@ final class ShellModelTests: XCTestCase {
 
   override func tearDown() async throws {
     AppRouter.shared.voiceRequested = false
+    AppRouter.shared.voiceWithCameraRequested = false
+    AppRouter.shared.cameraRequested = false
     AppRouter.shared.draftRequested = nil
     shell = nil
     appState = nil
@@ -69,9 +71,60 @@ final class ShellModelTests: XCTestCase {
     XCTAssertNil(appState.selectedThreadID)
     XCTAssertTrue(AppRouter.shared.voiceRequested)
     shell.select(thread)
+    shell.perform(.voiceWithCamera)
+    XCTAssertNil(appState.selectedThreadID)
+    XCTAssertTrue(AppRouter.shared.voiceWithCameraRequested)
+    shell.select(thread)
+    shell.perform(.snapAndAsk)
+    XCTAssertNil(appState.selectedThreadID)
+    XCTAssertTrue(AppRouter.shared.cameraRequested)
+    shell.select(thread)
     shell.perform(.draft("Plan a trip"))
     XCTAssertNil(appState.selectedThreadID)
     XCTAssertEqual(AppRouter.shared.draftRequested, "Plan a trip")
+  }
+
+  func testOpenProjectAndOpenDocumentRouteToOwners() throws {
+    shell.perform(.openProject(UUID()))
+    XCTAssertNil(shell.openProject)
+
+    let project = appState.newProject(named: "Budget", in: context)
+    shell.perform(.openProject(project.id))
+    XCTAssertEqual(shell.openProject?.id, project.id)
+
+    let thread = appState.newThread(in: context)
+    let chatDoc = ChatDocument(
+      name: "receipt.pdf", kindRaw: DocumentKind.pdf.rawValue, byteCount: 512, pageCount: 1,
+      text: "Total $42", threadID: thread.id)
+    let projectDoc = ChatDocument(
+      name: "plan.md", kindRaw: DocumentKind.text.rawValue, byteCount: 256, pageCount: 0,
+      text: "Quarterly targets", projectID: project.id)
+    context.insert(chatDoc)
+    context.insert(projectDoc)
+    try context.save()
+
+    shell.perform(.openDocument(chatDoc.id))
+    XCTAssertEqual(appState.selectedThreadID, thread.id)
+    XCTAssertNil(shell.openProject)
+
+    shell.perform(.openDocument(projectDoc.id))
+    XCTAssertEqual(shell.openProject?.id, project.id)
+
+    shell.perform(.openDocument(UUID()))
+    XCTAssertNil(shell.openProject)
+  }
+
+  func testComposerBridgeCommandDeliveryIsIsolated() {
+    let bridge = ComposerBridge()
+    XCTAssertFalse(bridge.searchWeb)
+    XCTAssertNil(bridge.takeRequest())
+    bridge.send(.insertStarter("Explain how "))
+    if case .insertStarter(let text) = bridge.takeRequest() {
+      XCTAssertEqual(text, "Explain how ")
+    } else {
+      XCTFail("Expected insertStarter command")
+    }
+    XCTAssertNil(bridge.takeRequest(), "Command should be consumed once")
   }
 
   /// "Ask Agello" from Siri or Shortcuts sends the question in a chat of its own.

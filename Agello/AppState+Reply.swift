@@ -44,11 +44,28 @@ extension AppState {
       }
     } else if FileContext.wantsSummary(question) {
       let share = budget / documents.count
+      let longDocuments = documents.filter {
+        ContextBudget.estimateTokens($0.text) > share && $0.summary == nil
+      }
+      if longDocuments.count > 1 {
+        BackgroundWork.shared.onExpire = { [weak self] in await self?.stopAndDrain() }
+        BackgroundWork.shared.begin(
+          title: String(localized: "Synthesizing \(longDocuments.count) documents"),
+          subtitle: String(localized: "Reading \(longDocuments[0].name)"),
+          totalSteps: longDocuments.count)
+      }
+      var longIndex = 0
       for document in documents {
         if ContextBudget.estimateTokens(document.text) <= share {
           materials.append(.full(name: document.name, pageCount: document.pageCount, text: document.text))
         } else {
-          guard let summary = await summary(of: document) else { return nil }
+          let needsWork = document.summary == nil
+          let docIndex = needsWork ? longIndex : 0
+          let docTotal = max(1, longDocuments.count)
+          if needsWork { longIndex += 1 }
+          guard let summary = await summary(
+            of: document, documentIndex: docIndex, documentCount: docTotal)
+          else { return nil }
           materials.append(
             .summary(
               name: document.name, pageCount: document.pageCount,
@@ -57,10 +74,21 @@ extension AppState {
         cite(document.name)
       }
     } else {
+      if documents.count > 1 {
+        BackgroundWork.shared.onExpire = { [weak self] in await self?.stopAndDrain() }
+        BackgroundWork.shared.begin(
+          title: String(localized: "Researching \(documents.count) documents"),
+          subtitle: String(localized: "Searching your files…"),
+          totalSteps: 3)
+      }
       preparingStatus = "Searching your files…"
       let passages = FileContext.fit(
         await knowledge.search(question, in: documents, limit: 24), budget: budget)
       if Task.isCancelled { return nil }
+      if documents.count > 1 {
+        BackgroundWork.shared.stepProgress(
+          completed: 2, total: 3, subtitle: String(localized: "Synthesizing findings…"))
+      }
       materials.append(.excerpts(passages.map { (label: $0.citation, text: $0.text) }))
       for passage in passages { cite(passage.citation, String(passage.text.prefix(240))) }
     }
@@ -72,7 +100,9 @@ extension AppState {
   }
 
   /// A long document's section-by-section summary, written once and cached.
-  func summary(of document: ChatDocument) async -> String? {
+  func summary(
+    of document: ChatDocument, documentIndex: Int = 0, documentCount: Int = 1
+  ) async -> String? {
     if let summary = document.summary { return summary }
     let chunks = document.chunks.sorted { $0.index < $1.index }.map {
       ChunkDraft(index: $0.index, text: $0.text, pageStart: $0.pageStart, pageEnd: $0.pageEnd)
@@ -81,12 +111,23 @@ extension AppState {
     let prompts = sections.map { FileContext.sectionPrompt($0, of: document.name) }
     let name = document.name
     let count = sections.count
-    // Only long, user-requested file summaries request background GPU time.
+    // Long document synthesis requests background GPU + inference time.
     BackgroundWork.shared.onExpire = { [weak self] in await self?.stopAndDrain() }
-    BackgroundWork.shared.begin(
-      title: String(localized: "Summarizing \(name)"),
-      subtitle: String(localized: "Reading \(count) sections"))
-    preparingStatus = "Reading \(name)…"
+    if documentCount == 1 {
+      BackgroundWork.shared.begin(
+        title: String(localized: "Summarizing \(name)"),
+        subtitle: String(localized: "Reading \(count) sections"),
+        totalSteps: count)
+    } else {
+      BackgroundWork.shared.update(
+        subtitle: BackgroundWorkPlan.documentSubtitle(
+          name: name, documentIndex: documentIndex, documentCount: documentCount,
+          section: 1, totalSections: count))
+    }
+    preparingStatus =
+      documentCount > 1
+      ? "Document \(documentIndex + 1) of \(documentCount) · Reading \(name)…"
+      : "Reading \(name)…"
     let result: Result<[String], Error> = await serialized {
       let result: Result<[String], Error>
       do {
@@ -95,8 +136,12 @@ extension AppState {
             prompts, maxOutputTokens: FileContext.sectionSummaryTokens
           ) { done in
             await MainActor.run {
-              self.preparingStatus = "Reading \(name) · part \(min(done + 1, count)) of \(count)"
-              BackgroundWork.shared.sectionProgress(completed: done, total: count)
+              self.preparingStatus = BackgroundWorkPlan.documentSubtitle(
+                name: name, documentIndex: documentIndex, documentCount: documentCount,
+                section: min(done + 1, count), totalSections: count)
+              BackgroundWork.shared.documentSectionProgress(
+                documentIndex: documentIndex, documentCount: documentCount,
+                sectionCompleted: done, sectionTotal: count, documentName: name)
             }
           })
       } catch {
@@ -166,12 +211,25 @@ extension AppState {
     toolStatus = nil
     defer { toolStatus = nil }
     var finished = false
+    var toolSteps = 0
     do {
       for try await event in stream {
         switch event {
         case .chunk(let chunk):
           accumulator.append(chunk)
-          if let latest = chunk.toolActivity.last { toolStatus = latest.summary }
+          if let latest = chunk.toolActivity.last, toolStatus != latest.summary {
+            toolStatus = latest.summary
+            toolSteps += 1
+            if !BackgroundWork.shared.isPendingOrActive, options.enableThinking {
+              BackgroundWork.shared.onExpire = { [weak self] in await self?.stopAndDrain() }
+              BackgroundWork.shared.begin(
+                title: String(localized: "Researching"),
+                subtitle: latest.summary,
+                totalSteps: 4)
+            }
+            BackgroundWork.shared.stepProgress(
+              completed: toolSteps, total: max(toolSteps + 1, 4), subtitle: latest.summary)
+          }
           if ContinuousClock.now - lastFlush >= .milliseconds(100) {
             flush()
             stopIfMemoryIsExhausted()

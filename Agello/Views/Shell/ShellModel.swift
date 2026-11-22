@@ -51,7 +51,9 @@ final class ShellModel {
     let title = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let thread = renaming, !title.isEmpty else { return }
     thread.title = String(title.prefix(80))
+    thread.updatedAt = Date()
     try? context.save()
+    SpotlightIndex.index([thread])
   }
 
   func delete(_ thread: ChatThread) {
@@ -103,9 +105,26 @@ final class ShellModel {
     case .voice:
       newChat()
       AppRouter.shared.voiceRequested = true
+    case .voiceWithCamera:
+      newChat()
+      AppRouter.shared.voiceWithCameraRequested = true
+    case .snapAndAsk:
+      newChat()
+      AppRouter.shared.cameraRequested = true
     case .openChat(let id):
       appState.newChatProjectID = nil
       if threadExists(id) { appState.selectedThreadID = id }
+    case .openProject(let id):
+      if let project = project(withID: id) { openProject = project }
+    case .openDocument(let id):
+      if let document = document(withID: id) {
+        if let threadID = document.threadID, threadExists(threadID) {
+          appState.newChatProjectID = nil
+          appState.selectedThreadID = threadID
+        } else if let projectID = document.projectID, let project = project(withID: projectID) {
+          openProject = project
+        }
+      }
     case .ask(let question):
       guard !appState.isBusy else {
         appState.generationError = String(localized: "Finish or stop the current reply first.")
@@ -124,5 +143,15 @@ final class ShellModel {
   private func threadExists(_ id: UUID) -> Bool {
     let descriptor = FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == id })
     return ((try? context.fetchCount(descriptor)) ?? 0) > 0
+  }
+
+  private func project(withID id: UUID) -> Project? {
+    let descriptor = FetchDescriptor<Project>(predicate: #Predicate { $0.id == id })
+    return try? context.fetch(descriptor).first
+  }
+
+  private func document(withID id: UUID) -> ChatDocument? {
+    let descriptor = FetchDescriptor<ChatDocument>(predicate: #Predicate { $0.id == id })
+    return try? context.fetch(descriptor).first
   }
 }

@@ -33,6 +33,7 @@ struct AppBootstrap {
 
     let opened = ChatStoreLoader.open()
     container = opened.container
+    EntityIndexing.configure(container: container)
 
     // `--uitest-reset`: start UI tests from a clean slate (see AppReset). Downloaded models are
     // kept. Debug builds only: the UI suites build Debug, and an archive shouldn't carry a launch

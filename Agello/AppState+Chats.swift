@@ -127,6 +127,7 @@ extension AppState {
     let project = Project(name: name)
     context.insert(project)
     try? context.save()
+    SpotlightIndex.indexProjects([project])
     return project
   }
 
@@ -156,6 +157,7 @@ extension AppState {
       activeProject = nil
       conversationThreadID = nil
     }
+    SpotlightIndex.removeProjects([projectID])
     context.delete(project)
     try? context.save()
   }

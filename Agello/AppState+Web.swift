@@ -16,6 +16,8 @@ extension AppState {
     if !plan.needsSearch { return .notNeeded }
     let queries = plan.queries.isEmpty ? [WebContext.directQuery(question, history: history)] : plan.queries
     if Task.isCancelled { return .cancelled }
+    BackgroundWork.shared.stepProgress(
+      completed: 1, total: 4, subtitle: String(localized: "Searching sources…"))
     let window = resolved?.maxNumTokens ?? 8_192
     do {
       let findings = try await webResearch.research(
@@ -25,7 +27,12 @@ extension AppState {
         budgetTokens: WebContext.budget(
           window: window, question: question, alongsideFileTokens: fileTokens, forRequest: plan.isRequest),
         firstIndex: firstIndex
-      ) { status in self.preparingStatus = status }
+      ) { status in
+        self.preparingStatus = status
+        BackgroundWork.shared.stepProgress(completed: 2, total: 4, subtitle: status)
+      }
+      BackgroundWork.shared.stepProgress(
+        completed: 3, total: 4, subtitle: String(localized: "Writing answer…"))
       return findings.sources.isEmpty
         ? .failed(String(localized: "The web search found nothing useful. Answered without it."))
         : .found(findings)

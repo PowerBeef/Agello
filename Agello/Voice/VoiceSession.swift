@@ -51,6 +51,7 @@ final class VoiceSession: Identifiable {
   @ObservationIgnored private let appState: AppState
   @ObservationIgnored private let makeThread: () -> ChatThread
   @ObservationIgnored private var thread: ChatThread?
+  @ObservationIgnored private let startWithCamera: Bool
 
   /// UI tests can't answer the system microphone prompt on device.
   #if DEBUG || BENCH
@@ -60,9 +61,13 @@ final class VoiceSession: Identifiable {
   #endif
   static let maxUtterance: TimeInterval = 30
 
-  init(appState: AppState, thread: ChatThread?, makeThread: @escaping () -> ChatThread) {
+  init(
+    appState: AppState, thread: ChatThread?, startWithCamera: Bool = false,
+    makeThread: @escaping () -> ChatThread
+  ) {
     self.appState = appState
     self.thread = thread
+    self.startWithCamera = startWithCamera
     self.makeThread = makeThread
   }
 
@@ -94,6 +99,9 @@ final class VoiceSession: Identifiable {
     do {
       try audio.start()
       state = .listening
+      if startWithCamera, CameraFeed.isAvailable {
+        cameraOn = await camera.start()
+      }
       let captureFormat = audio.captureFormat
       monitorStartTask = Task { [weak self] in
         guard let self else { return }

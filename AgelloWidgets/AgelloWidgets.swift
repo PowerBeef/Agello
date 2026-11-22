@@ -8,6 +8,8 @@ struct AgelloWidgets: WidgetBundle {
     QuickActionsWidget()
     TalkControl()
     NewChatControl()
+    SnapAndAskControl()
+    VoiceWithCameraControl()
   }
 }
 
@@ -48,6 +50,7 @@ enum WidgetPalette {
   static let canvas = Color(red: 0.086, green: 0.094, blue: 0.137)
   static let canvasBottom = Color(red: 0.038, green: 0.044, blue: 0.056)
   static let glacier = Color(red: 0.541, green: 0.690, blue: 0.784)
+  static let teal = Color(red: 0.459, green: 0.761, blue: 0.733)
   static let gold = Color(red: 0.929, green: 0.800, blue: 0.541)
   static let text = Color(red: 0.95, green: 0.94, blue: 0.92)
   static let secondary = Color(red: 0.78, green: 0.76, blue: 0.72)
@@ -64,6 +67,8 @@ enum WidgetPalette {
 enum WidgetLinks {
   static let newChat = URL(string: "agello://new")!
   static let voice = URL(string: "agello://voice")!
+  static let snapAndAsk = URL(string: "agello://camera")!
+  static let voiceWithCamera = URL(string: "agello://voice-camera")!
 }
 
 struct QuickActionsView: View {
@@ -86,8 +91,9 @@ struct QuickActionsView: View {
       }
       .widgetURL(WidgetLinks.newChat)
     case .systemMedium:
-      HStack(spacing: 12) {
+      HStack(spacing: 10) {
         action("New chat", symbol: "square.and.pencil", tint: WidgetPalette.glacier, url: WidgetLinks.newChat)
+        action("Snap", symbol: "camera.viewfinder", tint: WidgetPalette.teal, url: WidgetLinks.snapAndAsk)
         action("Talk", symbol: "waveform", tint: WidgetPalette.gold, url: WidgetLinks.voice)
       }
     default:
@@ -154,5 +160,29 @@ struct NewChatControl: ControlWidget {
     }
     .displayName("New Agello chat")
     .description("Start a new chat.")
+  }
+}
+
+struct SnapAndAskControl: ControlWidget {
+  var body: some ControlWidgetConfiguration {
+    StaticControlConfiguration(kind: "com.patricedery.agello.snapandask") {
+      ControlWidgetButton(action: SnapAndAskIntent()) {
+        Label("Snap & Ask Agello", systemImage: "camera.viewfinder")
+      }
+    }
+    .displayName("Snap & Ask Agello")
+    .description("Take a photo and ask Agello about it.")
+  }
+}
+
+struct VoiceWithCameraControl: ControlWidget {
+  var body: some ControlWidgetConfiguration {
+    StaticControlConfiguration(kind: "com.patricedery.agello.voicecamera") {
+      ControlWidgetButton(action: VoiceWithCameraIntent()) {
+        Label("Voice with Camera", systemImage: "video.fill")
+      }
+    }
+    .displayName("Voice with Camera")
+    .description("Start a hands-free voice conversation with the camera on.")
   }
 }

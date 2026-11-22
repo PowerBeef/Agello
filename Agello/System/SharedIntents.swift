@@ -34,3 +34,35 @@ struct StartVoiceModeIntent: AppIntent {
     return .result()
   }
 }
+
+/// Open a new chat and immediately launch the camera to snap a photo and ask about it.
+/// Requires device unlock so lock-screen triggers cannot access the camera or personal tools.
+struct SnapAndAskIntent: AppIntent {
+  static let title: LocalizedStringResource = "Snap & Ask Agello"
+  static let description = IntentDescription("Take a photo and ask Agello about it in a new chat.")
+  static let supportedModes: IntentModes = .foreground(.immediate)
+  static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+
+  func perform() async throws -> some IntentResult {
+    #if !WIDGET_EXTENSION
+      await MainActor.run { AppRouter.shared.handle(.snapAndAsk) }
+    #endif
+    return .result()
+  }
+}
+
+/// Start hands-free voice mode with the live camera active so Agello can see while listening.
+struct VoiceWithCameraIntent: AppIntent {
+  static let title: LocalizedStringResource = "Voice with Camera"
+  static let description = IntentDescription(
+    "Start a hands-free voice conversation with the camera on.")
+  static let supportedModes: IntentModes = .foreground(.immediate)
+  static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+
+  func perform() async throws -> some IntentResult {
+    #if !WIDGET_EXTENSION
+      await MainActor.run { AppRouter.shared.handle(.voiceWithCamera) }
+    #endif
+    return .result()
+  }
+}

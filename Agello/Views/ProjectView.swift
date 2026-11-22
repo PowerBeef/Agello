@@ -243,6 +243,7 @@ struct ProjectView: View {
     if changedInstructions { project.instructions = instructions }
     project.updatedAt = Date()
     try? context.save()
+    SpotlightIndex.indexProjects([project])
     if changedInstructions { appState.projectInstructionsChanged(project.id) }
   }
 }

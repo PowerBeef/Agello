@@ -34,6 +34,7 @@ let package = Package(
         "Agello/App", "Agello/Assets.xcassets", "Agello/PrivacyInfo.xcprivacy", "Agello/Resources",
         "Agello/Views", "Agello/Markdown", "Agello/Support/Theme",
         "Agello/Support/Announcements.swift",
+        "Agello/System/AppEntities.swift",
         "Agello/System/AppIntents.swift", "Agello/System/SharedIntents.swift",
         "Agello/Voice/CameraFeed.swift", "Agello/Voice/LiveSpeechTranscriber.swift",
         "Agello/Voice/VoiceAudio.swift", "Agello/Voice/VoiceSession.swift",

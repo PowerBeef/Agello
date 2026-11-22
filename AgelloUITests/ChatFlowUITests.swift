@@ -509,6 +509,11 @@ final class ChatFlowUITests: XCTestCase {
     XCTAssertTrue(element("voice.state").waitForExistence(timeout: 15), "Voice mode didn't open")
     element("voice.end").tap()
     XCTAssertTrue(element("chat.input").waitForExistence(timeout: 5))
+
+    XCUIDevice.shared.system.open(URL(string: "agello://voice-camera")!)
+    XCTAssertTrue(element("voice.state").waitForExistence(timeout: 15), "Voice with camera didn't open")
+    element("voice.end").tap()
+    XCTAssertTrue(element("chat.input").waitForExistence(timeout: 5))
   }
 
   /// Memory: turn it on and add a memory by hand.
