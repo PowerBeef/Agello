@@ -363,8 +363,9 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     let config = try EngineConfig(
       modelPath: modelURL.path,
       backend: .gpu,
-      // The image and audio encoders still run on the CPU (docs/BACKEND.md, B5).
-      visionBackend: resolved.enableVision ? .cpu() : nil,
+      // Vision runs on Metal GPU (A19 Pro Neural Accelerators, P4.2); audio
+      // Conformer stays on P-core XNNPACK with lazy load/unload.
+      visionBackend: resolved.enableVision ? .gpu : nil,
       audioBackend: resolved.enableAudio ? .cpu() : nil,
       maxNumTokens: resolved.maxNumTokens,
       cacheDir: try EngineCache.directory()
@@ -827,8 +828,11 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     cancelRequested = false
     defer { generating = false }
 
-    var contents: [Content] = [.text(Self.promptText(text, imageData, audioFileURL))]
+    // Gemma 4's canonical multimodal order places image tokens before the
+    // user's text prompt so causal attention attends to visual context first.
+    var contents: [Content] = []
     if let imageData { contents.append(.imageData(imageData)) }
+    contents.append(.text(Self.promptText(text, imageData, audioFileURL)))
     if let audioFileURL { contents.append(.audioFile(audioFileURL.path)) }
     let message = LiteRTLM.Message(contents: contents)
 
