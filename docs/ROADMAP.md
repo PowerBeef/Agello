@@ -9,15 +9,18 @@ Updated 2026-11-21. Technical backing: [RUNTIME-AUDIT-2026-11-21.md](RUNTIME-AUD
 The handoff between work sessions (injected automatically at startup by `.agents/hooks/session-start.sh`).
 
 - **Baseline (2026-11-21):**
-  - **Runtime (`../LiteRT-LM`):** `main` at `517ab613` (`--mac-only` build target + `telemetry.py` fix + `P1.1` drain-safe cancellation); app vendors `agello-one-20261115` (`0c749789100a`) with updated Swift 6 wrapper (`waitUntilDone`, `activeToolRounds`). Sparse Metal 4 KV caches (`MTLBufferSparseTier1`), per-prefill transient pool release, D8 system prompt (`141/142`), and `EmbeddingGemma 2` at 768 dims are in place.
-  - **App (`iRT`):** `main` with M6 Mac-first iPhone 17 Pro simulation (`SIM_GPU=Apple_A19_Pro`) and `P1.1` committed locally (push only when asked).
-  - **Audit complete ([RUNTIME-AUDIT-2026-11-21.md](RUNTIME-AUDIT-2026-11-21.md)):** Proved why `AGELLO_MTP_REPLAY=1` (`+13–17%`) did not carry over to GPU-Resident Round Stage 3 (artificial cross-CB GPU overlap in replay + 837 MB PLE `mmap` page wiring slowing prefill `−3.8%`; Stage 3 `=1` closed, drafter chain `=2` kept). Uncovered `3.5–4.0 MiB/round` CPU logits `memcpy` in `TopPSampler`, 32 KiB `ConvAppleMPP` occupancy cap (`1 TG/core`), linear raster vs. Morton Z-order walk, 302 unfused `RMSNorm + Mul` pairs, `llguidance` `TokTrie` byte/marker bugs, and iOS background GPU / Swift 6 XPC isolation hazards.
-- **Active focus — Phase 1 (`P1.1`–`P1.3`, M6 Mac `SIM_GPU=Apple_A19_Pro` workbench):**
-  - [x] `P1.1` (`P0`, `iRT` + `LiteRT-LM` `517ab613`): `nonisolated` `BGContinuedProcessingTask` handlers (`submitTaskRequest` iOS 27 API), synchronous `beginBackgroundTask` + `wait_until_done` drain, intra-MTP & post-Think cancel, `GPUGate` helper & embedder guards, inter-tool `activeToolRounds` cancel (314 CLI + 381 `PLATFORM=mac` iOS binary unit tests, `test04_StopMidReply`, `test05_ToolCall`, `test11_TitleAndContextAfterHelper`, `test01_ThinkingBudgets` pass).
-  - [ ] `P1.2` (`P0`, `LiteRT-LM`): Zero-copy NEON `GreedyHalf` (`TopPSampler`, −3.5–4.0 MiB/round `memcpy`), per-turn `ContextDrafts` bandit reset, `size - 1` off-by-one (`telemetry.py` `max_us` done in `3b35a119`).
-  - [ ] `P1.3` (`P1`, `LiteRT-LM`): Shader compile deduplication (~6,910 → ~250 PSOs) + `MTLBinaryArchive`, `MTLComputePipelineDescriptor` hints, 16 KB `CacheBuilder` alignment, RAII encoder cleanup, `gpu_info.cc` Ultra/Pro+ matching.
-- **Next physical iPhone 17 Pro gate (once connected):**
-  - Verify Phase 1 runtime candidate via `scripts/phone-bench.sh`, full device suites (`unit`, `inference`, `files`, `web`, `thinking`, `memory`), D8 `bench` baseline refresh, and background-interruption checks.
+  - **Runtime (`../LiteRT-LM`):** `main` at `e99882fb` (4 local commits ahead of `origin/main`: `--mac-only` target + `P1.1` `517ab613` + `P1.2` `73000de4` + `P1.3` `e99882fb`); app vendors `agello-one-20261115` (`0c749789100a`) with updated Swift 6 wrapper (`waitUntilDone`, `activeToolRounds`). Sparse Metal 4 KV caches (`MTLBufferSparseTier1`), per-prefill transient pool release, D8 system prompt (`141/142`), and `EmbeddingGemma 2` at 768 dims are in place.
+  - **App (`iRT`):** `main` with M6 Mac-first iPhone 17 Pro simulation (`SIM_GPU=Apple_A19_Pro`) and `P1.1` (`f05184e`) committed locally (push only when asked).
+  - **Phase 1 complete on M6 `SIM_GPU=Apple_A19_Pro` workbench (`P1.1`–`P1.3`):**
+    - [x] `P1.1` (`P0`, `LiteRT-LM@517ab613` + `iRT@f05184e`): `nonisolated` `BGContinuedProcessingTask` handlers (`submitTaskRequest` iOS 27 API), synchronous `beginBackgroundTask` + `wait_until_done` drain, intra-MTP & post-Think cancel, `GPUGate` helper & embedder guards, inter-tool `activeToolRounds` cancel (314 CLI + 381 `PLATFORM=mac` iOS binary unit tests pass).
+    - [x] `P1.2` (`P0`, `LiteRT-LM@73000de4`): Zero-copy ARM64 NEON FP16 greedy sampling (`GreedyHalf` + direct `DSHWBC4` `GreedyHalfDSHWBC4` on `verify`/`verify_8`, `LocksInPlace` direct linear shared Metal buffers), per-turn `ContextDrafts` bandit reset, `<= size` boundary fix, `telemetry.py` `max_us` fix (`0` host read copies / `0.0 KB/tok` across all cases, down from `>2.0 GB` on `explain`).
+    - [x] `P1.3` (`P1`, `LiteRT-LM@e99882fb`): Process-wide PSO deduplication + persistent `MTLBinaryArchive` (`agello_pipelines.mtlarc`, 231 KB), `MTLComputePipelineDescriptor` hints (`MTLMutabilityImmutable` + finalized 32-aligned `threadGroupSizeIsMultipleOfThreadExecutionWidth`), 16 KB `CacheBuilder` + page-aligned `newBufferWithBytesNoCopy:`, RAII `PostConvertGuard` encoder cleanup, M4 Ultra & M6 Pro/Max/Ultra `gpu_info` entries. Verified with `MTL_DEBUG_LAYER=1` (0 warnings), 4/4 C++ unit tests (`top_p_cpu_sampler_test`, `agello_context_drafts_test`, `agello_gemma4_template_test`, `gpu_info_test`), `files` (5/5 pass), `inference` (22/23 pass; `test05b_CalculatorPowersAndPercent` bisected to pre-Phase-1 `main` behavior, identical across `P1.1`/`P1.2`/`P1.3`), and `cli-bench.sh` (`ROUNDS=2`, 5 runs/arm, 20/20 checks pass: `3.9 s` cold / `1.50 s` warm full load [`0.95 s` in `01_load`, `608 ms` `engine.init`], `−85 MB` footprint / `−98 MB` peak vs `P1.2`, `2,680 tok/s` `file-report` prefill, `83.5–94.2 tok/s` decode, `0` host reads).
+- **Active focus — Phase 2 (`P2.1`–`P2.3`, M6 Mac `SIM_GPU=Apple_A19_Pro` workbench):**
+  - [ ] `P2.1` (`P1`, `LiteRT-LM`): `FullyConnected` `simd_sum` + `GetLocalBatchSize` fix on `verify`/`verify_8`, fused `RMSNorm + gamma` (−302 ops), `MTLResourceUsageRead`, `{32,1,1}` 1D workgroups.
+  - [ ] `P2.2` (`P1`, `LiteRT-LM`): `ConvAppleMPP` 0-B register epilogue (`c_tile`), Morton Z-order walk, coarse K-sync window skip, 47 `kUint8` PLE in-place INT4.
+  - [ ] `P2.3` (`P2`, `LiteRT-LM`): MSL 4.1 cooperative-tensor FlashAttention (`reduce_rows` + `get_left_input_cooperative_tensor`) + `int2b_format` INT2 LM head.
+- **Next physical iPhone 17 Pro gate (batched once connected):**
+  - Build dual-slice (`ios-arm64` + `macos-arm64`) `CLiteRTLM.xcframework` for Phase 1 (`e99882fb`), verify via `scripts/phone-bench.sh`, full device suites (`unit`, `inference`, `files`, `web`, `thinking`, `memory`), D8 `bench` baseline refresh, and background-interruption checks.
 
 ---
 
@@ -57,7 +60,7 @@ flowchart LR
 
 ## Next
 
-Work proceeds through six sequential-yet-modular engineering phases. Pure logic and C++/Metal prototypes iterate fast on the Mac CLI (`agello`, `scripts/cli-test.sh`, `scripts/cli-bench.sh` — ask before real-model Mac GPU runs); **every shipping milestone is gated on the physical iPhone 17 Pro** (`scripts/phone-bench.sh`, `scripts/device-harness.sh bench`, and hardware suites).
+Work proceeds through six sequential-yet-modular engineering phases. Pure logic and C++/Metal prototypes iterate fast on the M6 Mac mini workbench (`agello`, `scripts/cli-test.sh`, `scripts/cli-bench.sh` with `SIM_GPU=Apple_A19_Pro`, and `PLATFORM=mac scripts/device-harness.sh`); **every shipping milestone is gated on the physical iPhone 17 Pro** (`scripts/phone-bench.sh`, `scripts/device-harness.sh bench`, and hardware suites).
 
 ### Phase 1 — Lifecycle Bulletproofing, Zero-Copy Speculation & Runtime Hygiene (`P0`)
 
@@ -155,9 +158,9 @@ Every roadmap deliverable has a stable ID checked off with its commit SHA once v
 
 | Done | ID | Pri | Repo | Work Item | Primary Verification Gate | Commit |
 | :---: | :---: | :---: | :---: | --- | --- | :---: |
-| [x] | **P1.1** | P0 | `iRT` + `LiteRT-LM` | Background GPU drain (`beginBackgroundTask` + `wait_until_done`), `nonisolated` `BackgroundWork`, `keep && GPUGate.isOpen`, inter-tool cancel | `cli-test.sh unit` + `PLATFORM=mac unit` (iPhone background gate queued) | `LiteRT-LM@517ab613` + `iRT` |
-| [ ] | **P1.2** | P0 | `LiteRT-LM` | Zero-copy NEON `GreedyHalf` (+ optional `PostConvert` `simd_max`), `ContextDrafts` bandit reset, `size - 1` fix, `telemetry.py` `max_us` | `cli-bench.sh` → `phone-bench.sh` | — |
-| [ ] | **P1.3** | P1 | `LiteRT-LM` | Shader compile dedup (~6,910 → ~250) + `MTLBinaryArchive`, `MTLComputePipelineDescriptor` hints, 16 KB `CacheBuilder`, RAII encoder, `gpu_info.cc` | `cli-test.sh` + `MTL_DEBUG_LAYER` → `phone-bench.sh` | — |
+| [x] | **P1.1** | P0 | `iRT` + `LiteRT-LM` | Background GPU drain (`beginBackgroundTask` + `wait_until_done`), `nonisolated` `BackgroundWork`, `keep && GPUGate.isOpen`, inter-tool cancel | `cli-test.sh unit` + `PLATFORM=mac unit` (iPhone background gate queued) | `LiteRT-LM@517ab613` + `iRT@f05184e` |
+| [x] | **P1.2** | P0 | `LiteRT-LM` | Zero-copy NEON `GreedyHalf` + direct `DSHWBC4` `GreedyHalfDSHWBC4`, `ContextDrafts` bandit reset, `<= size` fix, `telemetry.py` `max_us` | `bazelisk test` + `cli-bench.sh` (iPhone `phone-bench.sh` gate queued) | `LiteRT-LM@73000de4` |
+| [x] | **P1.3** | P1 | `LiteRT-LM` | Shader compile dedup (~6,910 → ~250) + `MTLBinaryArchive`, `MTLComputePipelineDescriptor` hints, 16 KB `CacheBuilder`, RAII encoder, `gpu_info.cc` | `MTL_DEBUG_LAYER=1` + 4 C++ tests + `cli-test.sh` (`files`, `inference`) + `cli-bench.sh` | `LiteRT-LM@e99882fb` |
 | [ ] | **P2.1** | P1 | `LiteRT-LM` | `FullyConnected` `simd_sum` + `GetLocalBatchSize` fix on `verify`/`verify_8`, fused `RMSNorm + gamma` (−302 ops), `MTLResourceUsageRead`, `{32,1,1}` 1D WG | `cli-bench.sh` → `phone-bench.sh` | — |
 | [ ] | **P2.2** | P1 | `LiteRT-LM` | `ConvAppleMPP` 0-B register epilogue (`c_tile`), Morton Z-order walk, coarse K-sync window skip, 47 `kUint8` PLE in-place INT4 | `cli-bench.sh` → `phone-bench.sh` (`file-report`) | — |
 | [ ] | **P2.3** | P2 | `LiteRT-LM` | MSL 4.1 cooperative-tensor FlashAttention (`reduce_rows` + `get_left_input_cooperative_tensor`) + `int2b_format` INT2 LM head | `cli-bench.sh` → `phone-bench.sh` + `WindowQualityProbes` | — |
