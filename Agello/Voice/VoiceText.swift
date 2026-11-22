@@ -182,4 +182,176 @@ struct VoiceActivityDetector: Equatable {
     below = 0
     speechLength = 0
   }
+
+  /// Current silence duration inside an active utterance.
+  var silenceDuration: TimeInterval { below }
+
+  /// Whether `level` exceeds the adapted room noise threshold.
+  func isAboveThreshold(_ level: Float, assistantSpeaking: Bool) -> Bool {
+    level > noiseFloor + margin + (assistantSpeaking ? bargeInMargin : 0)
+  }
+
+  /// Whether initial room-noise calibration has finished.
+  var isCalibrated: Bool { calibrated >= calibration }
+}
+
+/// Hybrid acoustic + neural end-of-utterance turn detector for voice mode.
+///
+/// Pairs `VoiceActivityDetector` (adaptive room noise floor and echo-safe barge-in margin) with
+/// live ANE `SpeechAnalyzer` transcript cues:
+/// - Ends turns faster (`completedEndAfter`, ~0.42 s) once speech produces a finalized phrase or
+///   terminal punctuation followed by silence.
+/// - Extends patience (`midThoughtEndAfter`, ~1.05 s) when new volatile words arrived right before
+///   a brief pause so mid-clause thinking doesn't cut the user off.
+/// - Falls back seamlessly to classic acoustic VAD when `neuralActive` is false or when the user
+///   speaks a language outside the active Apple Speech locale.
+struct NeuralTurnDetector: Equatable, Sendable {
+  var acoustic = VoiceActivityDetector()
+  /// Silence required to end a turn after neural finalization or sentence-ending punctuation.
+  var completedEndAfter: TimeInterval = 0.42
+  /// Silence allowed before ending when volatile words arrived right before a mid-clause pause.
+  var midThoughtEndAfter: TimeInterval = 1.05
+  /// How recently a volatile word must have arrived to trigger mid-thought hold.
+  var recentWordWindow: TimeInterval = 0.35
+  /// Minimum recognized words needed for neural barge-in confirmation during assistant speech.
+  var bargeInMinWords: Int = 2
+
+  private(set) var neuralActive = false
+  private(set) var speaking = false
+  private(set) var liveTranscript = ""
+  private(set) var neuralWordCount = 0
+  private(set) var neuralFinalized = false
+  private(set) var neuralEndedSentence = false
+
+  private var elapsed: TimeInterval = 0
+  private var lastWordAt: TimeInterval?
+  private var silenceStreak: TimeInterval = 0
+  private var utteranceDuration: TimeInterval = 0
+  private var holdingMidThought = false
+
+  mutating func setNeuralActive(_ active: Bool) {
+    neuralActive = active
+  }
+
+  /// Feed one acoustic RMS frame (dBFS) over `duration` seconds.
+  mutating func feedLevel(
+    _ level: Float, duration: TimeInterval, assistantSpeaking: Bool = false
+  ) -> VoiceActivityDetector.Event? {
+    elapsed += duration
+    guard neuralActive else {
+      let event = acoustic.feed(level: level, duration: duration, assistantSpeaking: assistantSpeaking)
+      speaking = acoustic.speaking
+      return event
+    }
+
+    if !speaking {
+      let event = acoustic.feed(level: level, duration: duration, assistantSpeaking: assistantSpeaking)
+      if event == .speechStarted {
+        beginSpeaking()
+        return .speechStarted
+      }
+      return nil
+    }
+
+    let loud = acoustic.isAboveThreshold(level, assistantSpeaking: assistantSpeaking)
+    utteranceDuration += duration
+    if loud {
+      silenceStreak = 0
+      holdingMidThought = false
+      // Keep underlying acoustic detector synchronized while loud.
+      _ = acoustic.feed(level: level, duration: duration, assistantSpeaking: assistantSpeaking)
+      return nil
+    }
+
+    silenceStreak += duration
+
+    // Fast neural end-of-utterance: words were recognized and either finalized or closed with
+    // terminal punctuation, followed by a brief clean silence.
+    if neuralWordCount > 0, neuralFinalized || neuralEndedSentence,
+      silenceStreak >= completedEndAfter
+    {
+      reset()
+      return .speechEnded
+    }
+
+    // Mid-thought patience: if volatile words arrived just before this pause with no sentence
+    // terminator, hold up to `midThoughtEndAfter` instead of cutting off at acoustic `endAfter`.
+    if !holdingMidThought,
+      neuralWordCount > 0,
+      !neuralFinalized,
+      !neuralEndedSentence,
+      let lastWordAt,
+      (elapsed - silenceStreak) - lastWordAt <= recentWordWindow
+    {
+      holdingMidThought = true
+    }
+
+    let effectiveEndAfter = holdingMidThought ? midThoughtEndAfter : acoustic.endAfter
+    if silenceStreak >= effectiveEndAfter {
+      let spoken = utteranceDuration - silenceStreak
+      let hadSpeech = spoken >= acoustic.minimumSpeech || neuralWordCount > 0
+      reset()
+      return hadSpeech ? .speechEnded : nil
+    }
+
+    return nil
+  }
+
+  /// Feed a live ANE speech transcript update (partial or finalized).
+  mutating func feedTranscript(
+    _ text: String, isFinal: Bool, assistantSpeaking: Bool = false
+  ) -> VoiceActivityDetector.Event? {
+    guard neuralActive else { return nil }
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+
+    let words = trimmed.split(whereSeparator: \.isWhitespace).count
+    if trimmed != liveTranscript || words > neuralWordCount {
+      lastWordAt = elapsed
+      holdingMidThought = false
+    }
+    liveTranscript = trimmed
+    neuralWordCount = max(neuralWordCount, words)
+    if isFinal { neuralFinalized = true }
+    if let last = trimmed.last, VoiceText.sentenceEnds.contains(last) {
+      neuralEndedSentence = true
+    } else if !isFinal {
+      neuralEndedSentence = false
+    }
+
+    // Neural barge-in: real recognized words during assistant speech confirm interruption even if
+    // the user spoke softly enough not to trip the high acoustic barge-in margin.
+    if !speaking, assistantSpeaking, neuralWordCount >= bargeInMinWords {
+      beginSpeaking(keepTranscript: true)
+      return .speechStarted
+    }
+    return nil
+  }
+
+  mutating func reset() {
+    acoustic.reset()
+    speaking = false
+    liveTranscript = ""
+    neuralWordCount = 0
+    neuralFinalized = false
+    neuralEndedSentence = false
+    lastWordAt = nil
+    silenceStreak = 0
+    utteranceDuration = 0
+    holdingMidThought = false
+  }
+
+  private mutating func beginSpeaking(keepTranscript: Bool = false) {
+    speaking = true
+    silenceStreak = 0
+    utteranceDuration = acoustic.startAfter
+    holdingMidThought = false
+    if !keepTranscript {
+      liveTranscript = ""
+      neuralWordCount = 0
+      neuralFinalized = false
+      neuralEndedSentence = false
+      lastWordAt = nil
+    }
+  }
 }

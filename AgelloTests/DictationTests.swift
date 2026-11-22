@@ -23,6 +23,71 @@ final class DictationTests: XCTestCase {
       accuracy: 0.001)
     XCTAssertEqual(Dictation.wordErrorRate(reference: "Québec", hypothesis: "Quebec"), 0)
   }
+
+  func testSelectBackendPrefersSpeechTranscriberForPrimaryLocale() {
+    XCTAssertEqual(
+      Dictation.selectBackend(
+        preferredLanguages: ["fr-CA", "en-US"],
+        installedSpeechTranscriber: ["fr_FR", "fr_CA"],
+        installedDictationTranscriber: ["fr_CA", "en_US"]),
+      .speechTranscriber(localeIdentifier: "fr_CA")
+    )
+    XCTAssertEqual(
+      Dictation.selectBackend(
+        preferredLanguages: ["fr-CA"],
+        installedSpeechTranscriber: ["fr_FR"],
+        installedDictationTranscriber: ["en_US"]),
+      .speechTranscriber(localeIdentifier: "fr_FR")
+    )
+  }
+
+  func testSelectBackendUsesDictationTranscriberInsteadOfWrongLanguage() {
+    // Primary language is English, SpeechTranscriber only has French, DictationTranscriber has English.
+    XCTAssertEqual(
+      Dictation.selectBackend(
+        preferredLanguages: ["en-US", "fr-CA"],
+        installedSpeechTranscriber: ["fr_CA", "fr_FR"],
+        installedDictationTranscriber: ["fr_CA", "en_US"]),
+      .dictationTranscriber(localeIdentifier: "en_US")
+    )
+  }
+
+  func testSelectBackendFallsBackToGemmaWhenPrimaryLocaleMissing() {
+    XCTAssertEqual(
+      Dictation.selectBackend(
+        preferredLanguages: ["ja-JP", "en-US"],
+        installedSpeechTranscriber: ["fr_CA"],
+        installedDictationTranscriber: ["en_US"]),
+      .gemmaAudio
+    )
+    XCTAssertEqual(
+      Dictation.selectBackend(
+        preferredLanguages: [],
+        installedSpeechTranscriber: ["en_US"],
+        installedDictationTranscriber: ["en_US"]),
+      .gemmaAudio
+    )
+  }
+
+  func testLiveTranscriptStreamsAndCommitsOnTopOfBaseDraft() {
+    var live = Dictation.LiveTranscript(base: "Please summarize:")
+    live.apply(text: "the", isFinal: false)
+    XCTAssertEqual(live.composedDraft, "Please summarize: the")
+    live.apply(text: "the quarterly report.", isFinal: true)
+    XCTAssertEqual(live.composedDraft, "Please summarize: the quarterly report.")
+    XCTAssertEqual(live.volatile, "")
+
+    live.apply(text: "Keep it brief", isFinal: false)
+    XCTAssertEqual(live.composedDraft, "Please summarize: the quarterly report. Keep it brief")
+    let committed = live.commitVolatile()
+    XCTAssertEqual(committed, "Please summarize: the quarterly report. Keep it brief")
+    XCTAssertEqual(live.volatile, "")
+    XCTAssertEqual(live.finalized, "the quarterly report. Keep it brief")
+
+    // Punctuation-leading final segments attach without stray spaces.
+    live.apply(text: "!", isFinal: true)
+    XCTAssertEqual(live.composedDraft, "Please summarize: the quarterly report. Keep it brief!")
+  }
 }
 
 @MainActor

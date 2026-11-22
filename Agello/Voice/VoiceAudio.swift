@@ -8,11 +8,16 @@ import Foundation
 final class VoiceAudio: @unchecked Sendable {
   /// Level of the microphone in dBFS over `duration` seconds (audio thread).
   var onLevel: (@Sendable (Float, TimeInterval) -> Void)?
+  /// Echo-cancelled 16 kHz mono PCM buffer from the microphone tap (audio thread).
+  var onAudioBuffer: (@Sendable (AVAudioPCMBuffer) -> Void)?
   /// All queued speech has played (main thread).
   var onSpeechFinished: (@Sendable () -> Void)?
   /// Audio paused (a call, another app) or came back after a pause, a route change or a
   /// media-services reset; false when it couldn't (main thread).
   var onAvailabilityChanged: (@Sendable (_ available: Bool) -> Void)?
+
+  /// Format of buffers delivered to `onAudioBuffer` (16 kHz mono Int16).
+  var captureFormat: AVAudioFormat { recordFormat }
 
   /// Replaced when audio restarts: a media-services reset invalidates the old engine.
   private var engine = AVAudioEngine()
@@ -188,6 +193,7 @@ final class VoiceAudio: @unchecked Sendable {
     guard let converter = lock.withLock({ inputConverter }),
       let converted = convert(buffer, with: converter, to: recordFormat)
     else { return }
+    onAudioBuffer?(converted)
     lock.withLock {
       if let file { writer.async { try? file.write(from: converted) } }
       preroll.append(converted)

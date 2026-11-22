@@ -36,7 +36,9 @@ final class VoiceSession: Identifiable {
 
   let camera = CameraFeed()
   @ObservationIgnored private let audio = VoiceAudio()
-  @ObservationIgnored private var vad = VoiceActivityDetector()
+  @ObservationIgnored private let speechMonitor = VoiceSpeechMonitor()
+  @ObservationIgnored private var monitorStartTask: Task<Void, Never>?
+  @ObservationIgnored private var vad = NeuralTurnDetector()
   @ObservationIgnored private var sentences = VoiceText.SentenceStream()
   @ObservationIgnored private var replyLanguage: String?
   @ObservationIgnored private var replyFinished = false
@@ -80,6 +82,9 @@ final class VoiceSession: Identifiable {
     audio.onLevel = { [weak self] level, duration in
       Task { @MainActor in self?.heardLevel(level, duration: duration) }
     }
+    audio.onAudioBuffer = { [weak self] buffer in
+      self?.speechMonitor.feed(buffer)
+    }
     audio.onSpeechFinished = { [weak self] in
       Task { @MainActor in self?.speechFinished() }
     }
@@ -89,6 +94,15 @@ final class VoiceSession: Identifiable {
     do {
       try audio.start()
       state = .listening
+      let captureFormat = audio.captureFormat
+      monitorStartTask = Task { [weak self] in
+        guard let self else { return }
+        let active = await self.speechMonitor.start(inputFormat: captureFormat) { [weak self] text, isFinal in
+          Task { @MainActor in self?.heardTranscript(text, isFinal: isFinal) }
+        }
+        guard !Task.isCancelled else { return }
+        self.vad.setNeuralActive(active)
+      }
       _ = await appState.ensureEngineLoaded()  // warm up while the user talks
     } catch {
       state = .failed(String(localized: "The microphone couldn't start."))
@@ -98,7 +112,10 @@ final class VoiceSession: Identifiable {
   func end() {
     // Stop the reply first: cancelling only the turn's task would leave the engine busy.
     if appState.isBusy { appState.stop() }
+    monitorStartTask?.cancel()
+    monitorStartTask = nil
     turnTask?.cancel()
+    speechMonitor.stop()
     audio.stop()
     if cameraOn { camera.stop() }
     appState.onVoiceReply = nil
@@ -119,6 +136,7 @@ final class VoiceSession: Identifiable {
     if muted, state == .hearing {
       audio.cancelUtterance()
       vad.reset()
+      speechMonitor.resetUtterance()
       state = .listening
     }
   }
@@ -127,6 +145,7 @@ final class VoiceSession: Identifiable {
   func interrupt() {
     guard state == .speaking || state == .thinking else { return }
     stopReply()
+    speechMonitor.resetUtterance()
     state = .listening
   }
 
@@ -139,12 +158,9 @@ final class VoiceSession: Identifiable {
     if state != .speaking, abs(shown - self.level) >= 0.02 { self.level = shown }
     guard !muted, state != .starting else { return }
     if case .failed = state { return }
-    switch vad.feed(level: level, duration: duration, assistantSpeaking: assistantBusy) {
+    switch vad.feedLevel(level, duration: duration, assistantSpeaking: assistantBusy) {
     case .speechStarted:
-      if assistantBusy { stopReply() }  // barge-in
-      audio.beginUtterance()
-      utteranceStarted = Date()
-      state = .hearing
+      beginListeningToUtterance(interrupting: assistantBusy)
     case .speechEnded:
       finishUtterance()
     case nil:
@@ -157,13 +173,33 @@ final class VoiceSession: Identifiable {
     }
   }
 
+  private func heardTranscript(_ text: String, isFinal: Bool) {
+    guard !muted, state != .starting else { return }
+    if case .failed = state { return }
+    let assistantBusy = state == .speaking || state == .thinking
+    if vad.feedTranscript(text, isFinal: isFinal, assistantSpeaking: assistantBusy) == .speechStarted {
+      beginListeningToUtterance(interrupting: assistantBusy)
+    }
+    if state == .hearing {
+      heard = text
+    }
+  }
+
+  private func beginListeningToUtterance(interrupting: Bool) {
+    if interrupting { stopReply() }  // barge-in
+    audio.beginUtterance()
+    utteranceStarted = Date()
+    state = .hearing
+  }
+
   private func finishUtterance() {
+    speechMonitor.resetUtterance()
     guard let url = audio.endUtterance() else {
       state = .listening
       return
     }
     state = .thinking
-    heard = ""
+    if !vad.neuralActive { heard = "" }
     let image = cameraOn ? camera.snapshot() : nil
     turnNumber += 1
     let number = turnNumber
@@ -218,7 +254,10 @@ final class VoiceSession: Identifiable {
   /// A call took the audio (paused, "Starting…"), or it came back on the current route.
   private func audioAvailabilityChanged(_ available: Bool) {
     if state == .speaking || state == .thinking || state == .hearing { stopReply() }
-    vad = VoiceActivityDetector()
+    let neuralActive = vad.neuralActive
+    vad = NeuralTurnDetector()
+    vad.setNeuralActive(neuralActive)
+    speechMonitor.resetUtterance()
     level = 0
     state = available ? .listening : .starting
   }

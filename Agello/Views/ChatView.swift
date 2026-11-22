@@ -13,6 +13,7 @@ struct ChatView: View {
   @State private var pendingImage: Data?
   @State private var photoItem: PhotosPickerItem?
   @State private var recorder = AudioRecorder()
+  @State private var liveDictation = LiveDictation()
   @State private var showLibrary = false
   @State private var showPhotos = false
   @State private var showCamera = false
@@ -96,7 +97,14 @@ struct ChatView: View {
     }
     .alert(
       "Microphone access denied",
-      isPresented: $recorder.permissionDenied
+      isPresented: Binding(
+        get: { recorder.permissionDenied || liveDictation.permissionDenied },
+        set: { shown in
+          if !shown {
+            recorder.permissionDenied = false
+            liveDictation.permissionDenied = false
+          }
+        })
     ) {
       Button("OK", role: .cancel) {}
     } message: {
@@ -140,6 +148,7 @@ struct ChatView: View {
       pendingFiles = []
       searchWeb = false
       dictating = false
+      liveDictation.cancel()
       recorder.discard()
       takeRequestedDraft()
     }
@@ -147,7 +156,10 @@ struct ChatView: View {
       // A new chat opened for it applies it on the chat change above.
       if thread == nil { takeRequestedDraft() }
     }
-    .onDisappear { reader.stop() }
+    .onDisappear {
+      reader.stop()
+      liveDictation.cancel()
+    }
     .onAppear {
       // Debug and Bench builds only (2026-11-17).
       #if DEBUG || BENCH
@@ -537,7 +549,7 @@ struct ChatView: View {
       }
       .padding(.vertical, Theme.Spacing.xs)
     }
-    if pendingImage != nil || recorder.finishedURL != nil || recorder.isRecording {
+    if pendingImage != nil || recorder.finishedURL != nil || recorder.isRecording || liveDictation.isListening {
       HStack(spacing: Theme.Spacing.sm) {
         // 256 pixels cover the 44-point square at 3x, whatever the photo's shape.
         if let data = pendingImage, let thumbnail = ImageDownsampler.cgImage(from: data, maxPixels: 256) {
@@ -558,7 +570,19 @@ struct ChatView: View {
           .accessibilityLabel("Photo")
           .accessibilityHint("Removes the photo")
         }
-        if recorder.isRecording {
+        if liveDictation.isListening {
+          Label(
+            String(format: String(localized: "Listening… %.0fs"), liveDictation.elapsed),
+            systemImage: "waveform"
+          )
+          .font(.system(.caption, weight: .medium))
+          .monospacedDigit()
+          .foregroundStyle(Theme.Text.primary)
+          .padding(.horizontal, Theme.Spacing.md)
+          .frame(minHeight: Theme.Size.pill)
+          .background { LitTintBackground(shape: Capsule(), tint: Theme.Status.critical, strength: .pill) }
+          .accessibilityIdentifier("composer.recording")
+        } else if recorder.isRecording {
           Label(
             dictating
               ? String(format: String(localized: "Listening… %.0fs"), recorder.elapsed)
@@ -675,6 +699,7 @@ struct ChatView: View {
   }
 
   private func openVoiceMode() {
+    liveDictation.cancel()
     voiceSession = VoiceSession(appState: appState, thread: thread, makeThread: newThread)
   }
 
@@ -793,10 +818,11 @@ struct ChatView: View {
     .accessibilityIdentifier("composer.think")
   }
 
-  /// Dictation: speak, then the text lands in the composer for review.
+  /// Dictation: live ANE streaming words into the composer (zero E4B lock), falling back to
+  /// Gemma audio recording when no matching Apple Speech asset is installed.
   @ViewBuilder
   private var micButton: some View {
-    let listening = recorder.isRecording && dictating
+    let listening = liveDictation.isListening || (recorder.isRecording && dictating)
     let button = Button(action: toggleDictation) {
       Group {
         if appState.isTranscribing {
@@ -814,22 +840,38 @@ struct ChatView: View {
         button.buttonStyle(QuietCircleButtonStyle())
       }
     }
-    .disabled(
-      appState.isBusy || appState.isTranscribing || (recorder.isRecording && !dictating))
+    .disabled(appState.isTranscribing || (recorder.isRecording && !dictating))
     .accessibilityLabel(listening ? "Finish dictation" : "Dictate")
     .accessibilityValue(appState.isTranscribing ? "Transcribing" : listening ? "Listening" : "")
     .accessibilityIdentifier("composer.mic")
   }
 
   private func toggleDictation() {
+    if liveDictation.isListening {
+      Task {
+        await liveDictation.stop()
+        inputFocused = true
+      }
+      return
+    }
     if recorder.isRecording && dictating {
       recorder.stop()  // transcribed in onChange(of: isRecording)
-    } else {
-      dictating = true
-      Task {
-        await recorder.toggle()
-        if !recorder.isRecording { dictating = false }
+      return
+    }
+    let baseDraft = draft
+    Task {
+      let startedLive = await liveDictation.start(baseDraft: baseDraft) { updated in
+        draft = updated
       }
+      if startedLive || liveDictation.permissionDenied { return }
+      // Fallback: Gemma 4 audio transcription when ANE Speech asset isn't installed (or fake mic).
+      guard !appState.isBusy else {
+        appState.notice = String(localized: "Finish or stop the current reply before offline dictation.")
+        return
+      }
+      dictating = true
+      await recorder.toggle()
+      if !recorder.isRecording { dictating = false }
     }
   }
 
@@ -879,7 +921,11 @@ struct ChatView: View {
   private var primaryAction: PrimaryAction {
     if appState.isBusy { return .stop }
     // Nothing to send: talk instead (voice mode).
-    if !canSend, !recorder.isRecording, !appState.isTranscribing, editingTurn == nil { return .voice }
+    if !canSend, !recorder.isRecording, !liveDictation.isListening, !appState.isTranscribing,
+      editingTurn == nil
+    {
+      return .voice
+    }
     return .send
   }
 
@@ -915,7 +961,8 @@ struct ChatView: View {
   }
 
   private var canSend: Bool {
-    guard readingFiles == 0, !recorder.isRecording, !appState.isTranscribing else { return false }
+    guard readingFiles == 0, !recorder.isRecording, !liveDictation.isListening, !appState.isTranscribing
+    else { return false }
     return !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       || pendingImage != nil || voiceMessageURL != nil || !pendingFiles.isEmpty
   }

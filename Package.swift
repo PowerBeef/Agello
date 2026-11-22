@@ -35,8 +35,8 @@ let package = Package(
         "Agello/Views", "Agello/Markdown", "Agello/Support/Theme",
         "Agello/Support/Announcements.swift",
         "Agello/System/AppIntents.swift", "Agello/System/SharedIntents.swift",
-        "Agello/Voice/CameraFeed.swift", "Agello/Voice/VoiceAudio.swift",
-        "Agello/Voice/VoiceSession.swift",
+        "Agello/Voice/CameraFeed.swift", "Agello/Voice/LiveSpeechTranscriber.swift",
+        "Agello/Voice/VoiceAudio.swift", "Agello/Voice/VoiceSession.swift",
       ],
       // Whole folders where every file is engine code, so a new file there joins by itself; a
       // new file elsewhere that the engine needs breaks this build, which is the signal.
