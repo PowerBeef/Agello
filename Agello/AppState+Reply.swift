@@ -278,7 +278,7 @@ extension AppState {
     }
     let drainGuard = BackgroundTaskGuard.begin(name: "AgelloGPUDrain")
     helperTimer?.cancel()
-    knowledge.cancelIndexing()
+    if knowledge.usesGPUEmbedder { knowledge.cancelIndexing() }
     if isBusy {
       Log.lifecycle.info("background: stopping generation and draining GPU")
       stopCount &+= 1

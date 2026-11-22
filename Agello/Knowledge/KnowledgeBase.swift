@@ -45,12 +45,35 @@ final class KnowledgeBase {
     self.useHashingEmbedder = useHashingEmbedder
   }
 
+  /// Path to the Core AI Neural Engine EmbeddingGemma 2 bundle when present beside model files.
+  nonisolated static func aneBundleURL() -> URL? {
+    guard let dir = try? ModelStore.modelsDirectory() else { return nil }
+    let url = dir.appendingPathComponent(CoreAIEmbedder.bundleDirectoryName, isDirectory: true)
+    return CoreAIEmbedder.isAvailable(at: url) ? url : nil
+  }
+
+  /// Whether an embedding model (Core AI ANE bundle or LiteRT-LM fallback) is ready locally.
+  var hasLocalEmbedder: Bool {
+    useHashingEmbedder || Self.aneBundleURL() != nil
+      || store.isDownloaded(ModelCatalog.embeddingGemma)
+  }
+
+  /// Whether the active embedder uses the Metal GPU (needs cancellation when leaving foreground).
+  var usesGPUEmbedder: Bool {
+    embedder?.usesGPU ?? (Self.aneBundleURL() == nil && !useHashingEmbedder)
+  }
+
   /// The embedder, once its model is on the device; otherwise starts (or
-  /// queues) the model download and returns nil.
+  /// queues) the model download and returns nil. Prefers the Core AI Neural Engine bundle when
+  /// present so retrieval never contends with E4B on the Metal GPU.
   func currentEmbedder() -> (any TextEmbedder)? {
     if let embedder { return embedder }
     if useHashingEmbedder {
       embedder = HashingEmbedder()
+      return embedder
+    }
+    if let aneURL = Self.aneBundleURL() {
+      embedder = CoreAIEmbedder(bundleURL: aneURL)
       return embedder
     }
     let spec = ModelCatalog.embeddingGemma
@@ -173,7 +196,8 @@ final class KnowledgeBase {
       } catch {
         Log.engine.error("knowledge: indexing failed: \(LogText.errorKind(error), privacy: .public)")
         // In the background the GPU is off limits: that's not this document's fault.
-        guard !Task.isCancelled, GPUGate.isOpen, document.modelContext != nil else { return }
+        guard !Task.isCancelled, !embedder.usesGPU || GPUGate.isOpen, document.modelContext != nil
+        else { return }
         document.indexedWith = Self.failedMarker(embedder.identifier)
         try? modelContext?.save()
       }
@@ -195,12 +219,12 @@ final class KnowledgeBase {
   }
 
   /// Index every document not yet indexed with the current embedder (e.g.
-  /// once the embedding model has downloaded). Waits for the foreground: indexing runs on
-  /// the GPU.
+  /// once the embedding model has downloaded). Waits for the foreground when the embedder uses
+  /// the GPU; ANE embedders can run without touching the Metal queue.
   func indexPending() {
-    guard GPUGate.isOpen, let context = modelContext, let embedder = currentEmbedder() else {
-      return
-    }
+    guard let context = modelContext, let embedder = currentEmbedder(),
+      !embedder.usesGPU || GPUGate.isOpen
+    else { return }
     let identifier = embedder.identifier
     let failed = Self.failedMarker(identifier)
     // `nil` (never indexed) must match explicitly: SQL comparisons skip NULL.
@@ -214,7 +238,7 @@ final class KnowledgeBase {
   /// ``indexPending()`` when the embedding model is already on the device,
   /// so a launch never starts its download.
   func indexPendingIfAvailable() {
-    guard useHashingEmbedder || store.isDownloaded(ModelCatalog.embeddingGemma) else { return }
+    guard hasLocalEmbedder else { return }
     indexPending()
   }
 

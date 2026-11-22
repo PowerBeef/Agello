@@ -1,3 +1,4 @@
+import LiteRTLM
 import XCTest
 
 @testable import Agello
@@ -45,8 +46,16 @@ final class KnowledgeScenarioTests: DeviceTestCase {
   }
 
   private func freshEmbedding() async throws -> TimeInterval {
-    let seconds = try await harness.ensureDownloaded(ModelCatalog.embeddingGemma, timeout: 900)
-    XCTAssertNotNil(appState.knowledge.currentEmbedder() as? LiteRTEmbedder)
+    let seconds: TimeInterval
+    if KnowledgeBase.aneBundleURL() != nil {
+      seconds = 0
+    } else {
+      seconds = try await harness.ensureDownloaded(ModelCatalog.embeddingGemma, timeout: 900)
+    }
+    let embedder = appState.knowledge.currentEmbedder()
+    XCTAssertTrue(
+      embedder is CoreAIEmbedder || embedder is LiteRTEmbedder,
+      "Expected CoreAIEmbedder or LiteRTEmbedder, got \(String(describing: embedder))")
     return seconds
   }
 
@@ -255,5 +264,122 @@ final class KnowledgeScenarioTests: DeviceTestCase {
       "knowledge03_chatsByMeaning",
       ["matrix": matrix, "indexSecondsWhileStreaming": indexSeconds, "tidesChars": tides.count],
       in: self)
+  }
+
+  private static func aneParityCorpus() -> (documents: [(title: String, text: String)], queries: [String]) {
+    let documents: [(title: String, text: String)] = [
+      ("notes.md", "Paris is the capital and most populous city of France, situated along the Seine River."),
+      (
+        "Architecture.md",
+        "Global KV caches use Metal 4 sparse buffers with TrimKvMapping on reset and rewind."
+      ),
+      ("french.txt", "Bonjour ! Aujourd'hui nous testons l'indexation sémantique sur le Neural Engine."),
+      ("cjk.txt", "東京の天気は晴れです。卡普鲁日灯塔于1988年实现全自动化，结束了一百四十年的驻守历史。"),
+      (
+        "code.swift",
+        "actor CoreAIEmbedder: TextEmbedder {\n  func embed(query: String) async throws -> [Float] { [] }\n}"
+      ),
+      ("coastal-report.pdf", Self.report().pages[22]),
+      ("long-report.pdf", Array(repeating: Self.report().pages[6], count: 4).joined(separator: "\n\n")),
+    ]
+    let queries = [
+      "What is the capital of France?",
+      "How much money was approved for renovating the harbour?",
+      "灯塔什么时候实现自动化？",
+      "CoreAIEmbedder actor Swift",
+      "Italian pasta dinner without cream",
+    ]
+    return (documents, queries)
+  }
+
+  /// Verifies the Core AI Neural Engine embedder matches LiteRT-LM's true FP32 reference
+  /// (cosine >= 0.995 across English, French, CJK, Swift code, and long PDF passages) while
+  /// keeping `usesGPU == false` so retrieval never contends with E4B on Metal.
+  func test04_CoreAIANEParity() async throws {
+    guard let aneURL = KnowledgeBase.aneBundleURL() else {
+      throw XCTSkip("Core AI ANE bundle not present in models directory")
+    }
+    let litertSpec = ModelCatalog.embeddingGemma
+    guard appState.store.isDownloaded(litertSpec), let litertURL = appState.store.localURL(for: litertSpec)
+    else {
+      throw XCTSkip("LiteRT EmbeddingGemma baseline not present for parity comparison")
+    }
+
+    let ane = CoreAIEmbedder(bundleURL: aneURL)
+    let gpu = LiteRTEmbedder(modelURL: litertURL)
+    defer {
+      Task {
+        await ane.unload()
+        await gpu.unload()
+      }
+    }
+
+    XCTAssertFalse(ane.usesGPU)
+    XCTAssertEqual(ane.identifier, gpu.identifier)
+    XCTAssertEqual(ane.dimensions, gpu.dimensions)
+
+    let (documents, queries) = Self.aneParityCorpus()
+    let tok = try SentencePieceTokenizer(contentsOf: aneURL.appendingPathComponent("tokenizer.model"))
+    let cjkTokens = tok.encode(
+      LiteRTEmbedder.documentPrompt(title: documents[3].title, text: documents[3].text))
+    let expectedCjkTokens: [Int32] = [
+      3250, 236787, 505, 42838, 236761, 7090, 1109, 1816, 236787, 86459, 236945, 228212, 237048,
+      240532, 237137, 3652, 236924, 238679, 238757, 240914, 237205, 239785, 240019, 237412,
+      236770, 236819, 236828, 236828, 237155, 18979, 237450, 123426, 236900, 45783, 14542,
+      238192, 226962, 28643, 241624, 239340, 36648, 236924,
+    ]
+    XCTAssertEqual(cjkTokens, expectedCjkTokens, "SentencePieceTokenizer mismatch on CJK prompt")
+
+    _ = try await ane.embed(query: "warmup")
+    _ = try await gpu.embed(query: "warmup")
+
+    let aneStarted = Date()
+    let aneVecs = try await Self.embedAll(documents: documents, queries: queries, using: ane)
+    let aneSeconds = Date().timeIntervalSince(aneStarted)
+
+    let gpuStarted = Date()
+    let gpuVecs = try await Self.embedAll(documents: documents, queries: queries, using: gpu)
+    let gpuSeconds = Date().timeIntervalSince(gpuStarted)
+
+    let fp32Engine = EmbeddingEngine(
+      config: EmbeddingEngineConfig(
+        modelPath: litertURL.path, backend: .gpu, cacheDir: EngineCache.disabled,
+        activationDataType: .float32))
+    try await fp32Engine.initialize()
+    let embOpts = EmbeddingOptions(normalize: true, outputSize: 768, inputOverflowStrategy: .truncate)
+    let prompts =
+      documents.map { LiteRTEmbedder.documentPrompt(title: $0.title, text: $0.text) }
+      + queries.map { LiteRTEmbedder.queryPrompt($0, task: .search) }
+    var fp32Vecs: [[Float]] = []
+    for prompt in prompts {
+      fp32Vecs.append(
+        try await fp32Engine.computeEmbedding(contents: [.text(prompt)], options: embOpts).embedding)
+    }
+    await fp32Engine.close()
+
+    let fp32Cosines = zip(aneVecs, fp32Vecs).map { VectorIndex.dot($0, $1) }
+    let fp16Cosines = zip(aneVecs, gpuVecs).map { VectorIndex.dot($0, $1) }
+    let minFP32 = fp32Cosines.min() ?? 0
+    let avgFP32 = fp32Cosines.reduce(0, +) / Float(max(1, fp32Cosines.count))
+
+    harness.record(
+      "knowledge04_aneParity",
+      [
+        "count": fp32Cosines.count, "aneVsFP32Min": minFP32, "aneVsFP32Avg": avgFP32,
+        "aneVsFP32": fp32Cosines.map { Double($0) },
+        "aneVsLiteRTFP16": fp16Cosines.map { Double($0) },
+        "aneSeconds": aneSeconds, "gpuSeconds": gpuSeconds,
+      ], in: self)
+
+    XCTAssertGreaterThanOrEqual(
+      minFP32, 0.995,
+      "ANE embedder cosine parity vs LiteRT FP32 dropped below 0.995: min=\(minFP32), all=\(fp32Cosines)")
+  }
+  private static func embedAll(
+    documents: [(title: String, text: String)], queries: [String], using embedder: any TextEmbedder
+  ) async throws -> [[Float]] {
+    var vectors = try await embedder.embed(documents: documents)
+    for query in queries { vectors.append(try await embedder.embed(query: query)) }
+    return vectors
   }
 }

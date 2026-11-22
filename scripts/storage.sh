@@ -100,7 +100,7 @@ for f in "$MODELS"/*; do
   [ -e "$f" ] || continue
   name="$(basename "$f")"
   case "$name" in
-    *.litertlm) models=$((models + $(kb "$f"))) ;;
+    *.litertlm | embeddinggemma-2-text-270m-ane) models=$((models + $(kb "$f"))) ;;
     lab)
       # agello-bench's runs without --cache leave engine caches beside the lab models.
       lab=0

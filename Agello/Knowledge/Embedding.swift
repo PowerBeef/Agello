@@ -14,6 +14,8 @@ protocol TextEmbedder: Sendable {
   /// Short, generic chats score fairly high against any query, so a raw
   /// threshold alone shows unrelated chats.
   var relatedMargin: Float { get }
+  /// Whether this embedder submits Metal GPU work (must honor ``GPUGate`` in the background).
+  var usesGPU: Bool { get }
   func embed(documents: [(title: String, text: String)]) async throws -> [[Float]]
   func embed(query: String) async throws -> [Float]
   /// A query for one of EmbeddingGemma's tasks; the others embed every query alike.
@@ -22,6 +24,8 @@ protocol TextEmbedder: Sendable {
 }
 
 extension TextEmbedder {
+  var usesGPU: Bool { false }
+
   func embed(query: String, task: EmbeddingQueryTask) async throws -> [Float] {
     try await embed(query: query)
   }
@@ -51,6 +55,7 @@ actor LiteRTEmbedder: TextEmbedder {
   /// the median, unrelated ones up to 0.07).
   nonisolated let relatedThreshold: Float = 0.60
   nonisolated let relatedMargin: Float = 0.07
+  nonisolated let usesGPU = true
 
   private let modelURL: URL
   private var engine: EmbeddingEngine?
