@@ -22,10 +22,16 @@
 #   scripts/phone-bench.sh --read build/phone/runs/<time>    read a run again; no phone needed
 #
 # Env: ROUNDS (default 3: each build runs every case that many times; the builds take turns, the
-#      order reversed every other round, so a reinstall comes once per round),
+#      order reversed every other round, so a reinstall comes once per round; cases alternate
+#      heavy/light and reverse on even rounds so thermal tails balance across cases and builds),
 #      OUT (default build/phone/runs/<time>), DEVICE_ID, PREFLIGHT (off skips it),
 #      COOL (on, the default: before each send the app waits, up to ten minutes, for the phone to
 #      cool to nominal; off sends at once),
+#      REST (on when COOL=on, off when COOL=off: rest between measured cases to avoid SoC die
+#      thermal-hysteresis drift while thermalState still reads nominal),
+#      CASE_REST (default 15 s after a light nominal case),
+#      HEAVY_REST (default 45 s after a heavy or >=20 s nominal case),
+#      WARM_REST (default 90 s after a case that warmed past nominal),
 #      MIN_CLEAN (undisturbed runs wanted of each case and build, default 3 or ROUNDS if less),
 #      EXTRA_ROUNDS (the most rounds added to get them, default 2),
 #      AGELLO_RESIDENT_ROUND (passed to the app for every arm: 0 the GPU-resident round off, 1 with
@@ -58,6 +64,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT/scripts/lib/harness-lock.sh"
 ROUNDS="${ROUNDS:-3}"
 COOL="${COOL:-on}"
+if [ "$COOL" = off ]; then
+  REST="${REST:-off}"
+else
+  REST="${REST:-on}"
+fi
+CASE_REST="${CASE_REST:-15}"
+HEAVY_REST="${HEAVY_REST:-45}"
+WARM_REST="${WARM_REST:-90}"
 EXTRA_ROUNDS="${EXTRA_ROUNDS:-2}"
 MIN_CLEAN="${MIN_CLEAN:-3}"
 [ "$MIN_CLEAN" -gt "$ROUNDS" ] && MIN_CLEAN="$ROUNDS"
@@ -230,7 +244,7 @@ say() {
 }
 hardware="$(xcrun devicectl list devices 2>/dev/null | grep "$DEVICE_ID" | grep -o 'iPhone [0-9A-Za-z ]*(iPhone[0-9,]*)' | head -1)"
 [ -n "$hardware" ] || hardware="iPhone"
-say "Phone comparison on $hardware:$(for n in $names; do printf ' %s' "$n"; done); cases $cases; $ROUNDS rounds; cooling $COOL. Records: $OUT"
+say "Phone comparison on $hardware:$(for n in $names; do printf ' %s' "$n"; done); cases $cases; $ROUNDS rounds; cooling $COOL; rest $REST (${CASE_REST}/${HEAVY_REST}/${WARM_REST}s). Records: $OUT"
 
 # 1. Build the app once per runtime, before anything is measured. Arms on the same runtime share
 # an app.
@@ -388,15 +402,30 @@ run_case() {
   else
     say "  $rc_name, $rc_label: $rc_status"
   fi
+  if [ "$rc_warmup" = no ] && [ "$REST" != off ] && [ -z "$stopped" ]; then
+    rc_trace_path=""
+    [ -n "$rc_trace" ] && [ -f "$OUT/traces/$rc_trace" ] && rc_trace_path="$OUT/traces/$rc_trace"
+    rc_rest_line="$(python3 "$HELPER" rest "$CASES_FILE" "$rc_case" "$rc_trace_path" \
+      --base "$CASE_REST" --heavy "$HEAVY_REST" --warm "$WARM_REST")"
+    rc_rest_sec="${rc_rest_line%% *}"
+    rc_rest_reason="${rc_rest_line#* }"
+    if [ "$rc_rest_sec" -gt 0 ] 2>/dev/null; then
+      say "    resting ${rc_rest_sec} s (${rc_rest_reason})"
+      sleep "$rc_rest_sec"
+    fi
+  fi
 }
-# measure_round ROUND: every build runs every case once; even rounds take the builds in reverse.
+# measure_round ROUND: every build runs every case once; builds reverse on even rounds, and cases
+# alternate heavy/light and reverse on even rounds so thermal tails balance evenly.
 measure_round() {
   order="$names"
   if [ $(($1 % 2)) -eq 0 ]; then
     order=""
     for name in $names; do order="$name $order"; done
   fi
-  say "Round $1:"
+  # shellcheck disable=SC2086 # case names have no spaces
+  round_cases="$(python3 "$HELPER" schedule "$CASES_FILE" "$1" $cases)"
+  say "Round $1 (builds:$order; cases: $round_cases):"
   for name in $order; do
     eval "app=\"\$app_$name\""
     if [ "$app" != "$installed" ]; then
@@ -411,7 +440,7 @@ measure_round() {
       run_case "$name" "$1" warmup yes
       [ -n "$stopped" ] && return 0
     fi
-    for case in $cases; do
+    for case in $round_cases; do
       run_case "$name" "$1" "$case" no
       [ -n "$stopped" ] && return 0
     done

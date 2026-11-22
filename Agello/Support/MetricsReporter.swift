@@ -4,15 +4,47 @@ import MetricKit
 import OSLog
 import UniformTypeIdentifiers
 
-/// MetricKit's metrics and diagnostics (crashes, hangs, CPU and disk-write exceptions), kept on
-/// this iPhone (Application Support/Diagnostics, the newest ``kept``) for the user to share from
-/// Settings → Help. Nothing is sent anywhere.
+/// MetricKit's metrics and diagnostics (crashes, hangs, CPU/disk/memory exceptions, GPU/CPU time,
+/// peak memory), kept on this iPhone (`Application Support/Diagnostics`, newest ``kept``) for the
+/// user to share from Settings → Help. Nothing is sent anywhere.
 final class MetricsReporter: NSObject, MXMetricManagerSubscriber, @unchecked Sendable {
   static let shared = MetricsReporter()
   static let kept = 30
 
+  /// Aggregated view over saved MetricKit payloads (both classic `MX*Payload` and iOS 27
+  /// `MetricReport` / `DiagnosticReport` JSON). Pure & unit-tested.
+  struct TelemetrySummary: Equatable, Sendable {
+    var reportCount = 0
+    var metricReportCount = 0
+    var diagnosticReportCount = 0
+    var memoryExceptionCount = 0
+    var crashCount = 0
+    var hangCount = 0
+    var cpuExceptionCount = 0
+    var diskWriteExceptionCount = 0
+    var peakMemoryMB: Double?
+    var gpuTimeSeconds: Double = 0
+    var cpuTimeSeconds: Double = 0
+
+    var formattedLines: [String] {
+      var lines = [
+        "Reports: \(reportCount) (\(metricReportCount) metrics, \(diagnosticReportCount) diagnostics)",
+        "Diagnostics: \(memoryExceptionCount) memory exceptions, \(crashCount) crashes, \(hangCount) hangs, \(cpuExceptionCount) CPU, \(diskWriteExceptionCount) disk",
+      ]
+      if let peakMemoryMB {
+        lines.append(String(format: "MetricKit peak memory: %.1f MB", peakMemoryMB))
+      }
+      if gpuTimeSeconds > 0 || cpuTimeSeconds > 0 {
+        lines.append(
+          String(format: "Cumulative compute: GPU %.1f s · CPU %.1f s", gpuTimeSeconds, cpuTimeSeconds))
+      }
+      return lines
+    }
+  }
+
   func start() {
     MXMetricManager.shared.add(self)
+    MetricKitStream.shared.start()
   }
 
   func didReceive(_ payloads: [MXMetricPayload]) {
@@ -44,14 +76,194 @@ final class MetricsReporter: NSObject, MXMetricManagerSubscriber, @unchecked Sen
     }
   }
 
-  /// One text file for sharing: the app and device, every saved report, and the app's log of
-  /// the last hour.
+  /// Summarize all saved MetricKit JSON files in `folder` (defaults to `directory()`).
+  static func summarize(in folder: URL? = nil) -> TelemetrySummary {
+    guard let folder = folder ?? (try? directory()) else { return TelemetrySummary() }
+    let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
+      .filter { $0.hasSuffix(".json") }
+      .sorted()
+    let payloads: [(String, Data)] = names.compactMap { name in
+      guard let data = try? Data(contentsOf: folder.appendingPathComponent(name)) else { return nil }
+      return (name, data)
+    }
+    return summarize(payloads: payloads)
+  }
+
+  /// Pure summarizer over raw MetricKit JSON payloads (classic and iOS 27 formats).
+  static func summarize(payloads: [(name: String, data: Data)]) -> TelemetrySummary {
+    var summary = TelemetrySummary()
+    for (name, data) in payloads {
+      summary.reportCount += 1
+      guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+        continue
+      }
+      let isDiagnostic = name.contains("diagnostics") || json["result"] != nil
+        || json["crashDiagnostics"] != nil || json["memoryExceptionDiagnostics"] != nil
+      if isDiagnostic {
+        summary.diagnosticReportCount += 1
+        accumulateDiagnostic(json, into: &summary)
+      } else {
+        summary.metricReportCount += 1
+        accumulateMetrics(json, into: &summary)
+      }
+    }
+    return summary
+  }
+
+  private static func accumulateDiagnostic(_ json: [String: Any], into summary: inout TelemetrySummary) {
+    // Classic MXDiagnosticPayload arrays.
+    summary.crashCount += (json["crashDiagnostics"] as? [Any])?.count ?? 0
+    summary.hangCount += (json["hangDiagnostics"] as? [Any])?.count ?? 0
+    summary.cpuExceptionCount += (json["cpuExceptionDiagnostics"] as? [Any])?.count ?? 0
+    summary.diskWriteExceptionCount += (json["diskWriteExceptionDiagnostics"] as? [Any])?.count ?? 0
+    summary.memoryExceptionCount += (json["memoryExceptionDiagnostics"] as? [Any])?.count ?? 0
+
+    // iOS 27 Swift DiagnosticReport (`result: { "memoryException": { ... } }`).
+    if let result = json["result"] as? [String: Any] {
+      if result["memoryException"] != nil { summary.memoryExceptionCount += 1 }
+      if result["crash"] != nil { summary.crashCount += 1 }
+      if result["hang"] != nil { summary.hangCount += 1 }
+      if result["cpuException"] != nil { summary.cpuExceptionCount += 1 }
+      if result["diskWriteException"] != nil { summary.diskWriteExceptionCount += 1 }
+    }
+  }
+
+  private static func accumulateMetrics(_ json: [String: Any], into summary: inout TelemetrySummary) {
+    // Classic MXMetricPayload dictionaries.
+    if let memory = json["memoryMetrics"] as? [String: Any],
+      let peakMB = parseMegabytes(memory["peakMemoryUsage"])
+    {
+      summary.peakMemoryMB = max(summary.peakMemoryMB ?? 0, peakMB)
+    }
+    if let gpu = json["gpuMetrics"] as? [String: Any],
+      let seconds = parseSeconds(gpu["cumulativeGPUTime"])
+    {
+      summary.gpuTimeSeconds += seconds
+    }
+    if let cpu = json["cpuMetrics"] as? [String: Any],
+      let seconds = parseSeconds(cpu["cumulativeCPUTime"])
+    {
+      summary.cpuTimeSeconds += seconds
+    }
+
+    // iOS 27 Swift MetricReport (`intervalEntries` / `stateEntries` → `values: [{ "peakMemory": ... }]`).
+    let entries =
+      ((json["intervalEntries"] as? [[String: Any]]) ?? [])
+      + ((json["stateEntries"] as? [[String: Any]]) ?? [])
+    for entry in entries {
+      guard let values = entry["values"] as? [[String: Any]] else { continue }
+      for item in values {
+        if let peakObj = item["peakMemory"] as? [String: Any],
+          let peakMB = parseMegabytes(peakObj["value"] ?? peakObj["_0"])
+        {
+          summary.peakMemoryMB = max(summary.peakMemoryMB ?? 0, peakMB)
+        }
+        if let gpuObj = item["gpuTime"] as? [String: Any],
+          let seconds = parseSeconds(gpuObj["value"] ?? gpuObj["_0"])
+        {
+          summary.gpuTimeSeconds += seconds
+        }
+        if let cpuObj = item["cpuTime"] as? [String: Any],
+          let seconds = parseSeconds(cpuObj["value"] ?? cpuObj["_0"])
+        {
+          summary.cpuTimeSeconds += seconds
+        }
+      }
+    }
+  }
+
+  static func parseMegabytes(_ raw: Any?) -> Double? {
+    if let dict = raw as? [String: Any] {
+      if let nested = dict["value"] as? [String: Any] { return parseMegabytes(nested) }
+      guard let number = numericValue(dict["value"]) else { return nil }
+      let symbol = (dict["unit"] as? [String: Any])?["symbol"] as? String ?? "B"
+      return convertStorageToMB(number, unit: symbol)
+    }
+    if let text = raw as? String {
+      let parts = text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ")
+      guard let first = parts.first, let number = Double(first) else { return nil }
+      let unit = parts.count > 1 ? String(parts[1]) : "B"
+      return convertStorageToMB(number, unit: unit)
+    }
+    if let number = numericValue(raw) { return number / 1e6 }
+    return nil
+  }
+
+  static func parseSeconds(_ raw: Any?) -> Double? {
+    if let dict = raw as? [String: Any] {
+      if let nested = dict["value"] as? [String: Any] { return parseSeconds(nested) }
+      guard let number = numericValue(dict["value"]) else { return nil }
+      let symbol = (dict["unit"] as? [String: Any])?["symbol"] as? String ?? "s"
+      return convertDurationToSeconds(number, unit: symbol)
+    }
+    if let text = raw as? String {
+      let parts = text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ")
+      guard let first = parts.first, let number = Double(first) else { return nil }
+      let unit = parts.count > 1 ? String(parts[1]) : "s"
+      return convertDurationToSeconds(number, unit: unit)
+    }
+    return numericValue(raw)
+  }
+
+  private static func numericValue(_ raw: Any?) -> Double? {
+    if let d = raw as? Double { return d }
+    if let i = raw as? Int { return Double(i) }
+    if let n = raw as? NSNumber { return n.doubleValue }
+    return nil
+  }
+
+  private static func convertStorageToMB(_ value: Double, unit: String) -> Double {
+    switch unit.lowercased() {
+    case "gb": value * 1_000
+    case "gib": value * 1_024
+    case "mb": value
+    case "mib": value * 1.048_576
+    case "kb", "kib": value / 1_000
+    case "b", "bytes": value / 1_000_000
+    default: value / 1_000_000
+    }
+  }
+
+  private static func convertDurationToSeconds(_ value: Double, unit: String) -> Double {
+    switch unit.lowercased() {
+    case "hr", "h", "hours": value * 3_600
+    case "min", "m", "minutes": value * 60
+    case "ms", "msec": value / 1_000
+    case "us", "µs", "usec": value / 1_000_000
+    case "ns": value / 1_000_000_000
+    default: value
+    }
+  }
+
+  /// Formatted live memory ledger & thermal snapshot for diagnostics exports.
+  static func liveTelemetrySummary(snapshot: MemoryProbe.Snapshot = MemoryProbe.capture()) -> String {
+    let lines = [
+      String(
+        format: "Footprint: %.2f GB (peak %.2f GB · available %.2f GB)",
+        Double(snapshot.footprintBytes) / 1e9,
+        Double(snapshot.peakFootprintBytes) / 1e9,
+        Double(snapshot.availableBytes) / 1e9),
+      String(
+        format: "Ledgers: GPU %.2f GB · ANE %.2f GB · compressed %.2f GB",
+        Double(snapshot.graphicsBytes) / 1e9,
+        Double(snapshot.neuralBytes) / 1e9,
+        Double(snapshot.compressedBytes) / 1e9),
+      "Thermal state: \(MemoryProbe.thermalStateLabel(snapshot.thermalState))",
+    ]
+    return lines.joined(separator: "\n")
+  }
+
+  /// One text file for sharing: the app and device, live memory/ANE/GPU/thermal snapshot,
+  /// MetricKit telemetry summary, every saved report, and the app's log of the last hour.
   static func exportFile(now: Date = .now) throws -> URL {
     var text = "Agello diagnostics, \(now.formatted(date: .abbreviated, time: .standard))\n"
     let info = Bundle.main.infoDictionary
     text += "Version \(info?["CFBundleShortVersionString"] as? String ?? "?")"
     text += " (\(info?["CFBundleVersion"] as? String ?? "?")), \(DeviceProfile.current.summary)\n\n"
+    text += "== Live memory & thermal ==\n" + liveTelemetrySummary() + "\n\n"
     let folder = try directory()
+    let summary = summarize(in: folder)
+    text += "== Telemetry summary ==\n" + summary.formattedLines.joined(separator: "\n") + "\n\n"
     let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [])
       .filter { $0.hasSuffix(".json") }
       .sorted()

@@ -5,6 +5,11 @@ Usage:
   scripts/phone-bench.py case CASES_SWIFT ID [--cool on|off]
       How to launch one bench case with no driver: three lines, the launch environment (JSON),
       the app's arguments, and the most seconds to wait for its trace.
+  scripts/phone-bench.py schedule CASES_SWIFT ROUND CASE [CASE ...]
+      Case-alternating order for ROUND: separates heavy cases with light cases and reverses on
+      even rounds so thermal tails balance across cases and builds.
+  scripts/phone-bench.py rest CASES_SWIFT CASE [TRACE] [--base N] [--heavy N] [--warm N]
+      Seconds to rest after CASE finishes ("<seconds> <reason>") based on case weight and heat.
   scripts/phone-bench.py show TRACE
       One line on a reply's trace (speed, heat, build).
   scripts/phone-bench.py records OUT [--hardware NAME] [--labels a,b]
@@ -78,6 +83,60 @@ def parse_case(source, case):
         "launchArguments": re.findall(r'"([^"]+)"', arguments.group(1)) if arguments else [],
         "timeout": int(timeout.group(1)) if timeout else 300,
     }
+
+
+def is_heavy_case(case):
+    """Heavy cases warm the A19 Pro die even while thermalState stays nominal."""
+    return (
+        case["id"] in ("file-report", "explain")
+        or bool(case.get("think"))
+        or len(case.get("prompt", "")) >= 600
+        or "--uitest-sample-report" in (case.get("launchArguments") or [])
+    )
+
+
+def schedule_cases(case_specs, round_num):
+    """Interleave heavy and light cases so heavy runs don't sit back-to-back, and reverse on even
+    rounds so every case gets both cool-start and mid-round slots equally."""
+    heavy = [c for c in case_specs if is_heavy_case(c)]
+    light = [c for c in case_specs if not is_heavy_case(c)]
+    ordered = []
+    take_heavy = len(heavy) > len(light)
+    hi = li = 0
+    while hi < len(heavy) or li < len(light):
+        if take_heavy and hi < len(heavy):
+            ordered.append(heavy[hi]["id"])
+            hi += 1
+        elif not take_heavy and li < len(light):
+            ordered.append(light[li]["id"])
+            li += 1
+        elif hi < len(heavy):
+            ordered.append(heavy[hi]["id"])
+            hi += 1
+        else:
+            ordered.append(light[li]["id"])
+            li += 1
+        take_heavy = not take_heavy
+    if round_num % 2 == 0:
+        ordered.reverse()
+    return ordered
+
+
+def rest_seconds(case, trace=None, base_rest=15, heavy_rest=45, warm_rest=90):
+    """Thermal rest duration (seconds, reason) after a measured case finishes."""
+    hottest = 0
+    elapsed = 0.0
+    if trace:
+        settings = trace.get("settings") or {}
+        at_send = settings.get("thermalState", 0)
+        during = [s.get("thermalState", 0) for s in trace.get("timeline") or []]
+        hottest = max([at_send] + during)
+        elapsed = float(trace.get("seconds") or 0.0)
+    if hottest > 0:
+        return warm_rest, f"warmed to {thermal_name(hottest)}"
+    if is_heavy_case(case) or elapsed >= 20.0:
+        return heavy_rest, "heavy case cooldown"
+    return base_rest, "case cooldown"
 
 
 def launch_spec(case, cool):
@@ -185,6 +244,7 @@ def record_of(trace, entry, hardware, trace_name):
                     "gpuAppleFamily": int(family.group(1)) if family else 0,
                     "runtime": build, "runtimeSHA256": build, "isiOSAppOnMac": False},
         "settings": settings,
+        "memory": trace.get("memory"),
         "telemetry": {"spans": spans, "counters": counters, "facts": facts, "level": after.get("level")},
         "suspect": suspect, "trace": trace_name,
     }
@@ -334,6 +394,26 @@ def self_test():
         if env["AGELLO_BENCH_THINK"] != "0" or env.get("AGELLO_BENCH_COOL") != "1" or "--trace" not in arguments or wait < 900:
             problems.append(f"launch spec {env} {arguments} {wait}")
 
+        # Case-alternating thermal schedule & rest rules.
+        explain = {"id": "explain", "prompt": "Explain.", "think": True, "launchArguments": []}
+        email = {"id": "email", "prompt": "Short email.", "think": False, "launchArguments": []}
+        report = {"id": "file-report", "prompt": "Summary.", "think": False, "launchArguments": ["--uitest-sample-report"]}
+        r1 = schedule_cases([explain, email, report], round_num=1)
+        r2 = schedule_cases([explain, email, report], round_num=2)
+        if r1 != ["explain", "email", "file-report"] or r2 != ["file-report", "email", "explain"]:
+            problems.append(f"schedule_cases odd/even mismatch: {r1} / {r2}")
+        r_sep = schedule_cases([explain, report, email], round_num=1)
+        if r_sep != ["explain", "email", "file-report"]:
+            problems.append(f"schedule_cases did not separate heavy cases: {r_sep}")
+        if rest_seconds(email, {"seconds": 5.0, "settings": {"thermalState": 0}, "timeline": []})[0] != 15:
+            problems.append("light nominal case did not get base rest")
+        if rest_seconds(report, {"seconds": 12.0, "settings": {"thermalState": 0}, "timeline": []})[0] != 45:
+            problems.append("heavy nominal case did not get heavy rest")
+        if rest_seconds(email, {"seconds": 25.0, "settings": {"thermalState": 0}, "timeline": []})[0] != 45:
+            problems.append("long nominal case did not get heavy rest")
+        if rest_seconds(email, {"seconds": 5.0, "settings": {"thermalState": 0}, "timeline": [{"thermalState": 1}]})[0] != 90:
+            problems.append("warmed case did not get warm rest")
+
         def telemetry(prefilled, decoded, prefill_ms, decode_ms, steps, gpu_ms):
             return {"level": 2, "facts": {"gpu": "Apple A19 Pro GPU, ML Drift family Apple10"},
                     "counters": {"tokens_prefilled": prefilled, "tokens_decoded": decoded},
@@ -404,6 +484,36 @@ def main():
         print(" ".join(arguments))
         print(wait)
         print(json.dumps(case["prompt"], ensure_ascii=False))
+        return 0
+    if command == "schedule":
+        if len(sys.argv) < 5:
+            raise SystemExit(__doc__)
+        source = open(sys.argv[2]).read()
+        round_num = int(sys.argv[3])
+        specs = [parse_case(source, cid) for cid in sys.argv[4:]]
+        print(" ".join(schedule_cases(specs, round_num)))
+        return 0
+    if command == "rest":
+        if len(sys.argv) < 4:
+            raise SystemExit(__doc__)
+        source = open(sys.argv[2]).read()
+        case = parse_case(source, sys.argv[3])
+        trace = None
+        base_rest, heavy_rest, warm_rest = 15, 45, 90
+        rest_args = sys.argv[4:]
+        while rest_args:
+            arg = rest_args.pop(0)
+            if arg == "--base":
+                base_rest = int(rest_args.pop(0))
+            elif arg == "--heavy":
+                heavy_rest = int(rest_args.pop(0))
+            elif arg == "--warm":
+                warm_rest = int(rest_args.pop(0))
+            elif arg and os.path.exists(arg):
+                trace = json.load(open(arg))
+        secs, reason = rest_seconds(
+            case, trace=trace, base_rest=base_rest, heavy_rest=heavy_rest, warm_rest=warm_rest)
+        print(f"{secs} {reason}")
         return 0
     if command == "show":
         show(sys.argv[2])

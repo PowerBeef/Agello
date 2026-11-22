@@ -8,16 +8,25 @@ import SwiftUI
 struct DeveloperSettingsView: View {
   @Environment(AppState.self) private var appState
   @AppStorage("showPerformanceDetails") private var showStats = false
+  @State private var memorySnapshot = MemoryProbe.capture()
+  @State private var telemetrySummary = MetricsReporter.summarize()
 
   var body: some View {
     Form {
       performanceSection
       benchmarkSection
+      telemetrySection
       deviceSection
     }
     .themedList()
     .navigationTitle("Developer")
     .inlineTitleDisplay()
+    .onAppear(perform: refreshTelemetry)
+  }
+
+  private func refreshTelemetry() {
+    memorySnapshot = MemoryProbe.capture()
+    telemetrySummary = MetricsReporter.summarize()
   }
 
   private var performanceSection: some View {
@@ -97,6 +106,60 @@ struct DeveloperSettingsView: View {
         .foregroundStyle(Theme.Text.primary)
       Text(label)
         .font(.caption2)
+        .foregroundStyle(Theme.Text.tertiary)
+    }
+  }
+
+  private var telemetrySection: some View {
+    Section {
+      LabeledContent(
+        "Footprint / Peak",
+        value: String(
+          format: "%.2f / %.2f GB",
+          Double(memorySnapshot.footprintBytes) / 1e9,
+          Double(memorySnapshot.peakFootprintBytes) / 1e9)
+      )
+      .monospacedDigit()
+      .themedRow()
+      LabeledContent(
+        "GPU / ANE ledgers",
+        value: String(
+          format: "%.2f / %.2f GB",
+          Double(memorySnapshot.graphicsBytes) / 1e9,
+          Double(memorySnapshot.neuralBytes) / 1e9)
+      )
+      .monospacedDigit()
+      .themedRow()
+      LabeledContent("Thermal", value: MemoryProbe.thermalStateLabel(memorySnapshot.thermalState))
+        .themedRow()
+      LabeledContent(
+        "MetricKit",
+        value: "\(telemetrySummary.reportCount) reports · \(telemetrySummary.memoryExceptionCount) mem exc · \(telemetrySummary.crashCount) crashes"
+      )
+      .monospacedDigit()
+      .themedRow()
+      if let peakMB = telemetrySummary.peakMemoryMB {
+        LabeledContent("MetricKit peak", value: String(format: "%.0f MB", peakMB))
+          .monospacedDigit()
+          .themedRow()
+      }
+      if telemetrySummary.gpuTimeSeconds > 0 || telemetrySummary.cpuTimeSeconds > 0 {
+        LabeledContent(
+          "MetricKit compute",
+          value: String(
+            format: "GPU %.1fs · CPU %.1fs",
+            telemetrySummary.gpuTimeSeconds, telemetrySummary.cpuTimeSeconds)
+        )
+        .monospacedDigit()
+        .themedRow()
+      }
+      Button("Refresh telemetry", action: refreshTelemetry)
+        .foregroundStyle(Theme.Brand.glacier)
+        .themedRow()
+    } header: {
+      Text("Telemetry").eyebrowStyle()
+    } footer: {
+      Text("Live kernel physical footprint, peak (`ledger_phys_footprint_peak`), Metal/ANE ledgers, and on-device MetricKit reports.")
         .foregroundStyle(Theme.Text.tertiary)
     }
   }

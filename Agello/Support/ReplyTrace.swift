@@ -75,6 +75,7 @@ enum ReplyTrace {
     var work: [String: Work] = [:]
     var samples: [Sample] = []
     var chunks = 0
+    var baselineMemory: MemoryProbe.Snapshot?
   }
 
   /// The last trace written: helper tasks that follow a reply (its title, memories) are added
@@ -97,6 +98,8 @@ enum ReplyTrace {
     guard isEnabled else { return }
     var trace = Running()
     trace.prompt = prompt
+    let baseline = MemoryProbe.capture()
+    trace.baselineMemory = baseline
     trace.settings = [
       "think": .bool(options.enableThinking), "thinkingBudget": .int(options.thinkingBudget),
       "search": .bool(search), "tools": .bool(tools),
@@ -106,7 +109,8 @@ enum ReplyTrace {
       "runtimeBuild": .string(EngineCache.runtimeBuildID),
       "appVersion": .string(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""),
       "optimized": .bool(isOptimizedBuild),
-      "thermalState": .int(ProcessInfo.processInfo.thermalState.rawValue),
+      "thermalState": .int(baseline.thermalState),
+      "peakFootprintGBAtSend": .double(Double(baseline.peakFootprintBytes) / 1e9),
     ]
     trace.telemetryBefore = RuntimeTelemetry.snapshotJSON()
     let generation = trace.generation
@@ -269,6 +273,20 @@ enum ReplyTrace {
     {
       report["stats"] = object
     }
+    let finalMemory = MemoryProbe.capture()
+    var memoryReport: [String: Any] = [
+      "footprintGB": Double(finalMemory.footprintBytes) / 1e9,
+      "peakFootprintGB": Double(finalMemory.peakFootprintBytes) / 1e9,
+      "graphicsGB": Double(finalMemory.graphicsBytes) / 1e9,
+      "neuralGB": Double(finalMemory.neuralBytes) / 1e9,
+    ]
+    if let baseline = trace.baselineMemory {
+      let delta = finalMemory.delta(from: baseline)
+      memoryReport["peakDeltaMB"] = delta.peakDeltaMB
+      memoryReport["graphicsDeltaMB"] = delta.graphicsDeltaMB
+      memoryReport["neuralDeltaMB"] = delta.neuralDeltaMB
+    }
+    report["memory"] = memoryReport
     var engine: [String: Any] = [:]
     for (key, text) in [("before", trace.telemetryBefore), ("after", RuntimeTelemetry.snapshotJSON())] {
       if let text, let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) { engine[key] = object }
