@@ -29,13 +29,14 @@ final class AppState {
   }
 
   /// Options as the engine receives them: the system prompt includes the
-  /// user's personalization.
+  /// user's personalization, plus runtime tool availability for the active chat.
   var effectiveOptions: InferenceOptions {
     var effective = options
     effective.systemPrompt = SystemPrompt.compose(
       base: options.systemPrompt, personalization: personalization, project: activeProject,
       memories: memoryEnabled ? memoryTexts() : [], current: SystemPrompt.CurrentInfo(webSettings: webSettings))
     effective.webSearchTool = webSettings.allowed && webSettings.automatic
+    effective.workspaceFileTools = activeThreadHasDocuments
     return effective
   }
 
@@ -52,9 +53,12 @@ final class AppState {
   }
   @ObservationIgnored private(set) lazy var webResearch = WebResearch(knowledge: knowledge)
 
-  /// The system prompt the engine's conversation was built with; a
-  /// different one (project, memories, personalization) means a rebuild.
+  /// The system prompt and tool set the engine's conversation was built with; a
+  /// different one (project, memories, personalization, or tool set) means a rebuild.
   @ObservationIgnored private var appliedSystemPrompt: String?
+  @ObservationIgnored private var appliedToolSetKey: String?
+  /// Whether the active chat or its project currently has attached files.
+  @ObservationIgnored var activeThreadHasDocuments = false
 
   /// Memory: learn lasting facts from the user's messages and add them to
   /// the system prompt. Off by default.
@@ -176,6 +180,7 @@ final class AppState {
     // working with ~0.8 GB left in the 8 GB simulation), so only stop a reply
     // when memory is actually nearly exhausted (also checked while streaming).
     installWebSearchTool()
+    installWorkspaceTools()
     // Files attached before the embedding model arrived get indexed once it does.
     self.store.onModelReady = { [weak self] model in
       if model == ModelCatalog.embeddingGemma.id { self?.knowledge.indexPending() }
@@ -286,7 +291,9 @@ final class AppState {
       )
       resolved = plan
       visionTokenLimit = await engine.maxVisionTokenBudget ?? VisualDetail.defaultLimit
-      appliedSystemPrompt = effectiveOptions.systemPrompt
+      let applied = effectiveOptions
+      appliedSystemPrompt = applied.systemPrompt
+      appliedToolSetKey = applied.toolSetKey
       engineState = .ready
       return true
     } catch {
@@ -363,6 +370,7 @@ final class AppState {
           resolved = try await live.updateConversationOptions(
             newOptions, enableTools: enableTools, history: history)
           appliedSystemPrompt = newOptions.systemPrompt
+          appliedToolSetKey = newOptions.toolSetKey
           conversationThreadID = selectedThreadID
           conversationIsEmpty = history.isEmpty
         } catch {
@@ -375,6 +383,7 @@ final class AppState {
         memoryBytes: DeviceProfile.current.physicalMemoryBytes)
       await mock.applyConversationOptions(newOptions)
       appliedSystemPrompt = newOptions.systemPrompt
+      appliedToolSetKey = newOptions.toolSetKey
     }
   }
 
@@ -408,22 +417,29 @@ final class AppState {
     threadID: UUID, history: [(role: ChatRole, text: String)]
   ) async -> Bool {
     guard await loadIfNeeded() else { return false }
-    if conversationThreadID == threadID { return true }
     // Never swap the conversation out from under a live reply.
     if isGenerating { return false }
-    // Another project, changed memories or personalization: rebuild the
-    // conversation with the right system prompt.
+    // Refresh workspace file availability & project context before deciding whether to rebuild.
     activeProject = projectContext(for: threadID)
-    let systemPrompt = effectiveOptions.systemPrompt
-    if systemPrompt != appliedSystemPrompt {
-      Log.engine.info("system prompt changed: rebuild with \(history.count) turns")
+    if let context = modelContext {
+      let desc = FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == threadID })
+      if let thread = (try? context.fetch(desc))?.first {
+        activeThreadHasDocuments = !documents(for: thread).isEmpty
+      }
+    }
+    let desired = effectiveOptions
+    let conversationConfigChanged =
+      desired.systemPrompt != appliedSystemPrompt || desired.toolSetKey != appliedToolSetKey
+    if conversationThreadID == threadID, !conversationConfigChanged { return true }
+    if conversationConfigChanged {
+      Log.engine.info("conversation config changed: rebuild with \(history.count) turns")
       do {
         if let live = engine as? LiteRTChatEngine {
           resolved = try await live.updateConversationOptions(
-            effectiveOptions, enableTools: enableTools, history: history)
+            desired, enableTools: enableTools, history: history)
         } else {
           if let mock = engine as? MockChatEngine {
-            await mock.applyConversationOptions(effectiveOptions)
+            await mock.applyConversationOptions(desired)
           }
           try await engine.reseed(history: history)
         }
@@ -431,7 +447,8 @@ final class AppState {
         generationError = (error as? ChatError)?.displayMessage ?? error.localizedDescription
         return false
       }
-      appliedSystemPrompt = systemPrompt
+      appliedSystemPrompt = desired.systemPrompt
+      appliedToolSetKey = desired.toolSetKey
       conversationThreadID = threadID
       conversationIsEmpty = history.isEmpty
       return true

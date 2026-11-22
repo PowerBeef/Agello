@@ -375,6 +375,103 @@ final class KnowledgeScenarioTests: DeviceTestCase {
       minFP32, 0.995,
       "ANE embedder cosine parity vs LiteRT FP32 dropped below 0.995: min=\(minFP32), all=\(fp32Cosines)")
   }
+  /// P5.2: E4B calls workspace tools (`query_table_or_json`, `convert_units`, `search_past_chats`)
+  /// autonomously to compute exact CSV aggregations, convert units, and recall prior chats.
+  func test05_WorkspaceDataAndUnitsTools() async throws {
+    try await requireLoadedModel()
+
+    // 1) Past chat recall via search_past_chats
+    let past = harness.newThread()
+    past.title = "Roof Repair Estimate"
+    past.append(ChatTurn(role: .user, text: "The roofer quoted $6,350 for slate shingle repairs."))
+    past.append(ChatTurn(role: .model, text: "Got it, $6,350 for the slate shingle roof repair."))
+
+    let recallThread = harness.newThread()
+    let c1 = ToolActivity.cursor
+    let recall = await harness.ask(
+      "Search my past chats to find how much the roofer quoted for the roof repair.",
+      in: recallThread)
+    let recallInvoked = ToolActivity.invocations(since: c1)
+
+    // 2) Exact CSV aggregation via query_table_or_json on an attached file
+    let dataThread = harness.newThread()
+    let csv = """
+      region,quarter,revenue
+      North,Q1,1245.50
+      North,Q2,2310.25
+      South,Q1,980.00
+      South,Q2,1520.75
+      North,Q3,1890.00
+      """
+    let csvDoc = ExtractedDocument(
+      name: "quarterly_sales.csv", kind: .text, byteCount: Int64(csv.utf8.count), pages: [csv]).prepared()
+    appState.knowledge.add(csvDoc, threadID: dataThread.id)
+
+    let c2 = ToolActivity.cursor
+    let csvAnswer = await harness.ask(
+      "Use the query_table_or_json tool on quarterly_sales.csv to compute the exact sum of revenue for region = North.",
+      in: dataThread)
+    let csvInvoked = ToolActivity.invocations(since: c2)
+
+    // 3) Unit conversion via convert_units
+    let unitThread = harness.newThread()
+    let c3 = ToolActivity.cursor
+    let unitAnswer = await harness.ask(
+      "Use convert_units to convert 42.195 km to miles.",
+      in: unitThread)
+    let unitInvoked = ToolActivity.invocations(since: c3)
+
+    harness.record(
+      "knowledge05_workspaceTools",
+      [
+        "recallReply": recall.text, "recallInvoked": recallInvoked,
+        "csvReply": csvAnswer.text, "csvInvoked": csvInvoked,
+        "unitReply": unitAnswer.text, "unitInvoked": unitInvoked,
+      ], in: self)
+
+    XCTAssertTrue(recall.accepted, appState.generationError ?? "")
+    XCTAssertTrue(recallInvoked.contains(SearchPastChatsTool.name), "Invoked: \(recallInvoked)")
+    XCTAssertTrue(recall.text.contains("6,350") || recall.text.contains("6350"), recall.text)
+
+    XCTAssertTrue(csvAnswer.accepted, appState.generationError ?? "")
+    XCTAssertTrue(csvInvoked.contains(QueryTableOrJsonTool.name), "Invoked: \(csvInvoked)")
+    XCTAssertTrue(csvAnswer.text.contains("5,445.75") || csvAnswer.text.contains("5445.75"), csvAnswer.text)
+
+    XCTAssertTrue(unitAnswer.accepted, appState.generationError ?? "")
+    XCTAssertTrue(unitInvoked.contains(ConvertUnitsTool.name), "Invoked: \(unitInvoked)")
+    XCTAssertTrue(unitAnswer.text.contains("26.2"), unitAnswer.text)
+  }
+
+  /// P5.2: E4B uses `read_document_pages` and `search_files` (plus parallel read-only calls)
+  /// to inspect specific pages of a multi-page report and convert figures accurately.
+  func test06_ReadDocumentPagesAndParallelTools() async throws {
+    try await requireLoadedModel()
+    let thread = harness.newThread()
+    let pages = [
+      "Annual Lighthouse Audit. Executive overview of coastal stations.",
+      "Station A (Cape Rouge): tower height is 28.5 meters, built in 1894.",
+      "Station B (Pointe-au-Père): tower height is 33.0 meters, built in 1909.",
+      "Budget Appendix: annual paint and lens maintenance totals $48,200.",
+    ]
+    let doc = ExtractedDocument(
+      name: "lighthouse_audit.pdf", kind: .pdf, byteCount: 512, pages: pages).prepared()
+    appState.knowledge.add(doc, threadID: thread.id)
+
+    let cursor = ToolActivity.cursor
+    let answer = await harness.ask(
+      "Call read_document_pages on lighthouse_audit.pdf page 2, and also call convert_units to convert 28.5 meters to feet. Report both the year built and the height in feet.",
+      in: thread)
+    let invoked = ToolActivity.invocations(since: cursor)
+    harness.record(
+      "knowledge06_pageReadAndParallel",
+      ["reply": answer.text, "invoked": invoked, "seconds": answer.seconds], in: self)
+    XCTAssertTrue(answer.accepted, appState.generationError ?? "")
+    XCTAssertTrue(invoked.contains(ReadDocumentPagesTool.name), "Invoked: \(invoked)")
+    XCTAssertTrue(invoked.contains(ConvertUnitsTool.name), "Invoked: \(invoked)")
+    XCTAssertTrue(answer.text.contains("1894"), answer.text)
+    XCTAssertTrue(answer.text.contains("93.5"), answer.text)
+  }
+
   private static func embedAll(
     documents: [(title: String, text: String)], queries: [String], using embedder: any TextEmbedder
   ) async throws -> [[Float]] {

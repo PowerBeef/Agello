@@ -53,9 +53,11 @@ enum ContextBudget {
   static let preambleTokens = 256
 
   /// Preamble for a conversation with `systemPrompt` (which grows with
-  /// personalization), so long instructions can't overflow the window.
-  static func preambleTokens(systemPrompt: String) -> Int {
-    preambleTokens + estimateTokens(systemPrompt)
+  /// personalization) and optional extra tool declarations beyond the base set,
+  /// so long instructions or tool schemas can't overflow the window.
+  static func preambleTokens(systemPrompt: String, toolCount: Int = 0) -> Int {
+    let extraToolTokens = max(0, toolCount - 3) * 80
+    return preambleTokens + estimateTokens(systemPrompt) + extraToolTokens
   }
   /// Per-turn template overhead (role markers, separators).
   static let perTurnOverhead = 8

@@ -397,6 +397,23 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
   }
 
+  private static func activeTools(toolsEnabled: Bool, options: InferenceOptions) -> [any Tool] {
+    var tools: [any Tool] = []
+    if toolsEnabled {
+      tools.append(CurrentDateTimeTool())
+      tools.append(CalculatorTool())
+      tools.append(ConvertUnitsTool())
+      tools.append(QueryTableOrJsonTool())
+      tools.append(SearchPastChatsTool())
+      if options.workspaceFileTools {
+        tools.append(SearchFilesTool())
+        tools.append(ReadDocumentPagesTool())
+      }
+    }
+    if options.webSearchTool { tools.append(WebSearchTool()) }
+    return tools
+  }
+
   private static func makeConversation(
     engine: Engine, resolved: ResolvedInference, options: InferenceOptions,
     toolsEnabled: Bool, history: [(role: ChatRole, text: String)], samplingSeed: Int? = nil,
@@ -405,15 +422,14 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     let sampler = try SamplerConfig(
       topK: resolved.topK, topP: resolved.topP, temperature: resolved.temperature,
       seed: samplingSeed ?? 0)
-    var tools: [any Tool] = toolsEnabled ? [CurrentDateTimeTool(), CalculatorTool()] : []
-    if options.webSearchTool { tools.append(WebSearchTool()) }
+    let tools = activeTools(toolsEnabled: toolsEnabled, options: options)
     let replayed: [(role: ChatRole, text: String)]
     if alreadyTrimmed {
       replayed = history
     } else {
       let budget = ContextBudget.historyBudget(
         maxNumTokens: resolved.maxNumTokens, input: 0, thinkingBudget: resolved.thinkingBudget,
-        preamble: ContextBudget.preambleTokens(systemPrompt: options.systemPrompt))
+        preamble: ContextBudget.preambleTokens(systemPrompt: options.systemPrompt, toolCount: tools.count))
       replayed = ContextBudget.trimmedHistory(history, budget: budget)
     }
     let initial = replayed.map { turn -> LiteRTLM.Message in

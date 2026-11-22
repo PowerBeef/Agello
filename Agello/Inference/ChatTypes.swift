@@ -119,8 +119,16 @@ struct InferenceOptions: Codable, Sendable, Equatable {
   /// Offer the model the `web_search` tool (automatic web search; runtime
   /// only, from the web settings).
   var webSearchTool: Bool = false
+  /// Offer file-inspection tools (`search_files`, `read_document_pages`) when the
+  /// active chat or project has attached files (runtime only, never saved).
+  var workspaceFileTools: Bool = false
 
-  /// Stored keys (``webSearchTool`` is decided at runtime, never saved).
+  /// Identifies the runtime tool configuration that alters conversation tool schemas.
+  var toolSetKey: String {
+    "web=\(webSearchTool),files=\(workspaceFileTools)"
+  }
+
+  /// Stored keys (runtime tool flags are decided per conversation, never saved).
   private enum CodingKeys: String, CodingKey {
     case maxNumTokensOverride, enableThinking, thinkingBudget, samplerPreset
     case systemPrompt, enableVision, enableAudio, visualDetail, enableSpeculativeDecoding

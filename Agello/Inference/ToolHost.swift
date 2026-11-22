@@ -58,33 +58,36 @@ enum ToolBudget {
   static let answerTokens = 256
 
   /// Split `room` (tokens) for one reply. Tool rounds run inside LiteRT-LM, so whenever any tool
-  /// is registered (including `web_search` alone) the room is split: an eighth per tool result
-  /// (at most two calls), and the first round, where nearly every reply is answered, gets half
-  /// the room for its answer plus Think's reasoning budget on top. The two later rounds share
-  /// what's left, at least a sixteenth each, or their reasoning budget plus an answer when it
-  /// fits (they reason with the conversation's budget). Until 2026-11-02 the first round got a
-  /// quarter with the reasoning inside it, which cut long answers short (probe 23). Without tools
-  /// the reply gets the whole room. `maxOutputTokens` caps every round; the reasoning budget
-  /// always leaves an answer room.
+  /// is registered (including `web_search` alone) the room is split so every tool result plus its
+  /// follow-up generation fits strictly inside `room`:
+  /// - Smaller rooms (`< 16,384` tokens): up to 2 tool calls, an eighth per result.
+  /// - Large rooms (`>= 16,384` tokens, e.g. 64K context): up to 4 tool calls, a sixteenth per
+  ///   result (still 1,000–4,000 tokens per result), enabling multi-step Think + parallel research.
+  /// Without tools the reply gets the whole room. `maxOutputTokens` caps every round; the reasoning
+  /// budget always leaves an answer room.
   static func plan(
     room: Int, toolsOffered: Bool, thinkingBudget: Int? = nil, maxOutputTokens: Int? = nil
   ) -> Plan {
-    let resultTokens = room / 8
     let limit = maxOutputTokens ?? .max
     guard toolsOffered else {
       let cap = min(room, limit)
       return Plan(
         outputCap: cap, followUpCap: cap, thinkingBudget: thinkingBudget.map { reasoning($0, cap: cap) },
-        limits: Limits(maxResultTokens: resultTokens, maxCalls: 0))
+        limits: Limits(maxResultTokens: room / 8, maxCalls: 0))
     }
-    let laterRound = min(resultTokens, max(room / 16, thinkingBudget.map { $0 + answerTokens } ?? 0))
-    let first = min(room - 2 * resultTokens - 2 * laterRound, room / 2 + (thinkingBudget ?? 0))
-    let followUp = (room - first - 2 * resultTokens) / 2
+    let maxCalls = room >= 16_384 ? 4 : 2
+    let resultTokens = room / (maxCalls * 4)
+    let laterFloor = room / (maxCalls * 8)
+    let laterRound = min(resultTokens, max(laterFloor, thinkingBudget.map { $0 + answerTokens } ?? 0))
+    let first = min(
+      room - maxCalls * resultTokens - maxCalls * laterRound,
+      room / 2 + (thinkingBudget ?? 0))
+    let followUp = (room - first - maxCalls * resultTokens) / maxCalls
     let cap = min(first, limit)
     return Plan(
       outputCap: cap, followUpCap: min(followUp, limit),
       thinkingBudget: thinkingBudget.map { reasoning($0, cap: cap) },
-      limits: Limits(maxResultTokens: resultTokens, maxCalls: 2))
+      limits: Limits(maxResultTokens: resultTokens, maxCalls: maxCalls))
   }
 
   /// The reasoning budget that leaves a round of `cap` tokens room for its answer:
