@@ -44,10 +44,23 @@ def parse_case(source, case):
     if not match:
         raise SystemExit(f"No bench case {case} in BenchCases.swift")
     if match.group(1):
-        literal = re.search(r'static let ' + match.group(1) + r' = #"""\n(.*?)\n\s*"""#', source, re.S).group(1)
-        lines = literal.split("\n")
-        indent = min(len(line) - len(line.lstrip()) for line in lines if line.strip())
-        prompt = "\n".join(line[indent:] for line in lines)
+        lit_match = re.search(
+            r'static let ' + match.group(1) + r' = (#?)"""\n(.*?)\n([ \t]*)"""\1', source, re.S)
+        if not lit_match:
+            raise SystemExit(f"Could not parse Prompts.{match.group(1)} in BenchCases.swift")
+        raw, literal, closing_indent = lit_match.group(1), lit_match.group(2), lit_match.group(3)
+        indent = len(closing_indent)
+        lines = [line[indent:] if line.startswith(closing_indent) else line for line in literal.split("\n")]
+        if raw:
+            prompt = "\n".join(lines)
+        else:
+            out_lines = []
+            for line in lines:
+                if out_lines and out_lines[-1].endswith("\\"):
+                    out_lines[-1] = out_lines[-1][:-1] + line
+                else:
+                    out_lines.append(line)
+            prompt = "\n".join(out_lines)
     else:
         prompt = unescape(match.group(2))
     # The rest of this case's arguments: up to the next case, or the end of the list.
@@ -78,7 +91,7 @@ def launch_spec(case, cool):
         env["AGELLO_BENCH_COOL"] = "1"
     # The runtime's switches, as set for the run, for every arm (a build without one ignores it):
     # AGELLO_RESIDENT_ROUND, the GPU-resident round (docs/PERFORMANCE.md).
-    for key in ("AGELLO_RESIDENT_ROUND",):
+    for key in ("AGELLO_RESIDENT_ROUND", "AGELLO_TELEMETRY", "AGELLO_KERNEL_SHAPES", "AGELLO_FLASH_ATTENTION"):
         if os.environ.get(key):
             env[key] = os.environ[key]
     # Memories would change the system prompt from one case to the next: off for these launches

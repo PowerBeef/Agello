@@ -26,8 +26,8 @@ mkdir -p "$OUT"
 # The case's prompt and Think, as scripts/phone-bench.sh sends them (no cooling: this measures
 # the phone as it is).
 spec="$(python3 "$ROOT/scripts/phone-bench.py" case "$ROOT/AgelloUITests/BenchCases.swift" "$CASE" --cool off)"
-environment="$(echo "$spec" | sed -n 1p)"
-arguments="$(echo "$spec" | sed -n 2p)"
+environment="$(printf '%s\n' "$spec" | sed -n 1p)"
+arguments="$(printf '%s\n' "$spec" | sed -n 2p)"
 started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 # A trace is named by its send time; the app keeps the last 40, so wait for a name, not a count.
 launched="$(date -u +%Y-%m-%dT%H-%M-%SZ)"

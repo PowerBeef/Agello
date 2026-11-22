@@ -343,10 +343,10 @@ run_case() {
   rc_case="$3"
   rc_warmup="$4"
   rc_spec="$(python3 "$HELPER" case "$CASES_FILE" "$rc_case" --cool "$COOL" 2>/dev/null)"
-  rc_environment="$(echo "$rc_spec" | sed -n 1p)"
-  rc_arguments="$(echo "$rc_spec" | sed -n 2p)"
-  rc_wait="$(echo "$rc_spec" | sed -n 3p)"
-  rc_prompt="$(echo "$rc_spec" | sed -n 4p)"
+  rc_environment="$(printf '%s\n' "$rc_spec" | sed -n 1p)"
+  rc_arguments="$(printf '%s\n' "$rc_spec" | sed -n 2p)"
+  rc_wait="$(printf '%s\n' "$rc_spec" | sed -n 3p)"
+  rc_prompt="$(printf '%s\n' "$rc_spec" | sed -n 4p)"
   wait_unlocked || { stopped=4; return 0; }
   # The trace's name is its send time: anything named after the launch is this case's.
   rc_launched="$(date -u +%Y-%m-%dT%H-%M-%SZ)"
