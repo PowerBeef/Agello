@@ -50,16 +50,16 @@ final class DeviceProfileTests: XCTestCase {
     XCTAssertNil(InferenceOptions.launch(saved: nil, arguments: ["Agello", "--uitest-window", "big"]).maxNumTokensOverride)
   }
 
-  /// 64K by default where the device has 12 GB (2026-11-14; 32K from 2026-11-09), stepping down to
-  /// 16K below 5.1 GB left at load and to 8K below 3.5 GB.
+  /// 64K by default where the device has 12 GB (sparse 64K + FlashAttention), stepping down to
+  /// 16K below 4.2 GB left at load and to 8K below 3.5 GB.
   func testLargeContextStepsDownWithTheRoomAtLoad() {
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 65_536, roomBytes: 8_000_000_000), 65_536)
-    XCTAssertEqual(DeviceProfile.contextTokens(standard: 65_536, roomBytes: 5_100_000_000), 65_536)
-    XCTAssertEqual(DeviceProfile.contextTokens(standard: 65_536, roomBytes: 5_000_000_000), 16_384)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 65_536, roomBytes: 4_200_000_000), 65_536)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 65_536, roomBytes: 4_100_000_000), 16_384)
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 65_536, roomBytes: 3_380_000_000), 8_192)
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: 8_000_000_000), 32_768)
-    XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: 5_100_000_000), 32_768)
-    XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: 5_000_000_000), 16_384)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: 4_200_000_000), 32_768)
+    XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: 4_100_000_000), 16_384)
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: 3_380_000_000), 8_192)
     XCTAssertEqual(DeviceProfile.contextTokens(standard: 32_768, roomBytes: nil), 32_768)
   }
@@ -107,6 +107,20 @@ final class DeviceProfileTests: XCTestCase {
     // Not reported: keep.
     XCTAssertTrue(keeps(32_768, 0))
     XCTAssertEqual(DeviceProfile.kvBytesPerToken * 32_000, 917_504_000)
+
+    // v2 128K ring-KV + Metal 4 copyMappings: detaches global heaps with zero duplication,
+    // needing only the 31.5 MiB rings + one 4K sparse step (~32 MiB) above lowMemoryStopBytes.
+    let ringCopy =
+      DeviceProfile.ringKvFixedBytes
+      + DeviceProfile.ringKvBytesPerToken * DeviceProfile.sparseHelperStepPositions
+    XCTAssertTrue(
+      DeviceProfile.keepsConversationAcrossHelpers(
+        usedTokens: 60_000, availableBytes: ringCopy + DeviceProfile.lowMemoryStopBytes,
+        exportWindow: 131_101))
+    XCTAssertFalse(
+      DeviceProfile.keepsConversationAcrossHelpers(
+        usedTokens: 60_000, availableBytes: ringCopy + DeviceProfile.lowMemoryStopBytes - 1,
+        exportWindow: 131_101))
   }
 
   /// The window by physical memory: 64K with 12 GB, 16K with 8 GB.

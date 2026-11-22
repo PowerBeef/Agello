@@ -199,4 +199,53 @@ final class ContextBudgetTests: XCTestCase {
     XCTAssertEqual(cap, 1024 - 600 - 100 - ContextBudget.safetyMargin)
     XCTAssertNil(ContextBudget.outputCap(maxNumTokens: 1024, used: 900, input: 50))
   }
+
+  /// P3.3: replyReserve caps the answer portion at 4,096 + thinkingBudget, unlocking ~56–60K
+  /// usable single-prompt tokens in a 64K window.
+  func testReplyReserveCapAt64KUnlocksSinglePromptRoom() {
+    XCTAssertEqual(ContextBudget.replyReserve(maxNumTokens: 65_536, thinkingBudget: nil), 4_096)
+    XCTAssertEqual(ContextBudget.replyReserve(maxNumTokens: 65_536, thinkingBudget: 4_096), 8_192)
+    XCTAssertEqual(ContextBudget.replyReserve(maxNumTokens: 32_000, thinkingBudget: nil), 4_096)
+    XCTAssertEqual(ContextBudget.replyReserve(maxNumTokens: 32_000, thinkingBudget: 4_096), 8_192)
+    XCTAssertTrue(ContextBudget.fits(used: 0, input: 60_000, maxNumTokens: 65_536, thinkingBudget: nil))
+    XCTAssertTrue(ContextBudget.fits(used: 0, input: 56_000, maxNumTokens: 65_536, thinkingBudget: 4_096))
+  }
+
+  /// P3.3: trimHistory returns the exact evicted prefix and recall helpers format relevant context.
+  func testTrimHistoryReturnsEvictedTurnsAndFormatsRecall() {
+    let history: [(role: ChatRole, text: String)] = [
+      (.user, "My project codename is Aurora and the launch is on March 14."),
+      (.model, "Noted — Aurora launches March 14."),
+      (.user, String(repeating: "Filler discussion about weather. ", count: 30)),
+      (.model, String(repeating: "Weather reply text. ", count: 30)),
+      (.user, "What is the latest status?"),
+      (.model, "Everything is green."),
+    ]
+    let split = ContextBudget.trimHistory(history, budget: 120)
+    XCTAssertEqual(split.kept.count + split.evicted.count, history.count)
+    XCTAssertEqual(split.evicted.first?.text, history.first?.text)
+    let exchanges = ContextBudget.evictedExchanges(split.evicted)
+    XCTAssertFalse(exchanges.isEmpty)
+    XCTAssertTrue(exchanges[0].contains("Aurora"))
+    let block = ContextBudget.recalledContext(exchanges: exchanges, budget: 256)
+    XCTAssertNotNil(block)
+    let combined = ContextBudget.promptWithRecall(block, prompt: "When does Aurora launch?")
+    XCTAssertTrue(combined.contains("Aurora"))
+    XCTAssertTrue(combined.hasSuffix("When does Aurora launch?"))
+  }
+
+  @MainActor
+  func testKnowledgeBaseRecallsRelevantEvictedExchange() async {
+    let kb = KnowledgeBase(store: ModelStore(), useHashingEmbedder: true)
+    let evicted: [(role: ChatRole, text: String)] = [
+      (.user, "The secret harbor code is DELTA-942 for the lighthouse dock."),
+      (.model, "Got it, harbor code DELTA-942."),
+      (.user, "What should I cook for pasta tonight?"),
+      (.model, "Try garlic olive oil spaghetti with basil."),
+    ]
+    let recalled = await kb.recallEvictedTurns(
+      evicted, for: "What was the harbor code for the lighthouse?", budget: 400)
+    XCTAssertNotNil(recalled)
+    XCTAssertTrue(recalled?.contains("DELTA-942") ?? false)
+  }
 }

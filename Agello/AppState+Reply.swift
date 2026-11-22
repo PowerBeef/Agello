@@ -300,4 +300,22 @@ extension AppState {
     knowledge.indexPendingIfAvailable()
     scheduleHelpers()
   }
+
+  /// When `fitContext` trims older turns from the conversation, semantically recalls relevant
+  /// earlier exchanges within the recall budget and verifies the combined prompt still fits.
+  func promptWithEvictedRecall(
+    promptToFit: String, query: String, imageData: Data?, audioFileURL: URL?,
+    history: [(role: ChatRole, text: String)]
+  ) async -> String {
+    guard let window = resolved?.maxNumTokens else { return promptToFit }
+    let evicted = await engine.lastEvictedHistory
+    let recallBudget = ContextBudget.recallBudget(maxNumTokens: window)
+    guard
+      let recall = await knowledge.recallEvictedTurns(evicted, for: query, budget: recallBudget)
+    else { return promptToFit }
+    let candidate = ContextBudget.promptWithRecall(recall, prompt: promptToFit)
+    let retrimmed = try? await engine.fitContext(
+      text: candidate, imageData: imageData, audioFileURL: audioFileURL, history: history)
+    return retrimmed == false ? candidate : promptToFit
+  }
 }

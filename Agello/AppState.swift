@@ -673,7 +673,13 @@ final class AppState {
         }
         let trimmed = try await self.engine.fitContext(
           text: promptToFit, imageData: imageData, audioFileURL: audioFileURL, history: history)
-        return .ready(trimmed: trimmed || trimmedForFollowUp, prompt: promptToFit)
+        let finalPrompt =
+          trimmed
+          ? await self.promptWithEvictedRecall(
+            promptToFit: promptToFit, query: prompt, imageData: imageData,
+            audioFileURL: audioFileURL, history: history)
+          : promptToFit
+        return .ready(trimmed: trimmed || trimmedForFollowUp, prompt: finalPrompt)
       } catch {
         // Fitting may have emptied the conversation on its way to this error: reseed first.
         self.conversationThreadID = nil

@@ -134,11 +134,16 @@ enum ContextBudget {
     history.reduce(0) { $0 + estimateTokens($1.text) }
   }
 
-  /// Room kept free for the reply when history is trimmed: a quarter of the window for the
-  /// answer plus the reasoning budget, at most a third. A long chat keeps less history, and every
-  /// reply keeps room for a long answer (512 tokens until 2026-11-02 cut them short, probe 23).
+  /// Cap on the answer portion of ``replyReserve(maxNumTokens:thinkingBudget:)``.
+  /// Preserves ~56–60K usable single-prompt tokens in a 64K window while reserving full room for
+  /// long answers plus any Think reasoning budget.
+  static let maxAnswerReserve = 4_096
+
+  /// Room kept free for the reply when history is trimmed: up to ``maxAnswerReserve`` (or a
+  /// quarter of smaller windows) for the answer plus the reasoning budget, capped at a third of
+  /// the window.
   static func replyReserve(maxNumTokens: Int, thinkingBudget: Int?) -> Int {
-    min(maxNumTokens / 3, maxNumTokens / 4 + (thinkingBudget ?? 0))
+    min(maxNumTokens / 3, min(maxNumTokens / 4, maxAnswerReserve) + (thinkingBudget ?? 0))
   }
 
   /// Whether `used` cached tokens + `input` + a reply reserve fit the window.
@@ -169,6 +174,15 @@ enum ContextBudget {
   static func trimmedHistory(
     _ history: [(role: ChatRole, text: String)], budget: Int, tokens: [Int]? = nil
   ) -> [(role: ChatRole, text: String)] {
+    trimHistory(history, budget: budget, tokens: tokens).kept
+  }
+
+  /// Splits `history` into the newest turns that fit `budget` (`kept`, starting on a user turn)
+  /// and the older turns dropped from the front (`evicted`) so callers can semantically recall
+  /// relevant earlier facts.
+  static func trimHistory(
+    _ history: [(role: ChatRole, text: String)], budget: Int, tokens: [Int]? = nil
+  ) -> (kept: [(role: ChatRole, text: String)], evicted: [(role: ChatRole, text: String)]) {
     let textTokens =
       tokens.flatMap { $0.count == history.count ? $0 : nil }
       ?? history.map { estimateTextTokens($0.text) }
@@ -211,7 +225,78 @@ enum ContextBudget {
       }
     }
     while let first = kept.first, first.role != .user { kept.removeFirst() }
-    return kept
+    let evictedCount = max(0, history.count - kept.count)
+    return (kept, Array(history.prefix(evictedCount)))
+  }
+
+  /// Upper bound on tokens reserved for semantically recalled evicted turns.
+  static let maxRecallTokens = 1_536
+
+  /// Token budget for recalled snippets from evicted turns, scaled gently with the window so
+  /// recall never crowds out recent turns or the answer.
+  static func recallBudget(maxNumTokens: Int) -> Int {
+    max(0, min(maxRecallTokens, maxNumTokens / 16))
+  }
+
+  /// Pairs evicted turns into compact user/assistant exchanges suitable for semantic or BM25
+  /// recall. Long turns are capped to keep recalled snippets focused.
+  static func evictedExchanges(_ evicted: [(role: ChatRole, text: String)]) -> [String] {
+    var exchanges: [String] = []
+    var index = 0
+    let perTurnMaxBytes = 1_200
+    func compact(_ text: String) -> String {
+      let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard trimmed.utf8.count > perTurnMaxBytes else { return trimmed }
+      return prefix(trimmed, maxBytes: perTurnMaxBytes) + "…"
+    }
+    while index < evicted.count {
+      let current = evicted[index]
+      let currentText = compact(current.text)
+      if current.role == .user, index + 1 < evicted.count, evicted[index + 1].role == .model {
+        let replyText = compact(evicted[index + 1].text)
+        if !currentText.isEmpty || !replyText.isEmpty {
+          exchanges.append("User: \(currentText)\nAssistant: \(replyText)")
+        }
+        index += 2
+      } else {
+        if !currentText.isEmpty {
+          let label = current.role == .user ? "User" : "Assistant"
+          exchanges.append("\(label): \(currentText)")
+        }
+        index += 1
+      }
+    }
+    return exchanges
+  }
+
+  /// Formats the top-ranked recalled exchanges within `budget` tokens, or nil when none fit.
+  static func recalledContext(exchanges: [String], budget: Int) -> String? {
+    guard !exchanges.isEmpty, budget >= minTruncatedTokens else { return nil }
+    let header = "[Earlier in this conversation — recalled for relevance]"
+    var used = estimateTextTokens(header) + 4
+    var selected: [String] = []
+    for exchange in exchanges {
+      let cost = estimateTextTokens(exchange) + 2
+      if used + cost <= budget {
+        selected.append(exchange)
+        used += cost
+      } else if selected.isEmpty {
+        let room = budget - used - 2
+        if room >= minTruncatedTokens {
+          let maxBytes = Int(Double(room) * bytesPerToken)
+          selected.append(prefix(exchange, maxBytes: maxBytes) + "…")
+        }
+        break
+      }
+    }
+    guard !selected.isEmpty else { return nil }
+    return header + "\n" + selected.joined(separator: "\n---\n")
+  }
+
+  /// Prepends a recalled-history block to `prompt` when present.
+  static func promptWithRecall(_ recall: String?, prompt: String) -> String {
+    guard let recall, !recall.isEmpty else { return prompt }
+    return recall + "\n\n" + prompt
   }
 
   /// Longest prefix of `text` within `maxBytes` UTF-8 bytes (never splits a character).

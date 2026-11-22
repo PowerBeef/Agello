@@ -46,25 +46,39 @@ struct DeviceProfile: Sendable, Equatable {
     availableBytes > 0 && availableBytes < lowMemoryStopBytes
   }
 
-  /// E4B's KV cache per position (24 INT8 caches of the published file): 0.47 GB at 16K. The
-  /// file opened to 128K holds less per position (its global caches, 8,192 bytes, and 31.5 MB of
-  /// local rings), so this bounds both.
+  /// E4B's KV cache per position on the published 32K file (24 INT8 caches): 0.47 GB at 16K.
   static let kvBytesPerToken: UInt64 = 28_672
+
+  /// E4B v2 ring-KV cache costs: 8,192 B/tok for the 4 global layers plus 31.5 MiB fixed local
+  /// sliding-window rings (`1,536` slots across 20 local layers).
+  static let ringKvBytesPerToken: UInt64 = 8_192
+  static let ringKvFixedBytes: UInt64 = 33_030_144
+
+  /// Export window at or above which a model file uses ring-buffer local caches (v2 128K artifact).
+  static let ringKvExportWindowThreshold = 65_536
+
+  /// Positions mapped per sparse KV step (4,096) for a helper running beside detached main heaps.
+  static let sparseHelperStepPositions: UInt64 = 4_096
 
   /// Whether a helper (title, memory, search planning, summary, dictation)
   /// runs beside the chat's conversation instead of replacing it.
   ///
-  /// The runtime copies the chat's KV cache aside while the helper runs and
-  /// restores it in about 0.1 s (2.9 s to reseed 8K tokens of history on the
-  /// Mac). The copy holds only the positions the chat has filled (`usedTokens`; 0.47 GB for 16K
-  /// of them) and lives while the helper runs (the engine restores the chat as soon as the
-  /// helper ends), so it needs that much memory above ``lowMemoryStopBytes``. Short of it, the
-  /// chat's conversation is released before the helper and reseeded after.
-  /// `availableBytes` 0 means not reported: keep. (The iPhone app on a Mac
-  /// reports its physical memory.)
-  static func keepsConversationAcrossHelpers(usedTokens: Int, availableBytes: UInt64) -> Bool {
+  /// With Metal 4 sparse KV mapping snapshots (`copyBufferMappingsFromBuffer:`) on ring-KV models
+  /// (`exportWindow >= 65_536`), the global KV heaps are detached in place without duplication:
+  /// only the fixed local rings (31.5 MiB) plus one 4K sparse step (~32 MiB) for the helper are
+  /// needed above ``lowMemoryStopBytes``. On older non-ring models (`exportWindow == nil` or
+  /// `<= 32_768`), this bounds one copy of `usedTokens`.
+  /// `availableBytes` 0 means not reported: keep.
+  static func keepsConversationAcrossHelpers(
+    usedTokens: Int, availableBytes: UInt64, exportWindow: Int? = nil
+  ) -> Bool {
     guard availableBytes > 0 else { return true }
-    let copy = kvBytesPerToken * UInt64(max(0, usedTokens))
+    let copy: UInt64
+    if let exportWindow, exportWindow >= ringKvExportWindowThreshold {
+      copy = ringKvFixedBytes + ringKvBytesPerToken * sparseHelperStepPositions
+    } else {
+      copy = kvBytesPerToken * UInt64(max(0, usedTokens))
+    }
     return availableBytes >= copy + lowMemoryStopBytes
   }
 
@@ -95,12 +109,10 @@ struct DeviceProfile: Sendable, Equatable {
   static let defaultThinkingBudget = 4_096
 
   /// Room the app needs left as it loads to take ``largeContextTokens``:
-  /// ``roomForStandardContextBytes`` plus the 1.6 GB more a 32K engine peaked at. The memory
-  /// suite's 6.0 GB envelope (5.98 GB left at load) passed every step with 1.3 GB to spare
-  /// (iPhone 17 Pro, 2026-11-10, 32K); nothing between 5.1 and 6.0 GB is measured. Kept for 64K
-  /// until the memory suite measures it on the iPhone (a 64K engine peaks lower than 32K did on
-  /// the M6).
-  static let roomForLargeContextBytes: UInt64 = 5_100_000_000
+  /// calibrated for sparse 64K KV caches + MSL 4.1 FlashAttention (which cut peak footprint by
+  /// ~740 MB vs. dense 32K, peaking at ~1.68 GB on short chats and ~2.04 GB on 5.2K PDFs),
+  /// leaving 700 MB headroom above ``roomForStandardContextBytes`` (3.5 GB).
+  static let roomForLargeContextBytes: UInt64 = 4_200_000_000
 
   /// The window of a load with less than ``roomForStandardContextBytes`` left.
   static let reducedContextTokens = 8_192

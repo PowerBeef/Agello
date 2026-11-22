@@ -350,6 +350,44 @@ final class KnowledgeBase {
     return true
   }
 
+  /// Semantically recalls the most relevant earlier exchanges from `evicted` turns for `query`
+  /// within `budget` tokens (falling back to BM25 keyword matches when no embedder is ready).
+  func recallEvictedTurns(
+    _ evicted: [(role: ChatRole, text: String)], for query: String, budget: Int, limit: Int = 4
+  ) async -> String? {
+    let exchanges = ContextBudget.evictedExchanges(evicted)
+    guard !exchanges.isEmpty, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      budget >= ContextBudget.minTruncatedTokens, limit > 0
+    else { return nil }
+
+    var ranked: [String] = []
+    if let embedder = currentEmbedder(),
+      await textVectorsCached(exchanges, embedder: embedder),
+      let queryVector = try? await embedder.embed(query: query, task: .search)
+    {
+      let key = { (text: String) in embedder.identifier + "\u{0}" + text }
+      let scored = exchanges.enumerated().map { index, text in
+        (index: index, text: text, score: VectorIndex.dot(textVectors[key(text)] ?? [], queryVector))
+      }
+      // Require either semantic similarity above the embedder's threshold or positive keyword overlap
+      // so unrelated earlier turns aren't injected as noise.
+      let keywords = KeywordScorer.scores(query: query, documents: exchanges)
+      ranked = scored
+        .filter { $0.score >= embedder.relatedThreshold || keywords[$0.index] > 0 }
+        .sorted { $0.score != $1.score ? $0.score > $1.score : $0.index > $1.index }
+        .prefix(limit)
+        .map(\.text)
+    } else {
+      let scores = KeywordScorer.scores(query: query, documents: exchanges)
+      ranked = zip(exchanges, scores).enumerated()
+        .filter { $0.element.1 > 0 }
+        .sorted { $0.element.1 != $1.element.1 ? $0.element.1 > $1.element.1 : $0.offset > $1.offset }
+        .prefix(limit)
+        .map(\.element.0)
+    }
+    return ContextBudget.recalledContext(exchanges: ranked, budget: budget)
+  }
+
   /// Wait for chat indexing started by ``indexChats(_:)``.
   func waitForChatIndexing() async {
     await chatIndexTask?.value

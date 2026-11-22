@@ -67,6 +67,9 @@ protocol ChatEngineProtocol: Sendable {
   /// finished with the main conversation as it was. False when it was replaced
   /// by an empty one, or the helper failed: reseed before the next send.
   var lastHelperKeptConversation: Bool { get async }
+  /// Older turns dropped by the most recent ``fitContext`` trim (empty when nothing was trimmed),
+  /// available for semantic recall of evicted context.
+  var lastEvictedHistory: [(role: ChatRole, text: String)] { get async }
   /// The most vision tokens per image the loaded model file accepts (nil when it doesn't say).
   var maxVisionTokenBudget: Int? { get async }
 }
@@ -102,6 +105,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// ``ChatError/generationCancelled`` and the caller must reseed.
   private var cancelRequested = false
   private(set) var lastHelperKeptConversation = false
+  private(set) var lastEvictedHistory: [(role: ChatRole, text: String)] = []
   var maxVisionTokenBudget: Int? {
     capabilities.flatMap { $0.maxVisionTokenBudget > 0 ? $0.maxVisionTokenBudget : nil }
   }
@@ -394,14 +398,24 @@ actor LiteRTChatEngine: ChatEngineProtocol {
 
   private static func makeConversation(
     engine: Engine, resolved: ResolvedInference, options: InferenceOptions,
-    toolsEnabled: Bool, history: [(role: ChatRole, text: String)], samplingSeed: Int? = nil
+    toolsEnabled: Bool, history: [(role: ChatRole, text: String)], samplingSeed: Int? = nil,
+    alreadyTrimmed: Bool = false
   ) async throws -> Conversation {
     let sampler = try SamplerConfig(
       topK: resolved.topK, topP: resolved.topP, temperature: resolved.temperature,
       seed: samplingSeed ?? 0)
     var tools: [any Tool] = toolsEnabled ? [CurrentDateTimeTool(), CalculatorTool()] : []
     if options.webSearchTool { tools.append(WebSearchTool()) }
-    let initial = history.suffix(maxReplayedTurns).map { turn -> LiteRTLM.Message in
+    let replayed: [(role: ChatRole, text: String)]
+    if alreadyTrimmed {
+      replayed = history
+    } else {
+      let budget = ContextBudget.historyBudget(
+        maxNumTokens: resolved.maxNumTokens, input: 0, thinkingBudget: resolved.thinkingBudget,
+        preamble: ContextBudget.preambleTokens(systemPrompt: options.systemPrompt))
+      replayed = ContextBudget.trimmedHistory(history, budget: budget)
+    }
+    let initial = replayed.map { turn -> LiteRTLM.Message in
       switch turn.role {
       case .user: return LiteRTLM.Message(PromptText.neutralized(turn.text), role: .user)
       case .model: return LiteRTLM.Message(PromptText.neutralized(turn.text), role: .model)
@@ -437,38 +451,49 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   }
 
   /// A new conversation holding `history`, sampling or not as it is now.
-  private func rebuild(history: [(role: ChatRole, text: String)]) async throws {
+  private func rebuild(
+    history: [(role: ChatRole, text: String)], alreadyTrimmed: Bool = false
+  ) async throws {
     guard let engine, let resolved, let options else { throw ChatError.engineNotReady }
     guard GPUGate.isOpen else { throw GPUGate.closedError }
     let conversation = try await Self.makeConversation(
       engine: engine, resolved: resolved, options: options, toolsEnabled: toolsEnabled,
-      history: history, samplingSeed: samplingSeed
+      history: history, samplingSeed: samplingSeed, alreadyTrimmed: alreadyTrimmed
     )
     self.conversation = conversation
     seedTokens = await Self.seedTokens(
-      conversation, engine: engine, history: history, systemPrompt: options.systemPrompt)
+      conversation, engine: engine, history: history, systemPrompt: options.systemPrompt,
+      resolved: resolved, alreadyTrimmed: alreadyTrimmed)
   }
 
   /// What a new conversation prefills before its first message: its preamble and replayed
   /// history as the runtime renders them, plus BOS; estimated if the runtime can't count.
   private static func seedTokens(
     _ conversation: Conversation, engine: Engine, history: [(role: ChatRole, text: String)],
-    systemPrompt: String
+    systemPrompt: String, resolved: ResolvedInference? = nil, alreadyTrimmed: Bool = false
   ) async -> Int {
     if let preface = try? conversation.renderPrefaceIntoString(),
       let exact = try? await engine.countTokens(preface)
     {
       return exact + 1
     }
-    return ContextBudget.preambleTokens(systemPrompt: systemPrompt)
-      + ContextBudget.estimateHistory(Array(history.suffix(maxReplayedTurns)))
+    let preamble = ContextBudget.preambleTokens(systemPrompt: systemPrompt)
+    let replayed: [(role: ChatRole, text: String)]
+    if alreadyTrimmed || resolved == nil {
+      replayed = history
+    } else if let resolved {
+      let budget = ContextBudget.historyBudget(
+        maxNumTokens: resolved.maxNumTokens, input: 0, thinkingBudget: resolved.thinkingBudget,
+        preamble: preamble)
+      replayed = ContextBudget.trimmedHistory(history, budget: budget)
+    } else {
+      replayed = history
+    }
+    return preamble + ContextBudget.estimateHistory(replayed)
   }
 
   private static let signposter = OSSignposter(
     subsystem: "com.patricedery.agello", category: .pointsOfInterest)
-
-  /// Upper bound on replayed turns (see ``makeConversation``).
-  static let maxReplayedTurns = 20
 
   // MARK: Context window
 
@@ -481,6 +506,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     history: [(role: ChatRole, text: String)]
   ) async throws -> Bool {
     guard let resolved else { throw ChatError.engineNotReady }
+    lastEvictedHistory = []
     if conversation == nil { try await rebuild(history: []) }
     guard conversation != nil else { throw ChatError.engineNotReady }
     let window = resolved.maxNumTokens
@@ -495,7 +521,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
 
     // The message alone, on an empty conversation: preamble, tools and the message, counted.
-    try await rebuild(history: [])
+    try await rebuild(history: [], alreadyTrimmed: true)
     let alone = await tokensAfterPrefill(text: text, imageData: imageData, audioFileURL: audioFileURL)
     guard fits(alone) else { throw ChatError.messageTooLong }
     var budget = ContextBudget.historyBudget(
@@ -503,13 +529,16 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     var turnTokens: [Int] = []
     for turn in history { turnTokens.append(await textTokens(PromptText.neutralized(turn.text))) }
     var trimmed: [(role: ChatRole, text: String)] = []
+    var evicted: [(role: ChatRole, text: String)] = history
     var total = alone
     // The turns' own template tokens aren't counted per turn: check the rebuilt conversation and
     // trim by what it's over until it fits.
     for _ in 0..<4 {
-      trimmed = ContextBudget.trimmedHistory(history, budget: budget, tokens: turnTokens)
+      let split = ContextBudget.trimHistory(history, budget: budget, tokens: turnTokens)
+      trimmed = split.kept
+      evicted = split.evicted
       if trimmed.isEmpty { break }
-      try await rebuild(history: trimmed)
+      try await rebuild(history: trimmed, alreadyTrimmed: true)
       total = await tokensAfterPrefill(text: text, imageData: imageData, audioFileURL: audioFileURL)
       if fits(total) { break }
       let over =
@@ -517,11 +546,13 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         + ContextBudget.safetyMargin - window
       budget -= max(over, ContextBudget.perTurnOverhead)
       trimmed = []
+      evicted = history
     }
     if trimmed.isEmpty {
-      try await rebuild(history: [])
+      try await rebuild(history: [], alreadyTrimmed: true)
       total = alone
     }
+    lastEvictedHistory = evicted
     Log.engine.info(
       "context: was \(used), now \(total) of \(window) (alone \(alone)); replaying \(trimmed.count)/\(history.count) turns"
     )
@@ -574,7 +605,8 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     let keep =
       conversation != nil
       && DeviceProfile.keepsConversationAcrossHelpers(
-        usedTokens: usedTokens(), availableBytes: MemoryProbe.availableBytes())
+        usedTokens: usedTokens(), availableBytes: MemoryProbe.availableBytes(),
+        exportWindow: ContextBudget.exportWindow(reported: capabilities?.maxContextTokens))
     if !keep { conversation = nil }
     return keep
   }
@@ -1148,7 +1180,11 @@ actor MockChatEngine: ChatEngineProtocol {
   /// Scripted `fitContext` outcome (tests): `.success(true)` = trimmed.
   private(set) var fitResult: Result<Bool, ChatError> = .success(false)
   private(set) var fitCalls = 0
+  private(set) var lastEvictedHistory: [(role: ChatRole, text: String)] = []
   func setFitResult(_ result: Result<Bool, ChatError>) { fitResult = result }
+  func setEvictedHistory(_ evicted: [(role: ChatRole, text: String)]) {
+    lastEvictedHistory = evicted
+  }
 
   func fitContext(
     text: String, imageData: Data?, audioFileURL: URL?,
