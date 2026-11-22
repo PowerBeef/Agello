@@ -222,7 +222,7 @@ can be built against any checkout of our LiteRT-LM. The iPhone still confirms wh
 ```sh
 swift build -c release --scratch-path build/cli/release            # then build/cli/release/release/agello
 scripts/cli-check.sh                                                # does it still build? (every harness run ends with it)
-scripts/cli-test.sh unit [Class[/method]]                           # 311 unit tests, about a minute, no phone
+scripts/cli-test.sh unit [Class[/method]]                           # 317 unit tests, about a minute, no phone
 scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-model scenarios on this Mac's GPU
 build/cli/release/release/agello bench --only todo,explain --out build/cli/runs/x.jsonl
 scripts/cli-bench.sh release next -- --only explain                 # two runtime builds, in turns, with the comparison
@@ -252,11 +252,11 @@ scripts/mac-ready.sh | cli-load.py                                   # is the Ma
   engine calls needs its twin in `AgelloCLI/Sources/Platform/`; an engine file elsewhere must be
   added to the list. `cli-check.sh` says when an app change broke it.
 - **It runs as the iPhone decides:** the engine sees a simulated app limit, the iPhone 17 Pro's
-  8 GiB (8.59 GB) by default, which leaves more than 5.1 GB of room at load, so the app asks for
-  65,536 and the published model file caps it at 32,000, as on the phone. `--memory-limit` can
-  only lower it: a limit that leaves less room steps down to 16K or 8K. Six bench cases were
-  checked to reach the engine exactly as on the iPhone 17 Pro; the replies themselves differ
-  between the GPUs.
+  8 GiB (8.59 GB) by default, which leaves more than 4.2 GB of room at load, so the app asks for
+  65,536 and the shipped v2 model file runs at the full 65,536, as on the phone (older 32K files
+  cap it at 32,000). `--memory-limit` can only lower it: a limit that leaves less room steps down
+  to 16K or 8K. Six bench cases were checked to reach the engine exactly as on the iPhone 17 Pro;
+  the replies themselves differ between the GPUs.
 - **Nothing of this Mac's is touched:** models are read from `~/Models/agello` and never
   changed, caches go to `~/Models/agello/cache/agello-cli/<build id>/`, tests run with their home
   folder redirected to `build/cli/test-home`, and chats live in memory.
@@ -406,8 +406,8 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
   suffixes (`test06b_…`), and keep `test90_Benchmark` last.
 - **Long prompts.** The engine counts a message's tokens exactly (probe 17),
   and a send must leave room for a reply (`agello-inference-rules`, "Context
-  window", has the reserve): about 21K tokens fit chat's 32K window, about 10K
-  at 16K. Digits cost a token each. Longer prompts, or a test that needs one
+  window", has the reserve): about 56K–60K tokens fit a 64K window, about
+  23K–27K at 32K, about 10K–11K at 16K. Digits cost a token each. Longer prompts, or a test that needs one
   window whatever the phone's memory, need
   `appState.options.maxNumTokensOverride` plus
   `await appState.applyCurrentOptions()`; `tearDown` restores the options.

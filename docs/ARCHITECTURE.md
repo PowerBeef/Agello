@@ -34,11 +34,11 @@ flowchart TB
 | --- | --- |
 | `AppState` | The hub. Runs every engine operation (load, settings change, benchmark, delete, helpers) one at a time; binds the native conversation to the open chat; drives send, regenerate and edit through one generation path; streams replies into SwiftData about ten times a second; persists settings. |
 | `LiteRTChatEngine` | The single owner of a LiteRT-LM `Engine` and `Conversation`. Loads on the GPU through a multimodal → text-only ladder, validates each engine, keeps every request inside the KV cache, and runs JSON-constrained helper prompts. `MockChatEngine` implements the same `ChatEngineProtocol` with a script, for tests and `--mock-engine`. |
-| `InferencePlanner`, `ContextBudget` | Pure, tested resolution of options and device memory into KV-cache size, sampler, thinking and visual-token budgets, and speculative decoding; token estimates, history trimming and reply caps. Decides when a settings change needs an engine rebuild. |
+| `InferencePlanner`, `ContextBudget` | Pure, tested resolution of options and device memory into KV-cache size, sampler, thinking and visual-token budgets, and speculative decoding; token estimates, token-budgeted history trimming, evicted-turn recall formatting, and reply caps. Decides when a settings change needs an engine rebuild. |
 | `ToolBudget`, tools | Date/time, calculator and web search tools, each generation round's share of the remaining context, and the live tool status. |
 | Chat history | A SwiftData `VersionedSchema` (V1 → V3) with a migration plan: threads, turns, projects, documents and their passages, memories. |
 | `MarkdownDocument`, `MarkdownView` | Pure, tested parsing (swift-markdown) into typed blocks, with display math split out and inline LaTeX converted to Unicode; rendering with syntax-highlighted code and SwiftMath typesetting. |
-| `KnowledgeBase` | Stores attached files as page-aware passages, embeds them (and chats) with EmbeddingGemma in the background, and finds relevant passages and related chats. |
+| `KnowledgeBase` | Stores attached files as page-aware passages, embeds them (and chats) with EmbeddingGemma in the background, and finds relevant passages, related chats, and evicted-turn recall snippets. |
 | `DocumentIngestor`, `Chunker`, `FileContext` | Pure, tested file reading (PDFKit, Vision text recognition, text formats), splitting into ~400-token passages with page numbers, and the choice of what the model reads within half the context window. |
 | `SystemPrompt` | Composes the base prompt, personalization, memories, project instructions and voice mode; any change rebuilds the conversation before the next message. |
 | `WebResearch` | Sources chosen by the planner's topic (`SearchTopic`): Wikipedia, Wikidata, Wikivoyage, Wiktionary, Wikiquote and Current events (`ReferenceSources.swift`), Apple Weather and Apple Maps (`AppleSources.swift`), the ECB's rates, Crossref, PubMed; a structured answer pinned first, pages read in parallel with a built-in readable-text extractor, passages ranked with EmbeddingGemma, numbered sources. Only sources whose terms permit the app, no API keys (2026-11-12). `WebSearchTool` exposes it to the model in automatic mode. |
@@ -56,8 +56,8 @@ flowchart TB
 1. Apply any setting changed since the last message (the **Think** toggle applies to *this* message).
 2. Build file context: whole files, cited passages, or a cached summary.
 3. Run a web search, if asked.
-4. Bind the native conversation to this chat, reseeding it from history if another chat or a cancellation used it last, or a helper that didn't keep it (the runtime keeps it when memory allows one more copy of the KV cache).
-5. Fit the context: estimate the message, trim older turns if needed, or reject a message that can never fit.
+4. Bind the native conversation to this chat, reseeding it from history if another chat or a cancellation used it last, or a helper that didn't keep it (on exclusive helper switches, the runtime detaches sparse global KV mappings via Metal 4 `copyBufferMappingsFromBuffer:` when memory allows).
+5. Fit the context: count the message, trim older turns by token budget if needed (recalling relevant evicted-turn snippets via `KnowledgeBase` and re-verifying fit), or reject a message that can never fit.
 6. Save the user turn and a placeholder reply, then stream tokens into it.
 7. Afterwards: learn memories, write a title after the first exchange, update Spotlight.
 

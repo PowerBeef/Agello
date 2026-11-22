@@ -20,18 +20,18 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   long awaits, so without it two loads interleave and hold two engines. Never
   call `serialized` from inside a serialized operation: that deadlocks.
 - `helperJSON`, `helperTexts`, and `transcribe` run in throwaway
-  conversations. The runtime keeps the main conversation beside them: it
-  copies its KV cache aside while the helper runs and restores it when the
-  engine switches back (about 0.1 s, against 2.9 s to reseed 8K tokens on the
-  Mac; the copy is 917.5 MB at a 32,000-token window). `endHelper` switches
-  back right away (the chat's `getTokenCount()` does it), so the copy, one KV
-  cache, lives only while the helper runs; otherwise it would wait for the
-  next message.
-- The engine keeps the chat only when a copy of the positions it has filled
-  fits above `lowMemoryStopBytes`
-  (`DeviceProfile.keepsConversationAcrossHelpers(usedTokens:)`: 28,672 bytes
-  a position, the published file's; the snapshot holds only the filled
-  positions, so in a 64K window a short chat keeps it cheaply).
+  conversations. On exclusive helper switches (`agello-one-20261122`+), the
+  runtime keeps the main conversation beside them by detaching/restoring its
+  sparse global KV caches via Metal 4 `MTL4CommandQueue.copyBufferMappingsFromBuffer:`
+  (zero-blit page-table handoff; only the 1,536-slot local ring buffers blit on
+  v2). `endHelper` switches back right away (the chat's `getTokenCount()` does
+  it), so the detached snapshot lives only while the helper runs.
+- The engine keeps the chat only when `GPUGate.isOpen` and the helper snapshot
+  plus helper KV pages fit above `lowMemoryStopBytes`
+  (`DeviceProfile.keepsConversationAcrossHelpers(usedTokens:exportWindow:)`:
+  for the v2 ring-KV model with `exportWindow >= 65_536`, counts the fixed
+  31.5 MB local rings + 8,192 B/token up to 4,096 helper positions; for 32K
+  files without rings, 28,672 B/token).
   Otherwise it releases the main conversation *before* the helper and leaves
   an **empty** one, and the caller must reseed history before the next send.
   Callers ask `lastHelperKeptConversation` (`AppState.afterHelper`) and
@@ -55,9 +55,9 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   `runSend` caps output with `ContextBudget.outputCap` and throws
   `contextFull` when there's no room.
 - Budgets use the positions LiteRT-LM allocates, not the request:
-  `ContextBudget.allocatedPositions` (the app's 64K request gets 32,000
-  with the published model file). The 64-token margin is what keeps an
-  MTP verify round inside.
+  `ContextBudget.allocatedPositions` (the app's 64K request gets the full
+  65,536 with the shipped v2 128K model, or 32,000 with older 32K files). The
+  64-token margin is what keeps an MTP / `verify_8` round inside.
 - With tools offered, the room is split (`ToolBudget.plan`): an eighth per
   tool result (budgeted in estimated tokens), at most two calls; the first
   round, where nearly every reply is answered, gets half the room plus Think's
@@ -82,8 +82,12 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
 - `fitContext`: if the message fits after what's cached, nothing happens.
   Otherwise it measures the message on an empty conversation (too long:
   `messageTooLong`, and the conversation is left empty, so AppState unbinds
-  the chat after any fit error), trims the history with exact per-turn counts
-  and checks the rebuilt conversation, trimming by the overshoot.
+  the chat after any fit error), trims the history by token budget with exact
+  per-turn counts (`ContextBudget.trimHistory` returns `(kept, evicted)` and
+  `makeConversation` no longer uses a hard 20-turn cap), records evicted turns
+  in `lastEvictedHistory` so `AppState.promptWithEvictedRecall` can recall
+  relevant snippets via `KnowledgeBase.recallEvictedTurns` and re-verify
+  `fitContext`, and checks the rebuilt conversation, trimming by any overshoot.
 - Text from outside the app's prompts can't carry chat markers:
   `PromptText.neutralized` puts a zero-width joiner inside `<|` and `|>` in the
   message, system prompt, replayed history, helper prompts and web results
@@ -98,32 +102,26 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   guards it with `cachedTokenCount()`.
 - Chat's cache isn't a setting (since 2026-11-02; a saved custom window is
   dropped at launch): a fixed 64K (65,536 requested) on the 12 GB iPhones
-  (the floor, 11 GB or more of physical memory; the maintainer's choice,
-  2026-11-14, 32K from 2026-11-09), capped by the model file: a load reads
-  the file's export window (`ContextBudget.exportWindow(reported:)` from
-  ModelInfo; the published file allocates 32,000 positions, the file opened
-  to 128K 65,536) and every plan uses it (`InferencePlanner.resolve(...,
-  exportWindow:)`, in `load` and `plan(for:)` alike, or a settings change
-  would reload). `DeviceProfile.defaultMaxTokens`' smaller values only serve
-  the iPhone app run on a Mac with less. On our runtime decode hardly depends
-  on the window (iPhone 17 Pro: 39 / 42 / 42 tok/s at 8K / 16K / 32K), and the
-  KV caches cost only what a chat fills (sparse KV, the runtime's default):
-  on the M6 a short chat at 64K holds 0.86 GB (1.09 at 32K before), a 44K
-  prompt peaks at 1.8 GB; the iPhone's numbers are pending. Each load measures
-  the room left (`MemoryProbe.roomBytes`: the app's memory limit less its
-  footprint, nil where no limit is reported) after the old engine is gone, and
-  steps down
-  (`DeviceProfile.contextTokens`): 16K below 5.1 GB (an estimate made for
-  32K, kept for 64K until the memory suite measures it: 3.5 GB plus 32K's
-  extra 1.6 GB; the memory suite's 6.0 GB envelope passed with 1.3 GB to
-  spare on 2026-11-10, nothing lower is measured), 8K below
-  3.5 GB (at 3.38 GB a 16K load, an image and a 2K-token prompt were killed,
-  memory suite at 3.5 GB usable). Physical memory decides, not the reported
-  limit, which has read 6.44 GB on the iPhone 17 Pro before rising to
-  8.59 GB. The engine keeps that window for later plans
-  (`loadedContextTokens`), so a settings change doesn't reload to try a
-  larger one. Budgets read the engine's `resolved.maxNumTokens`, never the
-  default. Don't raise it without the memory suite.
+  (the floor, 11 GB or more of physical memory), capped by the model file: a
+  load reads the file's export window (`ContextBudget.exportWindow(reported:)`
+  from ModelInfo; the shipped v2 128K file runs at the full 65,536) and every
+  plan uses it (`InferencePlanner.resolve(..., exportWindow:)`, in `load` and
+  `plan(for:)` alike, or a settings change would reload).
+  `DeviceProfile.defaultMaxTokens`' smaller values only serve the iPhone app run
+  on a Mac with less. Global KV caches are Metal 4 sparse buffers trimmed on
+  reset/rewind and local KV caches are 1,536-slot rings in v2: on iPhone 17 Pro
+  (2026-11-22), full 65,536 context held `3.18–3.45 GB` (`2.99–3.26 GB` free
+  below jetsam). Each load measures the room left (`MemoryProbe.roomBytes`: the
+  app's memory limit less its footprint, nil where no limit is reported) after
+  the old engine is gone, and steps down (`DeviceProfile.contextTokens`): 16K
+  below **4.2 GB** (`DeviceProfile.roomForLargeContextBytes`, validated by the
+  iPhone `memory` suite on 2026-11-22 with 0 warnings across `6.0 / 5.0 / 4.0 /
+  3.5 GB`), 8K below 3.5 GB. Physical memory decides, not the reported limit,
+  which has read 6.44 GB on the iPhone 17 Pro before rising to 8.59 GB. The
+  engine keeps that window for later plans (`loadedContextTokens`), so a
+  settings change doesn't reload to try a larger one. Budgets read the engine's
+  `resolved.maxNumTokens`, never the default. Don't raise it without the memory
+  suite.
 - Think's reasoning budget is 4,096 tokens on every device
   (`DeviceProfile.defaultThinkingBudget`, the maintainer's choice on
   2026-11-10; 1,024 cut a coding plan mid-word on the iPhone 17 Pro), and not
@@ -133,14 +131,15 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   decoding, the sampler, vision, audio, image detail and the system prompt
   are the app's choices, set in memory by tests and the Mac command line
   only.
-- When history is trimmed, the reply reserve stays free: a quarter of the
-  window plus the reasoning budget, at most a third
-  (`ContextBudget.replyReserve`): 8,000 tokens at 32K and 10,666 with Think,
-  4,096 and 5,461 at 16K, 2,048 and 2,730 at 8K (512 plus reasoning before
-  2026-11-02). A message fits when it leaves that reserve after the preamble:
-  about 21K tokens of English at 32K, about 10K at 16K; digits cost a token
-  each. Tests with longer prompts set
-  `maxNumTokensOverride` in memory (see `test15_LongContextDigitFidelity`).
+- When history is trimmed, the reply reserve stays free
+  (`ContextBudget.replyReserve`): the answer share is capped at
+  `maxAnswerReserve = 4,096`, plus the reasoning budget, at most a third of the
+  window (`min(maxNumTokens / 3, min(maxNumTokens / 4, 4_096) + (thinkingBudget ?? 0))`):
+  4,096 tokens at 64K (8,192 with Think), 4,096 at 32K (8,192 with Think),
+  4,096 at 16K (5,461 with Think), 2,048 at 8K (2,730 with Think). That unlocks
+  ~56K–60K usable single-prompt tokens in a 64K chat (~10K–11K at 16K); digits
+  cost a token each. Tests with longer prompts set `maxNumTokensOverride` in
+  memory (see `test15_LongContextDigitFidelity`).
 
 ## Engine lifecycle
 
@@ -182,16 +181,19 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   digits past position 2,048 with 16-bit GPU activations ("2026" becomes
   "202026"; LiteRT-LM #3913): it computes rotary angles from a float copy of
   the position, which FP16 can't hold exactly above 2,048.
-  - `ModelCatalog.e4b` downloads a copy whose rotary positions are split
-    (`512·h + l`) so the rotary math stays exact up to 32,767, M1-class GPUs
-    included (2,048-token blocks, the first revision, still missed digits
-    there). It's pinned to a Hugging Face commit; probes 10–12 prove it.
+  - `ModelCatalog.e4b` downloads `gemma-4-E4B-it-agello-v2.litertlm` (1,536-slot
+    local KV rings, 128K shared Dual-`GATHER` float16-exact rotary tables with
+    <0.001 rad error across 0..131,071, and `verify_8`), built via
+    `tools/model-surgery/build_v2.sh` and pinned to a Hugging Face commit;
+    `test27_NeedleTable` (90/90) and `test28_WindowPositions` (12/12 exact up to
+    65,534 on iPhone 17 Pro) prove it.
   - The app runs in 16-bit activations everywhere, with no FP32 switch.
   - Don't point the catalog at the unpatched file, and don't add precision
     switching back.
-  - When the model is updated, re-apply `patch_rope.py --split --block 512` (see
-    `agello-litert-update`), then run `test15_LongContextDigitFidelity`
-    and probe 12.
+  - When the upstream model is updated, re-apply `patch_rope.py --split --block 512`
+    then `build_v2.sh` (see `agello-litert-update`), then run
+    `test15_LongContextDigitFidelity`, `test27_NeedleTable`, and
+    `test28_WindowPositions`.
 - Speculative decoding (MTP) breaks JSON-schema constrained decoding on
   device: the draft and verify states share
   one grammar matcher, so verify masks come from the wrong position and a
@@ -207,12 +209,9 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   Search plan's `kind`). Free strings are fine.
 - Don't trust the model file's `thinking` or `functionCalling` flags: Gemma 4
   files report both as unsupported, yet both work.
-- With MTP on, the shipped runtime (`agello-one-20261115`) rewrites a reply's last token in the
-  KV cache when the reply stops inside a round (probe 35, 2026-11-17): the next turn sees "40"
-  for a reply that streamed "400". Fixed in the fork's `e62e6ff1` (`Tasks` rolled back one token
-  past the stop). Until a release with it is vendored, a check on what the model remembers of a
-  short answer (a number, a word) can fail for this alone: run it against the fork
-  (`LITERTLM_PACKAGE=../LiteRT-LM scripts/cli-test.sh …`) before blaming a prompt.
+- With MTP on, `agello-one-20261115` used to rewrite a reply's last token in
+  the KV cache when the reply stopped inside a round (probe 35, 2026-11-17).
+  Fixed in fork `e62e6ff1` and shipped in `agello-one-20261122`.
 - Sampling (probe 18): with MTP on, every reply is greedy whatever the
   preset; with MTP off the conversation's sampler applies, but every
   conversation starts at seed 0, so a rebuilt conversation repeats the same

@@ -192,17 +192,17 @@ Every roadmap deliverable has a stable ID checked off with its commit SHA once v
 
 Every phase is measured on **iPhone 17 Pro (A19 Pro, 12 GB, Release/Bench configuration, nominal thermal start)** against explicit engineering targets:
 
-| Metric | Current (`agello-one-20261115`) | Target (Phases 1–4 Complete) | Gate Suite / Tool |
-| --- | --- | --- | --- |
-| **Time to First Token (short chat)** | `~0.42 s` | **`<= 0.30 s`** | `bench-direct.sh` / `bench` |
-| **Prefill Throughput (1,024-tok chunks)** | `~1,900 tok/s` (`539 ms`/1K) | **`>= 2,500 tok/s` (`<= 410 ms`/1K)** | `phone-bench.sh` (`file-report`) |
-| **Sustained Decode (chat / Think)** | `46 tok/s` / `38 tok/s` | **`53–60 tok/s` / `44–50 tok/s`** | `phone-bench.sh` + `bench` |
-| **Copy / Rewrite Decode (`verify_8`)** | `46–60 tok/s` (`verify_4`) | **`65–85+ tok/s`** | `phone-bench.sh` (code/doc edit) |
-| **Model Load (cold / warm)** | `~8–9 s` / `~1.2–3 s` | **`<= 2.0 s` / `<= 0.4 s`** | `calibrate` + `telemetry.py` |
-| **40-Page PDF Index (768-dim)** | `1.9 s` on GPU (blocks E4B) | **`<= 1.2 s` on ANE (0% GPU block)** | `files` suite |
-| **64K Window Peak Footprint (45K + image + helper)** | `2.49 GB` (lab 128K file) | **`<= 2.25 GB` (shipped v2 file)** | `memory` + `WindowQualityProbes` |
-| **128K RoPE Max Phase Error (`0..131,071`)** | `0.239 rad` (`window_128k.py`) | **`< 0.0008 rad` (Dual-`GATHER`)** | `probes` (exact digit copy to 64K+) |
-| **Background GPU / Adversarial Tool Kills** | Unprotected race paths | **`0` kills / `100%` injection block** | `ui` + adversarial agent suite |
+| Metric | Baseline (`agello-one-20261115`) | Measured (`agello-one-20261122` + v2) | Target (Phases 1–4 Complete) | Gate Suite / Tool |
+| --- | --- | --- | --- | --- |
+| **Time to First Token (short chat)** | `~0.68 s` (`email` cool) | **`0.64 s`** (`email` `−4.9%`, `typo-fix 0.65 s −6.5%`) | **`<= 0.30 s`** | `bench-direct.sh` / `phone-bench.sh` |
+| **Prefill Throughput (`file-report` 5.1K)** | `1,321 tok/s` (`3.94 s` TTFT) | **`1,443 tok/s`** (`+9.2%`, peak `1,466`, `3.58 s` TTFT) | **`>= 1,600+ tok/s`** | `phone-bench.sh` (`file-report`) |
+| **Sustained Decode (chat / Think)** | `53.1 / 46.7 tok/s` (60% clean) | **`54.2 / 47.9 tok/s`** (**85%** clean, `0` host copies) | **`53–60 tok/s` / `44–50 tok/s`** | `phone-bench.sh` + `bench` |
+| **Copy / Rewrite Decode (`typo-fix`)** | `81.1 tok/s` (`verify_4`) | **`83.4–84.3 tok/s`** (v1); **`195.3 tok/s`** on M6 w/ v2 `verify_8` | **`85–130+ tok/s`** (v2 `verify_8` on iPhone) | `phone-bench.sh` (code/doc edit) |
+| **Model Load (warm)** | `~1.2–3 s` | **`~0.70 s`** (`engine.init` warm on iPhone w/ `MTLBinaryArchive`) | **`<= 0.7 s` warm** | `phone-bench.sh` + `telemetry.py` |
+| **40-Page PDF Index (768-dim)** | `1.9 s` on GPU (blocks E4B) | `1.9 s` on GPU (Phase 4 `P4.1` pending) | **`<= 1.2 s` on ANE (0% GPU block)** | `files` suite |
+| **64K Window Peak Footprint** | `2.49 GB` (lab 45K) | **`3.18 GB`** at full **65,536** (`3.26 GB` free); **`3.45 GB`** at 59K+`verify_8` | **`<= 3.5 GB`** at full 64K (achieved) | `memory` + `WindowQualityProbes` |
+| **128K RoPE Max Phase Error (`0..131,071`)** | `0.239 rad` (old `window_128k.py`) | **`< 0.001 rad`** (Dual-`GATHER`, **12/12 exact to 65,534**, **90/90** needles) | **`< 0.001 rad`** (achieved) | `probes` (exact digit copy to 64K+) |
+| **Background GPU / Adversarial Tool Kills** | Unprotected race paths | **`0` background GPU kills** (`ui` 26/26 + live call test); Phase 5 tools pending | **`0` kills / `100%` injection block** | `ui` + adversarial agent suite |
 
 ### Manual checks
 

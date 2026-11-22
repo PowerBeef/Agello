@@ -37,7 +37,7 @@ Chats, photos, files and recordings stay on the phone. The network is used only 
 <img src="docs/images/readme/icons/fast.svg" width="40" height="40" alt="">
 
 **Fast**<br>
-On an iPhone 17 Pro: about **half a second** to the first word and **40 to 50 tokens a second** as it writes, depending on how warm the phone is. A 40-page PDF is indexed in under 2 seconds.
+On an iPhone 17 Pro: about **0.6 s** to the first word, **48 to 54 tokens a second** in normal chat (**83+ tok/s** on edits/rewrites), up to **1,440+ tok/s** prefill on long files, and a full **64K context window** at **3.2–3.5 GB** peak RAM. A 40-page PDF is indexed in under 2 seconds.
 
 </td>
 <td width="33%" valign="top">
@@ -162,7 +162,7 @@ Every message takes one path through `AppState`. Pending settings are applied, t
 <img src="docs/images/readme/icons/rotary.svg" width="40" height="40" alt="">
 
 **Long chats on the GPU ([LiteRT-LM #3913](https://github.com/google-ai-edge/LiteRT-LM/issues/3913))**<br>
-With 16-bit activations on the GPU, Gemma 4 started repeating digits in long chats ("2026" became "202026"). The model computes rotary angles from a float copy of each token's position, and float16 can't hold every integer past 2,048. Until this is fixed upstream, Agello downloads a copy of the model whose graph splits positions into 512-token blocks, which keeps those values exact to 32K tokens. The weights are unchanged, and long chats keep float16 speed instead of falling back to float32.
+With 16-bit activations on the GPU, Gemma 4 started repeating digits in long chats ("2026" became "202026"). The model computes rotary angles from a float copy of each token's position, and float16 can't hold every integer past 2,048. Agello ships a graph-patched v2 model (`gemma-4-E4B-it-agello-v2.litertlm`: shared Dual-`GATHER` 128K rotary tables with <0.001 rad error, 1,536-slot local KV rings, and `verify_8`), exact through the full 64K window on iPhone 17 Pro at float16 speed with unchanged weights (the standard 32K 512-block file stays on the same repo for stock LiteRT-LM users).
 
 The workaround came out of the discussion on the issue:
 - [@john-rocky](https://github.com/john-rocky): the copy-fidelity suite that first showed the errors growing with prompt length, checks of the patched files on an M4 Max and an Android GPU, and the finding that a Gemma 4 E2B file exported with litert-torch's RoPE composite avoids the problem at the source ([litert-torch#1343](https://github.com/google-ai-edge/litert-torch/issues/1343)).
@@ -179,7 +179,7 @@ The workaround came out of the discussion on the issue:
 **A context window that never overflows**<br>
 Overflowing LiteRT-LM's KV cache corrupts its native heap, so every message is budgeted first:
 - each turn is rendered the way the runtime will see it, and counted with the model's own tokenizer;
-- older turns are trimmed, and replies are capped;
+- older turns are trimmed by token budget with semantic/keyword recall of evicted turns, and replies are capped;
 - tool results get their own budgets, and tool rounds are bounded.
 
 A message that can't fit is explained, never crashed on.
@@ -327,7 +327,7 @@ Agello is licensed under the [Apache License 2.0](LICENSE). [NOTICE](NOTICE) cov
 | LiteRT-LM | Vendored in `Vendor/LiteRT-LM` | Apache 2.0 |
 | swift-markdown, swift-cmark | Swift packages | Apache 2.0, BSD 2-Clause |
 | SwiftMath | Swift package | MIT |
-| Gemma 4 E4B (litert-community build, rotary positions patched), EmbeddingGemma 2 | Downloaded at runtime | Apache 2.0 |
+| Gemma 4 E4B (litert-community build, v2 graph-patched), EmbeddingGemma 2 | Downloaded at runtime | Apache 2.0 |
 
 ## Acknowledgements
 

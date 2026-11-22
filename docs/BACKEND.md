@@ -1,16 +1,15 @@
 # The backend: our own runtime
 
-A plan, from the maintainer's direction of 2026-11-10. Where it stands (2026-11-15): B0, B1 (its
-iPhone suites passed on 2026-11-12), B2 and B3 are done. The runtime is one repository,
-`PowerBeef/agello-litert-lm`, with one branch, `main`, since 2026-11-15, and one checkout on this
-Mac, `../LiteRT-LM`. Both halves of B4 are done: the Mac's ("The ledger", below) and the iPhone's, the bench on
-the fork's `c137900d`, accepted as the baseline on 2026-11-17. B5, the performance work
-([PERFORMANCE.md](PERFORMANCE.md)), is under way. B6 is in part: the first release built from the
-one repository, `agello-one-20261115` (fork `6da75396`, build `0c749789100a`), ships in the app
-since 2026-11-15 (commit `39daed1`), after the iPhone comparisons of that build (the ledger).
-Still missing for B6: the fork's reference pages describe the three-repository layout in places,
-and the phone suites weren't rerun on the vendored package (the maintainer's choice: it is the
-build the comparisons ran). What's left to run, in order, is in
+A plan, from the maintainer's direction of 2026-11-10. Where it stands (2026-11-22): B0–B4 and
+B6 are done. The runtime is one repository, `PowerBeef/agello-litert-lm`, with one branch, `main`,
+and one checkout on this Mac, `../LiteRT-LM`. Release `agello-one-20261122` (fork `17f74284`,
+build `47b132c0cbd6`), carrying Phases 1–3 of [ROADMAP.md](ROADMAP.md) (MSL 4.1 FlashAttention,
+zero-copy NEON greedy sampling, persistent `MTLBinaryArchive`, Metal 4 `copyBufferMappingsFromBuffer:`
+helper snapshots, `verify_8` speculative rounds, and Apple10-tuned `ConvAppleMPP`), ships in the
+app (commit `136331a`) alongside the published v2 64K/ring-KV/`verify_8` model
+(`gemma-4-E4B-it-agello-v2.litertlm`, commit `c71dcda`), after passing the full iPhone 17 Pro
+hardware gate (`phone-bench.sh`, `inference`, `files`, `memory`, `ui`, and 64K `probes`). What's
+next (Phase 4 ANE/multimodal and Phase 5–6 agentic features) is tracked in
 [ROADMAP.md](ROADMAP.md#current-status), "Current status".
 
 Agello's backend stops being Google's LiteRT-LM with patches kept close to upstream. It becomes
@@ -52,8 +51,9 @@ fast as the hardware allows, at the quality the model has today.
 - Most of those files serve other platforms: Android, Windows, Linux and the web, OpenCL, OpenGL
   and WebGPU beside Metal (ML Drift's Metal folder is 38 files of 877), vendor NPUs, converters,
   the Kotlin, JavaScript and Python bindings, a CMake build beside Bazel.
-- The app ships release `agello-one-20261115` (build `0c749789100a`, since 2026-11-15; before it
-  `agello-next-20261024`, build `99b8f5f6ea49`) with our patched model file, `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`. The runtime serves that file, its MTP
+- The app ships release `agello-one-20261122` (build `47b132c0cbd6`, since 2026-11-22; previously
+  `agello-one-20261115` and `agello-next-20261024`) with our v2 model file,
+  `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` (`gemma-4-E4B-it-agello-v2.litertlm`). The runtime serves that file, its MTP
   drafter and EmbeddingGemma, and nothing else.
 - What the Mac command line measured on the M6 (shipped runtime, 32K window): 90 to 115 tok/s;
   a decode run is 72 % `fc1x1_int4_weights`; a prefill run is 43 % the int8 convolution and
@@ -319,6 +319,7 @@ here are the record. The iPhone's, under `build/phone/runs/`, are kept.
 | 2026-11-15 | The first release candidate on the iPhone 17 Pro: build `14576c317c88` (the changes above, with the mask bounds in the decode and verify graphs too) against the shipped `99b8f5f6ea49`, `scripts/phone-bench.sh release next` (`build/phone/runs/20261115-003730`) | 3 of 3 cases identical | −2.8 % (every case −2.4 to −3.0 %; −4.7 % on the Mac) | +13.1 %; first token −16.8 % | Not released as built. The cause: the mask bounds ran in the decode and verify graphs, where they cost more than they save. The fix (`agello-one` `6da75396`) keeps them for prefill tails of 64 score rows or more. On the Mac after the fix: decode +0.7 % against the shipped runtime over four cases (noise 0.2 %); at 64K with a 44K prompt, against the candidate, decode 95.4 → 105.2 tok/s and the peak 1,770 → 1,678 MB; `inference` 23/23. |
 | 2026-11-15 | The fixed candidate on the iPhone 17 Pro: build `0c749789100a` (`6da75396`) against `99b8f5f6ea49` (`build/phone/runs/20261115-122658`), then `explain` alone on a cool phone, six rounds (`build/phone/runs/explain-rerun`) | 3 of 3 cases identical; `explain` 12 of 12 | −0.3 % (email +0.8 %, file-report +1.0 %, explain −2.7 % [−4.8, −0.6] with the phone warm: heat disturbed 15 of 29 runs); `explain` on a cool phone +1.7 % [+0.9, +2.6] | +13.8 %; first token −16.6 %. `explain` cool: prefill +12.1 %, first token −18.5 % | Same output, decode the same, prefill and first token faster. The warm run's `explain` −2.7 % was heat (+1.2 % on the Mac). Passed: released. |
 | 2026-11-15 | Release `agello-one-20261115` (fork `6da75396`, build `0c749789100a`), published on the maintainer's go and vendored in the app (commit `39daed1`), replacing `agello-next-20261024` (build `99b8f5f6ea49`) | The build of the comparison above | — | — | Ships. It carries the runtime's part of every change kept above, from B0 on; the ring and 128K model files aren't published. The phone suites weren't rerun on the vendored package (the maintainer's choice: it is the build the comparisons ran). |
+| 2026-11-22 | Phases 1–3 (`P1.1`–`P3.3`, fork `17f74284`, build `47b132c0cbd6`): background GPU drain, zero-copy NEON FP16 greedy sampling (`0` host copies), PSO dedup + `MTLBinaryArchive`, `FullyConnected` `simd_sum`, fused FP32 `RMSNorm`, MSL 4.1 SWAR converter + `agello_flash_attention` (`D=256/512`), Apple10-tuned `ConvAppleMPP` (`c_tile.store` + linear walk after 7-point A19 Pro ablation), FP32 KV quantization / PV `c_tile`, `verify_8`-first delegation, sparse KV trim + Metal 4 `copyBufferMappingsFromBuffer:` helper snapshots; released as `agello-one-20261122` (vendored `136331a`) + v2 64K model (`gemma-4-E4B-it-agello-v2.litertlm`, pinned `c71dcda`) | `phone-bench.sh` (`build/phone/runs/20261122-063143`): 20/20 checks/arm; iPhone `inference` 22/23, `files` 5/5, `memory` 4/4 (0 warnings), `ui` 26/26; v2 64K `test27` 90/90 & `test28` 12/12 bit-exact to 65,534 | `+0.4%` undisturbed (`+1.2%` cool best; `typo-fix` 83.4–84.3, `email` 54.2 tok/s; 85% undisturbed vs `release` 60%); M6 v2 64K `typo-fix` `195.3 tok/s` (`+115%` via `verify_8`) | `+3.6%` undisturbed (`+4.2%` cool best; `file-report` `1,443` tok/s `+9.2%`, peak `1,466` `+10.5%`, TTFT `−9.3%`) | Ships (`agello-one-20261122` + v2 64K model). iPhone 17 Pro v2 64K footprint `3.18–3.45 GB` (`2.99–3.26 GB` free below jetsam); `memory` suite 6.0 GB → 32K `0.93 GB` net peak, 5.0 GB → 32K `1.71 GB` net peak. |
 
 The iPhone's baseline is the bench's (`scripts/bench/baseline.json`); a new one is due: B1 passed
 there on 2026-11-12, and the committed baseline (2026-11-10) is on the previous runtime.

@@ -193,7 +193,7 @@ scripts/cli-report.py build/cli/runs/quality.jsonl
 ## The tests, natively
 
 ```sh
-scripts/cli-test.sh unit                         # 311 unit tests on the scripted engine, about a minute
+scripts/cli-test.sh unit                         # 317 unit tests on the scripted engine, about a minute
 scripts/cli-test.sh unit AppStateTests           # one class, or Class/method
 scripts/cli-test.sh inference                    # the real-model scenarios on this Mac's GPU (also files, web, thinking, probes, calibrate)
 ```
@@ -223,7 +223,7 @@ agello bench --only email --telemetry 3 --out build/cli/runs/trace.jsonl       #
 - **Level 4** times each GPU kernel in its own encoder. It halves the speed, so it's a pass of
   its own, read for shares (`telemetry.py --kernels`).
 - **Level 3** writes the runtime's events as a Chrome/Perfetto trace beside the app's trace
-  (`*.engine.json`). A runtime with C7's probes (the shipped `agello-one-20261115` among them)
+  (`*.engine.json`). A runtime with C7's probes (`agello-one-20261115` and `agello-one-20261122`)
   keeps the last 262,144 events per thread and leaves LiteRT's own trace sites out of them, so a
   1,500-token reply fits whole; the previous release (`agello-next-20261024`, shipped until
   2026-11-15) keeps 65,536 with those sites in, about three seconds of decoding.
@@ -319,7 +319,7 @@ agello bench --only email --telemetry 3 --out build/cli/runs/trace.jsonl       #
 ### C7, built on 2026-11-10 and checked on 2026-11-11
 
 Probes in the runtime (`agello-next` `3118b5d4`, built as `d5ed12808214`; local at first, now on
-the fork's `main` and in release `agello-one-20261115`, which the app ships since 2026-11-15):
+the fork's `main` and shipped since `agello-one-20261115`):
 
 - **What they record:** a `token` event per token with its id; `mtp.draft` and `mtp.verify`;
   `engine.init` and `session.create`; `kv_copy_bytes`; the GPU's allocated memory

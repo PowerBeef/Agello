@@ -29,9 +29,10 @@ patches, the docs and tools; renamed to `main`, so links to it redirect), `agell
 are archived). Older notes and the #3913 section below name those branches as history.
 
 `Vendor/LiteRT-LM` holds only the Swift package surface of our fork's
-`main` (`swift/` at `82b05ea1`): `Package.swift` (with the checksummed
-`CLiteRTLM.xcframework` download of our release, `agello-one-20261115` (`6da75396`, build
-`0c749789100a`) since 2026-11-15; `agello-next-20261024` from 2026-10-28), `swift/`, and `LICENSE`. It's vendored because upstream Git LFS
+`main` (`swift/` at `17f74284`): `Package.swift` (with the checksummed
+`CLiteRTLM.xcframework` download of our release, `agello-one-20261122` (`17f74284`, build
+`47b132c0cbd6`) since 2026-11-22; previously `agello-one-20261115` and `agello-next-20261024`),
+`swift/`, and `LICENSE`. It's vendored because upstream Git LFS
 breaks Swift Package Manager resolution.
 
 ## The fork
@@ -47,9 +48,9 @@ separate `AGENTS.md` or `.agents/` folder):
 | --- | --- |
 | `origin` | `PowerBeef/agello-litert-lm` (push here) |
 | `upstream` | `google-ai-edge/LiteRT-LM` (fetch only; push is disabled) |
-| `main` branch | The only branch: the runtime (upstream's 0.19.0 nightly source, tag `agello-base-20261013`, plus our commits, LiteRT and ML Drift in tree), `docs/agello/`, `tools/`. The app vendors its releases: `agello-one-20261115` (`6da75396`) since 2026-11-15. |
+| `main` branch | The only branch: the runtime (upstream's 0.19.0 nightly source, tag `agello-base-20261013`, plus our commits, LiteRT and ML Drift in tree), `docs/agello/`, `tools/`. The app vendors its releases: `agello-one-20261122` (`17f74284`) since 2026-11-22. |
 | `research/3913` tag | The #3913 research (below); a branch until 2026-10-15, so links to `tree/research/3913` still resolve |
-| Release tags | `agello-next-20261024`, `agello-one-20261115`; Google's are on upstream's `release/vX.Y.Z` branches (fetch from `upstream`) |
+| Release tags | `agello-next-20261024`, `agello-one-20261115`, `agello-one-20261122`; Google's are on upstream's `release/vX.Y.Z` branches (fetch from `upstream`) |
 
 Branch policy (the user's choice, 2026-11-15): one branch per repository, ours. Don't recreate
 an upstream mirror or side branches on GitHub, and don't create a branch named `agello`: it would
@@ -165,15 +166,17 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
   `research/issue-3913/webgpu-op-check/` (commit `7cebaa0c`).
 - Reproduction: the fork's `research/3913` tag, `research/issue-3913/`
   (graph-patch script, macOS runner, raw results, `summarize.py`).
-- **The app ships our fix.** `ModelCatalog.e4b` downloads
+- **The app ships our v2 surgical artifact.** `ModelCatalog.e4b` downloads
+  `gemma-4-E4B-it-agello-v2.litertlm` from
   `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`, pinned to a commit.
-  - It's the litert-community file run through the fork's
-    `tools/model-surgery/patch_rope.py --split --block 512`: rotary positions
-    split as `512·h + l`, exact in FP16 up to 32,767 on every GPU tested (M1-class
-    GPUs also lose precision in SIN/COS past ~1,650, which 2,048-token blocks,
-    the first revision `13d5aa4c`, left in place); main model and MTP drafter;
-    weights unchanged. `--block 2048` reproduces the first revision.
-  - The output is deterministic: the model card lists the sha256 of both files.
+  - Built from the `patch_rope.py --split --block 512` base via
+    `tools/model-surgery/build_v2.sh` (`ring_kv.py` 1,536-slot local rings →
+    `window_128k.py` 128K window + shared Dual-`GATHER` rotary tables exact to
+    131,071 → `verify_n.py --positions 8`); weights unchanged.
+  - The standard 32K file (`gemma-4-E4B-it-fp16-rope.litertlm`, `--block 512`)
+    stays untouched on `main` of that repo for external #3913 / stock LiteRT-LM
+    users.
+  - Both outputs are deterministic: the model card lists the sha256 of each file.
 - **When litert-community updates the E4B file** (use the `huggingface` MCP
   tools `hf_fs`, `hub_repo_details`, `hub_repo_search`, `hf_whoami` for Hub
   inspection, and `/opt/homebrew/bin/hf` with `BypassSandbox: true` for
@@ -183,16 +186,16 @@ Pushing to the fork, and anything posted upstream, needs the user's go-ahead.
      (each file's `last_commit`).
   2. Download it to scratch, never the shared cache:
      `hf download litert-community/gemma-4-E4B-it-litert-lm <file> --revision <commit> --local-dir <scratch>`.
-  3. Run `patch_rope.py --split --block 512` on it.
-  4. On the user's go, upload it to the same repo with the model card's sha256
-     and source revision updated:
-     `hf upload PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope <file> <file> --commit-message "…"`
+  3. Run `patch_rope.py --split --block 512` (producing `gemma-4-E4B-it-fp16-rope.litertlm`),
+     then `tools/model-surgery/build_v2.sh` (producing `gemma-4-E4B-it-agello-v2.litertlm`).
+  4. On the user's go, upload both to `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`
+     with the model card's sha256s and source revision updated
      (no AI/agent attribution).
-  5. Update `ModelCatalog.e4b` (`revision`, `sizeBytes`, `sha256`) from
-     `hf models list PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope --revision <commit> --format json`:
-     the file's `size` and `lfs.sha256`. Downloads are checked against it.
+  5. Update `ModelCatalog.e4b` (`revision`, `sizeBytes`, `sha256`) from the Hub's
+     verified LFS metadata. Downloads are checked against it.
      EmbeddingGemma is pinned the same way (`ModelCatalog.embeddingGemma`).
-  6. Run the `inference` suite (`test15_LongContextDigitFidelity`) and probe 12.
+  6. Run `test15_LongContextDigitFidelity`, `test27_NeedleTable`, and
+     `test28_WindowPositions`.
 - **When Google fixes #3913** (a new LiteRT-LM release or a re-exported model):
   - Run `ONLY=AgelloDeviceTests/ProbeScenarioTests/test10_PositionBoundary scripts/device-harness.sh probes`
     against their file.
