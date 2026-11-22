@@ -16,6 +16,9 @@ struct ModelSpec: Identifiable, Sendable, Equatable {
   /// Disk the engine cache takes beside the file once the model loads (GPU-format weights
   /// and programs, one copy for every context size).
   var engineCacheBytes: Int64 = 0
+  /// When set, `fileName` is an Apple Archive (`.aar`) verified by exact size and SHA-256,
+  /// then atomically extracted into this directory inside `Models/`.
+  var extractedDirectoryName: String?
 
   var downloadURL: URL {
     // swiftlint:disable:next force_unwrapping
@@ -48,18 +51,21 @@ enum ModelCatalog {
     engineCacheBytes: 2_500_000_000
   )
 
-  /// EmbeddingGemma 2 (text, 270M): turns text into vectors for search by
-  /// meaning in files and memory.
+  /// EmbeddingGemma 2 (text, 270M, 768-dim) for Apple Neural Engine via Core AI
+  /// (`embeddinggemma-2-text-270m-ane.aar` -> 4-bucket asymmetric INT4 `.aimodel`,
+  /// `mmap` INT4 token table, and SentencePiece model). Runs on ANE with zero
+  /// Metal GPU contention alongside Gemma 4 E4B.
   static let embeddingGemma = ModelSpec(
     id: .embeddingGemma,
     displayName: "EmbeddingGemma",
     tagline: "Finds the right passages in your files and memories.",
-    repo: "litert-community/embeddinggemma-2-text-270m-litert-lm",
-    fileName: "embeddinggemma-2-text-270m.litertlm",
-    sizeBytes: 164_626_432,
-    revision: "9be6e8b90982095dc05c2bd162e4b954ee4dbac7",
-    sha256: "2d079ee2f6f066b1f368e8d7c819f55214eaef1d0513b312321901f30ab286fb",
-    engineCacheBytes: 100_000_000
+    repo: "PowerBeef02/embeddinggemma-2-text-270m-coreai-ane",
+    fileName: "embeddinggemma-2-text-270m-ane.aar",
+    sizeBytes: 128_245_086,
+    revision: "964dc1c0d594cb3bdbe9efef8429df88712ef94b",
+    sha256: "122c2d86657c20aa567fb778801a46e3aec786eec7bbabff618f1c4a531b2ece",
+    engineCacheBytes: 180_000_000,
+    extractedDirectoryName: CoreAIEmbedder.bundleDirectoryName
   )
 
   static let all: [ModelSpec] = [e4b, embeddingGemma]

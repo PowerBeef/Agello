@@ -1,6 +1,8 @@
+import AppleArchive
 import CryptoKit
 import Foundation
 import Network
+import System
 
 /// Downloads and stores `.litertlm` model files in Application Support.
 /// Downloads run in a background `URLSession`: they continue when the app
@@ -147,11 +149,16 @@ final class ModelStore: NSObject {
   }
 
   func localURL(for spec: ModelSpec) -> URL? {
-    try? Self.modelsDirectory().appendingPathComponent(spec.fileName)
+    try? Self.modelsDirectory().appendingPathComponent(
+      spec.extractedDirectoryName ?? spec.fileName,
+      isDirectory: spec.extractedDirectoryName != nil)
   }
 
   func isDownloaded(_ spec: ModelSpec) -> Bool {
     guard let url = localURL(for: spec) else { return false }
+    if spec.extractedDirectoryName != nil {
+      return CoreAIEmbedder.isAvailable(at: url)
+    }
     guard let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64
     else { return false }
     // A models folder given from outside (development tools) may hold a variant of a catalog
@@ -395,11 +402,12 @@ final class ModelStore: NSObject {
     guard Self.externalModelsDirectory == nil, let dir = try? Self.modelsDirectory() else { return }
     let known = Set(ModelCatalog.all.map(\.fileName))
     let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-    // Staged downloads left by an interrupted check go too (the download isn't verified).
+    // Staged downloads or extractions left by an interrupted check go too (unverified).
     let staging = downloadingSpec.map { Self.stagedName($0.fileName) }
     for file in files
     where (file.hasSuffix(".litertlm") && !known.contains(file) && file != downloadingSpec?.fileName)
       || (file.hasSuffix(".partial") && file != staging)
+      || file.hasSuffix(".extracting")
     {
       try? FileManager.default.removeItem(at: dir.appendingPathComponent(file))
     }
@@ -425,11 +433,15 @@ final class ModelStore: NSObject {
   @discardableResult
   nonisolated static func placeDownloadedFile(
     from location: URL, fileName: String, expectedSize: Int64, expectedSHA256: String? = nil,
+    extractToDirectoryName: String? = nil,
+    validateExtractedDirectory: ((URL) -> Bool)? = nil,
     in directory: URL
   ) throws -> URL {
     let staged = try stageDownloadedFile(from: location, fileName: fileName, in: directory)
     return try installStagedFile(
-      staged, fileName: fileName, expectedSize: expectedSize, expectedSHA256: expectedSHA256, in: directory)
+      staged, fileName: fileName, expectedSize: expectedSize, expectedSHA256: expectedSHA256,
+      extractToDirectoryName: extractToDirectoryName,
+      validateExtractedDirectory: validateExtractedDirectory, in: directory)
   }
 
   /// A finished download's name until its size and SHA-256 are checked: the final name exists only
@@ -451,11 +463,15 @@ final class ModelStore: NSObject {
     return staged
   }
 
-  /// Check a staged download's size and SHA-256, then give it its final name, replacing an older
-  /// copy; a file that fails is removed. About 3 s for E4B: run it off the session's queue.
+  /// Check a staged download's size and SHA-256, then give it its final name (or extract an
+  /// Apple Archive into `extractToDirectoryName`), replacing an older copy; a file that fails
+  /// is removed. About 3 s for E4B: run it off the session's queue.
   @discardableResult
   nonisolated static func installStagedFile(
-    _ staged: URL, fileName: String, expectedSize: Int64, expectedSHA256: String?, in directory: URL
+    _ staged: URL, fileName: String, expectedSize: Int64, expectedSHA256: String?,
+    extractToDirectoryName: String? = nil,
+    validateExtractedDirectory: ((URL) -> Bool)? = nil,
+    in directory: URL
   ) throws -> URL {
     let size = (try FileManager.default.attributesOfItem(atPath: staged.path)[.size] as? Int64) ?? -1
     guard size == expectedSize else {
@@ -467,12 +483,73 @@ final class ModelStore: NSObject {
       try? FileManager.default.removeItem(at: staged)
       throw ModelStoreError.checksumMismatch
     }
+    if let dirName = extractToDirectoryName {
+      let extracting = directory.appendingPathComponent(dirName + ".extracting", isDirectory: true)
+      if FileManager.default.fileExists(atPath: extracting.path) {
+        try? FileManager.default.removeItem(at: extracting)
+      }
+      do {
+        try extractAppleArchive(from: staged, to: extracting)
+        if let validateExtractedDirectory, !validateExtractedDirectory(extracting) {
+          throw ModelStoreError.archiveExtractionFailed
+        }
+      } catch {
+        try? FileManager.default.removeItem(at: extracting)
+        try? FileManager.default.removeItem(at: staged)
+        throw error is ModelStoreError ? error : ModelStoreError.archiveExtractionFailed
+      }
+      let destination = directory.appendingPathComponent(dirName, isDirectory: true)
+      if FileManager.default.fileExists(atPath: destination.path) {
+        try FileManager.default.removeItem(at: destination)
+      }
+      try FileManager.default.moveItem(at: extracting, to: destination)
+      try? FileManager.default.removeItem(at: staged)
+      return destination
+    }
     let destination = directory.appendingPathComponent(fileName)
     if FileManager.default.fileExists(atPath: destination.path) {
       try FileManager.default.removeItem(at: destination)
     }
     try FileManager.default.moveItem(at: staged, to: destination)
     return destination
+  }
+
+  /// Extract a compressed Apple Archive (`.aar`) into `destination` using Apple's streaming
+  /// `AppleArchive` framework (constant memory, zero third-party dependencies).
+  nonisolated static func extractAppleArchive(from archiveURL: URL, to destination: URL) throws {
+    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+    guard let archivePath = FilePath(archiveURL), let destPath = FilePath(destination) else {
+      throw ModelStoreError.archiveExtractionFailed
+    }
+    guard
+      let readStream = ArchiveByteStream.fileStream(
+        path: archivePath, mode: .readOnly, options: [], permissions: FilePermissions(rawValue: 0o644)
+      )
+    else {
+      throw ModelStoreError.archiveExtractionFailed
+    }
+    defer { try? readStream.close() }
+
+    guard let decompressStream = ArchiveByteStream.decompressionStream(readingFrom: readStream) else {
+      throw ModelStoreError.archiveExtractionFailed
+    }
+    defer { try? decompressStream.close() }
+
+    guard let decodeStream = ArchiveStream.decodeStream(readingFrom: decompressStream) else {
+      throw ModelStoreError.archiveExtractionFailed
+    }
+    defer { try? decodeStream.close() }
+
+    guard
+      let extractStream = ArchiveStream.extractStream(
+        extractingTo: destPath, flags: [.ignoreOperationNotPermitted]
+      )
+    else {
+      throw ModelStoreError.archiveExtractionFailed
+    }
+    defer { try? extractStream.close() }
+
+    _ = try ArchiveStream.process(readingFrom: decodeStream, writingTo: extractStream)
   }
 
   /// Hex SHA-256 of a file, read in 8 MB pieces (about 3 s for E4B's 3.7 GB on a recent iPhone).
@@ -492,6 +569,7 @@ final class ModelStore: NSObject {
 enum ModelStoreError: Error, LocalizedError, Equatable {
   case sizeMismatch(expected: Int64, actual: Int64)
   case checksumMismatch
+  case archiveExtractionFailed
   case httpStatus(Int)
 
   var errorDescription: String? {
@@ -501,6 +579,8 @@ enum ModelStoreError: Error, LocalizedError, Equatable {
         "Downloaded file failed verification (got \(actual) bytes, expected \(expected)). Please retry."
     case .checksumMismatch:
       return "Downloaded file failed verification (its checksum doesn't match). Please retry."
+    case .archiveExtractionFailed:
+      return "Downloaded model bundle could not be unpacked. Please retry."
     case .httpStatus(let code):
       return "The download server returned HTTP \(code). Please retry later."
     }
@@ -589,6 +669,9 @@ extension ModelStore {
         if let spec, let directory {
           try Self.installStagedFile(
             file, fileName: spec.fileName, expectedSize: spec.sizeBytes, expectedSHA256: spec.sha256,
+            extractToDirectoryName: spec.extractedDirectoryName,
+            validateExtractedDirectory: spec.extractedDirectoryName != nil
+              ? { CoreAIEmbedder.isAvailable(at: $0) } : nil,
             in: directory)
         }
         placementError = nil

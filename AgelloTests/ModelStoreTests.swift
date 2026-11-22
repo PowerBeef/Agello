@@ -1,3 +1,5 @@
+import AppleArchive
+import System
 import XCTest
 
 @testable import Agello
@@ -189,5 +191,79 @@ final class ModelStoreTests: XCTestCase {
     try Data(repeating: 0, count: 16).write(to: retired)
     _ = ModelStore()
     XCTAssertFalse(FileManager.default.fileExists(atPath: retired.path))
+  }
+
+  /// An Apple Archive download verifies size + SHA-256 first, extracts atomically into its target
+  /// directory, removes the staged `.partial`, and leaves any verified bundle untouched on failure.
+  func testAppleArchiveBundleVerifiesAndExtractsAtomically() throws {
+    let sourceDir = scratch.appendingPathComponent("bundle-src", isDirectory: true)
+    let nested = sourceDir.appendingPathComponent("text_encoder.aimodel", isDirectory: true)
+    try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+    try Data("mlirb-payload".utf8).write(to: nested.appendingPathComponent("main.mlirb"))
+    try Data("table-payload".utf8).write(to: sourceDir.appendingPathComponent("embed_tokens.bin"))
+    try Data("tok-payload".utf8).write(to: sourceDir.appendingPathComponent("tokenizer.model"))
+
+    let archiveURL = scratch.appendingPathComponent("bundle.aar")
+    try Self.writeTestAppleArchive(from: sourceDir, to: archiveURL)
+    let archiveSize = try XCTUnwrap(
+      FileManager.default.attributesOfItem(atPath: archiveURL.path)[.size] as? Int64)
+    let archiveHash = try ModelStore.sha256(of: archiveURL)
+
+    let models = scratch.appendingPathComponent("Models", isDirectory: true)
+    let installed = try ModelStore.placeDownloadedFile(
+      from: archiveURL,
+      fileName: "embeddinggemma-2-text-270m-ane.aar",
+      expectedSize: archiveSize,
+      expectedSHA256: archiveHash,
+      extractToDirectoryName: CoreAIEmbedder.bundleDirectoryName,
+      validateExtractedDirectory: { CoreAIEmbedder.isAvailable(at: $0) },
+      in: models)
+
+    XCTAssertEqual(installed.lastPathComponent, CoreAIEmbedder.bundleDirectoryName)
+    XCTAssertTrue(CoreAIEmbedder.isAvailable(at: installed))
+    XCTAssertEqual(
+      try Data(contentsOf: installed.appendingPathComponent("text_encoder.aimodel/main.mlirb")),
+      Data("mlirb-payload".utf8))
+    XCTAssertFalse(
+      FileManager.default.fileExists(
+        atPath: models.appendingPathComponent("embeddinggemma-2-text-270m-ane.aar.partial").path))
+
+    // A corrupt archive with matching size + hash still fails extraction without clobbering.
+    let junk = scratch.appendingPathComponent("junk.aar")
+    try Data("not-an-apple-archive".utf8).write(to: junk)
+    let junkHash = try ModelStore.sha256(of: junk)
+    XCTAssertThrowsError(
+      try ModelStore.placeDownloadedFile(
+        from: junk,
+        fileName: "embeddinggemma-2-text-270m-ane.aar",
+        expectedSize: 20,
+        expectedSHA256: junkHash,
+        extractToDirectoryName: CoreAIEmbedder.bundleDirectoryName,
+        validateExtractedDirectory: { CoreAIEmbedder.isAvailable(at: $0) },
+        in: models)
+    ) { error in
+      XCTAssertEqual(error as? ModelStoreError, .archiveExtractionFailed)
+    }
+    XCTAssertTrue(CoreAIEmbedder.isAvailable(at: installed))
+    XCTAssertFalse(
+      FileManager.default.fileExists(
+        atPath: models.appendingPathComponent("\(CoreAIEmbedder.bundleDirectoryName).extracting").path))
+  }
+
+  private static func writeTestAppleArchive(from sourceDir: URL, to archiveURL: URL) throws {
+    let destPath = try XCTUnwrap(FilePath(archiveURL))
+    let srcPath = try XCTUnwrap(FilePath(sourceDir))
+    let writeStream = try XCTUnwrap(
+      ArchiveByteStream.fileStream(
+        path: destPath, mode: .writeOnly, options: [.create, .truncate],
+        permissions: FilePermissions(rawValue: 0o644)))
+    defer { try? writeStream.close() }
+    let compressStream = try XCTUnwrap(
+      ArchiveByteStream.compressionStream(using: .lzfse, writingTo: writeStream))
+    defer { try? compressStream.close() }
+    let encodeStream = try XCTUnwrap(ArchiveStream.encodeStream(writingTo: compressStream))
+    defer { try? encodeStream.close() }
+    let keySet = try XCTUnwrap(ArchiveHeader.FieldKeySet("TYP,PAT,MOD,DAT,SIZ"))
+    try encodeStream.writeDirectoryContents(archiveFrom: srcPath, keySet: keySet)
   }
 }

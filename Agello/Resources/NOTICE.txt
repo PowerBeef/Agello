@@ -173,9 +173,11 @@ with this repository:
   https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope
   (original: https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm)
 
-  EmbeddingGemma 2 (LiteRT-LM build by litert-community)
+  EmbeddingGemma 2 (LiteRT-LM build by litert-community), converted to a
+  4-bucket asymmetric INT4 Core AI Apple Neural Engine bundle
   Licensed under the Apache License, Version 2.0
-  https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm
+  https://huggingface.co/PowerBeef02/embeddinggemma-2-text-270m-coreai-ane
+  (original: https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm)
 
 License texts for the CLiteRTLM runtime's components
 

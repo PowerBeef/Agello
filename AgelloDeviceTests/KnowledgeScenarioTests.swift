@@ -299,10 +299,10 @@ final class KnowledgeScenarioTests: DeviceTestCase {
     guard let aneURL = KnowledgeBase.aneBundleURL() else {
       throw XCTSkip("Core AI ANE bundle not present in models directory")
     }
-    let litertSpec = ModelCatalog.embeddingGemma
-    guard appState.store.isDownloaded(litertSpec), let litertURL = appState.store.localURL(for: litertSpec)
-    else {
-      throw XCTSkip("LiteRT EmbeddingGemma baseline not present for parity comparison")
+    let litertURL = try ModelStore.modelsDirectory().appendingPathComponent(
+      "embeddinggemma-2-text-270m.litertlm")
+    guard FileManager.default.fileExists(atPath: litertURL.path) else {
+      throw XCTSkip("Legacy LiteRT EmbeddingGemma .litertlm not present for parity comparison")
     }
 
     let ane = CoreAIEmbedder(bundleURL: aneURL)

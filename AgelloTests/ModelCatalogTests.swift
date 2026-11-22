@@ -40,12 +40,15 @@ final class ModelCatalogTests: XCTestCase {
     }
     XCTAssertEqual(
       ModelCatalog.embeddingGemma.sha256,
-      "2d079ee2f6f066b1f368e8d7c819f55214eaef1d0513b312321901f30ab286fb")
+      "122c2d86657c20aa567fb778801a46e3aec786eec7bbabff618f1c4a531b2ece")
+    XCTAssertEqual(
+      ModelCatalog.embeddingGemma.extractedDirectoryName, CoreAIEmbedder.bundleDirectoryName)
   }
 
   func testOriginalE4BFileIsRetired() {
-    // The unpatched file isn't in the catalog, so ModelStore deletes it.
+    // Retired files aren't in the catalog, so ModelStore deletes them.
     XCTAssertFalse(ModelCatalog.all.map(\.fileName).contains("gemma-4-E4B-it.litertlm"))
+    XCTAssertFalse(ModelCatalog.all.map(\.fileName).contains("embeddinggemma-2-text-270m.litertlm"))
   }
 
   func testVerifiedSize() {
@@ -54,10 +57,10 @@ final class ModelCatalogTests: XCTestCase {
     XCTAssertEqual(
       ModelCatalog.e4b.sha256,
       "7d63a4d8efee11108933c28e9f9a0a17804998379b5fd58ae03031130dac7e7b")
-    XCTAssertEqual(ModelCatalog.embeddingGemma.sizeBytes, 164_626_432)
+    XCTAssertEqual(ModelCatalog.embeddingGemma.sizeBytes, 128_245_086)
     XCTAssertEqual(
       ModelCatalog.embeddingGemma.downloadURL.absoluteString,
-      "https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/9be6e8b90982095dc05c2bd162e4b954ee4dbac7/embeddinggemma-2-text-270m.litertlm"
+      "https://huggingface.co/PowerBeef02/embeddinggemma-2-text-270m-coreai-ane/resolve/964dc1c0d594cb3bdbe9efef8429df88712ef94b/embeddinggemma-2-text-270m-ane.aar"
     )
   }
 }

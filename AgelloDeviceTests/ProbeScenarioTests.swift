@@ -121,8 +121,10 @@ final class ProbeScenarioTests: DeviceTestCase {
   /// the nearest passage is the right one.
   func test03_EmbeddingGemma() async throws {
     await appState.engine.unload()
-    _ = try await harness.ensureDownloaded(ModelCatalog.embeddingGemma)
-    let url = try XCTUnwrap(appState.store.localURL(for: ModelCatalog.embeddingGemma))
+    let url = try ModelStore.modelsDirectory().appendingPathComponent("embeddinggemma-2-text-270m.litertlm")
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      throw XCTSkip("Legacy LiteRT EmbeddingGemma .litertlm not present")
+    }
     // Until 2026-11-01 this probe downloaded a copy of its own into Caches (157 MB).
     if let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
       try? FileManager.default.removeItem(at: caches.appendingPathComponent(url.lastPathComponent))

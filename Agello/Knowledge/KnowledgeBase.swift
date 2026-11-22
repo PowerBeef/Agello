@@ -60,12 +60,14 @@ final class KnowledgeBase {
 
   /// Whether the active embedder uses the Metal GPU (needs cancellation when leaving foreground).
   var usesGPUEmbedder: Bool {
-    embedder?.usesGPU ?? (Self.aneBundleURL() == nil && !useHashingEmbedder)
+    if let embedder { return embedder.usesGPU }
+    guard !useHashingEmbedder, Self.aneBundleURL() == nil else { return false }
+    return ModelCatalog.embeddingGemma.extractedDirectoryName == nil
   }
 
   /// The embedder, once its model is on the device; otherwise starts (or
-  /// queues) the model download and returns nil. Prefers the Core AI Neural Engine bundle when
-  /// present so retrieval never contends with E4B on the Metal GPU.
+  /// queues) the model download and returns nil. Uses the Core AI Neural Engine bundle so
+  /// retrieval never contends with E4B on the Metal GPU.
   func currentEmbedder() -> (any TextEmbedder)? {
     if let embedder { return embedder }
     if useHashingEmbedder {
@@ -77,12 +79,12 @@ final class KnowledgeBase {
       return embedder
     }
     let spec = ModelCatalog.embeddingGemma
-    guard store.isDownloaded(spec), let url = store.localURL(for: spec) else {
-      store.ensureDownloaded(spec)
-      return nil
+    if spec.extractedDirectoryName == nil, store.isDownloaded(spec), let url = store.localURL(for: spec) {
+      embedder = LiteRTEmbedder(modelURL: url)
+      return embedder
     }
-    embedder = LiteRTEmbedder(modelURL: url)
-    return embedder
+    store.ensureDownloaded(spec)
+    return nil
   }
 
   /// Release the embedding model's memory (it reloads on next use).

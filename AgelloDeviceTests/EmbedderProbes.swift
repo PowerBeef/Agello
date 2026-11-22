@@ -17,8 +17,10 @@ extension ProbeScenarioTests {
   /// - seconds per passage.
   func test32_EmbedderPrecision() async throws {
     await appState.engine.unload()
-    _ = try await harness.ensureDownloaded(ModelCatalog.embeddingGemma, timeout: 900)
-    let url = try XCTUnwrap(appState.store.localURL(for: ModelCatalog.embeddingGemma))
+    let url = try ModelStore.modelsDirectory().appendingPathComponent("embeddinggemma-2-text-270m.litertlm")
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      throw XCTSkip("Legacy LiteRT EmbeddingGemma .litertlm not present")
+    }
     let corpus = Self.embedderCorpus
     let documents = corpus.passages.map { "title: none | text: \($0)" }
     var vectors: [String: [[Float]]] = [:]
@@ -84,8 +86,10 @@ extension ProbeScenarioTests {
   /// other chat and the median.
   func test33_ChatScoresByDimension() async throws {
     await appState.engine.unload()
-    _ = try await harness.ensureDownloaded(ModelCatalog.embeddingGemma, timeout: 900)
-    let url = try XCTUnwrap(appState.store.localURL(for: ModelCatalog.embeddingGemma))
+    let url = try ModelStore.modelsDirectory().appendingPathComponent("embeddinggemma-2-text-270m.litertlm")
+    guard FileManager.default.fileExists(atPath: url.path) else {
+      throw XCTSkip("Legacy LiteRT EmbeddingGemma .litertlm not present")
+    }
     let chats = [
       "Weeknight carbonara\nHow do I make carbonara without cream?\nWhisk eggs and pecorino, toss with hot spaghetti and crispy guanciale.",
       "Car making a grinding noise\nMy car grinds when I brake, what is it?\nWorn brake pads are the usual cause; have the rotors checked too.",

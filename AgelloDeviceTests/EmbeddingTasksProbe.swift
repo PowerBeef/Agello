@@ -11,7 +11,10 @@ extension ProbeScenarioTests {
     try await requireLoadedModel()
     let knowledge = appState.knowledge
     _ = try await harness.ensureDownloaded(ModelCatalog.embeddingGemma, timeout: 1800)
-    XCTAssertNotNil(knowledge.currentEmbedder() as? LiteRTEmbedder, "EmbeddingGemma isn't the embedder")
+    let embedder = knowledge.currentEmbedder()
+    XCTAssertTrue(
+      embedder is CoreAIEmbedder || embedder is LiteRTEmbedder,
+      "EmbeddingGemma isn't the embedder")
     let pairs: [(String, String, Bool)] = [
       ("Is vegetarian", "Doesn't eat meat", true),
       ("Lives in Montreal", "Lives in Montréal, Canada", true),
