@@ -32,27 +32,28 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 | **Personalization** | Name · about you · how to respond · response style (Default, Concise, Detailed, Friendly, Professional). Added to the system prompt. |
 | **Memory** | On or off (off by default) · review, edit, add, or delete memories · delete all. A reply that saved a memory says so. |
 | **Web search** | Allow web search · search automatically (off by default) · provider: Wikipedia, or SearXNG (your instance) |
-| **Spotlight** | Show chats in system search (on by default) |
-| **Models** | Download, pause, resume, or delete Gemma 4 E4B and EmbeddingGemma |
-| **On-device tools** | Turn the tools (date and time, calculator) on or off |
+| **Spotlight** | Show chats, projects, and attached documents in system search (on by default) |
+| **Models** | Download, pause, resume, or delete Gemma 4 E4B and EmbeddingGemma 2 |
+| **On-device tools** | Turn the offline tools (date and time, calculator, unit converter, file & past-chat search, document page inspection, CSV/TSV/JSON table queries) on or off |
+| **Personal tools** | Opt-in access to Calendar, Reminders, Contacts, and Apple Maps (all off by default). Creating events or reminders always shows an in-chat confirmation card first. |
 | **Help** | Share diagnostics: the system's crash and performance reports and the app's log of the last hour, kept on the iPhone until you share them |
 
 ## Outside the app
 
-- **Siri and Shortcuts.** "Ask Agello", "New Chat", and "Talk to Agello" work from Siri, the Shortcuts app, the Action Button, and Spotlight.
-- **Widgets and Control Center.** Home Screen and Lock Screen widgets ("Ask Agello", "Talk"), and Control Center controls for a new chat or a voice conversation.
-- **Spotlight.** Your chats appear in system search (a toggle in Settings), and tapping a result opens that chat.
+- **Siri and Shortcuts.** "Ask Agello", "New Chat", "Talk to Agello", "Snap & Ask Agello", and "Voice with Camera" work from Siri, the Shortcuts app, the Action Button, and Spotlight.
+- **Widgets and Control Center.** Home Screen and Lock Screen widgets ("Ask Agello", "Talk", "Snap & Ask"), and Control Center controls for a new chat, camera, or voice conversation.
+- **Spotlight.** Your chats, projects, and attached documents appear in system search (a toggle in Settings), and tapping a result opens it in Agello.
 - **Share sheet.** "Ask Agello" from any app with text, a link, an image, or a file; Agello answers when the app opens next.
-- **Links.** `agello://new`, `agello://ask?q=…`, and `agello://voice` work from anywhere on the system.
+- **Links.** `agello://new`, `agello://ask?q=…`, `agello://voice`, `agello://camera`, and `agello://voice-camera` work from anywhere on the system.
 
 ## The models
 
 | Model | Size | Role | License |
 | --- | --- | --- | --- |
 | **Gemma 4 E4B** | 3.7 GB | Chat: text, vision, audio, reasoning, and tool calling in one file. Context: 64K tokens (65,536), less when the iPhone is short of memory as the model loads | Apache 2.0 |
-| **EmbeddingGemma 2** (text, 270M) | 165 MB | Turns passages, chats and memories into 768-dimension vectors for retrieval and search by meaning. Downloads automatically after the chat model; keyword search fills in until then | Apache 2.0 |
+| **EmbeddingGemma 2** (text, 270M) | 128 MB | Turns passages, chats and memories into 768-dimension vectors on the Apple Neural Engine for retrieval and search by meaning. Downloads automatically after the chat model; keyword search fills in until then | Apache 2.0 |
 
-- **Source.** Downloaded at runtime from Hugging Face, without an account. EmbeddingGemma is the [`litert-community`](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm) build. The chat model is [`litert-community`'s Gemma 4 E4B build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) with graph-only edits (`gemma-4-E4B-it-agello-v2.litertlm`: 1,536-slot local KV rings, 128K shared Dual-`GATHER` float16-exact rotary tables, and `verify_8`, with the same weights; [`PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope), see [the engineering notes](ENGINEERING.md#long-context-digits-on-the-gpu-litert-lm-3913)). Both downloads are pinned to a commit.
+- **Source.** Downloaded at runtime from Hugging Face, without an account. EmbeddingGemma 2 is a 4-bucket asymmetric INT4 Core AI Apple Neural Engine conversion of [`litert-community`'s build](https://huggingface.co/litert-community/embeddinggemma-2-text-270m-litert-lm) ([`PowerBeef02/embeddinggemma-2-text-270m-coreai-ane`](https://huggingface.co/PowerBeef02/embeddinggemma-2-text-270m-coreai-ane), Apache 2.0). The chat model is [`litert-community`'s Gemma 4 E4B build](https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm) with graph-only edits (`gemma-4-E4B-it-agello-v2.litertlm`: 1,536-slot local KV rings, 128K shared Dual-`GATHER` float16-exact rotary tables, and `verify_8`, with the same weights; [`PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`](https://huggingface.co/PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope), see [the engineering notes](ENGINEERING.md#long-context-digits-on-the-gpu-litert-lm-3913)). Both downloads are pinned to a commit.
 - **Downloads** run in a background `URLSession`: they continue while the app is in the background, resume after a relaunch, support pause and resume, check free space first, and are verified by HTTP status, file size and SHA-256 checksum. Models are stored in Application Support and excluded from iCloud backup. On a cellular or other metered network, or in Low Data Mode, a download over 200 MB (Gemma 4 E4B) asks first: **Download now**, or **Wait for Wi-Fi**.
 - **Earlier versions.** Chats created with Gemma 4 E2B continue on E4B. Older model files (E2B, and the unpatched E4B) are deleted automatically, and the current file downloads once.
 
@@ -79,6 +80,6 @@ Settings opens from the bottom of the drawer. The card on top shows the model an
 - Search by meaning needs at least three chats; with fewer, search matches words only.
 - Web pages are read without running JavaScript, so pages that build their content with scripts contribute only their search snippet.
 - Search uses only sources whose terms allow an app like Agello, chosen by what you ask: Wikipedia and Wikidata for most questions, Wikivoyage for travel, Wiktionary for words, Wikiquote for quotations, Apple Weather and Apple Maps for weather and places (with your location for "near me" and "the nearest…", after you allow it; Apple Maps doesn't share opening hours with apps, so the reply links the place in Apple Maps, which shows them), the European Central Bank for exchange rates, Crossref and PubMed for studies, and Wikipedia's Current events for the last few days. General web search engines are not among them (none allows it for free), so product pages, forums and most news sites aren't searched.
-- Only long document summaries keep running when you leave the app, and only on iPhones that support background GPU use (the iPhone 17 Pro on iOS 27 doesn't: there the summary stops with a notice, like any other reply).
+- Long document or multi-document synthesis, web research, and multi-step Think tool chains can continue in the background as a Live Activity (`BGContinuedProcessingTask`) where the iPhone supports background GPU/inference work (including iPhone 17 Pro on iOS 27). Plain text chat stops cleanly with a notice when you leave the app.
 - Something shared to Agello is answered in a new chat the next time the app opens, not inside the share sheet.
 - Agello needs an iPhone with 12 GB of memory (iPhone 17 Pro and Pro Max, iPhone Air, or later). On an iPhone with less it opens on a screen that says so.

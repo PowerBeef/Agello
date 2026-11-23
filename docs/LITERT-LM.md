@@ -19,11 +19,10 @@ build (the fork's `main`); where the shipped runtime differs, it says so.
 | Native runtime | Our build: the checksummed `CLiteRTLM.xcframework` of release `agello-one-20261122-3` (build id `4712b414941a`), built from `8f9e7142` with LiteRT and ML Drift as folders of the same repository, iPhone and Mac slices on Metal 4 / MSL 4.1; FlashAttention, zero-copy NEON greedy sampling, persistent `MTLBinaryArchive`, Metal 4 `copyBufferMappingsFromBuffer:` helper snapshots, `verify_8` rounds, sparse KV caches, GPU Vision MPP kernels, lazy `AudioExecutor` + `USER_INTERACTIVE` QoS, fixed `LlgConstraintProvider` `TokTrie` + Think-tool continuity + recursive-descent FC parser, and the window read from the model file. Previously shipped `agello-one-20261122-2` (`f4f0ec25e764`), `agello-one-20261122` (`47b132c0cbd6`), `agello-one-20261115` (`0c749789100a`) and `agello-next-20261024` (`99b8f5f6ea49`). | [F-018](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-018), [versions.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/versions.md) |
 | Our source build | The fork's one branch, `main` (`agello-one` and `agello-next` before 2026-11-15): Google's 0.19.0 nightly plus our commits, LiteRT and ML Drift in the same tree. Releases of it are what Agello vendors; `Vendor/use-local-litert.sh` swaps in a local build for test runs. | [build-and-release.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/litert-lm/build-and-release.md) |
 | Chat model | `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` (`gemma-4-E4B-it-agello-v2.litertlm`) at `9935a811` (3,686,465,536 bytes): 1,536-slot local KV rings, 128K window with unshifted Dual-`GATHER` RoPE tables (<0.001 rad across 0..131,071), and `verify_8` speculative signature (`build_v2.sh`). | [F-020](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-020), [models/gemma4-e4b.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/models/gemma4-e4b.md) |
-| Embedding model | `PowerBeef02/embeddinggemma-2-text-270m-coreai-ane` (`embeddinggemma-2-text-270m-ane.aar`, 128,245,086 bytes, pinned to revision `964dc1c0` with SHA-256), unpacked atomically into a 4-bucket INT4 Core AI Apple Neural Engine bundle (0% GPU contention; converted from `litert-community/embeddinggemma-2-text-270m-litert-lm`). | [F-029](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-029), [models/embeddinggemma.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/models/embeddinggemma.md) |
+| Embedding model | `PowerBeef02/embeddinggemma-2-text-270m-coreai-ane` (`embeddinggemma-2-text-270m-ane.aar`, 128,245,086 bytes, pinned to revision `41026d1c` with SHA-256, Apache 2.0 `LICENSE` & `NOTICE`), unpacked atomically into a 4-bucket INT4 Core AI Apple Neural Engine bundle (0% GPU contention; converted from `litert-community/embeddinggemma-2-text-270m-litert-lm`). | [F-029](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-029), [models/embeddinggemma.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/models/embeddinggemma.md) |
 
-The fork's reference was re-pinned and re-verified on 2026-11-18 against `main` `b7b856a0` (fork
-`4318c4a1`; 648 claims checked). Remaining loose ends are tracked in
-`../LiteRT-LM/docs/agello/reference/_work/audits.md` and [ROADMAP.md](ROADMAP.md#current-status).
+> [!NOTE]
+> The fork's claim-checked reference (`../LiteRT-LM/docs/agello/reference/facts.md`) was last re-pinned on 2026-11-18 against `main` `b7b856a0` (fork `4318c4a1`, `agello-one-20261115`, v1 32K; 648 claims checked). It awaits its next `repin.py` pass after `agello-one-20261122-4` ships — cross-check [ROADMAP.md](ROADMAP.md#current-status) and `ModelCatalog.swift` for Phases 3–6 and Audit Waves 1–2 facts rather than quoting pre-v2 rows from `facts.md`. Remaining loose ends are tracked in `../LiteRT-LM/docs/agello/reference/_work/audits.md`.
 
 ## What Agello sets
 
@@ -40,20 +39,30 @@ full table, with what's left at defaults, is in
 - **Each new engine:** a one-token reply to "Hi" (`validate()`), with no sampler settings.
 - **Chat:** system prompt, history, tools, sampler, thinking budget and visual token budget per
   conversation; `sendMessageStream` with an output cap from `ContextBudget`.
-- **Helpers:** JSON helpers turn MTP off and use a JSON-schema response format; transcription
-  samples greedily; the others pass no sampler.
-- **Embeddings:** on the GPU (two tries, then search by keywords), normalized, 768 dimensions (256 until 2026-11-16), batches of 8, in the runtime's float16 activations: EmbeddingGemma 2's card warns against float16, but probe 32 measured our file on the GPU within a cosine of 0.9956 of float32, with no overflow, at half the time. `EmbeddingEngineConfig.activationDataType` (a wrapper patch) can ask for float32.
+- **Helpers:** JSON helpers run with speculative decoding (MTP) on by default
+  (`LiteRTChatEngine.jsonHelpersSpeculate`, fixed in fork `1382157b` + `7d80c7ec`; `#if DEBUG || BENCH`
+  override via `AGELLO_JSON_MTP=0`) and use a JSON-schema response format; transcription samples
+  greedily; the others pass no sampler.
+- **Embeddings:** primarily on the **16-core Apple Neural Engine** via Core AI (`CoreAIEmbedder`,
+  4-bucket `128/256/512/1024` asymmetric INT4 `EmbeddingGemma 2`, 768 dimensions, `0.99949` average
+  cosine vs LiteRT true FP32, `0.86 s` for a 40-page PDF on iPhone 17 Pro with zero GPU contention).
+  `LiteRTEmbedder` (GPU FP16, cosine `0.9956`, batches of 8; `EmbeddingEngineConfig.activationDataType`
+  available for FP32) and BM25 keyword search serve as fallbacks.
 
 ## Words to get right
 
 - **Context length** means four things: the *trained* context (128K for E2B and E4B), the file's
-  *export window* (32K), the *allocated* context (`maxNumTokens`; the app asks for 65,536 and the
-  published file allocates 32,000 positions) and the *filled* length (tokens in the cache). Say which.
+  *export window* (128K / `131,101` on the shipped v2 file `gemma-4-E4B-it-agello-v2.litertlm`;
+  older v1 files exported 32K), the *allocated* context (`maxNumTokens`; the app asks for 65,536
+  and the shipped v2 file allocates the full 65,536 positions on 12 GB iPhones, while older 32K
+  files cap at 32,000) and the *filled* length (tokens in the cache). Say which.
   ([F-048 to F-050](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-048))
-- **Which runtime.** A speed or memory figure names its build (Google's v0.18.0 binary or ours, with
-  its build id) and its date.
-- **GPU Neural Accelerators**, not "Neural Engine": ML Drift reaches the GPU's matrix units on
-  Apple10 GPUs; this stack doesn't use the Neural Engine.
+- **Which runtime.** A speed or memory figure names its build (ours, with its release tag and build
+  id, or a dated historical baseline) and its date.
+- **GPU Neural Accelerators vs Apple Neural Engine:** ML Drift runs Gemma 4 E4B (LLM + Vision) on
+  the GPU's matrix units (**GPU Neural Accelerators**) on Apple10+ GPUs, not the ANE. Agello uses
+  the **16-core Apple Neural Engine** directly via Core AI (`CoreAIEmbedder` for `EmbeddingGemma 2`)
+  and iOS 27 `SpeechAnalyzer` (live dictation and voice turn detection).
 
 The rest is in [glossary.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/glossary.md).
 
@@ -65,8 +74,8 @@ The rest is in [glossary.md](https://github.com/PowerBeef/agello-litert-lm/blob/
 | The engine's sampler takes its parameters from the first session that samples, and `validate()` samples first | The chat's temperature, top-k and top-p didn't reach plain decode steps, and Regenerate's seeds didn't vary replies | seen in probe 18 on our build; fixed there by `agello-next` `f1b88286` (each session's own sampler settings and random state). Google's binary applies them | [configuration.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/configuration.md#what-agello-sets) |
 | The E4B file exports at most 280 visual tokens per image | There's no image-detail setting (since 2026-11-11): the app sends 280 per image (`VisualDetail.balanced`), the file's most | from the file and the code | [F-066](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-066) |
 | With tools declared, a tool-call block the parser rejects sends up to three final error chunks; the wrapper releases its stream context on each | A use-after-free in the shipped wrapper | from the code; not reproduced. Our wrapper keeps streams by ID, and our build sends one final chunk per send at the C boundary (`agello-next` `8acc748c`) | [swift-api.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/litert-lm/swift-api.md#error-chunks-and-the-retained-context) |
-| MTP and a JSON or regex constraint share one grammar matcher across drafts | Constrained output can break the schema, in Google's binary and ours; JSON helpers keep MTP off | from the code, matches what Agello saw on device | [troubleshooting.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/troubleshooting.md#json-constrained-replies-break-with-mtp-on) |
-| EmbeddingGemma loads up to 1,024 tokens by default and runs at FP16 on the GPU | A passage plus its prefix must fit in 1,022 tokens; the model card advises against float16 | measured by probe 32: cosine 0.9956 vs float32 on GPU, no overflow, at half the time (`EmbeddingEngineConfig.activationDataType` can still request float32) | [F-056](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-056), [F-123](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-123) |
+| Upstream MTP and JSON/regex constraints shared one grammar matcher across drafts, and `LlgConstraintProvider` mangled `▁` / control tokens in `TokTrie` | Constrained output broke under MTP and rejected multi-word JSON enums | fixed in fork `1382157b` + `7d80c7ec` (shipped in `agello-one-20261122-3`); `jsonHelpersSpeculate` now defaults ON and `test16_MultiWordJsonEnumWithMTP` passes | [troubleshooting.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/troubleshooting.md#json-constrained-replies-break-with-mtp-on) |
+| EmbeddingGemma takes up to 1,024 tokens (`1,022` payload + BOS/EOS); model card warns against GPU FP16 | Passages plus prefixes must fit in 1,022 tokens; GPU embeddings contended with E4B | moved primary execution to the 16-core ANE via Core AI (`CoreAIEmbedder`, 4-bucket `128/256/512/1024` INT4, `0.99949` avg cosine vs FP32, `0.86 s` 40-page PDF, 0% GPU contention); LiteRT GPU FP16 (`0.9956` cosine, probe 32) stays as fallback | [F-056](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-056), [F-123](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-123) |
 | The chat template inside the E4B file is older than Google's Hugging Face template | The file's template is what runs; don't quote the Hugging Face one as Agello's | from the file | [F-032](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-032) |
 | The app's memory limit on an iPhone 17 Pro is about 8.6 GB (8 GiB); 6.44 GB (6 GiB) is an early reading in some runs | Tests that read the limit at launch can size themselves to the wrong value | measured | [F-071](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-071) |
 

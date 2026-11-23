@@ -1,18 +1,19 @@
 # The backend: our own runtime
 
-A plan, from the maintainer's direction of 2026-11-10. Where it stands (2026-11-22): B0–B4 and
-B6 are done. The runtime is one repository, `PowerBeef/agello-litert-lm`, with one branch, `main`,
-and one checkout on this Mac, `../LiteRT-LM`. Release `agello-one-20261122-3` (fork `8f9e7142`,
-build `4712b414941a`), carrying Phases 1–5 of [ROADMAP.md](ROADMAP.md) (MSL 4.1 FlashAttention,
+A plan, from the maintainer's direction of 2026-11-10. Where it stands (2026-11-23): B0–B4, B6,
+and all six roadmap phases (`P1.1`–`P6.2`) are done and verified on physical iPhone 17 Pro. The
+runtime is one repository, `PowerBeef/agello-litert-lm`, with one branch, `main`, and one checkout
+on this Mac, `../LiteRT-LM`. Release `agello-one-20261122-3` (fork `8f9e7142`, build
+`4712b414941a`), carrying Phases 1–5 of [ROADMAP.md](ROADMAP.md) (MSL 4.1 FlashAttention,
 zero-copy NEON greedy sampling, persistent `MTLBinaryArchive`, Metal 4 `copyBufferMappingsFromBuffer:`
 helper snapshots, `verify_8` speculative rounds, Apple10-tuned `ConvAppleMPP`, GPU Vision MPP
 kernels, lazy `AudioExecutor` + `USER_INTERACTIVE` QoS, fixed `llguidance` `TokTrie` + Think-tool
-continuity, parallel read-only tool dispatch, and a recursive-descent FC parser), ships in the
-app (commit `438ef6b`) alongside the published v2 64K/ring-KV/`verify_8` model
-(`gemma-4-E4B-it-agello-v2.litertlm`, commit `c71dcda`) and Core AI ANE `EmbeddingGemma 2` bundle,
-after passing the full iPhone 17 Pro hardware gates (`phone-bench.sh`, `security`, `inference`,
-`files`, `web`, `thinking`, `memory`, `ui`, and 64K `probes`). What's next (Phase 6 iOS 27 system
-surface and thermal soak) is tracked in [ROADMAP.md](ROADMAP.md#current-status), "Current status".
+continuity, parallel read-only tool dispatch, and a recursive-descent FC parser), is the currently
+shipped release alongside the v2 64K/ring-KV/`verify_8` model (`gemma-4-E4B-it-agello-v2.litertlm`,
+commit `9935a811`) and Core AI ANE `EmbeddingGemma 2` bundle (`41026d1c`). Full-Stack Audit Wave 1
+(`iRT@7ab1a63`) and Wave 2 (`LiteRT-LM@c819aecb`, verified on the M6 Mac workbench) are complete
+locally and await the physical iPhone 17 Pro hardware gate and release `agello-one-20261122-4` —
+tracked in [ROADMAP.md](ROADMAP.md#current-status), "Current status".
 
 Agello's backend stops being Google's LiteRT-LM with patches kept close to upstream. It becomes
 our own code base, a hard fork, with one job: run our model file on Apple GPUs under iOS 27 as
@@ -53,19 +54,21 @@ fast as the hardware allows, at the quality the model has today.
 - Most of those files serve other platforms: Android, Windows, Linux and the web, OpenCL, OpenGL
   and WebGPU beside Metal (ML Drift's Metal folder is 38 files of 877), vendor NPUs, converters,
   the Kotlin, JavaScript and Python bindings, a CMake build beside Bazel.
-- The app ships release `agello-one-20261122` (build `47b132c0cbd6`, since 2026-11-22; previously
-  `agello-one-20261115` and `agello-next-20261024`) with our v2 model file,
-  `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` (`gemma-4-E4B-it-agello-v2.litertlm`). The runtime serves that file, its MTP
-  drafter and EmbeddingGemma, and nothing else.
-- What the Mac command line measured on the M6 (shipped runtime, 32K window): 90 to 115 tok/s;
+- The app ships release `agello-one-20261122-3` (build `4712b414941a`; previously
+  `agello-one-20261122-2`, `agello-one-20261122`, `agello-one-20261115`, and `agello-next-20261024`)
+  with our v2 model file, `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`
+  (`gemma-4-E4B-it-agello-v2.litertlm`). The runtime serves that file, its MTP drafter, and the
+  LiteRT EmbeddingGemma fallback (primary embeddings now run on the 16-core ANE via Core AI).
+- What the Mac command line measured on the M6 (initial baseline, 32K window): 90 to 115 tok/s;
   a decode run is 72 % `fc1x1_int4_weights`; a prefill run is 43 % the int8 convolution and
   28 % `weights_convert_uint4_to_int8`; a decode step is 86 % the GPU's MTP verify run, and speed
   follows the share of drafts MTP keeps (58 to 71 % on the coding prompt, 44 to 60 % on the
   bench's cases, and 45 to 57 % on the iPhone).
-- **The CPU still does real work in the app.** The image and audio encoders run on the CPU
-  (`ChatEngine.makeEngine`), and so does everything around the GPU: the tokenizer, sampling, the
-  grammar for JSON. "GPU only" means the language model and the embedder; the CPU kernels the
-  encoders use stay in the runtime until the encoders move (B5).
+- **The CPU still does real work in the app.** At the start of B5 both encoders ran on the CPU; as
+  of Phase 4 (`P4.1`–`P4.2`), the image encoder runs on Apple10 GPU Neural Accelerators and
+  `EmbeddingGemma 2` runs on the 16-core Apple Neural Engine via Core AI, while the audio encoder
+  loads lazily on P-core XNNPACK (`USER_INTERACTIVE` QoS) alongside the tokenizer, sampling, and
+  JSON grammar constraints.
 
 ## Milestones
 

@@ -70,7 +70,10 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   Think's reasoning budget on top; later rounds share what's left, at least
   their floor or reasoning budget plus 256 answer tokens when that fits. Each
   reply sends its own reasoning budget that leaves the answer room
-  (`ToolBudget.reasoning`). A streaming guard (only with tools) ends the reply
+  (`ToolBudget.reasoning`), and post-tool rounds clamp reasoning to
+  `ToolBudget.Plan.followUpThinkingBudget` (`followUpThinkingConfig`, capped
+  within `followUpCap`) so a Think turn never spends all follow-up tokens on
+  reasoning with zero visible answer tokens. A streaming guard (only with tools) ends the reply
   (`replyTruncated`) before output plus tool results exceed the room; without
   tools the runtime's cap is exact. Don't loosen these limits.
 - Counts are exact (probe 17): `Conversation.renderMessageIntoString`
@@ -152,7 +155,9 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
   (`InferencePlanner.attempts`). The last attempt gets a second try whatever
   the error, then the load fails and is reported: there is no CPU backend to
   fall back to (removed 2026-11-11, `docs/BACKEND.md`), so don't add one. The
-  image and audio encoders still run on the CPU; that's a B5 thread.
+  image encoder (`VisionEncoder` + `VisionAdapter`) runs on the GPU (Apple10
+  Neural Accelerators, P4.2); the audio encoder loads lazily on P-core XNNPACK
+  (`USER_INTERACTIVE` QoS).
 - `InferencePlanner.requiresEngineReload` lists the engine-level settings
   (KV size, vision, audio, MTP). Changing any of
   them needs a full `load`. Everything else goes through
@@ -212,16 +217,23 @@ are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
 - **Tool safety & mutability (`AgentSecurity.swift`):**
   - Spotlight every untrusted external text (attached files, web search results,
     shared text, and external tool outputs) inside `<untrusted_data>` after
-    `PromptText.neutralized`, and strip untrusted blocks before memory
-    extraction (`UntrustedContext.stripUntrustedBlocks`).
+    `PromptText.neutralized` (use `UntrustedContext.wrapFitted` when fitting
+    to a token/character budget so the closing tag is never sliced off), and
+    strip untrusted blocks before memory extraction
+    (`UntrustedContext.stripUntrustedBlocks`).
   - Mark every `Tool` struct with explicit `static let isReadOnly` (`true` for
     read-only tools eligible for parallel `withTaskGroup` execution; `false`
     for side-effectful tools like `create_calendar_event` and
     `create_reminder`). Every `isReadOnly == false` tool MUST call
     `ToolConfirmationGate.confirm(...)` before mutating state — fail-closed by
-    default when backgrounded, stopped, or without an active UI presenter.
+    default when backgrounded, stopped, or without an active UI presenter,
+    with request-ID matching and inline `ToolConfirmationCard` rendered in
+    both `ChatView` and `VoiceModeView`.
   - Never throw from `Tool.run()`: return an actionable `["error": "..."]`
     dictionary so LiteRT-LM lets the model recover instead of aborting the turn.
+    `ToolManager.normalizeResult` also stringifies non-finite `Double`/`Float`
+    values (`NaN`, `±Infinity`) before JSON serialization so malformed numbers
+    never crash a tool round.
 
 ## Language-agnostic tools and prompts
 
@@ -282,11 +294,15 @@ speed, token budget, or output quality:
 - Replies stop only when available memory drops below 400 MB
   (`DeviceProfile.lowMemoryStopBytes`), not at the first memory warning.
 - No GPU work in the background. A reply stops when the app leaves the
-  foreground, except long file summaries running as a `BGContinuedProcessingTask`
-  with background GPU. `GPUGate` (separate from `isBusy`) is closed in the
-  background: helpers, dictation and indexing are cancelled and re-queued, and
-  a load interrupted by backgrounding stops (`GPUGate.closedError`) and runs
-  again when the app is back.
+  foreground, except eligible tasks (`BackgroundWorkPlan`: long document or
+  multi-document synthesis, web research, and multi-step Think tool chains)
+  running as a `BGContinuedProcessingTask` with background GPU. If submission
+  fails while already backgrounded, `BackgroundWork.onSubmissionFailure` closes
+  `GPUGate` and drains active GPU work immediately. `GPUGate` (separate from
+  `isBusy`) is closed in the background: helpers, dictation and indexing are
+  cancelled and re-queued, and a load tracks `loadingConversation` so a
+  backgrounded or cancelled load tears down cleanly (`GPUGate.closedError`)
+  and runs again when the app is back.
 - Extensions (widgets, share sheet) can't load the model. They hand off to the
   app.
 - Memory warnings go through `MemoryPolicy.action(level:)` and

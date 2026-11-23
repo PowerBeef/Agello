@@ -278,9 +278,11 @@ Google's nightly), `TELEMETRY.md`, and `tracks/` (one note per track). The
   `../LiteRT-LM`'s build (its header says how to switch back). It *copies* the
   framework: rerun it after every rebuild, and check the build id in the
   harness report's device record (`runtimeBuild`) before trusting a run. Never
-  commit `Vendor/LiteRT-LM` while it points at the local build. Then verify on
-  the iPhone (`agello-device-testing`); a `PLATFORM=mac` run only after asking
-  the user, who often keeps the Mac busy.
+  commit `Vendor/LiteRT-LM` while it points at the local build. Verify first on
+  this M6 Mac workbench (`scripts/cli-test.sh`, `PLATFORM=mac scripts/device-harness.sh`,
+  and `scripts/cli-bench.sh` with `scripts/mac-ready.sh` guarding quiet timing
+  runs), then ask the user before running the physical iPhone hardware gate
+  (`agello-device-testing`).
 - **Shipping it:** `agello/release-xcframework.sh <tag>` on the fork (a dry run
   without `--publish`; publishing needs the user's OK). `--publish` rebuilds
   first: to publish the dry run's files you tested, run the script's
@@ -345,8 +347,9 @@ Keep every rule in the `agello-inference-rules` skill.
 ## 4. Re-check the privacy manifest
 
 `CLiteRTLM.framework` is embedded without its own privacy manifest, so the
-app's `Agello/PrivacyInfo.xcprivacy` declares its required-reason APIs. After
-the build, list the binary's references:
+app's `Agello/PrivacyInfo.xcprivacy` declares its required-reason APIs
+(`AgelloShare/PrivacyInfo.xcprivacy` also declares `C617.1` for the Share
+extension). After the build, list the binary's references:
 
 ```sh
 F=$(find ~/Library/Developer/Xcode/DerivedData/Agello-*/SourcePackages/artifacts/litert-lm \
@@ -355,9 +358,9 @@ nm -u "$F" | grep -E "_(stat|fstat|fstatat|lstat|getattrlist.*|statfs|fstatfs|st
 find "$(dirname "$F")" -name "*.xcprivacy"
 ```
 
-v0.18.0 references `stat`, `fstat`, `fstatat`, `lstat` (file timestamp,
-declared `C617.1`) and `mach_absolute_time` (system boot time, `35F9.1`). Any
-new category needs an entry in the app's manifest. If the framework starts
+Our build references only `stat`, `fstat`, `lstat` (file timestamp, declared
+`C617.1`) and `mach_absolute_time` (system boot time, `35F9.1`). Any new
+category needs an entry in the app's manifest. If the framework starts
 shipping its own manifest, keep the app's entries for the app's own code
 (UserDefaults `CA92.1`, disk space `E174.1`, file sizes `C617.1`).
 

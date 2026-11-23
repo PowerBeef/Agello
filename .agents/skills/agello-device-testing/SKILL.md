@@ -13,6 +13,9 @@ through the harness scripts below, not raw `mobilebuildmcp` tools.
 
 ## Before a run
 
+0. **Ask the user before running tests or benchmarks on the physical iPhone.**
+   Use this M6 Mac mini (`scripts/cli-test.sh`, `PLATFORM=mac scripts/device-harness.sh`)
+   for day-to-day verification, and batch physical iPhone gates after asking the user.
 1. The iPhone is connected, paired, and **unlocked**, and stays unlocked for
    the whole run. A lock makes Xcode stall ("device is locked") and makes UI
    tests fail with "Timed out while enabling automation mode".
@@ -223,8 +226,10 @@ can be built against any checkout of our LiteRT-LM. The iPhone still confirms wh
 ```sh
 swift build -c release --scratch-path build/cli/release            # then build/cli/release/release/agello
 scripts/cli-check.sh                                                # does it still build? (every harness run ends with it)
-scripts/cli-test.sh unit [Class[/method]]                           # 317 unit tests, about a minute, no phone
+scripts/cli-test.sh unit [Class[/method]]                           # 384 unit tests, ~20 s, no phone
 scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-model scenarios on this Mac's GPU
+scripts/cli-test.sh security                                        # 6-vector prompt-injection gate on Mac
+MTL_DEBUG_LAYER=1 scripts/cli-test.sh inference InferenceScenarioTests/test01_BasicReply   # Metal API validation
 build/cli/release/release/agello bench --only todo,explain --out build/cli/runs/x.jsonl
 scripts/cli-bench.sh release next -- --only explain                 # two runtime builds, in turns, with the comparison
 scripts/cli-report.py | cli-timeline.py | cli-replies.py            # answer checks, where the time went, where two builds' replies part
@@ -335,7 +340,9 @@ Lessons from the first round (Search when needed, 2026-11-02):
   questions and requests, none for the rest).
 - Put follow-ups with their conversation in the table: they fail
   differently from first messages.
-- JSON enum values must be one word on our runtime (`agello-inference-rules`).
+- Multi-word JSON enum values now work with MTP ON since `agello-one-20261122-3`
+  (`LiteRT-LM@7d80c7ec`, guarded by `test16_MultiWordJsonEnumWithMTP`); keep
+  enum labels short to save helper tokens (`agello-inference-rules`).
 - Put the real input in the table, not a tidy stand-in: a follow-up passed with a two-sentence
   made-up reply as history and failed with the reply the app had actually given (2026-11-10).
   Look at what the helper reads after truncation: a cited reply cut to 400 bytes ended on the
@@ -426,8 +433,9 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
   is on, in the developer screen: five taps on Settings' version line
   (`settings.version`), then `settings.showStats`.
 - There's no Advanced screen (removed 2026-11-11): the sampler presets, the
-  Think budget and the other engine choices aren't in the UI. The engine-level
-  switch left in Settings is On-device tools (`settings.tools`).
+  Think budget and the other engine choices aren't in the UI. The tool toggles
+  in Settings are On-device tools (`settings.tools`) and opt-in Personal tools
+  (`PersonalToolsSettings`: Calendar, Reminders, Contacts, Apple Maps).
 - `--uitest-reset` wipes chats, projects, files, memories and all settings
   (models are kept): the dev install's own data on the phone goes too.
 - Screenshots for the README and App Store come from

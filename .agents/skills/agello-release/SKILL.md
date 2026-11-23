@@ -23,7 +23,7 @@ uploading, submitting) needs the user's go-ahead first.
 | Widgets extension | `com.patricedery.agello.widgets` |
 | Share extension | `com.patricedery.agello.share` |
 | App Group | `group.com.patricedery.agello` (app and share extension) |
-| App capabilities | Extended Virtual Addressing, Increased Memory Limit, Background GPU (continued processing), App Groups, WeatherKit (the App ID needs it under Capabilities and App Services) |
+| App capabilities | Extended Virtual Addressing, Increased Memory Limit, Background GPU (`continued-processing` + `continued-processing.inference`), App Groups, WeatherKit (the App ID needs it under Capabilities and App Services) |
 
 ## Checklist
 
@@ -37,7 +37,8 @@ uploading, submitting) needs the user's go-ahead first.
    subagent or the user's visible browser; the user signs in to Apple
    themselves). There was no record for the app (under either name) as of
    2026-10-14.
-3. **Privacy.** `Agello/PrivacyInfo.xcprivacy` declares no tracking, no data
+3. **Privacy.** `Agello/PrivacyInfo.xcprivacy` and
+   `AgelloShare/PrivacyInfo.xcprivacy` (`C617.1`) declare no tracking, no data
    collected, and the required-reason APIs (see `agello-litert-update` for
    the LiteRT-LM part). The App Store privacy answers must match: "Data Not
    Collected". At the user's request, web search sends its queries to the
@@ -45,11 +46,16 @@ uploading, submitting) needs the user's go-ahead first.
    Maps the user's area for "near me" questions, and it downloads the pages it
    found (`docs/privacy.md`); nothing goes to the developer. Confirm the user
    agrees with that classification.
-4. **Model hosting.** The chat model downloads from
-   `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` (our patched copy of
-   litert-community's file, Apache 2.0, with a NOTICE). Keep that repo public,
-   and keep the app's licenses screen crediting Google, litert-community and the
-   modification.
+4. **Model hosting.** Both model repos are Apache 2.0 with `LICENSE` and
+   `NOTICE` files:
+   - Chat model: `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` (our patched
+     v2 128K copy of litert-community's E4B file, `gemma-4-E4B-it-agello-v2.litertlm`).
+   - Embedding model: `PowerBeef02/embeddinggemma-2-text-270m-coreai-ane`
+     (revision `41026d1c`, our 4-bucket asymmetric INT4 Core AI ANE conversion
+     of litert-community's EmbeddingGemma 2).
+   Keep both repos public, and keep the app's licenses screen (`NOTICE` /
+   `Agello/Resources/NOTICE.txt`) crediting Google, litert-community and the
+   modifications.
 5. **Export compliance.** Done: `AgelloiOS/Info.plist` sets
    `ITSAppUsesNonExemptEncryption` to false (the app only uses HTTPS through
    URLSession, which qualifies as exempt). Revisit it if the app ever adds
@@ -64,8 +70,9 @@ uploading, submitting) needs the user's go-ahead first.
    with 12 GB of memory (iPhone 17 Pro and Pro Max, iPhone Air, or later) on
    iOS 27 and about 6.9 GB free: the app starts a download only when the file,
    the engine cache its first load writes and a 0.5 GB margin fit
-   (`ModelStore.requiredBytes`), 6.7 GB for E4B (3.66 + 2.5 + 0.5), and
-   EmbeddingGemma, which follows, needs its file and cache (0.26 GB) on top.
+   (`ModelStore.requiredBytes`), 6.7 GB for E4B (3.69 + 2.5 + 0.5), and
+   EmbeddingGemma, which follows, needs its 128 MB Core AI ANE archive and
+   unpacked bundle (~0.26 GB headroom during unpack) on top.
    The App Store can't enforce the memory: there's no capability key for it,
    and `iphone-performance-gaming-tier` is for games (dropped 2026-11-12).
    Any iPhone on iOS 27 can install the app; below 12 GB it opens on

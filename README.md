@@ -29,7 +29,7 @@ Agello is a full AI assistant that lives on your iPhone. It runs Google's **Gemm
 <img src="docs/images/readme/icons/private.svg" width="40" height="40" alt="">
 
 **Private by design**<br>
-Chats, photos, files and recordings stay on the phone. The network is used only to download the models and for the web searches you ask for: the sources receive the search terms (Apple Weather a place's coordinates, Apple Maps your area for "near me" questions), and Agello downloads the pages it found to read them. [Privacy policy](https://powerbeef.github.io/Agello/privacy)
+Chats, photos, files, recordings, and opt-in personal tools (Calendar, Reminders, Contacts) stay on the phone. The network is used only to download the models and for the web searches or Apple Maps place lookups you ask for: the sources receive the search terms (Apple Weather a place's coordinates, Apple Maps your area for "near me" questions), and Agello downloads the pages it found to read them. [Privacy policy](https://powerbeef.github.io/Agello/privacy)
 
 </td>
 <td width="33%" valign="top">
@@ -217,7 +217,7 @@ Hybrid acoustic + neural turn detection (`SpeechAnalyzer` on ANE) and one audio 
 
 <img src="docs/images/readme/icons/tests.svg" width="40" height="40" alt="">
 
-**Over 400 tests, run on a real iPhone**<br>
+**Over 550 tests, run on a real iPhone**<br>
 Unit tests, scenarios and runtime probes with the real models in-process, and real-tap UI flows, including an accessibility audit. They run through a device harness that also simulates memory pressure on a 12 GB phone. No simulator: the failures that matter only happen on hardware. [Testing](docs/TESTING.md) has the counts.
 
 </td>
@@ -328,7 +328,7 @@ Agello is licensed under the [Apache License 2.0](LICENSE). [NOTICE](NOTICE) cov
 | LiteRT-LM | Vendored in `Vendor/LiteRT-LM` | Apache 2.0 |
 | swift-markdown, swift-cmark | Swift packages | Apache 2.0, BSD 2-Clause |
 | SwiftMath | Swift package | MIT |
-| Gemma 4 E4B (litert-community build, v2 graph-patched), EmbeddingGemma 2 | Downloaded at runtime | Apache 2.0 |
+| Gemma 4 E4B (litert-community build, v2 graph-patched), EmbeddingGemma 2 (litert-community build, Core AI ANE conversion) | Downloaded at runtime | Apache 2.0 |
 
 ## Acknowledgements
 

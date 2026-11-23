@@ -53,9 +53,10 @@ The maintainer's correction of 2026-11-10 ([BACKEND.md](BACKEND.md) has the whol
 
 - **Memory decisions follow the iPhone, not this Mac.** The engine sees a simulated app limit
   (8 GiB by default, the iPhone 17 Pro's), so it takes the phone's window whatever else the Mac
-  is running: it requests 65,536 positions, which the published model file caps at 32,000 (a
-  file opened to 128K gets all 65,536). `--memory-limit 5.0` gives the 16K step and `3.4` the
-  8K step. Nothing is enforced: the memory suite stays on the iPhone.
+  is running: it requests 65,536 positions, and the shipped v2 128K model file allocates the full
+  65,536 (older 32K files cap at 32,000). `--memory-limit` steps down to 16K below 4.2 GB of room
+  (`DeviceProfile.roomForLargeContextBytes`) and 8K below 3.5 GB. Nothing is enforced: the memory
+  suite stays on the iPhone.
 
 ## What it reads and writes
 
@@ -111,8 +112,9 @@ the comparison (`compare.py`: medians, a 95 % interval for each change, the base
 band) and the answer checks (`cli-report.py`). A change inside the noise band isn't a change.
 
 - It takes the harness lock, so it and an iPhone run never measure or build at the same time.
-- It measures the Mac's load and takes it into account: "System load", below.
-- A real-model run is a Mac run: ask the maintainer first.
+- It measures the Mac's load and takes it into account: "System load", below (`scripts/mac-ready.sh`
+  waits or refuses with exit 4 if the Mac is busy; leave the Mac idle during measuring runs, and
+  always ask the user before running benchmarks on the physical iPhone).
 
 ## System load
 
@@ -193,9 +195,9 @@ scripts/cli-report.py build/cli/runs/quality.jsonl
 ## The tests, natively
 
 ```sh
-scripts/cli-test.sh unit                         # 317 unit tests on the scripted engine, about a minute
+scripts/cli-test.sh unit                         # 384 unit tests on the scripted engine, ~20 s
 scripts/cli-test.sh unit AppStateTests           # one class, or Class/method
-scripts/cli-test.sh inference                    # the real-model scenarios on this Mac's GPU (also files, web, thinking, probes, calibrate)
+scripts/cli-test.sh inference                    # the real-model scenarios on this Mac's GPU, SIM_GPU=Apple_A19_Pro (also files, web, thinking, security, probes, calibrate)
 ```
 
 The package has two test targets on the same folders the iPhone's test targets compile,
@@ -343,7 +345,7 @@ the fork's `main` and shipped since `agello-one-20261115`):
 ### C8, built on 2026-11-10
 
 - **269 unit tests passed natively** in 73 s on 2026-11-10 (of the iPhone's 333 then: the rest
-  test the interface). Today the package compiles 299 of the iPhone's 365 (2026-11-16).
+  test the interface). Today the package compiles 384 of the iPhone's 456 (2026-11-23).
 - **The `inference` suite passes natively, 23 of 23, in 105 s**: load, text, chat isolation,
   stop, tools, Think, image, audio, vision toggles, the context limit, exact token counts,
   titles, memory, dictation, voice turns, digits past 2,048 and 4,096 tokens, the benchmark.
