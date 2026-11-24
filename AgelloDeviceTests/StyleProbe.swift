@@ -10,6 +10,7 @@ import XCTest
 /// goes (after the base and the precedence line). `STYLE_CANDIDATES` picks some by name.
 extension ProbeScenarioTests {
   func test37_ConciseStyleTable() async throws {
+    try requireResearchProbes("multi-candidate style sweep", unlessEnvSet: "STYLE_CANDIDATES")
     try await requireLoadedModel()
     let saved = (appState.options, appState.personalization)
     defer { (appState.options, appState.personalization) = saved }

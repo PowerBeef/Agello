@@ -13,6 +13,7 @@ extension ProbeScenarioTests {
   /// - `SYSTEM_PROMPT_CANDIDATES`: which candidates, comma-separated (default `A,B,C,D,E`).
   /// - `SYSTEM_PROMPT_CASES`: case-id prefixes to run (default all).
   func test34_SystemPromptTable() async throws {
+    try requireResearchProbes("315-generation prompt table", unlessEnvSet: "SYSTEM_PROMPT_CANDIDATES")
     try await requireLoadedModel()
     let environment = ProcessInfo.processInfo.environment
     let names = (environment["SYSTEM_PROMPT_CANDIDATES"] ?? "A,B,C,D,E").split(separator: ",").map(String.init)

@@ -29,10 +29,10 @@ patches, the docs and tools; renamed to `main`, so links to it redirect), `agell
 are archived). Older notes and the #3913 section below name those branches as history.
 
 `Vendor/LiteRT-LM` holds only the Swift package surface of our fork's
-`main` (`swift/` at `8f9e7142`): `Package.swift` (with the checksummed
-`CLiteRTLM.xcframework` download of our release, `agello-one-20261122-3` (`8f9e7142`, build
-`4712b414941a`) since 2026-11-22; previously `agello-one-20261122-2`, `agello-one-20261122`,
-`agello-one-20261115`, and `agello-next-20261024`),
+`main` (`swift/` at `c819aecb`): `Package.swift` (with the checksummed
+`CLiteRTLM.xcframework` download of our release, `agello-one-20261124` (`c819aecb`, build
+`8a7e34594612`) since 2026-11-24; previously `agello-one-20261122-3`, `agello-one-20261122-2`,
+`agello-one-20261122`, `agello-one-20261115`, and `agello-next-20261024`),
 `swift/`, and `LICENSE`. It's vendored because upstream Git LFS
 breaks Swift Package Manager resolution.
 
@@ -49,9 +49,9 @@ separate `AGENTS.md` or `.agents/` folder):
 | --- | --- |
 | `origin` | `PowerBeef/agello-litert-lm` (push here) |
 | `upstream` | `google-ai-edge/LiteRT-LM` (fetch only; push is disabled) |
-| `main` branch | The only branch: the runtime (upstream's 0.19.0 nightly source, tag `agello-base-20261013`, plus our commits, LiteRT and ML Drift in tree), `docs/agello/`, `tools/`. The app vendors its releases: `agello-one-20261122-3` (`8f9e7142`) since 2026-11-22. |
+| `main` branch | The only branch: the runtime (upstream's 0.19.0 nightly source, tag `agello-base-20261013`, plus our commits, LiteRT and ML Drift in tree), `docs/agello/`, `tools/`. The app vendors its releases: `agello-one-20261124` (`c819aecb`) since 2026-11-24. |
 | `research/3913` tag | The #3913 research (below); a branch until 2026-10-15, so links to `tree/research/3913` still resolve |
-| Release tags | `agello-next-20261024`, `agello-one-20261115`, `agello-one-20261122`, `agello-one-20261122-2`, `agello-one-20261122-3`; Google's are on upstream's `release/vX.Y.Z` branches (fetch from `upstream`) |
+| Release tags | `agello-next-20261024`, `agello-one-20261115`, `agello-one-20261122`, `agello-one-20261122-2`, `agello-one-20261122-3`, `agello-one-20261124`; Google's are on upstream's `release/vX.Y.Z` branches (fetch from `upstream`) |
 
 Branch policy (the user's choice, 2026-11-15): one branch per repository, ours. Don't recreate
 an upstream mirror or side branches on GitHub, and don't create a branch named `agello`: it would
@@ -364,15 +364,12 @@ category needs an entry in the app's manifest. If the framework starts
 shipping its own manifest, keep the app's entries for the app's own code
 (UserDefaults `CA92.1`, disk space `E174.1`, file sizes `C617.1`).
 
-## 5. Verify on the iPhone
+## 5. Verify on the iPhone (lean dev gate)
 
-Run these in order (see `agello-device-testing`):
+After verifying on the M6 Mac workbench (`cli-test.sh unit` + targeted scenarios + reading replies), ask the user before running on the physical iPhone (`agello-device-testing`):
 
-1. `scripts/device-harness.sh probes`: LiteRT-LM feature probes (helper
-   conversation, JSON, embeddings).
-2. `inference`, then `files`.
-3. `calibrate` when performance or memory may have changed. Compare with the
-   roadmap's dated runs, and record the new ones there.
-4. If the release mentions #3913, follow "When Google fixes #3913" above.
+1. `scripts/device-harness.sh gate` (~8–12 min): single build, shared-engine hardware/ANE/memory check + core UI.
+2. Add `probes` (~3–5 min) or `soak` (~4–5 min) only if the runtime change touched low-level KV, pool, or constraint internals; save `calibrate`, `bench`, and `phone-bench.sh` for speed milestones or pre-release cuts.
+3. If the release mentions #3913, follow "When Google fixes #3913" above.
 
-Commit the vendored release and the fixes separately.
+Commit the vendored release and the fixes cleanly on `main`.

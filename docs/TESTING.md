@@ -21,16 +21,18 @@ The harness targets the `deviceId` in `.mobilebuildmcp/config.yaml`, a local, gi
 ```sh
 cp .mobilebuildmcp/config.example.yaml .mobilebuildmcp/config.yaml
 
-scripts/device-harness.sh unit        # unit tests (~3 min, scripted engine)
-scripts/device-harness.sh inference   # engine scenarios with the real model
-scripts/device-harness.sh files       # files, ANE retrieval, and workspace/multilingual tools
-scripts/device-harness.sh web         # live web search (needs internet)
-scripts/device-harness.sh security    # 6-vector adversarial prompt-injection gate (0% breach)
-scripts/device-harness.sh ui          # real-tap UI flows
-scripts/device-harness.sh all         # unit, inference + files + web, then UI
-scripts/device-harness.sh thinking | memory | calibrate | probes   # opt-in
-scripts/device-harness.sh screenshots # opt-in tour with the real model (README images)
-scripts/device-harness.sh bench       # opt-in: the bench through the app's screens, Release (HARNESS.md)
+scripts/device-harness.sh gate        # fast iPhone hardware gate (~7.5-9 min: 1x build + shared device/ANE/memory + core UI)
+scripts/device-harness.sh unit        # unit tests (~1-1.5 min, scripted engine)
+scripts/device-harness.sh inference   # engine scenarios with the real model (~5.5-6.5 min)
+scripts/device-harness.sh files       # files, ANE retrieval, and workspace/multilingual tools (~2.5-3.5 min warm ANE)
+scripts/device-harness.sh web         # live web search (~7-8 min, needs internet)
+scripts/device-harness.sh security    # 6-vector adversarial prompt-injection gate (0% breach, ~1-1.5 min)
+scripts/device-harness.sh ui          # real-tap UI flows (~11-15 min; TEST_RUNNER_UITEST_REAL_ENGINE=1 ~16-18 min)
+scripts/device-harness.sh all         # builds once, then unit, inference + files + web, and UI (~25-32 min)
+scripts/device-harness.sh thinking | memory | calibrate | probes   # opt-in (probes ~3-5 min, fast regression only)
+scripts/device-harness.sh soak | research-probes                   # opt-in 200-turn soak (~4-5 min) / historical sweeps (~60-75+ min)
+scripts/device-harness.sh screenshots # opt-in tour with the real model (README images, ~4 min)
+scripts/device-harness.sh bench       # opt-in: the bench through the app's screens, Release (~25-30 min, HARNESS.md)
 
 ONLY=AgelloTests/AppStateTests scripts/device-harness.sh unit   # part of a suite
 ```

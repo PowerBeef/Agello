@@ -3,36 +3,44 @@
 # the iPhone app (PLATFORM=mac). Never the simulator.
 #
 # Usage:
-#   scripts/device-harness.sh [unit|inference|files|web|ui|all|thinking|memory|calibrate|probes|screenshots|bench] [extra xcodebuild args...]
+#   scripts/device-harness.sh [gate|unit|inference|files|web|security|ui|all|thinking|memory|calibrate|probes|soak|research-probes|screenshots|bench] [extra xcodebuild args...]
 #
+#   gate       Fast physical iPhone hardware gate (~7.5-9 min): builds once
+#              (build-for-testing), runs one shared-engine device pass (2.3 min)
+#              for hardware-critical scenarios + ANE embeddings + memory envelopes,
+#              then one test-without-building UI pass (4.1 min) for core E2E + UI.
 #   unit       Unit tests (planner, budgets, schema, markdown, files, projects,
-#              the app pipeline through the scripted engine), on the iPhone.
+#              the app pipeline through the scripted engine), on the iPhone (~1 min).
 #   inference  In-app scenarios through the real engine (download, load, text,
 #              chat isolation, stop, tools, thinking, image, audio, settings
-#              round-trip, context limit, titles, benchmark). Downloads E4B if missing.
-#   files      Files with the real models: EmbeddingGemma indexing and retrieval,
-#              "summarize this 40-page PDF", cited follow-up.
+#              round-trip, context limit, titles, benchmark; ~5-6 min). Downloads E4B if missing.
+#   files      Files with the real models: ANE EmbeddingGemma indexing & retrieval,
+#              "summarize this 40-page PDF", cited follow-up, workspace/multilingual tools (~2-3 min).
 #   web        Live web search with the real model (needs internet): cited
-#              answer, planned follow-up, automatic mode.
-#   ui         Real-tap flows (send, Stop, Home button mid-reply, leave/return
-#              mid-reply, drawer, projects, files, message actions, Think,
-#              keyboard, Settings). Needs E4B downloaded.
-#   thinking   Long Thinking-mode scenarios (issue #703 prompt, budgets up to 2K).
-#   calibrate  Context-size calibration: memory and speed at 4K-32K KV caches.
-#   probes     LiteRT-LM feature probes (helper conversation, JSON, embeddings).
-#   memory     Memory pressure simulation (E4B at 6.0/5.0/4.0/3.5 GB usable).
+#              answer, planned follow-up, automatic mode, 21 decisions, 13 sources (~6-7 min).
+#   security   6-vector adversarial prompt-injection gate (0% breach, ~1 min).
+#   ui         Real-tap flows (7 real-GPU E2E streaming/backgrounding tests +
+#              16 --mock-engine UI flows + Floor + Accessibility audit; ~11-15 min).
+#              Pass TEST_RUNNER_UITEST_REAL_ENGINE=1 to run all UI tests on real GPU (~16-18 min).
+#   thinking   Long Thinking-mode scenarios (budgets, answer room, KV stripping; ~1.5-2 min).
+#   calibrate  Context-size calibration: memory and speed at 4K-32K KV caches (~1.5 min).
+#   probes     Fast LiteRT-LM runtime regression probes (~2-3 min; historical research
+#              sweeps & 200-turn soak stay opt-in via `soak` / `research-probes`).
+#   soak       200-turn GPU pool/memory soak (`ProbeScenarioTests/test38_PoolSoak`, ~4 min).
+#   research-probes  All probes including historical prompt/style tables & soak (~60+ min).
+#   memory     Memory pressure simulation (E4B at 6.0/5.0/4.0/3.5 GB usable; ~2.5 min).
 #   screenshots  A guided UI tour with the real model: one screenshot per
-#              screen (attachments/screenshots/) for the README and App Store.
+#              screen (attachments/screenshots/) for the README and App Store (~4 min).
 #   bench      The autonomous harness (docs/HARNESS.md): each bench case sent
 #              through the app's screens in a Bench build (Release with the bench's hooks), the app tracing
-#              the reply; traces pulled and joined in bench/report.md.
+#              the reply; traces pulled and joined in bench/report.md (~25-30 min).
 #              BENCH_ONLY=id,id runs some cases; BENCH_RESUME=1 runs only those
 #              the last report doesn't hold complete; BENCH_COOL=1 waits for
 #              the phone to cool before each case (for speeds); BENCH_ACCEPT=1
 #              makes this run the baseline later runs are compared with
 #              (scripts/bench/baseline.json); BENCH_TRACE=off runs without the
 #              app's trace (screen timings only). iPhone only.
-#   all        unit, inference + files + web, then ui.
+#   all        Builds once, then runs unit, inference + files + web, and ui.
 #
 # Env: PLATFORM (iphone, the default; mac: this Mac runs the iPhone app
 #      "Designed for iPad/iPhone" through its Metal path; ui, screenshots and
@@ -158,12 +166,44 @@ xcodebuild_test() {
   xcodebuild test \
     -project "$ROOT/Agello.xcodeproj" -scheme "$SCHEME" -configuration "${CONFIGURATION:-Debug}" \
     -destination "$DESTINATION" -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
-    -resultBundlePath "$result" "$@"
+    -resultBundlePath "$result" "$@" </dev/null
 }
 
-run_suite() {
+xcodebuild_build_for_testing() {
+  xcodebuild build-for-testing \
+    -project "$ROOT/Agello.xcodeproj" -scheme "$SCHEME" -configuration "${CONFIGURATION:-Debug}" \
+    -destination "$DESTINATION" -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
+    "$@" </dev/null
+}
+
+xcodebuild_test_without_building() {
+  xcodebuild test-without-building \
+    -project "$ROOT/Agello.xcodeproj" -scheme "$SCHEME" -configuration "${CONFIGURATION:-Debug}" \
+    -destination "$DESTINATION" \
+    -resultBundlePath "$result" "$@" </dev/null
+}
+
+build_once() {
   name="$1"
   shift
+  rm -f "$OUT/$name.log"
+  LAST=no
+  write_lock_info "$name"
+  echo "==> $name (build-for-testing)"
+  status_file="$OUT/.$name.status"
+  set +e
+  { xcodebuild_build_for_testing "$@" 2>&1; echo $? >"$status_file"; } \
+    | tee "$OUT/$name.log" | format_output
+  build_status="$(cat "$status_file")"
+  rm -f "$status_file"
+  set -e
+  return "$build_status"
+}
+
+run_suite_with() {
+  runner="$1"
+  name="$2"
+  shift 2
   result="$OUT/$name.xcresult"
   rm -rf "$result" "$OUT/$name.log"
   write_lock_info "$name"
@@ -171,7 +211,7 @@ run_suite() {
   # sh has no pipefail: keep xcodebuild's exit status in a file.
   status_file="$OUT/.$name.status"
   set +e
-  { xcodebuild_test "$@" 2>&1; echo $? >"$status_file"; } \
+  { "$runner" "$@" 2>&1; echo $? >"$status_file"; } \
     | tee "$OUT/$name.log" | format_output
   suite_status="$(cat "$status_file")"
   rm -f "$status_file"
@@ -185,6 +225,14 @@ run_suite() {
   xcrun xcresulttool export attachments --path "$result" \
     --output-path "$OUT/attachments/$name" >/dev/null 2>&1 || true
   return "$suite_status"
+}
+
+run_suite() {
+  run_suite_with xcodebuild_test "$@"
+}
+
+run_built_suite() {
+  run_suite_with xcodebuild_test_without_building "$@"
 }
 
 pull_report() {
@@ -243,9 +291,71 @@ case "$SUITE" in
     export TEST_RUNNER_HARNESS_PROBES=1
     scopes="$DEVICE_TESTS/ProbeScenarioTests"
     ;;
+  soak)
+    export TEST_RUNNER_HARNESS_PROBES=1
+    export TEST_RUNNER_HARNESS_RESEARCH_PROBES=1
+    scopes="$DEVICE_TESTS/ProbeScenarioTests/test38_PoolSoak"
+    ;;
+  research-probes)
+    export TEST_RUNNER_HARNESS_PROBES=1
+    export TEST_RUNNER_HARNESS_RESEARCH_PROBES=1
+    scopes="$DEVICE_TESTS/ProbeScenarioTests"
+    ;;
   calibrate)
     export TEST_RUNNER_HARNESS_CALIBRATE=1
     scopes="$DEVICE_TESTS/CalibrationScenarioTests"
+    ;;
+  gate)
+    if [ -n "${ONLY:-}" ]; then
+      echo "ONLY needs a single suite (unit, inference, ui…), not gate." >&2
+      exit 2
+    fi
+    build_once gate-build "$@" || status=$?
+    if [ "$status" -eq 0 ]; then
+      LAST=yes
+      if [ "$PLATFORM" = iphone ]; then
+        export TEST_RUNNER_HARNESS_MEMORY=1
+        device_status=0
+        run_built_suite gate-device \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test01_LoadModel \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test02_TextReply \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test05b_CalculatorPowersAndPercent \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test07_ImageInput \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test08_AudioInput \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test15_LongContextDigitFidelity \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test16_MultiWordJsonEnumWithMTP \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test17_ThinkToolCallContinuity \
+          -only-testing:"$DEVICE_TESTS"/KnowledgeScenarioTests/test01_IndexAndRetrieveWithEmbeddingGemma \
+          -only-testing:"$DEVICE_TESTS"/KnowledgeScenarioTests/test03_ChatsByMeaning \
+          -only-testing:"$DEVICE_TESTS"/MemoryEnvelopeScenarioTests "$@" || device_status=$?
+        [ "$status" -eq 0 ] && status=$device_status
+        ui_status=0
+        run_built_suite gate-ui \
+          -only-testing:AgelloUITests/ChatFlowUITests/testSendAndReceive \
+          -only-testing:AgelloUITests/ChatFlowUITests/testStopMidReply \
+          -only-testing:AgelloUITests/ChatFlowUITests/testBackgroundDuringGeneration \
+          -only-testing:AgelloUITests/ChatFlowUITests/testLongSummarySurvivesBackgrounding \
+          -only-testing:AgelloUITests/ChatFlowUITests/testDeepLinks \
+          -only-testing:AgelloUITests/ChatFlowUITests/testComposerControlsFit \
+          -only-testing:AgelloUITests/DeviceFloorUITests \
+          -only-testing:AgelloUITests/AccessibilityAuditUITests "$@" || ui_status=$?
+        [ "$status" -eq 0 ] && status=$ui_status
+      else
+        device_status=0
+        run_built_suite gate-device \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test01_LoadModel \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test02_TextReply \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test05b_CalculatorPowersAndPercent \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test07_ImageInput \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test08_AudioInput \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test15_LongContextDigitFidelity \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test16_MultiWordJsonEnumWithMTP \
+          -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests/test17_ThinkToolCallContinuity \
+          -only-testing:"$DEVICE_TESTS"/KnowledgeScenarioTests/test01_IndexAndRetrieveWithEmbeddingGemma \
+          -only-testing:"$DEVICE_TESTS"/KnowledgeScenarioTests/test03_ChatsByMeaning "$@" || device_status=$?
+        [ "$status" -eq 0 ] && status=$device_status
+      fi
+    fi
     ;;
   screenshots)
     export TEST_RUNNER_HARNESS_SCREENSHOTS=1
@@ -282,19 +392,20 @@ case "$SUITE" in
       echo "ONLY needs a single suite (unit, inference, ui…), not all." >&2
       exit 2
     fi
-    LAST=no
-    run_suite unit -only-testing:"$UNIT_TESTS" "$@" || status=$?
-    inference_status=0
-    [ "$PLATFORM" != iphone ] && LAST=yes
-    run_suite inference -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests \
-      -only-testing:"$DEVICE_TESTS"/KnowledgeScenarioTests \
-      -only-testing:"$DEVICE_TESTS"/WebScenarioTests "$@" || inference_status=$?
-    [ "$status" -eq 0 ] && status=$inference_status
-    if [ "$PLATFORM" = iphone ]; then
-      ui_status=0
+    build_once all-build "$@" || status=$?
+    if [ "$status" -eq 0 ]; then
       LAST=yes
-      run_suite ui -only-testing:AgelloUITests "$@" || ui_status=$?
-      [ "$status" -eq 0 ] && status=$ui_status
+      run_built_suite unit -only-testing:"$UNIT_TESTS" "$@" || status=$?
+      inference_status=0
+      run_built_suite inference -only-testing:"$DEVICE_TESTS"/InferenceScenarioTests \
+        -only-testing:"$DEVICE_TESTS"/KnowledgeScenarioTests \
+        -only-testing:"$DEVICE_TESTS"/WebScenarioTests "$@" || inference_status=$?
+      [ "$status" -eq 0 ] && status=$inference_status
+      if [ "$PLATFORM" = iphone ]; then
+        ui_status=0
+        run_built_suite ui -only-testing:AgelloUITests "$@" || ui_status=$?
+        [ "$status" -eq 0 ] && status=$ui_status
+      fi
     fi
     ;;
   *) echo "Unknown suite: $SUITE" >&2; exit 2 ;;

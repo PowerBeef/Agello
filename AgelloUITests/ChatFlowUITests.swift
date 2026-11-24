@@ -8,6 +8,7 @@ import XCTest
 @MainActor
 final class ChatFlowUITests: XCTestCase {
   private var app: XCUIApplication!
+  private var usesMockEngine = false
 
   private static var isSimulator: Bool {
     #if targetEnvironment(simulator)
@@ -15,6 +16,13 @@ final class ChatFlowUITests: XCTestCase {
     #else
       return false
     #endif
+  }
+
+  /// Set `TEST_RUNNER_UITEST_REAL_ENGINE=1` to run even pure-UI layout/navigation tests against
+  /// the real GPU model (pre-release soak). By default, only streaming/background/GPU E2E tests
+  /// cold-load E4B; pure-UI flows use `--mock-engine` so `ui` finishes in ~5–6 min instead of 15+.
+  private static var forceRealEngine: Bool {
+    ProcessInfo.processInfo.environment["UITEST_REAL_ENGINE"] == "1"
   }
 
   /// Every failure carries a screenshot of the app at that moment.
@@ -36,21 +44,29 @@ final class ChatFlowUITests: XCTestCase {
   override func setUp() async throws {
     continueAfterFailure = false
     app = XCUIApplication()
+    usesMockEngine = false
+  }
+
+  private func launchApp(mockEngine: Bool, extraArgs: [String] = []) {
+    app = XCUIApplication()
+    usesMockEngine = (mockEngine && !Self.forceRealEngine) || Self.isSimulator
     app.launchArguments = ["--uitest-reset"]
-    if Self.isSimulator { app.launchArguments.append("--mock-engine") }
+    if usesMockEngine { app.launchArguments.append("--mock-engine") }
+    app.launchArguments += extraArgs
     app.launch()
   }
 
   // MARK: - Scenarios
 
   func testSendAndReceive() throws {
+    launchApp(mockEngine: false)
     try openNewChat()
     send("What is the capital of France? Answer in one word.")
     try waitForReplyToFinish(timeout: 120)
     let reply = lastModelText()
     attachScreenshot("reply")
     XCTAssertFalse(reply.hasPrefix("Error:"), reply)
-    if !Self.isSimulator {
+    if !usesMockEngine {
       XCTAssertTrue(reply.localizedCaseInsensitiveContains("Paris"), reply)
     }
     // Performance details are off by default (the hidden developer screen turns them on).
@@ -62,6 +78,7 @@ final class ChatFlowUITests: XCTestCase {
   /// and no jump down and back.
   func testStreamingNeverJumps() throws {
     try XCTSkipIf(Self.isSimulator, "Needs real streaming")
+    launchApp(mockEngine: false)
     try openNewChat()
     send("Explain how a Bloom filter works, with a short Swift example and a comparison table.")
     XCTAssertTrue(element("chat.stop").waitForExistence(timeout: 10), "The reply never started")
@@ -90,6 +107,7 @@ final class ChatFlowUITests: XCTestCase {
   /// one.
   func testLongCodeReplyStaysResponsive() throws {
     try XCTSkipIf(Self.isSimulator, "Needs real generation")
+    launchApp(mockEngine: false)
     try openNewChat()
     send("Create a beautiful calculator app for mobile in a single self contained html file")
     XCTAssertTrue(element("chat.stop").waitForExistence(timeout: 30), "The reply never started")
@@ -111,6 +129,7 @@ final class ChatFlowUITests: XCTestCase {
   /// Audit #10.
   func testStopMidReply() throws {
     try XCTSkipIf(Self.isSimulator, "Needs real generation")
+    launchApp(mockEngine: false)
     try openNewChat()
     send("Write a detailed 600-word story about a lighthouse keeper.")
     try waitForStreamingText(minLength: 40)
@@ -124,6 +143,7 @@ final class ChatFlowUITests: XCTestCase {
   /// Audit #7: GPU work is not allowed in the background.
   func testBackgroundDuringGeneration() throws {
     try XCTSkipIf(Self.isSimulator, "Needs real GPU generation")
+    launchApp(mockEngine: false)
     try openNewChat()
     send("Write a detailed 600-word story about a lighthouse keeper.")
     try waitForStreamingText(minLength: 40)
@@ -152,6 +172,7 @@ final class ChatFlowUITests: XCTestCase {
   /// engine or kill the stream.
   func testLeaveAndReturnDuringGeneration() throws {
     try XCTSkipIf(Self.isSimulator, "Needs real generation")
+    launchApp(mockEngine: false)
     try openNewChat()
     send("Write a detailed 600-word story about a lighthouse keeper.")
     try waitForStreamingText(minLength: 40)
@@ -170,6 +191,7 @@ final class ChatFlowUITests: XCTestCase {
 
   /// Audit #3: rapid Settings edits must coalesce, and chat must keep working.
   func testRapidSettingsChangesThenChat() throws {
+    launchApp(mockEngine: true)
     try openNewChat()
     send("Say 'one'.")
     try waitForReplyToFinish(timeout: 120)
@@ -209,6 +231,7 @@ final class ChatFlowUITests: XCTestCase {
   /// The app opens on a new chat; a chat is saved on its first message
   /// (unused new chats never appear in the drawer) and reopens from it.
   func testDrawerNewChatAndReopen() throws {
+    launchApp(mockEngine: true)
     try openNewChat()
     send("Say 'one'.")
     try waitForReplyToFinish(timeout: 120)
@@ -237,11 +260,12 @@ final class ChatFlowUITests: XCTestCase {
 
   /// Rename and delete from the chat's toolbar menu.
   func testRenameAndDeleteChat() throws {
+    launchApp(mockEngine: true)
     try openNewChat()
     send("Say 'hello'.")
     try waitForReplyToFinish(timeout: 120)
     // Wait for the model-written title so it can't overwrite the rename.
-    sleep(Self.isSimulator ? 1 : 5)
+    sleep(usesMockEngine ? 1 : 5)
 
     element("chat.menu").tap()
     app.buttons["Rename"].tap()
@@ -272,11 +296,7 @@ final class ChatFlowUITests: XCTestCase {
   /// Simulator only: the mock engine answers "markdown" with a fixed sample.
   func testMarkdownRendering() throws {
     // The scripted engine answers "markdown" with a fixed rich sample.
-    if !Self.isSimulator {
-      app.terminate()
-      app.launchArguments.append("--mock-engine")
-      app.launch()
-    }
+    launchApp(mockEngine: true)
     try openNewChat()
     send("Show me markdown")
     try waitForReplyToFinish(timeout: 30)
@@ -292,6 +312,7 @@ final class ChatFlowUITests: XCTestCase {
   /// Regenerate adds a second version; the switcher moves between them.
   /// Editing a message (long press → Edit) branches the conversation.
   func testRegenerateEditAndVersions() throws {
+    launchApp(mockEngine: true)
     try openNewChat()
     send("Name one primary color. One word.")
     try waitForReplyToFinish(timeout: 120)
@@ -324,6 +345,7 @@ final class ChatFlowUITests: XCTestCase {
   /// The composer's Think toggle: reasoning streams into an expandable
   /// card while it's on, and stops when it's turned off.
   func testThinkToggleShowsReasoning() throws {
+    launchApp(mockEngine: true)
     try openNewChat()
     let think = element("composer.think")
     XCTAssertEqual(think.value as? String, "Off")
@@ -338,7 +360,7 @@ final class ChatFlowUITests: XCTestCase {
     XCTAssertTrue(
       element("message.reasoning.text").waitForExistence(timeout: 5), "Reasoning didn't expand")
     attachScreenshot("reasoning")
-    if !Self.isSimulator {
+    if !usesMockEngine {
       XCTAssertTrue(lastModelText().contains("391"), lastModelText())
     }
 
@@ -354,9 +376,7 @@ final class ChatFlowUITests: XCTestCase {
   /// An attached file shows as a chip, travels with the message, and the
   /// reply lists it as a source.
   func testAttachedFileIsSentAndCited() throws {
-    app.terminate()
-    app.launchArguments.append("--uitest-sample-file")
-    app.launch()
+    launchApp(mockEngine: true, extraArgs: ["--uitest-sample-file"])
     try openNewChat()
     XCTAssertTrue(element("message.file").waitForExistence(timeout: 5), "No pending file chip")
     send("When does the trailhead parking open?")
@@ -365,7 +385,7 @@ final class ChatFlowUITests: XCTestCase {
     XCTAssertTrue(element("message.sources").waitForExistence(timeout: 5), "No sources")
     // The chip moved from the composer to the sent message.
     XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "message.file").count, 1)
-    if !Self.isSimulator {
+    if !usesMockEngine {
       XCTAssertTrue(lastModelText().contains("6"), lastModelText())
     }
   }
@@ -373,14 +393,12 @@ final class ChatFlowUITests: XCTestCase {
   /// A long document summary keeps running while the app is in the
   /// background (a continued processing task with background GPU access on
   /// devices that support it; otherwise the reply stops cleanly, with a
-  /// notice). The iPhone 17 Pro on iOS 27 has no background GPU.
+  /// notice).
   func testLongSummarySurvivesBackgrounding() throws {
     try XCTSkipIf(Self.isSimulator, "Needs real GPU generation")
-    app.terminate()
     // Since 32K the sample report fits whole; at 8K, a load short of memory, it's read section by
     // section, the long work this test sends to the background (2026-11-12).
-    app.launchArguments += ["--uitest-sample-report", "--uitest-window", "8192"]
-    app.launch()
+    launchApp(mockEngine: false, extraArgs: ["--uitest-sample-report", "--uitest-window", "8192"])
     try openNewChat()
     XCTAssertTrue(element("message.file").waitForExistence(timeout: 5), "No pending file chip")
     send("Summarize this report in a few bullet points.")
@@ -408,6 +426,7 @@ final class ChatFlowUITests: XCTestCase {
   /// A project: create it, start a chat in it; the chat lives in the
   /// project, not in the drawer's recent chats.
   func testProjectChat() throws {
+    launchApp(mockEngine: true)
     try openNewChat()
     openDrawer()
     element("drawer.newProject").tap()
@@ -431,6 +450,7 @@ final class ChatFlowUITests: XCTestCase {
   /// The Search chip searches the web for one message; the reply lists
   /// linked sources and the chip turns itself off.
   func testWebSearchFromComposer() throws {
+    launchApp(mockEngine: true)
     try openNewChat()
     let search = element("composer.search")
     XCTAssertTrue(search.waitForExistence(timeout: 5))
@@ -439,7 +459,7 @@ final class ChatFlowUITests: XCTestCase {
     send("What is the capital of Australia?")
     try waitForReplyToFinish(timeout: 180)
     XCTAssertEqual(search.value as? String, "Off", "Search should apply to one message")
-    if !Self.isSimulator {
+    if !usesMockEngine {
       XCTAssertTrue(element("message.sources").waitForExistence(timeout: 5), "No sources")
       XCTAssertTrue(lastModelText().contains("Canberra"), lastModelText())
     }
@@ -451,9 +471,7 @@ final class ChatFlowUITests: XCTestCase {
   func testDictationButtonFlow() throws {
     // XCTest can't answer the system microphone prompt on device: record
     // silence through the app's test microphone instead.
-    app.terminate()
-    app.launchArguments.append("--uitest-fake-mic")
-    app.launch()
+    launchApp(mockEngine: true, extraArgs: ["--uitest-fake-mic"])
     try openNewChat()
     let mic = element("composer.mic")
     mic.tap()
@@ -471,9 +489,7 @@ final class ChatFlowUITests: XCTestCase {
   /// Voice mode opens from the empty composer and ends back in the chat
   /// (test microphone: XCTest can't answer the system prompt on device).
   func testVoiceModeOpensAndCloses() throws {
-    app.terminate()
-    app.launchArguments.append("--uitest-fake-mic")
-    app.launch()
+    launchApp(mockEngine: true, extraArgs: ["--uitest-fake-mic"])
     try openNewChat()
     let voice = element("composer.voice")
     XCTAssertTrue(voice.waitForExistence(timeout: 5), "No voice button in the empty composer")
@@ -490,9 +506,7 @@ final class ChatFlowUITests: XCTestCase {
   /// new chat with the question in the composer (a link never sends for the
   /// user); "voice" opens voice mode.
   func testDeepLinks() throws {
-    app.terminate()
-    app.launchArguments.append("--uitest-fake-mic")
-    app.launch()
+    launchApp(mockEngine: true, extraArgs: ["--uitest-fake-mic"])
     try openNewChat()
     XCUIDevice.shared.system.open(URL(string: "agello://ask?q=What%20is%202%2B2%3F")!)
     let input = element("chat.input")
@@ -518,6 +532,7 @@ final class ChatFlowUITests: XCTestCase {
 
   /// Memory: turn it on and add a memory by hand.
   func testMemorySettings() throws {
+    launchApp(mockEngine: true)
     openSettings()
     element("settings.memory").tap()
     let toggle = element("memory.enabled")
@@ -535,6 +550,7 @@ final class ChatFlowUITests: XCTestCase {
   /// E4B is the only model: its card (Settings → Models) shows Ready
   /// (device) or Download.
   func testModelsShowTheModel() throws {
+    launchApp(mockEngine: true)
     openSettings()
     element("settings.models").tap()
     let ready = element("models.ready.e4b")
@@ -552,6 +568,7 @@ final class ChatFlowUITests: XCTestCase {
   /// accessibility text size every composer control still fits inside the
   /// composer and can be tapped.
   func testComposerControlsFit() throws {
+    launchApp(mockEngine: true)
     let think = element("composer.think")
     let search = element("composer.search")
     XCTAssertTrue(think.waitForExistence(timeout: 10))
@@ -564,10 +581,11 @@ final class ChatFlowUITests: XCTestCase {
     attachScreenshot("composer-default")
 
     app.terminate()
-    app.launchArguments += [
-      "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL",
-    ]
-    app.launch()
+    launchApp(
+      mockEngine: true,
+      extraArgs: [
+        "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL",
+      ])
     let composer = element("chat.composer")
     XCTAssertTrue(composer.waitForExistence(timeout: 10))
     for id in ["composer.attach", "composer.think", "composer.search", "composer.mic", "composer.voice"] {
@@ -635,7 +653,7 @@ final class ChatFlowUITests: XCTestCase {
   }
 
   private func waitForEngineReady(timeout: TimeInterval = 180) throws {
-    if element("chat.banner.download").waitForExistence(timeout: 2) {
+    if !usesMockEngine, element("chat.banner.download").waitForExistence(timeout: 2) {
       throw XCTSkip("Model not downloaded: run InferenceScenarioTests/test00 first")
     }
     let loading = element("chat.banner.loading")
@@ -670,7 +688,7 @@ final class ChatFlowUITests: XCTestCase {
   }
 
   private func waitForReplyToFinish(timeout: TimeInterval) throws {
-    _ = element("chat.stop").waitForExistence(timeout: 10)
+    _ = element("chat.stop").waitForExistence(timeout: usesMockEngine ? 0.5 : 10)
     XCTAssertTrue(
       element("chat.stop").waitForNonExistence(timeout: timeout), "Reply did not finish in time")
     // Idle again: Send (draft present) or the voice-mode button (empty).
@@ -703,6 +721,7 @@ extension ChatFlowUITests {
   /// Checked by real taps: XCTest's keyboard frame excludes the predictive
   /// bar, so frame comparisons alone miss an overlap.
   func testKeyboardDoesNotCoverComposer() throws {
+    launchApp(mockEngine: true)
     let input = app.descendants(matching: .any).matching(identifier: "chat.input").firstMatch
     XCTAssertTrue(input.waitForExistence(timeout: 10))
     input.tap()

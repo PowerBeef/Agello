@@ -17,6 +17,18 @@ final class ProbeScenarioTests: DeviceTestCase {
     }
   }
 
+  /// Heavy historical research tables and 200-turn soak probes stay skipped during routine
+  /// regression runs unless `HARNESS_RESEARCH_PROBES=1` is set (or `soak` / `research-probes`
+  /// suite is chosen), or a probe-specific override variable is provided.
+  func requireResearchProbes(_ reason: String, unlessEnvSet overrideKey: String? = nil) throws {
+    let env = ProcessInfo.processInfo.environment
+    if env["HARNESS_RESEARCH_PROBES"] == "1" { return }
+    if let overrideKey, let value = env[overrideKey], !value.isEmpty { return }
+    throw XCTSkip(
+      "Research/soak probe (\(reason)): set HARNESS_RESEARCH_PROBES=1 or run `soak` / `research-probes`"
+    )
+  }
+
   private func gemmaEngine(
     maxNumTokens: Int = 8_192, activations: ActivationDataType? = nil,
     audio: Bool = false, modelURL: URL? = nil
@@ -489,6 +501,7 @@ final class ProbeScenarioTests: DeviceTestCase {
   /// digits are generated across position 2048. Controls: the reference at
   /// the end (its own positions past 2048), and float32 activations.
   func test10_PositionBoundary() async throws {
+    try requireResearchProbes("#3913 position staircase; covered by InferenceScenarioTests/test15")
     ExperimentalFlags.optIntoExperimentalAPIs()
     ExperimentalFlags.enableBenchmark = true
     ExperimentalFlags.enableSpeculativeDecoding = false

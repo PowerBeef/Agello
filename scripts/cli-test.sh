@@ -5,9 +5,9 @@
 #
 # Usage:
 #   scripts/cli-test.sh unit [Class[/method] ...]
-#       The unit tests that need no interface, on the scripted engine (about a minute).
-#   scripts/cli-test.sh inference|files|web|thinking|probes|calibrate [Class[/method] ...]
-#       The real-model scenarios of that suite, on this Mac's GPU: a Mac run, ask first.
+#       The unit tests that need no interface, on the scripted engine (~20-30 s).
+#   scripts/cli-test.sh inference|files|web|security|thinking|probes|soak|research-probes|calibrate [Class[/method] ...]
+#       The real-model scenarios of that suite on this Mac's GPU (default SIM_GPU=Apple_A19_Pro).
 #
 #   scripts/cli-test.sh unit AppStateTests
 #   scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall
@@ -39,6 +39,18 @@ case "$SUITE" in
   security) bundle=AgelloDeviceTests; classes="AgentSecurityScenarioTests" ;;
   thinking) bundle=AgelloDeviceTests; classes="ThinkingScenarioTests"; export HARNESS_THINKING=1 ;;
   probes) bundle=AgelloDeviceTests; classes="ProbeScenarioTests"; export HARNESS_PROBES=1 ;;
+  soak)
+    bundle=AgelloDeviceTests
+    classes="ProbeScenarioTests/test38_PoolSoak"
+    export HARNESS_PROBES=1
+    export HARNESS_RESEARCH_PROBES=1
+    ;;
+  research-probes)
+    bundle=AgelloDeviceTests
+    classes="ProbeScenarioTests"
+    export HARNESS_PROBES=1
+    export HARNESS_RESEARCH_PROBES=1
+    ;;
   calibrate) bundle=AgelloDeviceTests; classes="CalibrationScenarioTests"; export HARNESS_CALIBRATE=1 ;;
   *) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac

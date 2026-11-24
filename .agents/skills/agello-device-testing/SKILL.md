@@ -53,18 +53,26 @@ through the harness scripts below, not raw `mobilebuildmcp` tools.
 
 ## Running suites
 
+Measured iPhone 17 Pro durations (including build/install/post-check overhead):
+
 ```sh
-scripts/device-harness.sh unit        # ~3 min, scripted engine
-scripts/device-harness.sh inference   # real E4B engine scenarios
-scripts/device-harness.sh files       # ANE EmbeddingGemma, 40-page PDF, citations, workspace & multilingual tools
-scripts/device-harness.sh web         # live web search (needs internet)
-scripts/device-harness.sh security    # 6-vector adversarial prompt-injection gate (0% breach)
-scripts/device-harness.sh ui          # real-tap flows; needs E4B downloaded
-scripts/device-harness.sh all         # unit, then inference+files+web, then ui
-# Opt-in:
-scripts/device-harness.sh thinking | memory | calibrate | probes
-scripts/device-harness.sh screenshots # UI tour, one screenshot per screen
-scripts/device-harness.sh bench       # the autonomous harness (docs/HARNESS.md): bench cases through the UI, Release
+scripts/device-harness.sh gate        # ~7.5-9 min: 1x build + shared-engine device/ANE/memory (2.3 min) + core UI (4.1 min) — recommended iPhone check
+scripts/device-harness.sh unit        # ~1-1.5 min, 456 unit tests on scripted engine
+scripts/device-harness.sh inference   # ~5.5-6.5 min, 25 real E4B engine scenarios
+scripts/device-harness.sh files       # ~2.5-3.5 min warm ANE (+65 s on cold ANE specialize): 40-page PDF, citations, workspace & multilingual tools
+scripts/device-harness.sh web         # ~7-8 min, live web search (21 decisions + 13 sources; needs internet)
+scripts/device-harness.sh security    # ~1-1.5 min, 6-vector adversarial prompt-injection gate (0% breach)
+scripts/device-harness.sh ui          # ~11-15 min (7 real-GPU E2E + 16 --mock-engine UI + Floor + A11y; TEST_RUNNER_UITEST_REAL_ENGINE=1 ~16-18 min)
+scripts/device-harness.sh all         # ~25-32 min: builds once, then unit, inference+files+web, and ui
+# Opt-in / milestone / pre-release:
+scripts/device-harness.sh thinking    # ~2 min (budgets, answer room, KV stripping)
+scripts/device-harness.sh memory      # ~2.5-3 min (6.0 / 5.0 / 4.0 / 3.5 GB envelopes)
+scripts/device-harness.sh probes      # ~3-5 min (fast regression probes only)
+scripts/device-harness.sh soak        # ~4-5 min (200-turn GPU pool soak: test38_PoolSoak)
+scripts/device-harness.sh research-probes  # ~60-75+ min (includes 315-gen test34, test23, test10, test37, test38)
+scripts/device-harness.sh calibrate   # ~1.5 min
+scripts/device-harness.sh screenshots # ~4 min, UI tour, one screenshot per screen
+scripts/device-harness.sh bench       # ~25-30 min, autonomous harness (docs/HARNESS.md), Release
 ```
 
 Start suites with `run_command` using `WaitMsBeforeAsync: 500` (and
@@ -115,7 +123,7 @@ the app's own screens in a **Bench** build (Release with `BENCH` defined, which 
 settings in effect, each step with memory, why the reply ended, what the screen showed, the
 engine's telemetry, and each case's checks from `scripts/bench-report.py` (web apps loaded and
 pressed, Swift type-checked, Python compiled or run against `scripts/bench/<id>/`, expected facts).
-A full run is 13 turns and about 20 minutes; the phone warms up, so compare speeds case by case.
+A full run is 13 turns and about 25–30 minutes (measured `1,563 s` on iPhone 17 Pro); the phone warms up, so compare speeds case by case.
 
 - `BENCH_ONLY=id,id` runs some cases; `BENCH_TRACE=off` runs without tracing (screen timings only).
 - `BENCH_RESUME=1` runs only the cases the last report doesn't hold complete and keeps the
@@ -155,7 +163,7 @@ scripts/phone-bench.sh release again=release           # the noise: the shipped 
 ```
 
 - Start it in the background (`WaitMsBeforeAsync: 500`, `BypassSandbox: true`) and wait for the
-  notification: about an hour to an hour and a half for the default. Before it, ask the user for
+  notification: about 60 to 90 minutes for the default (`ROUNDS=3` with alternating thermal rests; reserve for speed-verification milestones or pre-release). Before it, ask the user for
   Auto-Lock set to Never, a Focus on, iPhone Mirroring closed, and the phone plugged in.
 - It builds the app once per runtime (Bench/Release; background priority unless
   `BUILD_PRIORITY=normal`), then installs the builds in turns, a warm-up after each install. It

@@ -7,6 +7,7 @@ extension ProbeScenarioTests {
   /// takes, and whether the answer stops at the cap (`reachedLimit`), with and without the
   /// on-device tools (which split the room, ToolBudget.plan), in new chats and deeper into one.
   func test23_LongAnswersWithThink() async throws {
+    try requireResearchProbes("10-min multi-essay Think sweep")
     try await requireLoadedModel()
     let prompts = [
       "Compare TCP and QUIC in depth: handshakes, head-of-line blocking, congestion control, connection migration and security. Use a heading for each and give a concrete example for each point.",

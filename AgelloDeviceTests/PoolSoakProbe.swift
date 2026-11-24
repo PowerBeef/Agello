@@ -13,6 +13,7 @@ import XCTest
 /// runtime and the app leak nothing here (2026-11-17).
 extension ProbeScenarioTests {
   func test38_PoolSoak() async throws {
+    try requireResearchProbes("200-turn pool soak; run suite `soak`", unlessEnvSet: "POOL_SOAK_TURNS")
     try await requireLoadedModel()
     let saved = appState.options
     defer { appState.options = saved }
