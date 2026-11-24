@@ -163,13 +163,12 @@ actor CoreAIEmbedder: TextEmbedder {
   }
 
   func embed(documents: [(title: String, text: String)]) async throws -> [[Float]] {
-    let loaded = try await loadedResources()
     var vectors: [[Float]] = []
     vectors.reserveCapacity(documents.count)
     for document in documents {
       try Task.checkCancellation()
       let prompt = LiteRTEmbedder.documentPrompt(title: document.title, text: document.text)
-      vectors.append(try await encode(prompt: prompt, resources: loaded))
+      vectors.append(try await encode(prompt: prompt))
       await Task.yield()
     }
     return vectors
@@ -180,8 +179,7 @@ actor CoreAIEmbedder: TextEmbedder {
   }
 
   func embed(query: String, task: EmbeddingQueryTask) async throws -> [Float] {
-    let loaded = try await loadedResources()
-    return try await encode(prompt: LiteRTEmbedder.queryPrompt(query, task: task), resources: loaded)
+    try await encode(prompt: LiteRTEmbedder.queryPrompt(query, task: task))
   }
 
   func unload() async {
@@ -193,11 +191,30 @@ actor CoreAIEmbedder: TextEmbedder {
 
   // MARK: - Inference
 
-  private func encode(prompt: String, resources loaded: LoadedResources) async throws -> [Float] {
+  private func encode(prompt: String) async throws -> [Float] {
+    do {
+      let loaded = try await loadedResources(bypassCache: false)
+      return try await runEncode(prompt: prompt, resources: loaded)
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      // iOS 27's AIModelCache.default can return a stale AIModel handle whose compiled
+      // MPSGraphNDX ANE binary was purged or invalidated (throwing _GenericObjCError.nilError on
+      // loadFunction/run). Evict the app's Core AI cache and re-specialize once cleanly.
+      Log.engine.warning(
+        "embedder: Core AI ANE call failed (\(error.localizedDescription, privacy: .public)); evicting cache and re-specializing"
+      )
+      evictCacheAndReset()
+      let fresh = try await loadedResources(bypassCache: true)
+      return try await runEncode(prompt: prompt, resources: fresh)
+    }
+  }
+
+  private func runEncode(prompt: String, resources loaded: LoadedResources) async throws -> [Float] {
     let maxLen = Self.buckets[Self.buckets.count - 1]
     let tokens = loaded.tokenizer.encodeWithSpecialTokens(prompt, maxLength: maxLen)
     let bucket = Self.bucket(for: tokens.count)
-    let function = try functionForBucket(bucket)
+    let function = try functionForBucket(bucket, fallbackModel: loaded.model)
 
     var embeddings = NDArray(shape: [1, bucket, loaded.table.dimension], scalarType: .float16)
     embeddings.mutableView(as: Float16.self).withUnsafeMutablePointer { ptr, _, _ in
@@ -225,9 +242,11 @@ actor CoreAIEmbedder: TextEmbedder {
     return VectorIndex.normalized(vector)
   }
 
-  private func functionForBucket(_ bucket: Int) throws -> InferenceFunction {
+  private func functionForBucket(
+    _ bucket: Int, fallbackModel: AIModel
+  ) throws -> InferenceFunction {
     if let cached = resources?.functions[bucket] { return cached }
-    guard let model = resources?.model else { throw ChatError.engineNotReady }
+    let model = resources?.model ?? fallbackModel
     let name = "encoder_\(bucket)"
     guard let fn = try model.loadFunction(named: name) else {
       throw EmbedderError.missingFunction(name)
@@ -236,16 +255,28 @@ actor CoreAIEmbedder: TextEmbedder {
     return fn
   }
 
-  private func loadedResources() async throws -> LoadedResources {
-    if let resources { return resources }
+  private func evictCacheAndReset() {
+    generation += 1
+    loading?.cancel()
+    loading = nil
+    resources = nil
+    let modelURL = bundleURL.appendingPathComponent("text_encoder.aimodel", isDirectory: true)
+    let options = SpecializationOptions(preferredComputeUnitKind: .neuralEngine)
+    try? AIModelCache.default.deleteEntry(for: modelURL, options: options)
+    try? AIModelCache.default.deleteEntries(for: modelURL)
+    try? AIModelCache.default.deleteAll()
+  }
+
+  private func loadedResources(bypassCache: Bool) async throws -> LoadedResources {
+    if !bypassCache, let resources { return resources }
     let started = generation
-    if let loading {
+    if !bypassCache, let loading {
       let shared = try await loading.value
       guard generation == started else { throw CancellationError() }
       return shared
     }
     let url = bundleURL
-    let task = Task { try await Self.load(bundleURL: url) }
+    let task = Task { try await Self.load(bundleURL: url, bypassCache: bypassCache) }
     loading = task
     defer { if loading == task { loading = nil } }
     let loaded = try await task.value
@@ -254,7 +285,7 @@ actor CoreAIEmbedder: TextEmbedder {
     return loaded
   }
 
-  private static func load(bundleURL: URL) async throws -> LoadedResources {
+  private static func load(bundleURL: URL, bypassCache: Bool) async throws -> LoadedResources {
     let started = ContinuousClock.now
     let modelURL = bundleURL.appendingPathComponent("text_encoder.aimodel", isDirectory: true)
     let tableURL = bundleURL.appendingPathComponent("embed_tokens.bin")
@@ -269,7 +300,7 @@ actor CoreAIEmbedder: TextEmbedder {
 
     let options = SpecializationOptions(preferredComputeUnitKind: .neuralEngine)
     let model: AIModel
-    if let cached = try? AIModelCache.default.model(for: modelURL, options: options) {
+    if !bypassCache, let cached = try? AIModelCache.default.model(for: modelURL, options: options) {
       model = cached
     } else {
       model = try await AIModel(contentsOf: modelURL, options: options)
