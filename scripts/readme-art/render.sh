@@ -16,7 +16,8 @@ art=(
   "hero 1000 520"
   "modes 1000 640"
   "screens 1000 560"
-  "performance 1000 330"
+  "silicon 1000 680"
+  "performance 1000 410"
 )
 
 for entry in $art; do
