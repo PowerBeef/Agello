@@ -2,12 +2,12 @@
 
 `Vendor/LiteRT-LM` is a pruned copy of our LiteRT-LM fork,
 https://github.com/PowerBeef/agello-litert-lm (one branch, `main`): its `swift/` and the binary of
-release `agello-one-20261122-3`, built from **8f9e7142** (Google's LiteRT-LM
+release `agello-one-20261124`, built from **c819aecb** (Google's LiteRT-LM
 0.19.0-nightly.20261013 plus our commits, with LiteRT and ML Drift as folders of the same
 repository). It contains only what the Xcode build needs:
 
 - `Package.swift` (pins the `CLiteRTLM.xcframework.zip` of our release
-  [`agello-one-20261122-3`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-one-20261122-3),
+  [`agello-one-20261124`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-one-20261124),
   checksummed)
 - `swift/` (the `LiteRTLM` Swift wrapper sources)
 - `LICENSE` (Apache 2.0, Google LLC)
@@ -18,7 +18,7 @@ The release's `CLiteRTLM.xcframework` has an iPhone slice and a Mac slice (a
 versioned framework), both on Metal. It's built from the same commit, with LiteRT and ML Drift
 linked statically (folders of the same repository since 2026-11-11, `agello/litert` and
 `agello/ml_drift`; our earlier forks `PowerBeef/LiteRT` and `PowerBeef/ml-drift` were archived
-on 2026-11-15): build id `4712b414941a`, whose `BUILD-INFO.txt` in the release names every commit. Its
+on 2026-11-15): build id `8a7e34594612`, whose `BUILD-INFO.txt` in the release names every commit. Its
 third-party notices are in `NOTICE`. Besides the Swift patches below, it carries our runtime
 fixes:
 

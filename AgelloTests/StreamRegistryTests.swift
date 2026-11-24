@@ -192,4 +192,103 @@ final class StreamRegistryTests: XCTestCase {
     harness.deliver(StreamChunk(isFinal: true, error: "CANCELLED"))
     XCTAssertTrue(harness.isFinished)
   }
+
+  /// Regression for R-10: round 1's `defer { endToolRound }` running after round 2 entered
+  /// `beginToolRound` must not remove round 2 from `activeToolRounds` or defeat cancellation.
+  func testEarlierToolRoundFinishDoesNotClearNewerToolRound() async {
+    final class State: @unchecked Sendable {
+      private let lock = NSLock()
+      private var _roundCount = 0
+      private var _round2Entered = false
+      private var _round1Exited = false
+      private var _round2Cancelled = false
+      var harness: StreamTestHarness?
+      func nextRound() -> Int {
+        lock.withLock {
+          _roundCount += 1
+          return _roundCount
+        }
+      }
+      var round2Entered: Bool { lock.withLock { _round2Entered } }
+      var round1Exited: Bool { lock.withLock { _round1Exited } }
+      var round2Cancelled: Bool { lock.withLock { _round2Cancelled } }
+      func markRound2Entered() { lock.withLock { _round2Entered = true } }
+      func markRound1Exited() { lock.withLock { _round1Exited = true } }
+      func markRound2Cancelled() { lock.withLock { _round2Cancelled = true } }
+    }
+    let state = State()
+    let toolChunk = toolCall
+    let harness = StreamTestHarness(
+      onToolRound: {
+        let round = state.nextRound()
+        if round == 2 {
+          state.markRound2Entered()
+          do {
+            try await Task.sleep(for: .seconds(5))
+          } catch {
+            state.markRound2Cancelled()
+            throw error
+          }
+        }
+      },
+      onAfterRegisterRound: {
+        // While round 1's Task is still before its defer, deliver round 2's tool calls so
+        // round 2 registers a newer generation in StreamTable.activeToolRounds first.
+        guard !state.round2Entered, let h = state.harness else { return }
+        h.deliver(toolChunk)
+        h.deliver(StreamChunk(isFinal: true))
+        let deadline = ContinuousClock().now + .seconds(2)
+        while !state.round2Entered, ContinuousClock().now < deadline {
+          try? await Task.sleep(for: .milliseconds(5))
+        }
+        state.markRound1Exited()
+      }
+    )
+    state.harness = harness
+
+    harness.deliver(toolChunk)
+    harness.deliver(StreamChunk(isFinal: true))
+    await waitUntil { state.round1Exited && state.round2Entered }
+    // Give round 1's defer a moment to run; round 2 must remain tracked.
+    try? await Task.sleep(for: .milliseconds(30))
+    XCTAssertTrue(harness.hasActiveToolRound)
+    harness.cancel()
+    let outcome = await drain(harness.stream)
+    XCTAssertTrue(outcome.error is CancellationError)
+    XCTAssertTrue(state.round2Cancelled)
+  }
+
+  /// Regression for R-02: non-finite Double/Float/NSNumber values in tool output must be
+  /// stringified before JSONSerialization so they never raise an ObjC NSInvalidArgumentException.
+  func testToolManagerNormalizesNonFiniteFloatsToValidJSON() throws {
+    let raw: [String: Any] = [
+      "nan": Double.nan,
+      "inf": Double.infinity,
+      "negInf": -Double.infinity,
+      "fnan": Float.nan,
+      "finf": Float.infinity,
+      "nsNan": NSNumber(value: Double.nan),
+      "okBool": true,
+      "okInt": 42,
+      "okDouble": 3.5,
+      "okNull": NSNull(),
+      "nested": [Double.nan, 1.25, "text"] as [Any],
+    ]
+    let normalized = ToolManager.normalizeResult(raw)
+    XCTAssertTrue(JSONSerialization.isValidJSONObject(normalized))
+    let data = try JSONSerialization.data(withJSONObject: normalized)
+    let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    XCTAssertEqual(decoded["nan"] as? String, "nan")
+    XCTAssertEqual(decoded["inf"] as? String, "inf")
+    XCTAssertEqual(decoded["negInf"] as? String, "-inf")
+    XCTAssertEqual(decoded["fnan"] as? String, "nan")
+    XCTAssertEqual(decoded["finf"] as? String, "inf")
+    XCTAssertEqual(decoded["nsNan"] as? String, "nan")
+    XCTAssertEqual(decoded["okBool"] as? Bool, true)
+    XCTAssertEqual(decoded["okInt"] as? Int, 42)
+    XCTAssertEqual(decoded["okDouble"] as? Double, 3.5)
+    XCTAssertTrue(decoded["okNull"] is NSNull)
+    let nested = try XCTUnwrap(decoded["nested"] as? [Any])
+    XCTAssertEqual(nested.first as? String, "nan")
+  }
 }

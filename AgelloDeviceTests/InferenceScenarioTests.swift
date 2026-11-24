@@ -55,8 +55,11 @@ final class InferenceScenarioTests: DeviceTestCase {
   }
 
   /// Regression for audit #2: context must not bleed between chats.
+  /// Tools are turned off so `search_past_chats` doesn't intentionally fetch the other thread.
   func test03_ThreadIsolation() async throws {
     try await requireLoadedModel()
+    appState.enableTools = false
+    await appState.applyCurrentOptions()
     let a = harness.newThread()
     let b = harness.newThread()
     let seed = await harness.ask(
@@ -315,6 +318,8 @@ final class InferenceScenarioTests: DeviceTestCase {
   /// off — so it has no vision executor — and vision is then switched on.
   func test09b_VisionEnabledAfterTextOnlyLoad() async throws {
     try await requireLoadedModel()
+    // Small synthetic window (2K): disable tools so the 5-tool schema preface doesn't consume it.
+    appState.enableTools = false
     appState.options.enableVision = false
     appState.options.maxNumTokensOverride = 2048  // engine-level: forces a rebuild without vision
     await appState.applyCurrentOptions()
@@ -340,6 +345,7 @@ final class InferenceScenarioTests: DeviceTestCase {
   /// Audit #15: a long chat against a small KV cache must degrade gracefully.
   func test10_LongChatNearContextLimit() async throws {
     try await requireLoadedModel()
+    appState.enableTools = false
     appState.options.maxNumTokensOverride = 1024
     await appState.applyCurrentOptions()
     let thread = harness.newThread()
@@ -364,6 +370,7 @@ final class InferenceScenarioTests: DeviceTestCase {
   /// Audit #15: a message that can't fit the window is refused, not sent.
   func test10b_OversizedMessageRejected() async throws {
     try await requireLoadedModel()
+    appState.enableTools = false
     appState.options.maxNumTokensOverride = 1024
     await appState.applyCurrentOptions()
     let thread = harness.newThread()
@@ -388,6 +395,7 @@ final class InferenceScenarioTests: DeviceTestCase {
   /// more than the window.
   func test10c_DigitHeavyMessagesAreCountedExactly() async throws {
     try await requireLoadedModel()
+    appState.enableTools = false
     appState.options.maxNumTokensOverride = 2048
     await appState.applyCurrentOptions()
     func numbers(_ count: Int) -> String {

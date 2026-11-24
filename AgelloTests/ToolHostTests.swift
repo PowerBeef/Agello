@@ -70,6 +70,12 @@ final class ToolHostTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(
           plan.outputCap - (reasoning ?? 0), min(ToolBudget.answerTokens, plan.outputCap / 2),
           "room \(room), thinking \(thinking)")
+        let followUpReasoning = try? XCTUnwrap(plan.followUpThinkingBudget)
+        XCTAssertLessThanOrEqual(followUpReasoning ?? .max, thinking)
+        XCTAssertGreaterThanOrEqual(
+          plan.followUpCap - (followUpReasoning ?? 0),
+          min(ToolBudget.answerTokens, plan.followUpCap / 2),
+          "follow-up room \(room), thinking \(thinking)")
         XCTAssertLessThanOrEqual(plan.outputCap, room / 2 + thinking)
         XCTAssertLessThanOrEqual(
           plan.outputCap + 2 * plan.followUpCap + 2 * plan.limits.maxResultTokens, room)
@@ -82,6 +88,7 @@ final class ToolHostTests: XCTestCase {
     // Without Think the first round gets half the room.
     let plain = ToolBudget.plan(room: 4_000, toolsOffered: true)
     XCTAssertNil(plain.thinkingBudget)
+    XCTAssertNil(plain.followUpThinkingBudget)
     XCTAssertEqual(plain.outputCap, 2_000)
     XCTAssertEqual(plain.followUpCap, 500)
   }
@@ -93,6 +100,7 @@ final class ToolHostTests: XCTestCase {
     XCTAssertEqual(plan.outputCap, 400)
     XCTAssertEqual(plan.followUpCap, 400)
     XCTAssertEqual(plan.thinkingBudget, 200)
+    XCTAssertEqual(plan.followUpThinkingBudget, 200)
     let solo = ToolBudget.plan(room: 7_000, toolsOffered: false, thinkingBudget: 4_096)
     XCTAssertEqual(solo.outputCap, 7_000)
     XCTAssertEqual(solo.thinkingBudget, 4_096)

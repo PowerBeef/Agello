@@ -13,7 +13,8 @@
 // limitations under the License.
 //
 // Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
-// the tool registry declared for Swift 6 language mode.
+// the tool registry declared for Swift 6 language mode, and tool results/arguments
+// validated for JSONSerialization (non-finite floats stringified before encoding).
 
 import Foundation
 
@@ -108,6 +109,9 @@ public final class ToolManager: Sendable {
     // 3. Merge provided arguments over the defaults.
     // The `arguments` take precedence.
     let mergedArgs = defaults.merging(arguments) { (_, new) in new }
+    guard JSONSerialization.isValidJSONObject(mergedArgs) else {
+      throw LiteRTLMError.conversation(.failedToSerializeMessage)
+    }
 
     let argsData = try JSONSerialization.data(withJSONObject: mergedArgs)
 
@@ -124,17 +128,23 @@ public final class ToolManager: Sendable {
     let result = try await toolInstance.run()
 
     // Normalize the result to ensure it is strictly JSON-compatible (mimicking Android logic)
-    return normalizeResult(result)
+    return Self.normalizeResult(result)
   }
 
   /// Helper to recursively convert any result into a JSON-Serialization friendly format.
   /// - Collections: Recursively normalized.
-  /// - Primitives: Passed through.
+  /// - Primitives: Passed through (non-finite floats become strings so JSONSerialization never
+  ///   raises an uncatchable ObjC NSInvalidArgumentException).
   /// - Custom Objects: Converted to String.
-  private func normalizeResult(_ value: Any) -> Any {
+  @_spi(Testing) public static func normalizeResult(_ value: Any) -> Any {
+    if value is NSNull {
+      return value
+    }
+
     // Handle Dictionaries
     if let dict = value as? [String: Any] {
       var normalizedDict: [String: Any] = [:]
+      normalizedDict.reserveCapacity(dict.count)
       for (key, val) in dict {
         normalizedDict[key] = normalizeResult(val)
       }
@@ -146,9 +156,38 @@ public final class ToolManager: Sendable {
       return array.map { normalizeResult($0) }
     }
 
-    // Handle Primitives (String, Number, Bool)
-    if value is String || value is Int || value is Double || value is Float || value is Bool {
+    let dynamicType = type(of: value)
+
+    if dynamicType == Bool.self {
       return value
+    }
+
+    if let str = value as? String {
+      return str
+    }
+
+    if dynamicType == Double.self, let d = value as? Double {
+      return d.isFinite ? d : String(describing: d)
+    }
+
+    if dynamicType == Float.self, let f = value as? Float {
+      return f.isFinite ? f : String(describing: f)
+    }
+
+    if dynamicType == Int.self || dynamicType == Int64.self || dynamicType == Int32.self
+      || dynamicType == Int16.self || dynamicType == Int8.self || dynamicType == UInt.self
+      || dynamicType == UInt64.self || dynamicType == UInt32.self || dynamicType == UInt16.self
+      || dynamicType == UInt8.self
+    {
+      return value
+    }
+
+    if let number = value as? NSNumber {
+      if CFGetTypeID(number) == CFBooleanGetTypeID() {
+        return number.boolValue
+      }
+      let d = number.doubleValue
+      return d.isFinite ? number : String(describing: d)
     }
 
     // Handle Void

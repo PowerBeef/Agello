@@ -51,6 +51,8 @@ enum ToolBudget {
     var followUpCap: Int
     /// The first round's reasoning budget (nil without Think), sized to leave an answer room.
     var thinkingBudget: Int?
+    /// Each follow-up tool round's reasoning budget (nil without Think), clamped to `followUpCap`.
+    var followUpThinkingBudget: Int?
     var limits: Limits
   }
 
@@ -71,8 +73,10 @@ enum ToolBudget {
     let limit = maxOutputTokens ?? .max
     guard toolsOffered else {
       let cap = min(room, limit)
+      let reasoningBudget = thinkingBudget.map { reasoning($0, cap: cap) }
       return Plan(
-        outputCap: cap, followUpCap: cap, thinkingBudget: thinkingBudget.map { reasoning($0, cap: cap) },
+        outputCap: cap, followUpCap: cap,
+        thinkingBudget: reasoningBudget, followUpThinkingBudget: reasoningBudget,
         limits: Limits(maxResultTokens: room / 8, maxCalls: 0))
     }
     let maxCalls = room >= 16_384 ? 4 : 2
@@ -84,9 +88,11 @@ enum ToolBudget {
       room / 2 + (thinkingBudget ?? 0))
     let followUp = (room - first - maxCalls * resultTokens) / maxCalls
     let cap = min(first, limit)
+    let followCap = min(followUp, limit)
     return Plan(
-      outputCap: cap, followUpCap: min(followUp, limit),
+      outputCap: cap, followUpCap: followCap,
       thinkingBudget: thinkingBudget.map { reasoning($0, cap: cap) },
+      followUpThinkingBudget: thinkingBudget.map { reasoning($0, cap: followCap) },
       limits: Limits(maxResultTokens: resultTokens, maxCalls: maxCalls))
   }
 

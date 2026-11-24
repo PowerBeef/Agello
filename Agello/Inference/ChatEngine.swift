@@ -988,14 +988,19 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
 
     do {
-      // Rounds after a tool response get the same cap; at most one more round than the
-      // reply's tool calls (the last answers "limit reached"), then the stream ends.
+      // Rounds after a tool response get their own output and reasoning caps so Think can never
+      // consume 100% of `followUpCap` and leave zero visible answer tokens; at most one more round
+      // than the reply's tool calls (the last answers "limit reached"), then the stream ends.
       let stream = conversation.sendMessageStream(
         message, maxOutputTokens: budget.outputCap,
         thinkingConfig: budget.thinkingBudget.map {
           ThinkingConfig(enableThinking: true, thinkingTokenBudget: $0)
         },
-        followUpMaxOutputTokens: budget.followUpCap, maxToolRounds: budget.limits.maxCalls + 1)
+        followUpMaxOutputTokens: budget.followUpCap,
+        followUpThinkingConfig: budget.followUpThinkingBudget.map {
+          ThinkingConfig(enableThinking: true, thinkingTokenBudget: $0)
+        },
+        maxToolRounds: budget.limits.maxCalls + 1)
       for try await chunk in stream {
         if Task.isCancelled {
           try? conversation.cancel()

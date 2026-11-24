@@ -77,6 +77,7 @@ struct ToolCallBatch: @unchecked Sendable {
 
 /// The per-message settings every round of one stream sends with.
 struct StreamOptions: @unchecked Sendable {
+  var extraContext: [String: Any]?
   var repetitionPenaltyConfig: RepetitionPenaltyConfig?
   var noRepeatNgramConfig: NoRepeatNgramConfig?
   var suppressTokensConfig: SuppressTokensConfig?
@@ -84,6 +85,10 @@ struct StreamOptions: @unchecked Sendable {
   var maxOutputTokens: Int?
   /// Output cap of each round after a tool response; `maxOutputTokens` when nil.
   var followUpMaxOutputTokens: Int?
+  /// Thinking config of the first round.
+  var thinkingConfig: ThinkingConfig?
+  /// Thinking config of each round after a tool response; `thinkingConfig` when nil.
+  var followUpThinkingConfig: ThinkingConfig?
   var responseFormat: ResponseFormat?
   /// Tool rounds the stream may run before it ends with `recurringToolCallLimitExceeded`.
   var maxToolRounds: Int
@@ -263,7 +268,7 @@ final class StreamTable: @unchecked Sendable {
   private var nextID: UInt = 1
   private var nextOwner: UInt64 = 1
   private var streams: [UInt: StreamContext] = [:]
-  private var activeToolRounds: [ObjectIdentifier: StreamContext] = [:]
+  private var activeToolRounds: [ObjectIdentifier: (context: StreamContext, generation: UInt64)] = [:]
 
   func makeOwner() -> UInt64 {
     lock.locked {
@@ -292,12 +297,24 @@ final class StreamTable: @unchecked Sendable {
   }
 
   /// Keeps `context` visible to `contexts(owner:)` while async app tool code runs between rounds.
-  func beginToolRound(_ context: StreamContext) {
-    lock.locked { activeToolRounds[ObjectIdentifier(context)] = context }
+  /// Tagged with `generation` so a finishing earlier round cannot clear a newer round's entry.
+  func beginToolRound(_ context: StreamContext, generation: UInt64) {
+    lock.locked {
+      activeToolRounds[ObjectIdentifier(context)] = (context: context, generation: generation)
+    }
   }
 
-  func endToolRound(_ context: StreamContext) {
-    lock.locked { _ = activeToolRounds.removeValue(forKey: ObjectIdentifier(context)) }
+  func endToolRound(_ context: StreamContext, generation: UInt64) {
+    lock.locked {
+      let key = ObjectIdentifier(context)
+      if let entry = activeToolRounds[key], entry.generation == generation {
+        activeToolRounds.removeValue(forKey: key)
+      }
+    }
+  }
+
+  func hasActiveToolRound(owner: UInt64) -> Bool {
+    lock.locked { activeToolRounds.values.contains { $0.context.owner == owner } }
   }
 
   /// The streams of one conversation still waiting for LiteRT-LM or executing a tool round.
@@ -308,8 +325,8 @@ final class StreamTable: @unchecked Sendable {
       for ctx in streams.values where ctx.owner == owner {
         if seen.insert(ObjectIdentifier(ctx)).inserted { result.append(ctx) }
       }
-      for ctx in activeToolRounds.values where ctx.owner == owner {
-        if seen.insert(ObjectIdentifier(ctx)).inserted { result.append(ctx) }
+      for entry in activeToolRounds.values where entry.context.owner == owner {
+        if seen.insert(ObjectIdentifier(entry.context)).inserted { result.append(entry.context) }
       }
       return result
     }
@@ -328,12 +345,12 @@ final class StreamTable: @unchecked Sendable {
           result.append(ctx)
         }
       }
-      let toolKeys = activeToolRounds.filter { $0.value.owner == owner }.map(\.key)
+      let toolKeys = activeToolRounds.filter { $0.value.context.owner == owner }.map(\.key)
       for key in toolKeys {
-        if let ctx = activeToolRounds.removeValue(forKey: key),
-          seen.insert(ObjectIdentifier(ctx)).inserted
+        if let entry = activeToolRounds.removeValue(forKey: key),
+          seen.insert(ObjectIdentifier(entry.context)).inserted
         {
-          result.append(ctx)
+          result.append(entry.context)
         }
       }
       return result
@@ -392,19 +409,22 @@ func handleStreamChunk(_ chunk: StreamChunk, id: UInt) {
       throwing: LiteRTLMError.conversation(
         .recurringToolCallLimitExceeded(limit: context.options.maxToolRounds)))
   case .toolCalls(let batch):
+    // Acquire the generation token before registering so a finishing earlier round cannot
+    // remove a newer round's activeToolRounds entry or clear its toolRoundTask.
+    let generation = context.beginToolRoundGeneration()
     // Keep the stream visible to Conversation.cancel() before retiring the send ID (zero gap).
-    StreamTable.shared.beginToolRound(context)
+    StreamTable.shared.beginToolRound(context, generation: generation)
     StreamTable.shared.retire(id)
     if context.isCancelled {
-      StreamTable.shared.endToolRound(context)
+      StreamTable.shared.endToolRound(context, generation: generation)
+      context.clearToolRoundTask(generation: generation)
       context.finish(throwing: CancellationError())
       return
     }
     // Off LiteRT-LM's thread: tools are app code, and the next round calls back into LiteRT-LM.
-    let generation = context.beginToolRoundGeneration()
     let task = Task {
       defer {
-        StreamTable.shared.endToolRound(context)
+        StreamTable.shared.endToolRound(context, generation: generation)
         context.clearToolRoundTask(generation: generation)
       }
       do {
@@ -441,9 +461,12 @@ func streamCallback(userData: UnsafeMutableRawPointer?, chunk: OpaquePointer?) {
   ///   - maxToolRounds: tool rounds allowed before the stream ends with an error.
   ///   - startsNextRound: whether a tool round registers a new send, as a live one does.
   ///   - onToolRound: optional async work run before registering the next round (for cancel tests).
+  ///   - onAfterRegisterRound: optional hook run after registering the next round and before
+  ///     the current tool-round task's defer exits (for cross-round overlap tests).
   public init(
     maxToolRounds: Int = 25, startsNextRound: Bool = true,
-    onToolRound: (@Sendable () async throws -> Void)? = nil
+    onToolRound: (@Sendable () async throws -> Void)? = nil,
+    onAfterRegisterRound: (@Sendable () async throws -> Void)? = nil
   ) {
     let (stream, continuation) = AsyncThrowingStream<Message, Error>.makeStream()
     self.stream = stream
@@ -454,6 +477,7 @@ func streamCallback(userData: UnsafeMutableRawPointer?, chunk: OpaquePointer?) {
         if context.isCancelled { throw CancellationError() }
         self?.recordRound(batch.calls)
         if startsNextRound { self?.registerRound(context) }
+        if let onAfterRegisterRound { try await onAfterRegisterRound() }
       })
     context = StreamContext(
       continuation: continuation, conversation: nil, owner: StreamTable.shared.makeOwner(),
@@ -476,6 +500,7 @@ func streamCallback(userData: UnsafeMutableRawPointer?, chunk: OpaquePointer?) {
   }
 
   public func isRegistered(_ id: UInt) -> Bool { StreamTable.shared.context(for: id) != nil }
+  public var hasActiveToolRound: Bool { StreamTable.shared.hasActiveToolRound(owner: context.owner) }
   public var isFinished: Bool { context.isFinished }
   public var cancelNativeCount: Int { lock.locked { cancelNativeCalls } }
   public var toolRoundsStarted: Int { lock.locked { roundsStarted.count } }

@@ -81,6 +81,18 @@ public final class Conversation: Sendable {
   private let visualTokenBudget: Int32?
   /// Identifies this conversation's streams in ``StreamTable``, after it's gone too.
   let streamOwner = StreamTable.shared.makeOwner()
+  /// Serializes native stream starts against `cancel()` so a cancelled tool round cannot launch
+  /// new native work after `cancel()` + `waitUntilDone()` already returned.
+  private let sendGateLock = NSLock()
+
+  /// Serializes a JSON object after verifying validity so non-finite floats or invalid objects
+  /// throw a Swift error instead of raising an uncatchable ObjC NSInvalidArgumentException.
+  private static func safeJSONData(_ object: Any) throws -> Data {
+    guard JSONSerialization.isValidJSONObject(object) else {
+      throw LiteRTLMError.conversation(.failedToSerializeMessage)
+    }
+    return try JSONSerialization.data(withJSONObject: object)
+  }
 
   /// Whether the conversation is alive and ready to be used.
   public var isAlive: Bool {
@@ -141,7 +153,8 @@ public final class Conversation: Sendable {
     suppressTokensConfig: SuppressTokensConfig? = nil,
     maxOutputTokens: Int? = nil,
     thinkingConfig: ThinkingConfig? = nil,
-    responseFormat: ResponseFormat? = nil
+    responseFormat: ResponseFormat? = nil,
+    followUpThinkingConfig: ThinkingConfig? = nil
   ) async throws -> Message {
     let handle = try checkIsAlive()
 
@@ -160,7 +173,7 @@ public final class Conversation: Sendable {
         noRepeatNgramConfig: noRepeatNgramConfig,
         suppressTokensConfig: suppressTokensConfig,
         maxOutputTokens: maxOutputTokens,
-        thinkingConfig: i == 0 ? thinkingConfig : nil,
+        thinkingConfig: i == 0 ? thinkingConfig : (followUpThinkingConfig ?? thinkingConfig),
         responseFormat: responseFormat
       )
 
@@ -193,14 +206,14 @@ public final class Conversation: Sendable {
   ) throws
     -> (responseJson: [String: Any], responseString: String)
   {
-    let messageData = try JSONSerialization.data(withJSONObject: messageJson)
+    let messageData = try Conversation.safeJSONData(messageJson)
     guard let messageString = String(data: messageData, encoding: .utf8) else {
       throw LiteRTLMError.conversation(.failedToSerializeMessage)
     }
 
     var extraContextString: String? = nil
     if let extraContext = extraContext, !extraContext.isEmpty,
-      let extraData = try? JSONSerialization.data(withJSONObject: extraContext)
+      let extraData = try? Conversation.safeJSONData(extraContext)
     {
       extraContextString = String(data: extraData, encoding: .utf8)
     }
@@ -425,7 +438,7 @@ public final class Conversation: Sendable {
       }
       let argsData: Data?
       if let argsObject = Conversation.toolArguments(function["arguments"]) {
-        argsData = try? JSONSerialization.data(withJSONObject: argsObject)
+        argsData = try? Conversation.safeJSONData(argsObject)
       } else {
         argsData = nil
       }
@@ -438,24 +451,46 @@ public final class Conversation: Sendable {
     if canRunInParallel {
       let manager = self.toolManager
       let log = self.logger
-      let results: [(Int, Data)] = await withTaskGroup(of: (Int, Data).self) { group in
+      let results: [(Int, String, Data)] = try await withThrowingTaskGroup(
+        of: (Int, String, Data).self
+      ) { group in
         for call in parsed {
           group.addTask {
-            let entry = await Conversation.executeSingleToolCall(
+            try Task.checkCancellation()
+            let entry = try await Conversation.executeSingleToolCall(
               name: call.name, argumentsData: call.argumentsData, toolManager: manager, logger: log)
-            let data = (try? JSONSerialization.data(withJSONObject: entry)) ?? Data()
-            return (call.index, data)
+            let fallback: [String: Any] = [
+              "type": "tool_response",
+              "name": call.name,
+              "response": [
+                "error": "'\(call.name)' returned a result that could not be serialized to JSON."
+              ],
+            ]
+            let data =
+              (try? Conversation.safeJSONData(entry))
+              ?? (try? Conversation.safeJSONData(fallback))
+              ?? Data()
+            return (call.index, call.name, data)
           }
         }
-        var collected: [(Int, Data)] = []
+        var collected: [(Int, String, Data)] = []
         collected.reserveCapacity(parsed.count)
-        for await item in group {
+        for try await item in group {
           collected.append(item)
         }
         return collected
       }
-      let ordered: [[String: Any]] = results.sorted { $0.0 < $1.0 }.compactMap { _, data in
-        (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+      let ordered: [[String: Any]] = results.sorted { $0.0 < $1.0 }.map { _, name, data in
+        if let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+          return object
+        }
+        return [
+          "type": "tool_response",
+          "name": name,
+          "response": [
+            "error": "'\(name)' returned a result that could not be serialized to JSON."
+          ],
+        ]
       }
       return ["role": "tool", "content": ordered]
     }
@@ -463,7 +498,8 @@ public final class Conversation: Sendable {
     var toolResponses: [[String: Any]] = []
     toolResponses.reserveCapacity(parsed.count)
     for call in parsed {
-      let entry = await Conversation.executeSingleToolCall(
+      try Task.checkCancellation()
+      let entry = try await Conversation.executeSingleToolCall(
         name: call.name, argumentsData: call.argumentsData, toolManager: toolManager, logger: logger)
       toolResponses.append(entry)
     }
@@ -472,14 +508,18 @@ public final class Conversation: Sendable {
 
   private static func executeSingleToolCall(
     name: String, argumentsData: Data?, toolManager: ToolManager, logger: Logger
-  ) async -> [String: Any] {
+  ) async throws -> [String: Any] {
+    try Task.checkCancellation()
     let response: Any
     if let argumentsData,
       let argsObject = (try? JSONSerialization.jsonObject(with: argumentsData)) as? [String: Any]
     {
       do {
         response = try await toolManager.execute(name: name, arguments: argsObject)
+      } catch is CancellationError {
+        throw CancellationError()
       } catch {
+        if Task.isCancelled { throw CancellationError() }
         logger.warning(
           "Tool call \(name, privacy: .public) failed: \(String(describing: error), privacy: .public)")
         response = ["error": Conversation.toolErrorMessage(name: name, error: error)]
@@ -560,15 +600,19 @@ public final class Conversation: Sendable {
     thinkingConfig: ThinkingConfig? = nil,
     responseFormat: ResponseFormat? = nil,
     followUpMaxOutputTokens: Int? = nil,
+    followUpThinkingConfig: ThinkingConfig? = nil,
     maxToolRounds: Int? = nil
   ) -> AsyncThrowingStream<Message, Error> {
     return AsyncThrowingStream { continuation in
       let options = StreamOptions(
+        extraContext: extraContext,
         repetitionPenaltyConfig: repetitionPenaltyConfig,
         noRepeatNgramConfig: noRepeatNgramConfig,
         suppressTokensConfig: suppressTokensConfig,
         maxOutputTokens: maxOutputTokens,
         followUpMaxOutputTokens: followUpMaxOutputTokens,
+        thinkingConfig: thinkingConfig,
+        followUpThinkingConfig: followUpThinkingConfig,
         responseFormat: responseFormat,
         maxToolRounds: maxToolRounds ?? recurringToolCallLimit
       )
@@ -614,14 +658,16 @@ public final class Conversation: Sendable {
   {
     let toolResponseJson = try await handleToolCalls(toolCalls)
     // A Stop while the tools ran found no native task to cancel.
-    if context.isCancelled { throw CancellationError() }
+    if context.isCancelled || Task.isCancelled { throw CancellationError() }
     try sendToStream(
       handle: checkIsAlive(),
       messageJson: toolResponseJson,
+      extraContext: context.options.extraContext,
       repetitionPenaltyConfig: context.options.repetitionPenaltyConfig,
       noRepeatNgramConfig: context.options.noRepeatNgramConfig,
       suppressTokensConfig: context.options.suppressTokensConfig,
       maxOutputTokens: context.options.followUpMaxOutputTokens ?? context.options.maxOutputTokens,
+      thinkingConfig: context.options.followUpThinkingConfig ?? context.options.thinkingConfig,
       responseFormat: context.options.responseFormat,
       context: context
     )
@@ -655,14 +701,14 @@ public final class Conversation: Sendable {
     responseFormat: ResponseFormat? = nil,
     context: StreamContext
   ) throws {
-    let messageData = try JSONSerialization.data(withJSONObject: messageJson)
+    let messageData = try Conversation.safeJSONData(messageJson)
     guard let messageString = String(data: messageData, encoding: .utf8) else {
       throw LiteRTLMError.conversation(.failedToSerializeMessage)
     }
 
     var extraContextString: String? = nil
     if let extraContext = extraContext, !extraContext.isEmpty,
-      let extraData = try? JSONSerialization.data(withJSONObject: extraContext)
+      let extraData = try? Conversation.safeJSONData(extraContext)
     {
       extraContextString = String(data: extraData, encoding: .utf8)
     }
@@ -678,16 +724,24 @@ public final class Conversation: Sendable {
     )
     defer { litert_lm_conversation_optional_args_delete(optionalArgs) }
 
-    // Registered before the call: LiteRT-LM can call back before it returns.
-    let id = StreamTable.shared.register(context)
-    let status = litert_lm_conversation_send_message_stream(
-      handle,
-      messageString,
-      extraContextString,
-      optionalArgs,
-      streamCallback,
-      UnsafeMutableRawPointer(bitPattern: id)
-    )
+    // Synchronize stream registration + native launch with `cancel()` so a concurrent Stop or
+    // background drain cannot finish before a tool-round follow-up calls into native code.
+    let (status, id) = try sendGateLock.locked { () -> (LiteRtLmStatusCode, UInt) in
+      if context.isCancelled {
+        throw CancellationError()
+      }
+      // Registered before the call: LiteRT-LM can call back before it returns.
+      let id = StreamTable.shared.register(context)
+      let status = litert_lm_conversation_send_message_stream(
+        handle,
+        messageString,
+        extraContextString,
+        optionalArgs,
+        streamCallback,
+        UnsafeMutableRawPointer(bitPattern: id)
+      )
+      return (status, id)
+    }
 
     guard status == kLiteRtLmStatusOk else {
       StreamTable.shared.retire(id)
@@ -704,12 +758,14 @@ public final class Conversation: Sendable {
   /// Cancels the ongoing asynchronous inference process, and any stream between tool rounds.
   public func cancel() throws {
     let handle = try checkIsAlive()
-    for context in StreamTable.shared.contexts(owner: streamOwner) {
-      context.markCancelled()
+    try sendGateLock.locked {
+      for context in StreamTable.shared.contexts(owner: streamOwner) {
+        context.markCancelled()
+      }
+      try LiteRTLMError.check(
+        litert_lm_conversation_cancel_process(handle), "litert_lm_conversation_cancel_process",
+        { .conversation(.invalidResponse($0)) })
     }
-    try LiteRTLMError.check(
-      litert_lm_conversation_cancel_process(handle), "litert_lm_conversation_cancel_process",
-      { .conversation(.invalidResponse($0)) })
   }
 
   /// Blocks the calling thread until any ongoing asynchronous inference or cancellation finishes.
@@ -730,7 +786,7 @@ public final class Conversation: Sendable {
   /// - Throws: A `LiteRTLMError` if the conversation is not alive, serializing fails, or rendering fails.
   public func renderMessageIntoString(_ message: Message) throws -> String {
     let handle = try checkIsAlive()
-    let messageData = try JSONSerialization.data(withJSONObject: message.toJson)
+    let messageData = try Conversation.safeJSONData(message.toJson)
     guard let messageString = String(data: messageData, encoding: .utf8) else {
       throw LiteRTLMError.conversation(.failedToSerializeMessage)
     }
