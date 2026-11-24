@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="348" viewBox="0 0 880 348" role="img" aria-labelledby="title desc">
+<title id="title">Sustained decode speed at 64K context</title>
+<desc id="desc">Bar chart of sustained decode speed on iPhone 17 Pro at 64K context: Rewrite 84.3 tok/s, Chat 57.8 tok/s, Document Q&amp;A 56.9 tok/s, and Think 51.9 tok/s — each well above upstream v0.18.0's 27 tok/s at 32K.</desc>
+<defs><linearGradient id="canvas" x1="0" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#161823"/><stop offset="0.45" stop-color="#1C1E26"/><stop offset="1" stop-color="#0C0E14"/></linearGradient><radialGradient id="glow0" cx="748" cy="0" r="360" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#BFAADC" stop-opacity="0.09"/><stop offset="1" stop-color="#BFAADC" stop-opacity="0"/></radialGradient></defs>
+<rect width="880" height="348" rx="24" fill="url(#canvas)"/><rect width="880" height="348" rx="24" fill="url(#glow0)"/><rect x="0.5" y="0.5" width="879" height="347" rx="23.5" fill="none" stroke="#F7EBD1" stroke-opacity="0.10"/>
+<text x="34" y="44" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="600" fill="#F2F0EB">Sustained decode speed at 64K context</text>
+<text x="34" y="66" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="400" fill="#948F84">Tokens per second on iPhone 17 Pro (Release, Gemma 4 E4B v2, higher is faster)</text>
+<line x1="170" y1="100" x2="170" y2="284" stroke="#2F3342" stroke-width="1"/>
+<text x="170" y="302" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84" text-anchor="middle">0</text>
+<line x1="292" y1="100" x2="292" y2="284" stroke="#2F3342" stroke-width="1"/>
+<text x="292" y="302" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84" text-anchor="middle">25</text>
+<line x1="414" y1="100" x2="414" y2="284" stroke="#2F3342" stroke-width="1"/>
+<text x="414" y="302" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84" text-anchor="middle">50</text>
+<line x1="536" y1="100" x2="536" y2="284" stroke="#2F3342" stroke-width="1"/>
+<text x="536" y="302" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84" text-anchor="middle">75</text>
+<line x1="658" y1="100" x2="658" y2="284" stroke="#2F3342" stroke-width="1"/>
+<text x="658" y="302" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84" text-anchor="middle">100</text>
+<line x1="301.76" y1="92" x2="301.76" y2="284" stroke="#ADB5C2" stroke-width="1.5" stroke-dasharray="4 4"/>
+<text x="306.76" y="98" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#ADB5C2">Upstream v0.18.0 @ 32K (27 tok/s)</text>
+<circle cx="40" cy="123" r="4.5" fill="#EDCC8A"/>
+<text x="52" y="127.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="600" fill="#F2F0EB">Rewrite</text>
+<path d="M170 110 h405.38 a6 6 0 0 1 6 6 v14 a6 6 0 0 1 -6 6 h-405.38 z" fill="#C89B42"/>
+<text x="589.38" y="127.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F2F0EB">84.3 tok/s</text>
+<text x="661.86" y="127.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#948F84">· 0.65 s TTFT · verify_8</text>
+<circle cx="40" cy="169" r="4.5" fill="#8AB0C8"/>
+<text x="52" y="173.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="600" fill="#F2F0EB">Chat</text>
+<path d="M170 156 h276.06 a6 6 0 0 1 6 6 v14 a6 6 0 0 1 -6 6 h-276.06 z" fill="#5B8AAD"/>
+<text x="460.06" y="173.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F2F0EB">57.8 tok/s</text>
+<text x="532.54" y="173.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#948F84">· 0.85 s TTFT · email</text>
+<circle cx="40" cy="215" r="4.5" fill="#8CC7BF"/>
+<text x="52" y="219.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="600" fill="#F2F0EB">File Q&amp;A</text>
+<path d="M170 202 h271.67 a6 6 0 0 1 6 6 v14 a6 6 0 0 1 -6 6 h-271.67 z" fill="#529B91"/>
+<text x="455.67" y="219.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F2F0EB">56.9 tok/s</text>
+<text x="528.15" y="219.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#948F84">· 3.80 s TTFT · 1,668 prefill</text>
+<circle cx="40" cy="261" r="4.5" fill="#BFAADC"/>
+<text x="52" y="265.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14.5" font-weight="600" fill="#F2F0EB">Think</text>
+<path d="M170 248 h247.27 a6 6 0 0 1 6 6 v14 a6 6 0 0 1 -6 6 h-247.27 z" fill="#8F76B8"/>
+<text x="431.27" y="265.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F2F0EB">51.9 tok/s</text>
+<text x="503.75" y="265.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#948F84">· 0.97 s TTFT · reasoning</text>
+<text x="846" y="328" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#948F84" text-anchor="end">phone-bench.sh · iPhone 17 Pro (A19 Pro, 12 GB, iOS 27.2.1) · 0.5% decode noise band · 0 host read copies</text>
+</svg>
