@@ -37,12 +37,19 @@ struct VoiceModeView: View {
         .accessibilityIdentifier("voice.state")
       captions
       if let confirmation = session.pendingToolConfirmation {
-        ToolConfirmationCard(
-          request: confirmation,
-          onApprove: { session.resolveToolConfirmation(id: confirmation.id, approved: true) },
-          onDeny: { session.resolveToolConfirmation(id: confirmation.id, approved: false) }
-        )
-        .padding(.horizontal, Theme.Spacing.lg)
+        ScrollView {
+          ToolConfirmationCard(
+            request: confirmation,
+            onApprove: { session.resolveToolConfirmation(id: confirmation.id, approved: true) },
+            onDeny: { session.resolveToolConfirmation(id: confirmation.id, approved: false) }
+          )
+          .padding(.horizontal, Theme.Spacing.lg)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxHeight: 340)
+      } else if !session.latestActionCards.isEmpty {
+        ActionCardStack(cards: session.latestActionCards, isCompact: true)
+          .accessibilityIdentifier("voice.actionCards")
       }
       Spacer()
       controls
@@ -66,7 +73,7 @@ struct VoiceModeView: View {
 
   private var orb: some View {
     let active = session.state == .hearing || session.state == .speaking
-    let size: CGFloat = session.cameraOn ? 96 : 200
+    let size: CGFloat = session.pendingToolConfirmation != nil ? 80 : (session.cameraOn ? 96 : 200)
     let scale = 1 + (active ? session.level * 0.35 : 0)
     let core = ZStack {
       // Halo: a soft bloom in the voice color.

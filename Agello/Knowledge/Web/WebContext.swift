@@ -296,6 +296,7 @@ final class WebResearch {
     var sources: [WebContext.Source]
     var queries: [String]
     var provider: SearchProvider?
+    var actionCards: [ActionCardRecord] = []
   }
 
   /// Pages read per search.
@@ -322,10 +323,13 @@ final class WebResearch {
   ) async throws -> Findings {
     progress(String(localized: "Searching the web for “\(queries.first ?? question)”…"))
 
-    // 1. A structured topic's own source: its answer, pinned.
+    // 1. A structured topic's own source: its answer, pinned, plus any native action cards.
     var pinned: [WebResult] = []
+    var actionCards: [ActionCardRecord] = []
     if topic.isStructured, let query = queries.first {
-      pinned = try await structuredAnswer(topic, query: query)
+      let structured = try await structuredAnswerWithCards(topic, query: query)
+      pinned = structured.results
+      actionCards = structured.actionCards
     }
 
     // 2. The reference sources, every search at once.
@@ -358,7 +362,7 @@ final class WebResearch {
     let sources = Self.sources(
       pinned: pinned, ranked: order.map { passages[$0] }, candidates: candidates, budgetTokens: budgetTokens,
       firstIndex: firstIndex)
-    return Findings(sources: sources, queries: queries, provider: found.provider)
+    return Findings(sources: sources, queries: queries, provider: found.provider, actionCards: actionCards)
   }
 
   /// What the reference searches found: pages to read by list (one per query and source, the
@@ -377,11 +381,13 @@ final class WebResearch {
     var text: String
   }
 
-  /// A structured topic's answer from its own source; empty or failing, the search stops there.
-  nonisolated func structuredAnswer(_ topic: SearchTopic, query: String) async throws -> [WebResult] {
-    let pinned: [WebResult]
+  /// A structured topic's answer and any native action cards; empty or failing, the search stops.
+  nonisolated func structuredAnswerWithCards(
+    _ topic: SearchTopic, query: String
+  ) async throws -> (results: [WebResult], actionCards: [ActionCardRecord]) {
+    let structured: (results: [WebResult], actionCards: [ActionCardRecord])
     do {
-      pinned = try await client.structured(topic, query: query)
+      structured = try await client.structuredWithCards(topic, query: query)
     } catch let error as WebSearchError {
       throw error
     } catch {
@@ -389,8 +395,13 @@ final class WebResearch {
       throw WebSearchError.unavailable(topic.sourceName)
     }
     try Task.checkCancellation()
-    if pinned.isEmpty { throw WebSearchError.noResults }
-    return pinned
+    if structured.results.isEmpty { throw WebSearchError.noResults }
+    return structured
+  }
+
+  /// A structured topic's answer from its own source; empty or failing, the search stops there.
+  nonisolated func structuredAnswer(_ topic: SearchTopic, query: String) async throws -> [WebResult] {
+    try await structuredAnswerWithCards(topic, query: query).results
   }
 
   /// Every reference search at once: Wikipedia (or the topic's sister project) and the search

@@ -31,6 +31,7 @@ final class VoiceSession: Identifiable {
   /// What the user said last (their transcript) and the answer so far.
   private(set) var heard = ""
   private(set) var answer = ""
+  private(set) var latestActionCards: [ActionCardRecord] = []
   private(set) var cameraOn = false
   private(set) var muted = false
 
@@ -160,6 +161,7 @@ final class VoiceSession: Identifiable {
 
   /// Tap on the orb while the assistant thinks or speaks: interrupt it.
   func interrupt() {
+    guard pendingToolConfirmation == nil else { return }
     guard state == .speaking || state == .thinking else { return }
     stopReply()
     speechMonitor.resetUtterance()
@@ -173,7 +175,8 @@ final class VoiceSession: Identifiable {
     // The orb follows visible changes only: every buffer (~50 a second) re-rendered it.
     let shown = Double(max(0, min(1, (level + 60) / 50)))
     if state != .speaking, abs(shown - self.level) >= 0.02 { self.level = shown }
-    guard !muted, state != .starting else { return }
+    // Pause VAD barge-in while a mutating-tool confirmation card awaits physical tap approval.
+    guard !muted, state != .starting, pendingToolConfirmation == nil else { return }
     if case .failed = state { return }
     switch vad.feedLevel(level, duration: duration, assistantSpeaking: assistantBusy) {
     case .speechStarted:
@@ -191,7 +194,7 @@ final class VoiceSession: Identifiable {
   }
 
   private func heardTranscript(_ text: String, isFinal: Bool) {
-    guard !muted, state != .starting else { return }
+    guard !muted, state != .starting, pendingToolConfirmation == nil else { return }
     if case .failed = state { return }
     let assistantBusy = state == .speaking || state == .thinking
     if vad.feedTranscript(text, isFinal: isFinal, assistantSpeaking: assistantBusy) == .speechStarted {
@@ -232,6 +235,7 @@ final class VoiceSession: Identifiable {
       }
       // Reset only now: until the last reply has stopped, `silenced` keeps its late chunks quiet.
       self.answer = ""
+      self.latestActionCards = []
       self.sentences = VoiceText.SentenceStream()
       self.replyLanguage = nil
       self.replyFinished = false
@@ -264,6 +268,7 @@ final class VoiceSession: Identifiable {
     if !ready.isEmpty, state == .thinking { state = .speaking }
     if final {
       replyFinished = true
+      latestActionCards = thread?.orderedTurns.last(where: { !$0.isUser })?.parts.actionCards ?? []
       if !audio.isSpeaking, state != .hearing { state = .listening }
     }
   }

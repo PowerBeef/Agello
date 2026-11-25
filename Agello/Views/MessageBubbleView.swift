@@ -131,6 +131,9 @@ struct MessageBubbleView: View {
       }
       if !isStreaming, !turn.text.isEmpty {
         let parts = turn.parts
+        if !parts.actionCards.isEmpty {
+          ActionCardStack(cards: parts.actionCards)
+        }
         if !parts.sources.isEmpty {
           sourcesCard(parts.sources)
           if parts.sources.contains(where: { WeatherLookup.isAttribution($0.url) }) {
@@ -274,16 +277,21 @@ struct MessageBubbleView: View {
           .font(.system(.footnote, weight: .semibold))
           .foregroundStyle(Theme.Text.primary)
           .lineLimit(2)
+          .multilineTextAlignment(.leading)
+          .frame(maxWidth: .infinity, alignment: .leading)
         if let host = source.url.flatMap(URL.init(string:))?.host() {
           Text(host.hasPrefix("www.") ? String(host.dropFirst(4)) : host)
             .font(.caption2)
             .foregroundStyle(tint)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         if let snippet = source.snippet {
           Text(snippet)
             .font(.caption)
             .foregroundStyle(Theme.Text.tertiary)
             .lineLimit(2)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
       Spacer(minLength: 0)
@@ -303,11 +311,13 @@ struct MessageBubbleView: View {
   // MARK: - Tools
 
   private var toolChips: some View {
-    HStack(spacing: Theme.Spacing.tight) {
+    WrapFlowLayout(horizontalSpacing: Theme.Spacing.tight, verticalSpacing: Theme.Spacing.tight) {
       ForEach(turn.toolNames, id: \.self) { name in
         Label(Self.toolLabel(name), systemImage: Self.toolSymbol(name))
           .font(.system(.caption, weight: .medium))
           .foregroundStyle(Theme.Text.secondary)
+          .lineLimit(1)
+          .fixedSize()
           .padding(.horizontal, Theme.Spacing.snug)
           .padding(.vertical, Theme.Spacing.xs)
           .background { QuietBackground(shape: Capsule()) }
@@ -320,18 +330,47 @@ struct MessageBubbleView: View {
     switch name {
     case "calculate": String(localized: "Used the calculator")
     case "get_current_date_time": String(localized: "Checked the date")
+    case "convert_units": String(localized: "Converted units")
+    case "query_table_or_json": String(localized: "Analyzed data")
+    case "search_files": String(localized: "Searched files")
+    case "read_document_pages": String(localized: "Read document")
+    case "search_past_chats": String(localized: "Searched past chats")
+    case "search_places": String(localized: "Searched Apple Maps")
+    case "estimate_travel_time": String(localized: "Checked directions")
+    case "search_calendar_events": String(localized: "Checked calendar")
+    case "find_free_slots": String(localized: "Checked free time")
+    case "create_calendar_event": String(localized: "Created event")
+    case "list_reminders": String(localized: "Checked reminders")
+    case "create_reminder": String(localized: "Created reminder")
+    case "search_contacts": String(localized: "Searched contacts")
+    case "prepare_message": String(localized: "Drafted message")
     case "web_search": String(localized: "Searched the web")
     case "memory": String(localized: "Updated memory")
     default: String(localized: "Used \(name.replacingOccurrences(of: "_", with: " "))")
     }
   }
 
-  private static func toolSymbol(_ name: String) -> String {
+  static func toolSymbol(_ name: String) -> String {
     switch name {
     case "calculate": "plus.forwardslash.minus"
+    case "get_current_date_time": "clock"
+    case "convert_units": "arrow.left.arrow.right"
+    case "query_table_or_json": "tablecells"
+    case "search_files": "doc.text.magnifyingglass"
+    case "read_document_pages": "book.pages"
+    case "search_past_chats": "clock.arrow.trianglehead.counterclockwise.rotate.90"
+    case "search_places": "mappin.and.ellipse"
+    case "estimate_travel_time": "car.fill"
+    case "search_calendar_events": "calendar"
+    case "find_free_slots": "calendar.badge.clock"
+    case "create_calendar_event": "calendar.badge.plus"
+    case "list_reminders": "checklist"
+    case "create_reminder": "checklist.checked"
+    case "search_contacts": "person.crop.circle"
+    case "prepare_message": "paperplane"
     case "web_search": "globe"
     case "memory": "brain.head.profile"
-    default: name.contains("date") || name.contains("time") ? "calendar" : "wrench.and.screwdriver"
+    default: "wrench.and.screwdriver"
     }
   }
 
@@ -474,6 +513,61 @@ struct MessageBubbleView: View {
     .padding(.vertical, Theme.Spacing.tight)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Thinking")
+  }
+}
+
+/// Leading-aligned wrapping flow layout for tool pills and action card buttons. Clamps every
+/// child to the proposed width so it can never widen an enclosing vertical `ScrollView`.
+struct WrapFlowLayout: Layout {
+  var horizontalSpacing: CGFloat = 6
+  var verticalSpacing: CGFloat = 6
+
+  func sizeThatFits(
+    proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+  ) -> CGSize {
+    let maxWidth = proposal.width ?? .infinity
+    let childProposal = ProposedViewSize(width: maxWidth.isFinite ? maxWidth : nil, height: nil)
+    var x: CGFloat = 0
+    var y: CGFloat = 0
+    var rowHeight: CGFloat = 0
+    var usedWidth: CGFloat = 0
+    for subview in subviews {
+      let size = subview.sizeThatFits(childProposal)
+      let width = maxWidth.isFinite ? min(size.width, maxWidth) : size.width
+      if x > 0, x + width > maxWidth {
+        x = 0
+        y += rowHeight + verticalSpacing
+        rowHeight = 0
+      }
+      usedWidth = max(usedWidth, x + width)
+      x += width + horizontalSpacing
+      rowHeight = max(rowHeight, size.height)
+    }
+    return CGSize(width: maxWidth.isFinite ? maxWidth : usedWidth, height: y + rowHeight)
+  }
+
+  func placeSubviews(
+    in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+  ) {
+    let maxWidth = bounds.width
+    let childProposal = ProposedViewSize(width: maxWidth, height: nil)
+    var x = bounds.minX
+    var y = bounds.minY
+    var rowHeight: CGFloat = 0
+    for subview in subviews {
+      let size = subview.sizeThatFits(childProposal)
+      let width = min(size.width, maxWidth)
+      if x > bounds.minX, x + width > bounds.maxX + 0.5 {
+        x = bounds.minX
+        y += rowHeight + verticalSpacing
+        rowHeight = 0
+      }
+      subview.place(
+        at: CGPoint(x: x, y: y),
+        proposal: ProposedViewSize(width: width, height: size.height))
+      x += width + horizontalSpacing
+      rowHeight = max(rowHeight, size.height)
+    }
   }
 }
 

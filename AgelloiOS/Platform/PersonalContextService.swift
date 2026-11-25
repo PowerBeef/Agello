@@ -44,6 +44,7 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     }
     let summaries = filtered.sorted { $0.startDate < $1.startDate }.prefix(40).map { event in
       CalendarEventSummary(
+        eventIdentifier: event.eventIdentifier,
         title: event.title ?? "Untitled",
         startDate: event.startDate,
         endDate: event.endDate,
@@ -73,6 +74,7 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
       try eventStore.save(event, span: .thisEvent, commit: true)
       return .success(
         CalendarEventSummary(
+          eventIdentifier: event.eventIdentifier,
           title: event.title ?? title, startDate: event.startDate, endDate: event.endDate,
           isAllDay: event.isAllDay, location: event.location, calendarName: calendar.title,
           notes: event.notes))
@@ -113,6 +115,7 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
         }
         let result = matched.prefix(30).map { item in
           ReminderSummary(
+            reminderIdentifier: item.calendarItemIdentifier,
             title: item.title ?? "Untitled",
             dueDate: item.dueDateComponents?.date,
             isCompleted: item.isCompleted,
@@ -145,12 +148,46 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
       try eventStore.save(reminder, commit: true)
       return .success(
         ReminderSummary(
+          reminderIdentifier: reminder.calendarItemIdentifier,
           title: reminder.title ?? title, dueDate: dueDate, isCompleted: false,
           listName: list.title, priority: reminder.priority, notes: reminder.notes))
     } catch {
       return .error("Could not save reminder: \(error.localizedDescription)")
     }
   }
+
+  func setReminderCompleted(
+    identifier: String, completed: Bool
+  ) async -> PersonalToolResult<ReminderSummary> {
+    if let err = await ensureRemindersAccess() { return .error(err) }
+    guard let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else {
+      return .error("Reminder not found.")
+    }
+    reminder.isCompleted = completed
+    reminder.completionDate = completed ? Date() : nil
+    do {
+      try eventStore.save(reminder, commit: true)
+      return .success(
+        ReminderSummary(
+          reminderIdentifier: reminder.calendarItemIdentifier,
+          title: reminder.title ?? "Untitled",
+          dueDate: reminder.dueDateComponents?.date,
+          isCompleted: reminder.isCompleted,
+          listName: reminder.calendar?.title,
+          priority: reminder.priority,
+          notes: reminder.notes))
+    } catch {
+      return .error("Could not update reminder: \(error.localizedDescription)")
+    }
+  }
+
+  /// Looks up an EventKit event for native `EKEventViewController` / `EKEventEditViewController`.
+  func event(withIdentifier identifier: String) -> EKEvent? {
+    eventStore.event(withIdentifier: identifier)
+  }
+
+  /// Shared store for native `EKEventEditViewController` presentation.
+  var sharedEventStore: EKEventStore { eventStore }
 
   // MARK: - Contacts
 
@@ -172,10 +209,13 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return .error("Provide a name, email, or phone number to search.") }
     let keys: [CNKeyDescriptor] = [
+      CNContactIdentifierKey as CNKeyDescriptor,
       CNContactFormatter.descriptorForRequiredKeys(for: .fullName),
       CNContactOrganizationNameKey as CNKeyDescriptor,
       CNContactPhoneNumbersKey as CNKeyDescriptor,
       CNContactEmailAddressesKey as CNKeyDescriptor,
+      CNContactPostalAddressesKey as CNKeyDescriptor,
+      CNContactBirthdayKey as CNKeyDescriptor,
     ]
     let capped = max(1, min(10, limit))
     do {
@@ -200,16 +240,36 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
       let summaries = contacts.prefix(capped).map { contact in
         let name = CNContactFormatter.string(from: contact, style: .fullName)
           ?? contact.organizationName
+        let postal: String? = contact.postalAddresses.first.map { labeled in
+          CNPostalAddressFormatter.string(from: labeled.value, style: .mailingAddress)
+            .replacingOccurrences(of: "\n", with: ", ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let birthday: String? = contact.birthday.flatMap { comps -> String? in
+          guard let month = comps.month, let day = comps.day else { return nil }
+          if let year = comps.year {
+            return String(format: "%04d-%02d-%02d", year, month, day)
+          }
+          return String(format: "%02d-%02d", month, day)
+        }
         return ContactSummary(
+          contactIdentifier: contact.identifier,
           fullName: name.isEmpty ? "Unnamed contact" : name,
           organization: contact.organizationName.isEmpty ? nil : contact.organizationName,
           phones: contact.phoneNumbers.map { $0.value.stringValue },
-          emails: contact.emailAddresses.map { $0.value as String })
+          emails: contact.emailAddresses.map { $0.value as String },
+          postalAddress: postal?.isEmpty == true ? nil : postal,
+          birthday: birthday)
       }
       return .success(Array(summaries))
     } catch {
       return .error("Could not search contacts: \(error.localizedDescription)")
     }
+  }
+
+  /// Fetches a full `CNContact` for native `CNContactViewController` presentation or vCard export.
+  func contact(withIdentifier identifier: String, keysToFetch: [CNKeyDescriptor]) -> CNContact? {
+    try? contactStore.unifiedContact(withIdentifier: identifier, keysToFetch: keysToFetch)
   }
 
   // MARK: - Maps & Places (MapKit)
@@ -218,12 +278,26 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     query: String, near: String?, limit: Int
   ) async -> PersonalToolResult<[PlaceSummary]> {
     let capped = max(1, min(10, limit))
+    let explicitNear = near?.trimmingCharacters(in: .whitespacesAndNewlines)
     do {
       let (places, _): ([PlaceSearch.Place], String?)
-      if let near, !near.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        (places, _) = try await PlaceSearch.search(what: query, near: near, limit: capped)
+      if let explicitNear, !explicitNear.isEmpty {
+        (places, _) = try await PlaceSearch.search(what: query, near: explicitNear, limit: capped)
       } else {
-        (places, _) = try await PlaceSearch.search(query, limit: capped)
+        let split = PlaceSearch.split(query)
+        if let parsedPlace = split.place {
+          (places, _) = try await PlaceSearch.search(
+            what: split.what, near: parsedPlace, originalQuery: query, limit: capped)
+        } else {
+          // Default omitted `near` to the user's current location (B1 fix), falling back to an
+          // unfiltered query only if Location permission is unavailable.
+          do {
+            (places, _) = try await PlaceSearch.search(
+              what: query, near: "here", originalQuery: query, limit: capped)
+          } catch WebSearchError.locationUnavailable {
+            (places, _) = try await PlaceSearch.search(query, limit: capped)
+          }
+        }
       }
       let summaries = places.map { p in
         var comps = URLComponents(string: "https://maps.apple.com/")
@@ -233,7 +307,9 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
         ]
         return PlaceSummary(
           name: p.name, address: p.address, phone: p.phone, category: p.category,
-          latitude: p.latitude, longitude: p.longitude, mapsURL: comps?.url?.absoluteString)
+          latitude: p.latitude, longitude: p.longitude, mapsURL: comps?.url?.absoluteString,
+          distanceMeters: p.meters, websiteURL: p.website?.absoluteString,
+          mapItemIdentifier: p.mapItemIdentifier)
       }
       return .success(summaries)
     } catch {
@@ -253,6 +329,7 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
 
     let sourceItem: MKMapItem
     let originLabel: String
+    let originIsCurrentLocation: Bool
     if let origin, !origin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
       !CurrentLocation.meansHere(origin)
     {
@@ -261,17 +338,21 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
       }
       sourceItem = found
       originLabel = found.name ?? origin
+      originIsCurrentLocation = false
     } else if let here = await CurrentLocation.fetch() {
       sourceItem = MKMapItem(location: here, address: nil)
       originLabel = "Current location"
+      originIsCurrentLocation = true
     } else {
       return .error("Provide an origin address or enable Location access to estimate travel from here.")
     }
 
     let mode = LanguageSupport.normalizeTransportMode(transport)
+    let resolvedMode = mode.isEmpty ? "driving" : mode
     let transportType: MKDirectionsTransportType
-    switch mode {
+    switch resolvedMode {
     case "walking": transportType = .walking
+    case "cycling": transportType = .cycling
     case "transit": transportType = .transit
     default: transportType = .automobile
     }
@@ -280,15 +361,62 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     request.source = sourceItem
     request.destination = destItem
     request.transportType = transportType
+
+    let originCoord = sourceItem.location.coordinate
+    let destCoord = destItem.location.coordinate
+    let destAddress = destItem.address?.fullAddress
+    let destID = destItem.identifier?.rawValue
+
+    // Per MKDirectionsTypes.h, `.transit` only supports `calculateETA()`; all other modes get
+    // full turn-by-turn `MKDirections.calculate()` routes with graceful fallback to `calculateETA()`.
+    if transportType != .transit,
+      let routeResponse = try? await MKDirections(request: request).calculate(),
+      let route = routeResponse.routes.first
+    {
+      let steps: [RouteCard.Step] = route.steps
+        .filter { !$0.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .prefix(15)
+        .enumerated()
+        .map { idx, step in
+          RouteCard.Step(
+            id: idx,
+            instruction: step.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
+            distanceMeters: step.distance)
+        }
+      return .success(
+        TravelEstimateSummary(
+          origin: originLabel,
+          destination: destItem.name ?? destName,
+          transport: resolvedMode,
+          distanceMeters: route.distance,
+          expectedTravelSeconds: route.expectedTravelTime,
+          originLatitude: originCoord.latitude,
+          originLongitude: originCoord.longitude,
+          originIsCurrentLocation: originIsCurrentLocation,
+          destinationAddress: destAddress,
+          destinationLatitude: destCoord.latitude,
+          destinationLongitude: destCoord.longitude,
+          destinationMapItemIdentifier: destID,
+          routeName: route.name.isEmpty ? nil : route.name,
+          steps: steps))
+    }
+
     do {
       let response = try await MKDirections(request: request).calculateETA()
       return .success(
         TravelEstimateSummary(
           origin: originLabel,
           destination: destItem.name ?? destName,
-          transport: mode.isEmpty ? "driving" : mode,
+          transport: resolvedMode,
           distanceMeters: response.distance,
-          expectedTravelSeconds: response.expectedTravelTime))
+          expectedTravelSeconds: response.expectedTravelTime,
+          originLatitude: originCoord.latitude,
+          originLongitude: originCoord.longitude,
+          originIsCurrentLocation: originIsCurrentLocation,
+          destinationAddress: destAddress,
+          destinationLatitude: destCoord.latitude,
+          destinationLongitude: destCoord.longitude,
+          destinationMapItemIdentifier: destID))
     } catch {
       return .error("Could not estimate travel time: \(error.localizedDescription)")
     }

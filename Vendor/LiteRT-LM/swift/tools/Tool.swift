@@ -13,7 +13,8 @@
 // limitations under the License.
 //
 // Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
-// added Tool.isReadOnly for safe parallel tool execution within a single round.
+// added Tool.isReadOnly for safe parallel tool execution within a single round,
+// and @ToolParam(allowedValues:) for compact JSON-schema enum constraints.
 
 import Foundation
 
@@ -93,13 +94,19 @@ public struct ToolParam<Value: ToolParameterValue>: Decodable, ToolParamProtocol
   /// A description of the parameter. This is used to to describe the parameter in the schema.
   public let description: String
 
+  /// Optional list of allowed enum values emitted as `"enum"` in the parameter JSON schema.
+  public let allowedValues: [String]?
+
   /// Whether the parameter has a default value provided by the developer when declaring the tool.
   private let hasDefaultValue: Bool
 
-  /// Initializes a parameter with an optional default value.
-  public init(wrappedValue: Value? = nil, description: String) {
+  /// Initializes a parameter with an optional default value and optional enum values.
+  public init(
+    wrappedValue: Value? = nil, description: String, allowedValues: [String]? = nil
+  ) {
     self.storage = wrappedValue
     self.description = description
+    self.allowedValues = allowedValues
     self.hasDefaultValue = wrappedValue != nil
   }
 
@@ -139,6 +146,9 @@ public struct ToolParam<Value: ToolParameterValue>: Decodable, ToolParamProtocol
     if !description.isEmpty {
       schema["description"] = description
     }
+    if let allowedValues, !allowedValues.isEmpty {
+      schema["enum"] = allowedValues
+    }
     return schema
   }
 
@@ -175,6 +185,7 @@ public struct ToolParam<Value: ToolParameterValue>: Decodable, ToolParamProtocol
     }
 
     self.description = ""
+    self.allowedValues = nil
     self.hasDefaultValue = true
   }
 }

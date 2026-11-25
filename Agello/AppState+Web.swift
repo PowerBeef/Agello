@@ -91,6 +91,7 @@ extension AppState {
         firstIndex: toolSourceOffset + WebSourcesRecorder.nextIndex
       ) { _ in }
       WebSourcesRecorder.record(findings.sources.map(\.record))
+      for card in findings.actionCards { ToolCardRecorder.record(card) }
       return findings.sources.isEmpty ? "No results." : WebContext.sourcesBlock(findings.sources)
     } catch {
       return "Web search failed: \(error.localizedDescription)"

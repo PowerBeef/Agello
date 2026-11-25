@@ -232,7 +232,8 @@ enum LanguageSupport {
 
   // MARK: - Transport mode normalization (MapKit)
 
-  /// Normalizes localized transport modes into canonical `"driving"`, `"walking"`, or `"transit"`.
+  /// Normalizes localized transport modes into canonical `"driving"`, `"walking"`, `"cycling"`,
+  /// or `"transit"`.
   static func normalizeTransportMode(_ raw: String) -> String {
     let cleaned = fold(raw).trimmingCharacters(in: .whitespacesAndNewlines)
     let walking: Set<String> = [
@@ -240,14 +241,136 @@ enum LanguageSupport {
       "marche", "a pied", "pied", "caminando", "a pie", "andar",
       "zu fuss", "gehen", "a piedi", "camminando", "a pe", "lopen", "pieszo", "пешком", "徒歩", "步行", "도보",
     ]
+    let cycling: Set<String> = [
+      "cycling", "cycle", "bike", "biking", "bicycle",
+      "velo", "a velo", "bicyclette", "bicicleta", "en bici",
+      "fahrrad", "radfahren", "mit dem rad", "bici", "in bici",
+      "fiets", "fietsen", "rower", "rowerem", "велосипед", "自転車", "骑行", "自行车", "자전거",
+    ]
     let transit: Set<String> = [
       "transit", "public transit", "public transport", "subway", "metro", "bus", "train",
       "transport en commun", "transports en commun", "transporte publico", "opnv", "nahverkehr",
       "trasporto pubblico", "transporte", "openbaar vervoer", "komunikacja", "транспорт", "電車", "公共交通", "대중교통",
     ]
     if walking.contains(cleaned) { return "walking" }
+    if cycling.contains(cleaned) { return "cycling" }
     if transit.contains(cleaned) { return "transit" }
     return "driving"
+  }
+
+  // MARK: - MapKit POI category inference (generic category queries only)
+
+  private static let genericProximityModifiers: Set<String> = [
+    // English
+    "nearest", "closest", "nearby", "closest", "local", "open", "a", "an", "the", "best", "good", "find",
+    // French
+    "le", "la", "les", "un", "une", "des", "plus", "proche", "proches", "pres", "meilleur", "meilleure", "ouvert", "ouverte",
+    // Spanish / Portuguese / Italian
+    "el", "la", "los", "las", "mas", "cercano", "cercana", "proximo", "proxima", "vicino", "vicina", "migliore", "mejor",
+    // German / Dutch / Polish
+    "nachste", "nachster", "nachstes", "die", "der", "das", "dichtstbijzijnde", "najblizszy", "najblizsza",
+  ]
+
+  private static let cjkPOICategories: [(tokens: [String], category: String)] = [
+    (["ガソリンスタンド", "加油站", "주유소"], "gasStation"),
+    (["レストラン", "餐厅", "餐廳", "餐馆", "식당", "레스토랑"], "restaurant"),
+    (["カフェ", "喫茶店", "咖啡店", "咖啡馆", "카페"], "cafe"),
+    (["薬局", "药店", "藥局", "약국"], "pharmacy"),
+    (["病院", "医院", "醫院", "병원"], "hospital"),
+    (["ホテル", "酒店", "飯店", "호텔"], "hotel"),
+    (["駐車場", "停车场", "停車場", "주차장"], "parking"),
+    (["充電スタンド", "充电桩", "充電站", "충전소"], "evCharger"),
+    (["スーパー", "超市", "마트", "슈퍼마켓"], "foodMarket"),
+    (["パン屋", "面包店", "麵包店", "빵집", "베이커리"], "bakery"),
+    (["銀行", "银行", "은행"], "bank"),
+    (["空港", "机场", "機場", "공항"], "airport"),
+    (["博物館", "美術館", "博物馆", "박물관"], "museum"),
+  ]
+
+  private static let latinPOICategories: [String: Set<String>] = [
+    "gasStation": [
+      "gas station", "gas stations", "petrol station", "fuel station", "service station", "gas", "fuel", "petrol",
+      "station service", "stations service", "station essence", "essence", "pompe essence", "pompe a essence",
+      "gasolinera", "gasolineras", "estacion de servicio", "tankstelle", "stazione di servizio", "benzinaio",
+      "posto de gasolina", "posto de combustivel", "tankstation", "stacja benzynowa", "stacja paliw",
+      "заправка", "азс", "محطة وقود", "محطة بنزين",
+    ],
+    "evCharger": [
+      "ev charger", "ev charging", "ev charging station", "charging station", "electric car charger",
+      "borne de recharge", "bornes de recharge", "borne electrique", "estacion de carga",
+      "ladestation", "colonnina di ricarica", "laadpaal", "stacja ladowania",
+    ],
+    "restaurant": [
+      "restaurant", "restaurants", "diner", "bistro", "eatery",
+      "restaurante", "restaurantes", "ristorante", "ristoranti", "restauracja", "ресторан", "مطعم",
+    ],
+    "cafe": [
+      "cafe", "cafes", "coffee", "coffee shop", "coffee shops", "espresso bar",
+      "cafeteria", "kaffeehaus", "kawiarnia", "кофейня", "кафе", "مقهى",
+    ],
+    "pharmacy": [
+      "pharmacy", "pharmacies", "drugstore", "drug store", "chemist",
+      "pharmacie", "farmacia", "farmacias", "apotheke", "apotheek", "apteka", "аптека", "صيدلية",
+    ],
+    "hospital": [
+      "hospital", "hospitals", "emergency room", "er", "medical center",
+      "hopital", "hopitaux", "urgences", "krankenhaus", "ospedale", "ziekenhuis", "szpital", "больница", "مستشفى",
+    ],
+    "hotel": [
+      "hotel", "hotels", "motel", "inn", "hoteles", "albergo", "отель", "гостиница", "فندق",
+    ],
+    "parking": [
+      "parking", "parking lot", "parking garage", "car park",
+      "stationnement", "aparcamiento", "estacionamiento", "parkplatz", "parkhaus", "parcheggio", "парковка", "موقف سيارات",
+    ],
+    "foodMarket": [
+      "grocery", "grocery store", "grocery stores", "supermarket", "supermarkets",
+      "epicerie", "supermarche", "supermercado", "supermarkt", "supermercato", "sklep spozywczy", "супермаркет",
+    ],
+    "bakery": [
+      "bakery", "bakeries", "boulangerie", "patisserie", "panaderia", "backerei", "panificio", "padaria", "bakkerij", "piekarnia", "пекарня",
+    ],
+    "bank": [
+      "bank", "banks", "banque", "banco", "banca", "банк", "بنك",
+    ],
+    "atm": [
+      "atm", "atms", "cash machine", "guichet automatique", "distributeur",
+      "cajero", "cajero automatico", "geldautomat", "bancomat", "bankomat", "банкомат",
+    ],
+    "airport": [
+      "airport", "airports", "aeroport", "aeropuerto", "flughafen", "aeroporto", "luchthaven", "lotnisko", "аэропорт", "مطار",
+    ],
+    "park": [
+      "park", "parks", "parc", "parque", "parco", "парк",
+    ],
+    "museum": [
+      "museum", "museums", "musee", "museo", "muzeum", "музей", "متحف",
+    ],
+  ]
+
+  /// Maps generic category queries (e.g. "nearest gas station", "station-service", "pharmacie")
+  /// across languages to a canonical MapKit POI category key, returning `nil` for specific brand
+  /// or business names ("Walmart", "Starbucks") so brand searches stay unfiltered.
+  static func placePOICategory(for query: String) -> String? {
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    for entry in cjkPOICategories
+    where entry.tokens.contains(where: { trimmed == $0 || (trimmed.count <= 10 && trimmed.contains($0)) }) {
+      return entry.category
+    }
+    let folded = fold(trimmed)
+      .replacingOccurrences(of: "-", with: " ")
+      .replacingOccurrences(of: "'", with: " ")
+      .replacingOccurrences(of: "’", with: " ")
+    let tokens = folded.split(whereSeparator: \.isWhitespace)
+      .map { $0.trimmingCharacters(in: .punctuationCharacters) }
+      .filter { !$0.isEmpty && !genericProximityModifiers.contains($0) }
+    guard !tokens.isEmpty, tokens.count <= 4 else { return nil }
+    let core = tokens.joined(separator: " ")
+    for (category, phrases) in latinPOICategories where phrases.contains(core) {
+      return category
+    }
+    return nil
   }
 
   // MARK: - Localized number parsing (US + European CSV/currency)

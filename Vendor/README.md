@@ -108,6 +108,10 @@ fixes:
    all 16 Swift tools cleanly on the iOS Simulator without shipping a simulator slice of
    `CLiteRTLM.xcframework`; also honors `automaticToolCalling == false` in `sendMessageStream` so
    external clients (`agello serve` SSE) receive `tool_calls` chunks instead of auto-executing them.
+8. `swift/tools/Tool.swift` and `swift/tools/ToolManager.swift` (mirrored in `../LiteRT-LM`):
+   adds `@ToolParam(allowedValues:)` emitting `"enum"` constraints directly in generated JSON tool
+   schemas, plus schema-aware scalar coercion in `ToolManager` (`"5"` → `5` / `5.0`, `"true"` →
+   `true`, numeric → string) before `JSONDecoder` decodes model tool arguments.
 
 ## Why vendored instead of a remote SPM dependency?
 

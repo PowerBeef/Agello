@@ -52,12 +52,26 @@ enum ContextBudget {
   /// Tool schemas + chat template + a short system prompt, before any turn.
   static let preambleTokens = 256
 
-  /// Preamble for a conversation with `systemPrompt` (which grows with
-  /// personalization) and optional extra tool declarations beyond the base set,
-  /// so long instructions or tool schemas can't overflow the window.
-  static func preambleTokens(systemPrompt: String, toolCount: Int = 0) -> Int {
-    let extraToolTokens = max(0, toolCount - 3) * 80
-    return preambleTokens + estimateTokens(systemPrompt) + extraToolTokens
+  /// Estimates tokens occupied by serialized tool JSON declarations (empty or `"[]"` -> 0).
+  static func estimateToolSchemaTokens(_ toolsJsonDescription: String) -> Int {
+    let trimmed = toolsJsonDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, trimmed != "[]" else { return 0 }
+    return estimateTextTokens(trimmed)
+  }
+
+  /// Preamble for a conversation with `systemPrompt` (which grows with personalization) and active
+  /// tool declarations (`toolSchemaTokens` measured from `ToolManager.toolsJsonDescription`, or a
+  /// conservative per-tool estimate when only `toolCount` is known).
+  static func preambleTokens(
+    systemPrompt: String, toolCount: Int = 0, toolSchemaTokens: Int? = nil
+  ) -> Int {
+    let toolTokens: Int
+    if let toolSchemaTokens {
+      toolTokens = max(0, toolSchemaTokens)
+    } else {
+      toolTokens = max(0, toolCount - 3) * 140
+    }
+    return preambleTokens + estimateTokens(systemPrompt) + toolTokens
   }
   /// Per-turn template overhead (role markers, separators).
   static let perTurnOverhead = 8

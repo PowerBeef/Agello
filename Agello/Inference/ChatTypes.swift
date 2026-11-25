@@ -174,6 +174,8 @@ struct ChatChunk: Sendable, Equatable {
   var toolNames: [String] = []
   /// Tool runs (with user-facing summaries) completed since the last chunk.
   var toolActivity: [ToolActivityRecord] = []
+  /// Swift-verified action cards emitted by tools since the last chunk.
+  var actionCards: [ActionCardRecord] = []
 
   static let empty = ChatChunk(textDelta: "", thoughtDelta: nil)
 }
@@ -184,9 +186,13 @@ struct StreamAccumulator: Sendable, Equatable {
   private(set) var thought = ""
   private(set) var toolNames: [String] = []
   private(set) var toolActivity: [ToolActivityRecord] = []
+  private(set) var actionCards: [ActionCardRecord] = []
 
   mutating func append(_ chunk: ChatChunk) {
     toolActivity += chunk.toolActivity
+    if !chunk.actionCards.isEmpty {
+      actionCards = ActionCards.merge(actionCards, chunk.actionCards)
+    }
     text += chunk.textDelta
     if let thoughtDelta = chunk.thoughtDelta {
       thought += thoughtDelta

@@ -613,6 +613,7 @@ final class AppState {
     // A voice turn is the recording; the model reads how to answer it with it.
     if voiceModeActive, audioFileURL != nil, prompt.isEmpty { enginePrompt = VoiceText.instruction }
     var sources: [SourceRecord] = []
+    var actionCards: [ActionCardRecord] = []
     var filesFollowUp: (key: String, prompt: String)?
     let documents = documents(for: thread)
     if !documents.isEmpty {
@@ -668,6 +669,9 @@ final class AppState {
           ($0.key, WebContext.prompt(question: prompt, sources: findings.sources, filePrompt: $0.prompt))
         }
         sources += findings.sources.map(\.record)
+        if !findings.actionCards.isEmpty {
+          actionCards = ActionCards.merge(actionCards, findings.actionCards)
+        }
       }
     }
 
@@ -746,7 +750,9 @@ final class AppState {
     // Placeholder model turn, mutated live as chunks stream in.
     persist()
     let reply = ChatTurn(role: .model)
-    if !sources.isEmpty { reply.parts = MessageParts(sources: sources) }
+    if !sources.isEmpty || !actionCards.isEmpty {
+      reply.parts = MessageParts(sources: sources, actionCards: actionCards)
+    }
     if let replacing {
       thread.addVersion(reply, of: replacing)
     } else {
@@ -763,6 +769,8 @@ final class AppState {
     conversationIsEmpty = false
 
     WebSourcesRecorder.reset()
+    TurnContactRoster.reset()
+    TurnContactRoster.registerUserText(prompt)
     toolSourceOffset = sources.count
     let stream = engine.send(text: enginePrompt, imageData: imageData, audioFileURL: audioFileURL)
     // Voice mode: the reply starts with the user's transcript.

@@ -277,32 +277,47 @@ struct WebClient: Sendable {
       json: try await get(Self.url(components), agent: Self.appAgent), site: site, language: language)
   }
 
-  /// The answer of a structured topic's source (weather, places, exchange rates), pinned.
-  func structured(_ topic: SearchTopic, query: String) async throws -> [WebResult] {
+  /// The answer of a structured topic's source (weather, places, exchange rates), pinned, along
+  /// with any Swift-verified interactive action cards produced directly from Apple frameworks.
+  func structuredWithCards(
+    _ topic: SearchTopic, query: String
+  ) async throws -> (results: [WebResult], actionCards: [ActionCardRecord]) {
     switch topic {
     case .weather:
-      guard let report = try await WeatherLookup.report(for: query) else { return [] }
+      guard let report = try await WeatherLookup.report(for: query) else { return ([], []) }
       let attribution = await WeatherLookup.attribution()
-      return [
-        WebResult(
-          title: "\(attribution.name) — \(report.place)", url: attribution.url, snippet: "",
-          content: WeatherLookup.describe(report), pinned: true)
-      ]
+      return (
+        [
+          WebResult(
+            title: "\(attribution.name) — \(report.place)", url: attribution.url, snippet: "",
+            content: WeatherLookup.describe(report), pinned: true)
+        ],
+        []
+      )
     case .place:
       let found = try await PlaceSearch.search(query)
-      return PlaceSearch.results(found.places, area: found.area)
+      let card = PlaceSearch.actionCard(found.places, query: query, area: found.area)
+      return (PlaceSearch.results(found.places, area: found.area), card.map { [$0] } ?? [])
     case .currency:
       let xml = String(decoding: try await get(ExchangeRates.dataURL, agent: Self.appAgent), as: UTF8.self)
-      guard let table = ExchangeRates.parse(xml: xml) else { return [] }
-      return [
-        WebResult(
-          title: "Euro reference rates — European Central Bank", url: ExchangeRates.sourceURL, snippet: "",
-          content: ExchangeRates.describe(table, request: ExchangeRates.request(query, known: Set(table.perEuro.keys))),
-          pinned: true)
-      ]
+      guard let table = ExchangeRates.parse(xml: xml) else { return ([], []) }
+      return (
+        [
+          WebResult(
+            title: "Euro reference rates — European Central Bank", url: ExchangeRates.sourceURL, snippet: "",
+            content: ExchangeRates.describe(table, request: ExchangeRates.request(query, known: Set(table.perEuro.keys))),
+            pinned: true)
+        ],
+        []
+      )
     default:
-      return []
+      return ([], [])
     }
+  }
+
+  /// The answer of a structured topic's source (weather, places, exchange rates), pinned.
+  func structured(_ topic: SearchTopic, query: String) async throws -> [WebResult] {
+    try await structuredWithCards(topic, query: query).results
   }
 
   /// Scientific papers with their abstracts, from Crossref.

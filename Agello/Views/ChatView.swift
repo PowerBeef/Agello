@@ -17,7 +17,6 @@ struct ChatView: View {
   /// of this view. The cover follows it (`item:`), so it never opens without its session.
   @State private var voiceSession: VoiceSession?
   @State private var reader = SpeechReader()
-  @State private var scrollPosition = ScrollPosition(edge: .bottom)
   /// The list keeps the latest text in view (the user hasn't scrolled up).
   @State private var followsLatest = true
   /// The developer screen's "Show performance details": time to first token, speed, backend.
@@ -96,7 +95,6 @@ struct ChatView: View {
       }
     }
     .onChange(of: thread?.id) { old, _ in
-      scrollPosition = ScrollPosition(edge: .bottom)
       followsLatest = true
       guard old != nil else { return }
       reader.stop()
@@ -166,69 +164,69 @@ struct ChatView: View {
       if turns.isEmpty {
         emptyState
       } else {
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
-            ForEach(turns) { turn in
-              MessageBubbleView(
-                turn: turn, isStreaming: isLiveBubble(turn, in: turns),
-                toolStatus: appState.toolStatus,
-                versions: versions[VersionKey(turn)] ?? [],
-                showsStats: showStats,
-                actions: actions(for: turn))
+        ScrollViewReader { proxy in
+          ScrollView(.vertical) {
+            LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
+              ForEach(turns) { turn in
+                MessageBubbleView(
+                  turn: turn, isStreaming: isLiveBubble(turn, in: turns),
+                  toolStatus: appState.toolStatus,
+                  versions: versions[VersionKey(turn)] ?? [],
+                  showsStats: showStats,
+                  actions: actions(for: turn))
+                  .id(turn.id)
+              }
+              if let confirmation = appState.pendingToolConfirmation,
+                let ownerID = appState.generatingThreadID ?? appState.pendingToolConfirmationThreadID,
+                thread?.id == ownerID
+              {
+                ToolConfirmationCard(
+                  request: confirmation,
+                  onApprove: {
+                    appState.resolvePendingToolConfirmation(id: confirmation.id, approved: true)
+                  },
+                  onDeny: {
+                    appState.resolvePendingToolConfirmation(id: confirmation.id, approved: false)
+                  })
+                  .id(confirmation.id)
+              }
             }
-            if let confirmation = appState.pendingToolConfirmation,
-              let ownerID = appState.generatingThreadID ?? appState.pendingToolConfirmationThreadID,
-              thread?.id == ownerID
-            {
-              ToolConfirmationCard(
-                request: confirmation,
-                onApprove: {
-                  appState.resolvePendingToolConfirmation(id: confirmation.id, approved: true)
-                },
-                onDeny: {
-                  appState.resolvePendingToolConfirmation(id: confirmation.id, approved: false)
-                })
-                .id(confirmation.id)
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.top, Theme.Spacing.lg)
+            .padding(.bottom, Theme.Spacing.sm)
+          }
+          .id(thread?.id)
+          .scrollDismissesKeyboard(.interactively)
+          // A chat opens on its latest message, and a short one sits at the top. At the bottom,
+          // growth (streaming text, a new message, action cards, the keyboard) keeps the latest
+          // line in view within the same layout pass. One-shot ScrollViewReader scrolling avoids
+          // sticky ScrollPosition(id:) bindings that shift X or overscroll Y when a row grows.
+          .defaultScrollAnchor(.bottom, for: .initialOffset)
+          .defaultScrollAnchor(.top, for: .alignment)
+          .defaultScrollAnchor(followsLatest ? .bottom : .top, for: .sizeChanges)
+          .onScrollGeometryChange(for: Bool.self) { geometry in
+            geometry.visibleRect.maxY >= geometry.contentSize.height - Theme.Spacing.xxxl
+          } action: { _, atBottom in
+            followsLatest = atBottom
+          }
+          .onChange(of: turns.count) { old, new in
+            guard new > old, let latest = turns.last?.id else { return }
+            followsLatest = true
+            withAppAnimation(Theme.Motion.easeOut) {
+              proxy.scrollTo(latest, anchor: .bottom)
             }
           }
-          // The rows are scroll targets: a new message is scrolled to by its id (below).
-          .scrollTargetLayout()
-          .padding(.horizontal, Theme.Spacing.xl)
-          .padding(.top, Theme.Spacing.lg)
-          .padding(.bottom, Theme.Spacing.sm)
-        }
-        .id(thread?.id)
-        .scrollPosition($scrollPosition)
-        .scrollDismissesKeyboard(.interactively)
-        // A chat opens on its latest message, and a short one sits at the top. At the bottom,
-        // growth (streaming text, a new message, the keyboard) keeps the latest line in view
-        // within the same layout pass: no scrollTo a frame late, so nothing jumps. Scrolled up,
-        // the text being read stays put.
-        .defaultScrollAnchor(.bottom, for: .initialOffset)
-        .defaultScrollAnchor(.top, for: .alignment)
-        .defaultScrollAnchor(followsLatest ? .bottom : .top, for: .sizeChanges)
-        .onScrollGeometryChange(for: Bool.self) { geometry in
-          geometry.visibleRect.maxY >= geometry.contentSize.height - Theme.Spacing.xxxl
-        } action: { _, atBottom in
-          followsLatest = atBottom
-        }
-        .onChange(of: turns.count) { old, new in
-          // A new message brings the list back to the latest, by its id rather than the list's
-          // edge: the lazy list only estimates the rows it hasn't laid out, and after a long
-          // reply (hundreds of lines of code) the edge's estimate left the view past the real
-          // end, an empty screen while the next reply streamed (iPhone 17 Pro, 2026-11-15).
-          guard new > old, let latest = turns.last?.id else { return }
-          followsLatest = true
-          withAppAnimation(Theme.Motion.easeOut) { scrollPosition.scrollTo(id: latest, anchor: .bottom) }
-        }
-        .onChange(of: appState.pendingToolConfirmation?.id) { _, newID in
-          guard let newID, let confirmation = appState.pendingToolConfirmation,
-            let ownerID = appState.generatingThreadID ?? appState.pendingToolConfirmationThreadID,
-            thread?.id == ownerID
-          else { return }
-          followsLatest = true
-          withAppAnimation(Theme.Motion.easeOut) { scrollPosition.scrollTo(id: newID, anchor: .bottom) }
-          Haptics.announce(confirmation.summary)
+          .onChange(of: appState.pendingToolConfirmation?.id) { _, newID in
+            guard let newID, let confirmation = appState.pendingToolConfirmation,
+              let ownerID = appState.generatingThreadID ?? appState.pendingToolConfirmationThreadID,
+              thread?.id == ownerID
+            else { return }
+            followsLatest = true
+            withAppAnimation(Theme.Motion.easeOut) {
+              proxy.scrollTo(newID, anchor: .bottom)
+            }
+            Haptics.announce(confirmation.summary)
+          }
         }
       }
     }

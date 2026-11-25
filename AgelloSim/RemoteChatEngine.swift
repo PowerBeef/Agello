@@ -90,9 +90,12 @@ actor RemoteChatEngine: ChatEngineProtocol {
   ) async throws -> Bool {
     guard let resolved else { throw ChatError.engineNotReady }
     lastEvictedHistory = []
+    let tools = ActiveTools.make(toolsEnabled: toolsEnabled, options: options)
+    let toolSchemaTokens = ContextBudget.estimateToolSchemaTokens(
+      ToolManager(tools: tools).toolsJsonDescription)
     let preamble = ContextBudget.preambleTokens(
-      systemPrompt: options.systemPrompt,
-      toolCount: ActiveTools.make(toolsEnabled: toolsEnabled, options: options).count)
+      systemPrompt: options.systemPrompt, toolCount: tools.count,
+      toolSchemaTokens: toolSchemaTokens)
     let inputTokens =
       ContextBudget.estimateTextTokens(text)
       + (imageData == nil ? 0 : Int(resolved.visualTokenBudget ?? 280))
@@ -232,8 +235,22 @@ actor RemoteChatEngine: ChatEngineProtocol {
     let tools = ActiveTools.make(toolsEnabled: toolsEnabled, options: options)
     let toolManager = ToolManager(tools: tools)
     let toolSchemas = parseToolSchemas(toolManager.toolsJsonDescription)
+    let toolSchemaTokens = ContextBudget.estimateToolSchemaTokens(toolManager.toolsJsonDescription)
+    let userPrompt = promptText(text, imageData, audioFileURL)
+    let estimatedPrefill =
+      ContextBudget.preambleTokens(
+        systemPrompt: options.systemPrompt, toolCount: tools.count,
+        toolSchemaTokens: toolSchemaTokens)
+      + ContextBudget.estimateHistory(history)
+      + ContextBudget.estimateInput(
+        text: userPrompt,
+        imageTokens: imageData == nil ? nil : Int(resolved.visualTokenBudget ?? 280),
+        audioSeconds: audioFileURL == nil ? nil : 10)
+    let room =
+      ContextBudget.outputCap(maxNumTokens: resolved.maxNumTokens, used: estimatedPrefill, input: 0)
+      ?? max(ContextBudget.minReplyTokens, resolved.maxNumTokens / 4)
     let budget = ToolBudget.plan(
-      room: max(2048, resolved.maxNumTokens - 2048),
+      room: room,
       toolsOffered: !tools.isEmpty,
       thinkingBudget: resolved.thinkingBudget,
       maxOutputTokens: resolved.maxOutputTokens
@@ -241,13 +258,14 @@ actor RemoteChatEngine: ChatEngineProtocol {
     ToolBudget.begin(budget.limits)
     defer { ToolBudget.end() }
 
-    let userPrompt = promptText(text, imageData, audioFileURL)
     var messages = buildInitialMessages(
       userText: userPrompt, imageData: imageData, audioFileURL: audioFileURL)
     let started = Date()
     let firstTokenTracker = FirstTokenTracker()
     let toolCursor = ToolActivity.cursor
     var reportedTools = 0
+    let cardCursor = ToolCardRecorder.cursor
+    var reportedCards = 0
     var totalInput = 0
     var totalOutput = 0
     var finalReplyText = ""
@@ -257,6 +275,12 @@ actor RemoteChatEngine: ChatEngineProtocol {
       let all = ToolActivity.records(since: toolCursor)
       defer { reportedTools = all.count }
       return Array(all.dropFirst(reportedTools))
+    }
+
+    func drainActionCards() -> [ActionCardRecord] {
+      let all = ToolCardRecorder.records(since: cardCursor)
+      defer { reportedCards = all.count }
+      return Array(all.dropFirst(reportedCards))
     }
 
     do {
@@ -286,14 +310,25 @@ actor RemoteChatEngine: ChatEngineProtocol {
         messages.append(assistantToolCallMessage(roundResult))
         let toolResponses = await executeToolCalls(roundResult.toolCalls, using: toolManager)
         let activity = drainToolActivity()
-        if !activity.isEmpty {
+        let cards = drainActionCards()
+        if !activity.isEmpty || !cards.isEmpty {
           continuation.yield(
             .chunk(
               ChatChunk(
                 textDelta: "", thoughtDelta: nil, toolNames: activity.map(\.name),
-                toolActivity: activity)))
+                toolActivity: activity, actionCards: cards)))
         }
         messages.append(contentsOf: toolResponses)
+      }
+
+      let lateActivity = drainToolActivity()
+      let lateCards = drainActionCards()
+      if !lateActivity.isEmpty || !lateCards.isEmpty {
+        continuation.yield(
+          .chunk(
+            ChatChunk(
+              textDelta: "", thoughtDelta: nil, toolNames: lateActivity.map(\.name),
+              toolActivity: lateActivity, actionCards: lateCards)))
       }
 
       history.append((role: .user, text: userPrompt))

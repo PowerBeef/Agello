@@ -187,10 +187,13 @@ extension AppState {
     // ~10 Hz: per-token model writes re-render (and re-parse markdown for)
     // the whole bubble 40-100 times a second.
     var accumulator = StreamAccumulator()
+    // Preserve pre-send cards (e.g. Search ON Apple Maps) across mid-stream flushes.
+    let initialActionCards = reply.parts.actionCards
     var lastFlush = ContinuousClock.now
     func flush(final: Bool = false) {
       let flushStarted = ContinuousClock.now
       defer { ReplyTrace.measure("chat write", since: flushStarted) }
+      var voiceAnswerToNotify: String?
       if let voiceTurn {
         // "⟦what the user said⟧ answer": the transcript becomes the user's
         // message; the answer is shown and spoken.
@@ -204,16 +207,22 @@ extension AppState {
           }
         }
         reply.text = split.answer
-        onVoiceReply?(split.answer, final)
+        voiceAnswerToNotify = split.answer
       } else {
         reply.text = accumulator.text
       }
       reply.thought = accumulator.thought
       if reply.toolNames != accumulator.toolNames { reply.toolNames = accumulator.toolNames }
-      if reply.parts.toolActivity != accumulator.toolActivity {
-        var parts = reply.parts
+      let mergedCards = ActionCards.merge(initialActionCards, accumulator.actionCards)
+      let currentParts = reply.parts
+      if currentParts.toolActivity != accumulator.toolActivity || currentParts.actionCards != mergedCards {
+        var parts = currentParts
         parts.toolActivity = accumulator.toolActivity
+        parts.actionCards = mergedCards
         reply.parts = parts
+      }
+      if let voiceAnswerToNotify {
+        onVoiceReply?(voiceAnswerToNotify, final)
       }
       lastFlush = .now
       BackgroundWork.shared.replyProgress(characters: reply.text.count)

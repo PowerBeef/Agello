@@ -22,11 +22,11 @@ enum ActiveTools {
       tools.append(CurrentDateTimeTool())
       tools.append(CalculatorTool())
       tools.append(ConvertUnitsTool())
-      tools.append(QueryTableOrJsonTool())
       tools.append(SearchPastChatsTool())
       if options.workspaceFileTools {
         tools.append(SearchFilesTool())
         tools.append(ReadDocumentPagesTool())
+        tools.append(QueryTableOrJsonTool())
       }
       if options.personalTools.calendar {
         tools.append(SearchCalendarEventsTool())
@@ -39,6 +39,7 @@ enum ActiveTools {
       }
       if options.personalTools.contacts {
         tools.append(SearchContactsTool())
+        tools.append(PrepareMessageTool())
       }
       if options.personalTools.maps {
         tools.append(SearchPlacesTool())
@@ -406,6 +407,7 @@ actor MockChatEngine: ChatEngineProtocol {
   private(set) var helperPrompts: [String] = []
   func setHelperResponse(_ json: String) { helperResponse = Data(json.utf8) }
   func setScript(_ text: String) { script = [ChatChunk(textDelta: text, thoughtDelta: nil)] }
+  func setScriptChunks(_ chunks: [ChatChunk]) { script = chunks }
   /// Whether helpers keep the main conversation, as our runtime does (tests).
   private(set) var helpersKeepConversation = false
   func setHelpersKeepConversation(_ value: Bool) { helpersKeepConversation = value }

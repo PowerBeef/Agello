@@ -28,6 +28,56 @@ enum ToolActivity {
   }
 }
 
+/// Concurrency-safe bounded ring buffer capturing typed ``ActionCardRecord``s emitted by Swift
+/// tools during a reply. Mirrors ``ToolActivity``'s cursor contract (immune to LiteRT-LM's C++
+/// callback thread boundary where `@TaskLocal` does not propagate) while staying O(1) memory
+/// across long soak sessions.
+enum ToolCardRecorder {
+  static let capacity = 64
+
+  private struct Entry {
+    var sequence: Int
+    var card: ActionCardRecord
+  }
+
+  private struct State {
+    var entries: [Entry] = []
+    var nextSequence = 0
+  }
+
+  private static let state = Mutex(State())
+
+  static func record(_ card: ActionCardRecord) {
+    guard card.isRenderable else { return }
+    state.withLock { s in
+      s.entries.append(Entry(sequence: s.nextSequence, card: card))
+      s.nextSequence += 1
+      if s.entries.count > capacity {
+        s.entries.removeFirst(s.entries.count - capacity)
+      }
+    }
+  }
+
+  static func record(_ payload: ActionCardRecord.Payload) {
+    record(ActionCardRecord(payload: payload))
+  }
+
+  /// Monotonic cursor for ``records(since:)``.
+  static var cursor: Int { state.withLock { $0.nextSequence } }
+
+  /// Action cards recorded at or after `cursor`, in insertion order.
+  static func records(since cursor: Int) -> [ActionCardRecord] {
+    state.withLock { s in
+      s.entries.filter { $0.sequence >= cursor }.map(\.card)
+    }
+  }
+
+  /// Clears buffered cards while preserving monotonic sequence numbers (for unit test isolation).
+  static func reset() {
+    state.withLock { $0.entries.removeAll(keepingCapacity: true) }
+  }
+}
+
 /// Per-reply limits for tool calls. Tool rounds run inside LiteRT-LM, so the
 /// engine sets these before each generation and tools must honor them: a
 /// tool result that overflows the KV cache corrupts the native heap.

@@ -41,13 +41,14 @@ struct PersonalToolsSettings: Codable, Equatable, Sendable {
 // MARK: - Personal context models & backend seam
 
 struct CalendarEventSummary: Equatable, Sendable {
+  var eventIdentifier: String? = nil
   var title: String
   var startDate: Date
   var endDate: Date
   var isAllDay: Bool
-  var location: String?
-  var calendarName: String?
-  var notes: String?
+  var location: String? = nil
+  var calendarName: String? = nil
+  var notes: String? = nil
 }
 
 struct FreeSlotSummary: Equatable, Sendable {
@@ -60,29 +61,36 @@ struct FreeSlotSummary: Equatable, Sendable {
 }
 
 struct ReminderSummary: Equatable, Sendable {
+  var reminderIdentifier: String? = nil
   var title: String
-  var dueDate: Date?
+  var dueDate: Date? = nil
   var isCompleted: Bool
-  var listName: String?
-  var priority: Int
-  var notes: String?
+  var listName: String? = nil
+  var priority: Int = 0
+  var notes: String? = nil
 }
 
 struct ContactSummary: Equatable, Sendable {
+  var contactIdentifier: String? = nil
   var fullName: String
-  var organization: String?
+  var organization: String? = nil
   var phones: [String]
   var emails: [String]
+  var postalAddress: String? = nil
+  var birthday: String? = nil
 }
 
 struct PlaceSummary: Equatable, Sendable {
   var name: String
-  var address: String?
-  var phone: String?
-  var category: String?
+  var address: String? = nil
+  var phone: String? = nil
+  var category: String? = nil
   var latitude: Double
   var longitude: Double
-  var mapsURL: String?
+  var mapsURL: String? = nil
+  var distanceMeters: Double? = nil
+  var websiteURL: String? = nil
+  var mapItemIdentifier: String? = nil
 }
 
 struct TravelEstimateSummary: Equatable, Sendable {
@@ -91,6 +99,15 @@ struct TravelEstimateSummary: Equatable, Sendable {
   var transport: String
   var distanceMeters: Double
   var expectedTravelSeconds: Double
+  var originLatitude: Double? = nil
+  var originLongitude: Double? = nil
+  var originIsCurrentLocation: Bool = false
+  var destinationAddress: String? = nil
+  var destinationLatitude: Double? = nil
+  var destinationLongitude: Double? = nil
+  var destinationMapItemIdentifier: String? = nil
+  var routeName: String? = nil
+  var steps: [RouteCard.Step] = []
 }
 
 enum PersonalToolResult<Value: Sendable>: Sendable {
@@ -116,6 +133,10 @@ protocol PersonalContextBackend: Sendable {
     title: String, dueDate: Date?, notes: String?
   ) async -> PersonalToolResult<ReminderSummary>
 
+  func setReminderCompleted(
+    identifier: String, completed: Bool
+  ) async -> PersonalToolResult<ReminderSummary>
+
   func searchContacts(
     query: String, limit: Int
   ) async -> PersonalToolResult<[ContactSummary]>
@@ -127,6 +148,82 @@ protocol PersonalContextBackend: Sendable {
   func estimateTravelTime(
     origin: String?, destination: String, transport: String
   ) async -> PersonalToolResult<TravelEstimateSummary>
+}
+
+extension PersonalContextBackend {
+  func setReminderCompleted(
+    identifier: String, completed: Bool
+  ) async -> PersonalToolResult<ReminderSummary> {
+    .error("Updating reminders is unavailable on this backend.")
+  }
+}
+
+/// Tracks verified phone numbers and email addresses fetched from on-device Contacts during the
+/// current reply so `prepare_message` can deterministically flag unverified/external recipients.
+enum TurnContactRoster {
+  private static let verified = Mutex<Set<String>>([])
+
+  static func reset() {
+    verified.withLock { $0.removeAll(keepingCapacity: true) }
+  }
+
+  static func register(_ contacts: [ContactSummary]) {
+    verified.withLock { set in
+      for contact in contacts {
+        for phone in contact.phones {
+          let norm = normalizePhone(phone)
+          if !norm.isEmpty { set.insert(norm) }
+        }
+        for email in contact.emails {
+          let norm = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+          if !norm.isEmpty { set.insert(norm) }
+        }
+      }
+    }
+  }
+
+  /// Registers raw email addresses or phone numbers typed directly by the user in their prompt
+  /// so user-authored recipients are not falsely flagged as unverified.
+  static func registerUserText(_ text: String) {
+    let emails = extractMatches(
+      in: text, pattern: #"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}"#)
+    let phones = extractMatches(
+      in: text, pattern: #"(?:\+?\d[\d\s().-]{6,}\d)"#)
+    verified.withLock { set in
+      for email in emails { set.insert(email.lowercased()) }
+      for phone in phones {
+        let norm = normalizePhone(phone)
+        if norm.count >= 7 { set.insert(norm) }
+      }
+    }
+  }
+
+  static func unverifiedRecipients(from recipients: [String]) -> [String] {
+    verified.withLock { known in
+      recipients.filter { recipient in
+        let trimmed = recipient.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if trimmed.contains("@") {
+          return !known.contains(trimmed.lowercased())
+        }
+        let norm = normalizePhone(trimmed)
+        return norm.isEmpty || !known.contains(norm)
+      }
+    }
+  }
+
+  private static func normalizePhone(_ raw: String) -> String {
+    raw.filter(\.isNumber)
+  }
+
+  private static func extractMatches(in text: String, pattern: String) -> [String] {
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+    else { return [] }
+    let range = NSRange(text.startIndex..., in: text)
+    return regex.matches(in: text, range: range).compactMap { match in
+      Range(match.range, in: text).map { String(text[$0]) }
+    }
+  }
 }
 
 /// Active personal-context backend dispatcher (platform implementation or injected test backend).
@@ -301,6 +398,65 @@ enum PersonalToolsLogic {
     }.joined(separator: "\n")
   }
 
+  /// Resolves an optional Calendar search date range cleanly:
+  /// - Both given: parses both bounds.
+  /// - Both omitted with a non-empty `query`: searches `-7d ... +30d` around `now` so searching
+  ///   for an upcoming event by name ("Team Lunch") finds it without guessing today-only.
+  /// - Both omitted without a `query`: searches `startOfDay(now) ... +7d`.
+  /// - Only one bound given: fills the counterpart (`+7d` or `-7d`).
+  static func resolveCalendarRange(
+    startDate: String?, endDate: String?, query: String?,
+    now: Date = .now, timeZone: TimeZone = .current
+  ) -> (start: Date, end: Date)? {
+    var cal = Calendar(identifier: .gregorian)
+    cal.timeZone = timeZone
+    let todayStart = cal.startOfDay(for: now)
+    let hasQuery = !(query?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+
+    let rawStart = startDate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let rawEnd = endDate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+    let start: Date
+    let end: Date
+    if rawStart.isEmpty && rawEnd.isEmpty {
+      if hasQuery {
+        start = cal.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart
+        end = cal.date(byAdding: DateComponents(day: 31, second: -1), to: todayStart) ?? now
+      } else {
+        start = todayStart
+        end = cal.date(byAdding: DateComponents(day: 8, second: -1), to: todayStart) ?? now
+      }
+    } else if !rawStart.isEmpty && !rawEnd.isEmpty {
+      guard let s = parseDate(rawStart, endOfDay: false, timeZone: timeZone),
+        let e = parseDate(rawEnd, endOfDay: true, timeZone: timeZone),
+        e >= s
+      else { return nil }
+      start = s
+      end = e
+    } else if !rawStart.isEmpty {
+      guard let s = parseDate(rawStart, endOfDay: false, timeZone: timeZone) else { return nil }
+      start = s
+      let spanDays = hasQuery ? 30 : 7
+      end = cal.date(byAdding: DateComponents(day: spanDays, second: -1), to: cal.startOfDay(for: s)) ?? s
+    } else {
+      guard let e = parseDate(rawEnd, endOfDay: true, timeZone: timeZone) else { return nil }
+      end = e
+      start = cal.date(byAdding: .day, value: -7, to: cal.startOfDay(for: e)) ?? e
+    }
+    return (start, end)
+  }
+
+  /// Broad window (`-7d ... +30d`) used for single-pass auto-widening when a narrow same-day
+  /// query returns zero events.
+  static func widenedCalendarRange(now: Date = .now, timeZone: TimeZone = .current) -> (start: Date, end: Date) {
+    var cal = Calendar(identifier: .gregorian)
+    cal.timeZone = timeZone
+    let todayStart = cal.startOfDay(for: now)
+    let start = cal.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart
+    let end = cal.date(byAdding: DateComponents(day: 31, second: -1), to: todayStart) ?? now
+    return (start, end)
+  }
+
   static func formatContacts(_ contacts: [ContactSummary]) -> String {
     guard !contacts.isEmpty else { return "No matching contacts found." }
     return contacts.map { c in
@@ -308,27 +464,50 @@ enum PersonalToolsLogic {
       if let org = c.organization, !org.isEmpty { parts.append("org: \(org)") }
       if !c.phones.isEmpty { parts.append("phone: \(c.phones.joined(separator: ", "))") }
       if !c.emails.isEmpty { parts.append("email: \(c.emails.joined(separator: ", "))") }
+      if let address = c.postalAddress, !address.isEmpty { parts.append("address: \(address)") }
+      if let bday = c.birthday, !bday.isEmpty { parts.append("birthday: \(bday)") }
       return parts.joined(separator: " | ")
     }.joined(separator: "\n")
   }
 
+  /// Compact model-facing place list: includes human distance, address, phone, and website while
+  /// omitting raw GPS coordinates and verbose Maps URLs (the inline `PlacesCard` handles Apple Maps
+  /// launches deterministically).
   static func formatPlaces(_ places: [PlaceSummary]) -> String {
     guard !places.isEmpty else { return "No matching places found." }
     return places.enumerated().map { idx, place in
       var parts = ["\(idx + 1). \(place.name)"]
       if let cat = place.category, !cat.isEmpty { parts.append("(\(cat))") }
-      if let addr = place.address, !addr.isEmpty { parts.append("— \(addr)") }
+      if let meters = place.distanceMeters {
+        parts.append("— \(formatDistance(meters)) away")
+      }
+      if let addr = place.address, !addr.isEmpty { parts.append("| \(addr)") }
       if let phone = place.phone, !phone.isEmpty { parts.append("| \(phone)") }
-      parts.append(String(format: "| coords: %.5f, %.5f", place.latitude, place.longitude))
-      if let url = place.mapsURL { parts.append("| \(url)") }
+      if let site = place.websiteURL, !site.isEmpty { parts.append("| \(site)") }
       return parts.joined(separator: " ")
     }.joined(separator: "\n")
   }
 
-  static func formatTravel(_ estimate: TravelEstimateSummary) -> String {
-    let km = estimate.distanceMeters / 1_000.0
+  static func formatDistance(_ meters: Double) -> String {
+    if meters < 1_000 {
+      return "\(max(1, Int(meters.rounded()))) m"
+    }
+    return String(format: "%.1f km", meters / 1_000.0)
+  }
+
+  static func formatTravel(_ estimate: TravelEstimateSummary, includeSteps: Bool = true) -> String {
+    let dist = formatDistance(estimate.distanceMeters)
     let mins = max(1, Int((estimate.expectedTravelSeconds / 60.0).rounded()))
-    return "\(estimate.transport.capitalized) from \(estimate.origin) to \(estimate.destination): "
-      + String(format: "%.1f km, about %d min.", km, mins)
+    var header = "\(estimate.transport.capitalized) from \(estimate.origin) to \(estimate.destination): \(dist), about \(mins) min"
+    if let routeName = estimate.routeName, !routeName.isEmpty {
+      header += " via \(routeName)"
+    }
+    header += "."
+    guard includeSteps, !estimate.steps.isEmpty else { return header }
+    let stepsText = estimate.steps.prefix(15).enumerated().map { idx, step in
+      let stepDist = step.distanceMeters >= 20 ? " (\(formatDistance(step.distanceMeters)))" : ""
+      return "\(idx + 1). \(step.instruction)\(stepDist)"
+    }.joined(separator: "\n")
+    return "\(header)\nTurn-by-turn steps:\n\(stepsText)"
   }
 }

@@ -178,31 +178,39 @@ struct MessageParts: Codable, Equatable, Sendable {
   var sources: [SourceRecord] = []
   /// Files the user attached to this message.
   var files: [FileRecord] = []
+  /// Swift-verified interactive action cards produced during this turn (Maps, Routes, Calendar,
+  /// Reminders, Contacts, Message Drafts). Stored inside SchemaV3's `partsData` with zero migration.
+  var actionCards: [ActionCardRecord] = []
   /// The user asked for a web search with this message.
   var webSearch = false
   /// The reply stopped before it ended (an error mid-stream, the context filling, low memory):
   /// its text is partial. A user's Stop doesn't set it.
   var incomplete = false
 
-  var isEmpty: Bool { toolActivity.isEmpty && sources.isEmpty && files.isEmpty && !webSearch && !incomplete }
+  var isEmpty: Bool {
+    toolActivity.isEmpty && sources.isEmpty && files.isEmpty && actionCards.isEmpty && !webSearch && !incomplete
+  }
 
   init(
     toolActivity: [ToolActivityRecord] = [], sources: [SourceRecord] = [], files: [FileRecord] = [],
-    webSearch: Bool = false, incomplete: Bool = false
+    actionCards: [ActionCardRecord] = [], webSearch: Bool = false, incomplete: Bool = false
   ) {
     self.toolActivity = toolActivity
     self.sources = sources
     self.files = files
+    self.actionCards = actionCards
     self.webSearch = webSearch
     self.incomplete = incomplete
   }
 
-  /// Tolerates missing keys: parts saved before a field existed still decode.
+  /// Tolerates missing keys and forward-incompatible card elements: parts saved before a field
+  /// existed or containing newer card kinds still decode cleanly.
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     toolActivity = try container.decodeIfPresent([ToolActivityRecord].self, forKey: .toolActivity) ?? []
     sources = try container.decodeIfPresent([SourceRecord].self, forKey: .sources) ?? []
     files = try container.decodeIfPresent([FileRecord].self, forKey: .files) ?? []
+    actionCards = (try? container.decodeIfPresent(LossyArray<ActionCardRecord>.self, forKey: .actionCards))?.elements ?? []
     webSearch = try container.decodeIfPresent(Bool.self, forKey: .webSearch) ?? false
     incomplete = try container.decodeIfPresent(Bool.self, forKey: .incomplete) ?? false
   }

@@ -72,10 +72,12 @@ struct WebSearchTool: Tool {
   static let description =
     "Look things up in Wikipedia and other reference sources: facts, recent events, travel, word meanings, quotations, weather, places, exchange rates, scientific and medical papers. Returns numbered sources to cite like [1]."
 
-  @ToolParam(description: "A short, self-contained query naming the subject, like \"2026 Tour de France\". For weather, the place; for currency, like \"100 USD to EUR\".")
+  @ToolParam(description: "Short query naming the subject, e.g. \"2026 Tour de France\", a place for weather, or \"100 USD to EUR\".")
   var query: String
 
-  @ToolParam(description: "What it's about: general, travel, word, quote, weather, place, currency, research, health or news.")
+  @ToolParam(
+    description: "Topic category.",
+    allowedValues: ["general", "travel", "word", "quote", "weather", "place", "currency", "research", "health", "news"])
   var topic: String = "general"
 
   /// Runs the search for the app (set by `AppState`) within a budget of tokens; returns the
@@ -500,33 +502,35 @@ struct QueryTableOrJsonTool: Tool {
   static let name = "query_table_or_json"
   static let isReadOnly = true
   static let description =
-    "Run exact schema, filter, sort, count, sum, avg, min, max, or grouped aggregations on attached or inline CSV/TSV/JSON data. Always use this instead of mental math when aggregating or filtering tabular or JSON data."
+    "Run exact schema, filter, sort, or grouped aggregations on attached or inline CSV/TSV/JSON data."
 
-  @ToolParam(description: "Operation: 'schema', 'filter', 'count', 'sum', 'avg', 'min', 'max', or 'aggregate'.")
+  @ToolParam(
+    description: "Query operation.",
+    allowedValues: ["schema", "filter", "count", "sum", "avg", "min", "max", "aggregate"])
   var operation: String
 
-  @ToolParam(description: "Optional attached file name containing CSV, TSV, or JSON data.")
+  @ToolParam(description: "Attached file name (CSV/TSV/JSON).")
   var fileName: String? = nil
 
-  @ToolParam(description: "Optional inline CSV, TSV, or JSON text when not reading from an attached file.")
+  @ToolParam(description: "Inline CSV/TSV/JSON text if no fileName.")
   var data: String? = nil
 
-  @ToolParam(description: "Column name to aggregate for sum/avg/min/max/aggregate/count.")
+  @ToolParam(description: "Target column for aggregation.")
   var column: String? = nil
 
-  @ToolParam(description: "Optional filter like \"region = West\" or \"price >= 50 AND status != closed\".")
+  @ToolParam(description: "Optional filter, e.g. \"region = West AND price >= 50\".")
   var whereClause: String? = nil
 
-  @ToolParam(description: "Optional column name to group aggregations by.")
+  @ToolParam(description: "Optional grouping column.")
   var groupBy: String? = nil
 
-  @ToolParam(description: "Optional column name to sort filtered rows by.")
+  @ToolParam(description: "Optional sort column.")
   var sortBy: String? = nil
 
-  @ToolParam(description: "Sort descending when true. Default is false.")
+  @ToolParam(description: "Sort descending (default false).")
   var descending: Bool = false
 
-  @ToolParam(description: "Maximum rows or groups to return (1 to 50). Default is 20.")
+  @ToolParam(description: "Max rows/groups (1-50, default 20).")
   var limit: Int = 20
 
   func run() async throws -> Any {
@@ -578,36 +582,63 @@ struct QueryTableOrJsonTool: Tool {
 
 // MARK: - Opt-in native iOS personal context tools (EventKit, Contacts, MapKit)
 
-/// Lists Calendar events in a date range. Read-only; offered only when Calendar tool is opted in.
+/// Lists Calendar events in an optional date range or matching a query. Read-only.
 struct SearchCalendarEventsTool: Tool {
   static let name = "search_calendar_events"
   static let isReadOnly = true
   static let description =
-    "Search the user's on-device Calendar events between startDate and endDate (ISO-8601 or YYYY-MM-DD)."
+    "Search on-device Calendar events. Omit startDate/endDate when searching by title to search upcoming events (-7d to +30d)."
 
-  @ToolParam(description: "Start of range, e.g. '2026-11-22' or '2026-11-22T09:00:00'.")
-  var startDate: String
+  @ToolParam(description: "Optional range start (YYYY-MM-DD or ISO-8601).")
+  var startDate: String? = nil
 
-  @ToolParam(description: "End of range, e.g. '2026-11-22' or '2026-11-23T18:00:00'.")
-  var endDate: String
+  @ToolParam(description: "Optional range end (YYYY-MM-DD or ISO-8601).")
+  var endDate: String? = nil
 
-  @ToolParam(description: "Optional text filter matched against event title, location, or notes.")
+  @ToolParam(description: "Optional title, location, or notes filter.")
   var query: String? = nil
 
   func run() async throws -> Any {
     guard let limits = ToolBudget.claim() else { return ToolBudget.limitReachedResult }
-    guard let start = PersonalToolsLogic.parseDate(startDate, endOfDay: false),
-      let end = PersonalToolsLogic.parseDate(endDate, endOfDay: true),
-      end >= start
+    guard
+      let range = PersonalToolsLogic.resolveCalendarRange(
+        startDate: startDate, endDate: endDate, query: query)
     else {
       return ["error": "Invalid date range. Use YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS."]
     }
-    switch await PersonalTools.activeBackend.searchCalendarEvents(start: start, end: end, query: query) {
+    let cleanQuery = query?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let hasQuery = !(cleanQuery?.isEmpty ?? true)
+    let backend = PersonalTools.activeBackend
+    switch await backend.searchCalendarEvents(start: range.start, end: range.end, query: cleanQuery) {
     case .error(let message):
       ToolActivity.record(Self.name, summary: "Calendar unavailable")
       return ["error": message]
-    case .success(let events):
+    case .success(var events):
+      // B6 auto-widen: if the model guessed a single-day window with a specific query and found
+      // nothing, widen once to -7d...+30d so events like "Team Lunch" tomorrow are still found.
+      let spanSeconds = range.end.timeIntervalSince(range.start)
+      if events.isEmpty, hasQuery, spanSeconds <= 36 * 3_600 {
+        let wide = PersonalToolsLogic.widenedCalendarRange()
+        if case .success(let widened) = await backend.searchCalendarEvents(
+          start: wide.start, end: wide.end, query: cleanQuery)
+        {
+          events = widened
+        }
+      }
       ToolActivity.record(Self.name, summary: "Checked calendar (\(events.count) events)")
+      for event in events.prefix(3) {
+        ToolCardRecorder.record(
+          .calendarEvent(
+            CalendarEventCard(
+              status: .found,
+              eventIdentifier: event.eventIdentifier,
+              title: event.title,
+              startDate: event.startDate,
+              endDate: event.endDate,
+              isAllDay: event.isAllDay,
+              location: event.location,
+              calendarName: event.calendarName)))
+      }
       let body = PersonalToolsLogic.formatEvents(events)
       return [
         "count": events.count,
@@ -621,16 +652,15 @@ struct SearchCalendarEventsTool: Tool {
 struct FindFreeSlotsTool: Tool {
   static let name = "find_free_slots"
   static let isReadOnly = true
-  static let description =
-    "Find available free time slots in the user's Calendar between startDate and endDate."
+  static let description = "Find free daytime slots in the user's Calendar between startDate and endDate."
 
-  @ToolParam(description: "Start of range, e.g. '2026-11-22' or '2026-11-22T09:00:00'.")
+  @ToolParam(description: "Range start (YYYY-MM-DD or ISO-8601).")
   var startDate: String
 
-  @ToolParam(description: "End of range, e.g. '2026-11-22' or '2026-11-24T18:00:00'.")
+  @ToolParam(description: "Range end (YYYY-MM-DD or ISO-8601).")
   var endDate: String
 
-  @ToolParam(description: "Minimum free slot length in minutes. Default is 30.")
+  @ToolParam(description: "Minimum slot length in minutes (default 30).")
   var minDurationMinutes: Int = 30
 
   func run() async throws -> Any {
@@ -662,22 +692,21 @@ struct FindFreeSlotsTool: Tool {
 struct CreateCalendarEventTool: Tool {
   static let name = "create_calendar_event"
   static let isReadOnly = false
-  static let description =
-    "Create a new event in the user's Calendar. Always asks the user for explicit confirmation before saving."
+  static let description = "Create a Calendar event (always confirms with the user before saving)."
 
   @ToolParam(description: "Event title.")
   var title: String
 
-  @ToolParam(description: "Event start date and time, e.g. '2026-11-23T14:00:00'.")
+  @ToolParam(description: "Start date/time (YYYY-MM-DDTHH:MM:SS).")
   var startDate: String
 
-  @ToolParam(description: "Event end date and time, e.g. '2026-11-23T15:00:00'.")
+  @ToolParam(description: "End date/time (YYYY-MM-DDTHH:MM:SS).")
   var endDate: String
 
-  @ToolParam(description: "Optional event location.")
+  @ToolParam(description: "Optional location.")
   var location: String? = nil
 
-  @ToolParam(description: "Optional event notes.")
+  @ToolParam(description: "Optional notes.")
   var notes: String? = nil
 
   func run() async throws -> Any {
@@ -720,6 +749,17 @@ struct CreateCalendarEventTool: Tool {
       return ["executed": false, "error": message]
     case .success(let saved):
       ToolActivity.record(Self.name, summary: "Created calendar event “\(saved.title)”")
+      ToolCardRecorder.record(
+        .calendarEvent(
+          CalendarEventCard(
+            status: .created,
+            eventIdentifier: saved.eventIdentifier,
+            title: saved.title,
+            startDate: saved.startDate,
+            endDate: saved.endDate,
+            isAllDay: saved.isAllDay,
+            location: saved.location,
+            calendarName: saved.calendarName)))
       return [
         "executed": true,
         "status": "created",
@@ -736,12 +776,12 @@ struct CreateCalendarEventTool: Tool {
 struct ListRemindersTool: Tool {
   static let name = "list_reminders"
   static let isReadOnly = true
-  static let description = "List the user's on-device Reminders (incomplete by default)."
+  static let description = "List on-device Reminders (incomplete by default)."
 
-  @ToolParam(description: "Include completed reminders when true. Default is false.")
+  @ToolParam(description: "Include completed reminders (default false).")
   var includeCompleted: Bool = false
 
-  @ToolParam(description: "Optional text filter matched against reminder title or notes.")
+  @ToolParam(description: "Optional title or notes filter.")
   var query: String? = nil
 
   func run() async throws -> Any {
@@ -752,6 +792,17 @@ struct ListRemindersTool: Tool {
       return ["error": message]
     case .success(let items):
       ToolActivity.record(Self.name, summary: "Checked reminders (\(items.count))")
+      for item in items.prefix(3) {
+        ToolCardRecorder.record(
+          .reminder(
+            ReminderCard(
+              status: .found,
+              reminderIdentifier: item.reminderIdentifier,
+              title: item.title,
+              dueDate: item.dueDate,
+              listName: item.listName,
+              isCompleted: item.isCompleted)))
+      }
       let body = PersonalToolsLogic.formatReminders(items)
       return [
         "count": items.count,
@@ -765,16 +816,15 @@ struct ListRemindersTool: Tool {
 struct CreateReminderTool: Tool {
   static let name = "create_reminder"
   static let isReadOnly = false
-  static let description =
-    "Create a new item in the user's Reminders. Always asks the user for explicit confirmation before saving."
+  static let description = "Create a Reminder (always confirms with the user before saving)."
 
   @ToolParam(description: "Reminder title.")
   var title: String
 
-  @ToolParam(description: "Optional due date/time, e.g. '2026-11-23T09:00:00' or '2026-11-23'.")
+  @ToolParam(description: "Optional due date/time (YYYY-MM-DD or ISO-8601).")
   var dueDate: String? = nil
 
-  @ToolParam(description: "Optional reminder notes.")
+  @ToolParam(description: "Optional notes.")
   var notes: String? = nil
 
   func run() async throws -> Any {
@@ -820,6 +870,15 @@ struct CreateReminderTool: Tool {
       return ["executed": false, "error": message]
     case .success(let saved):
       ToolActivity.record(Self.name, summary: "Created reminder “\(saved.title)”")
+      ToolCardRecorder.record(
+        .reminder(
+          ReminderCard(
+            status: .created,
+            reminderIdentifier: saved.reminderIdentifier,
+            title: saved.title,
+            dueDate: saved.dueDate,
+            listName: saved.listName,
+            isCompleted: saved.isCompleted)))
       return [
         "executed": true,
         "status": "created",
@@ -835,13 +894,12 @@ struct CreateReminderTool: Tool {
 struct SearchContactsTool: Tool {
   static let name = "search_contacts"
   static let isReadOnly = true
-  static let description =
-    "Look up a person's phone number, email, or organization in the user's on-device Contacts."
+  static let description = "Look up phone numbers, emails, addresses, or orgs in Contacts."
 
-  @ToolParam(description: "Person's name, company, email, or phone fragment to search for.")
+  @ToolParam(description: "Name, company, email, or phone fragment.")
   var query: String
 
-  @ToolParam(description: "Maximum contacts to return (1 to 10). Default is 5.")
+  @ToolParam(description: "Max results (1-10, default 5).")
   var limit: Int = 5
 
   func run() async throws -> Any {
@@ -854,6 +912,18 @@ struct SearchContactsTool: Tool {
       return ["error": message]
     case .success(let contacts):
       ToolActivity.record(Self.name, summary: "Searched contacts for “\(trimmed)”")
+      TurnContactRoster.register(contacts)
+      for contact in contacts.prefix(3) {
+        ToolCardRecorder.record(
+          .contact(
+            ContactCard(
+              contactIdentifier: contact.contactIdentifier,
+              fullName: contact.fullName,
+              organization: contact.organization,
+              phones: contact.phones,
+              emails: contact.emails,
+              postalAddress: contact.postalAddress)))
+      }
       let body = PersonalToolsLogic.formatContacts(contacts)
       return [
         "count": contacts.count,
@@ -863,20 +933,103 @@ struct SearchContactsTool: Tool {
   }
 }
 
+/// Prepares an SMS or email draft card for the native iOS composer after explicit confirmation.
+/// Never sends silently — the OS composer always requires a physical user tap on Send.
+struct PrepareMessageTool: Tool {
+  static let name = "prepare_message"
+  static let isReadOnly = false
+  static let description =
+    "Draft an SMS or email for the user to review and send via the native iOS composer (never sends silently)."
+
+  @ToolParam(description: "Message channel.", allowedValues: ["sms", "email"])
+  var channel: String
+
+  @ToolParam(description: "Recipient phone numbers or email addresses.")
+  var recipients: [String]
+
+  @ToolParam(description: "Optional email subject line.")
+  var subject: String? = nil
+
+  @ToolParam(description: "Draft message body.")
+  var body: String
+
+  func run() async throws -> Any {
+    guard ToolBudget.claim() != nil else { return ToolBudget.limitReachedResult }
+    let normalizedChannel = channel.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard let parsedChannel = MessageDraftCard.Channel(rawValue: normalizedChannel) else {
+      return ["error": "Invalid channel. Use 'sms' or 'email'."]
+    }
+    let cleanRecipients = recipients
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    guard !cleanRecipients.isEmpty else {
+      return ["error": "Provide at least one recipient phone number or email address."]
+    }
+    let cleanBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanBody.isEmpty else { return ["error": "Message body cannot be empty."] }
+    let cleanSubject = subject?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let unverified = TurnContactRoster.unverifiedRecipients(from: cleanRecipients)
+
+    var params: [ToolConfirmationRequest.Parameter] = [
+      .init(name: "channel", value: parsedChannel == .sms ? "SMS" : "Email"),
+      .init(name: "to", value: cleanRecipients.joined(separator: ", ")),
+    ]
+    if !unverified.isEmpty {
+      params.append(
+        .init(
+          name: "warning",
+          value: "Unverified recipient (not in Contacts): \(unverified.joined(separator: ", "))"))
+    }
+    if let cleanSubject, !cleanSubject.isEmpty {
+      params.append(.init(name: "subject", value: cleanSubject))
+    }
+    params.append(.init(name: "body", value: String(cleanBody.prefix(240))))
+
+    let label = parsedChannel == .sms ? String(localized: "Draft SMS") : String(localized: "Draft email")
+    let request = ToolConfirmationRequest(
+      toolName: Self.name,
+      title: label,
+      summary: "Prepare a draft to \(cleanRecipients.joined(separator: ", ")). You will tap Send yourself.",
+      parameters: params)
+    let decision = await ToolConfirmationGate.confirm(request)
+    guard case .approved = decision else {
+      let reason: String
+      if case .denied(let detail) = decision { reason = detail } else { reason = "Denied by user." }
+      ToolActivity.record(Self.name, summary: "Cancelled message draft")
+      return ["executed": false, "status": "cancelled", "message": reason]
+    }
+
+    let draft = MessageDraftCard(
+      channel: parsedChannel,
+      recipients: cleanRecipients,
+      subject: cleanSubject?.isEmpty == true ? nil : cleanSubject,
+      body: cleanBody,
+      unverifiedRecipients: unverified)
+    ToolCardRecorder.record(.messageDraft(draft))
+    ToolActivity.record(Self.name, summary: "Prepared \(parsedChannel.rawValue.uppercased()) draft")
+    return [
+      "executed": true,
+      "status": "draft_ready",
+      "channel": parsedChannel.rawValue,
+      "recipients": ToolOutput.boundedList(cleanRecipients, maxItems: 10),
+      "unverified_recipients": ToolOutput.boundedList(unverified, maxItems: 10),
+    ]
+  }
+}
+
 /// Searches Apple Maps POIs and addresses locally via MapKit. Read-only.
 struct SearchPlacesTool: Tool {
   static let name = "search_places"
   static let isReadOnly = true
-  static let description =
-    "Search Apple Maps for places, businesses, addresses, coordinates, and phone numbers."
+  static let description = "Search Apple Maps for nearby places, businesses, addresses, and phone numbers."
 
-  @ToolParam(description: "Place type, business name, or address, e.g. 'pharmacy' or 'coffee shop'.")
+  @ToolParam(description: "Place type, business name, or address, e.g. 'gas station' or 'coffee shop'.")
   var query: String
 
-  @ToolParam(description: "Optional landmark, neighborhood, city, or 'here' to search around, e.g. 'Place des Arts, Montreal'.")
+  @ToolParam(description: "Optional city, landmark, or 'here' (defaults to current location when omitted).")
   var near: String? = nil
 
-  @ToolParam(description: "Maximum places to return (1 to 10). Default is 5.")
+  @ToolParam(description: "Max places (1-10, default 5).")
   var limit: Int = 5
 
   func run() async throws -> Any {
@@ -888,8 +1041,27 @@ struct SearchPlacesTool: Tool {
       ToolActivity.record(Self.name, summary: "Maps search failed")
       return ["error": message]
     case .success(let places):
-      let label = near.map { "\(trimmed) near \($0)" } ?? trimmed
+      let cleanNear = near?.trimmingCharacters(in: .whitespacesAndNewlines)
+      let areaLabel = (cleanNear?.isEmpty == false && !LanguageSupport.meansCurrentLocation(cleanNear ?? ""))
+        ? cleanNear : nil
+      let label = areaLabel.map { "\(trimmed) near \($0)" } ?? trimmed
       ToolActivity.record(Self.name, summary: "Searched Apple Maps for “\(label)”")
+      if !places.isEmpty {
+        let cardItems = places.prefix(5).map { p in
+          PlacesCard.PlaceItem(
+            name: p.name,
+            category: p.category,
+            address: p.address,
+            phone: p.phone,
+            websiteURL: p.websiteURL,
+            latitude: p.latitude,
+            longitude: p.longitude,
+            distanceMeters: p.distanceMeters,
+            mapItemIdentifier: p.mapItemIdentifier)
+        }
+        ToolCardRecorder.record(
+          .places(PlacesCard(query: trimmed, areaLabel: areaLabel, places: Array(cardItems))))
+      }
       let body = PersonalToolsLogic.formatPlaces(places)
       return [
         "count": places.count,
@@ -899,21 +1071,26 @@ struct SearchPlacesTool: Tool {
   }
 }
 
-/// Estimates distance and travel time between two places using MapKit directions. Read-only.
+/// Estimates distance, travel time, and turn-by-turn directions between two places via Apple Maps.
 struct EstimateTravelTimeTool: Tool {
   static let name = "estimate_travel_time"
   static let isReadOnly = true
   static let description =
-    "Estimate travel distance and time between an origin (or current location) and destination via Apple Maps."
+    "Get travel distance, ETA, and turn-by-turn Apple Maps directions from an origin (or current location) to a destination."
 
-  @ToolParam(description: "Destination place or address, e.g. 'Montreal-Trudeau Airport'.")
+  @ToolParam(description: "Destination place or address.")
   var destination: String
 
-  @ToolParam(description: "Optional starting address or place; omit or use 'here' for current location.")
+  @ToolParam(description: "Optional starting place; omit or 'here' for current location.")
   var origin: String? = nil
 
-  @ToolParam(description: "Mode of transport: 'driving', 'walking', or 'transit'. Default is 'driving'.")
+  @ToolParam(
+    description: "Transport mode.",
+    allowedValues: ["driving", "walking", "cycling", "transit"])
   var transport: String = "driving"
+
+  @ToolParam(description: "Include turn-by-turn steps (default true).")
+  var includeSteps: Bool = true
 
   func run() async throws -> Any {
     guard let limits = ToolBudget.claim() else { return ToolBudget.limitReachedResult }
@@ -921,17 +1098,37 @@ struct EstimateTravelTimeTool: Tool {
       origin: origin, destination: destination, transport: transport)
     {
     case .error(let message):
-      ToolActivity.record(Self.name, summary: "Couldn't estimate travel time")
+      ToolActivity.record(Self.name, summary: "Couldn't get directions")
       return ["error": ToolOutput.text(message)]
     case .success(let est):
-      ToolActivity.record(Self.name, summary: "Estimated \(est.transport) time to \(est.destination)")
-      let summary = PersonalToolsLogic.formatTravel(est)
+      ToolActivity.record(Self.name, summary: "Got \(est.transport) route to \(est.destination)")
+      if let destLat = est.destinationLatitude, let destLon = est.destinationLongitude {
+        ToolCardRecorder.record(
+          .route(
+            RouteCard(
+              originName: est.origin,
+              originLatitude: est.originLatitude,
+              originLongitude: est.originLongitude,
+              originIsCurrentLocation: est.originIsCurrentLocation,
+              destinationName: est.destination,
+              destinationAddress: est.destinationAddress,
+              destinationLatitude: destLat,
+              destinationLongitude: destLon,
+              destinationMapItemIdentifier: est.destinationMapItemIdentifier,
+              transport: est.transport,
+              distanceMeters: est.distanceMeters,
+              expectedTravelSeconds: est.expectedTravelSeconds,
+              routeName: est.routeName,
+              steps: includeSteps ? Array(est.steps.prefix(15)) : [])))
+      }
+      let summary = PersonalToolsLogic.formatTravel(est, includeSteps: includeSteps)
       return [
         "origin": ToolOutput.text(est.origin, maxChars: 120),
         "destination": ToolOutput.text(est.destination, maxChars: 120),
         "transport": ToolOutput.text(est.transport, maxChars: 40),
         "distance_km": Double(String(format: "%.2f", est.distanceMeters / 1_000.0)) ?? 0,
         "minutes": max(1, Int((est.expectedTravelSeconds / 60.0).rounded())),
+        "step_count": includeSteps ? est.steps.count : 0,
         "summary": UntrustedContext.wrapFitted(summary, source: Self.name, limits: limits),
       ]
     }

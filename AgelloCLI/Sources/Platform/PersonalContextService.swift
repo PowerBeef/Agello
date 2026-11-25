@@ -56,7 +56,9 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
         ]
         return PlaceSummary(
           name: p.name, address: p.address, phone: p.phone, category: p.category,
-          latitude: p.latitude, longitude: p.longitude, mapsURL: comps?.url?.absoluteString)
+          latitude: p.latitude, longitude: p.longitude, mapsURL: comps?.url?.absoluteString,
+          distanceMeters: p.meters, websiteURL: p.website?.absoluteString,
+          mapItemIdentifier: p.mapItemIdentifier)
       }
       return .success(summaries)
     } catch {
@@ -81,20 +83,65 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
       return .error("Could not locate those places on Apple Maps.")
     }
     let mode = LanguageSupport.normalizeTransportMode(transport)
-    let transportType: MKDirectionsTransportType =
-      mode == "walking" ? .walking : mode == "transit" ? .transit : .automobile
+    let resolvedMode = mode.isEmpty ? "driving" : mode
+    let transportType: MKDirectionsTransportType
+    switch resolvedMode {
+    case "walking": transportType = .walking
+    case "cycling": transportType = .cycling
+    case "transit": transportType = .transit
+    default: transportType = .automobile
+    }
     let request = MKDirections.Request()
     request.source = sourceItem
     request.destination = destItem
     request.transportType = transportType
+    let originCoord = sourceItem.location.coordinate
+    let destCoord = destItem.location.coordinate
+    if transportType != .transit,
+      let routeResponse = try? await MKDirections(request: request).calculate(),
+      let route = routeResponse.routes.first
+    {
+      let steps: [RouteCard.Step] = route.steps
+        .filter { !$0.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .prefix(15)
+        .enumerated()
+        .map { idx, step in
+          RouteCard.Step(
+            id: idx,
+            instruction: step.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
+            distanceMeters: step.distance)
+        }
+      return .success(
+        TravelEstimateSummary(
+          origin: sourceItem.name ?? origin, destination: destItem.name ?? destName,
+          transport: resolvedMode,
+          distanceMeters: route.distance,
+          expectedTravelSeconds: route.expectedTravelTime,
+          originLatitude: originCoord.latitude,
+          originLongitude: originCoord.longitude,
+          originIsCurrentLocation: false,
+          destinationAddress: destItem.address?.fullAddress,
+          destinationLatitude: destCoord.latitude,
+          destinationLongitude: destCoord.longitude,
+          destinationMapItemIdentifier: destItem.identifier?.rawValue,
+          routeName: route.name.isEmpty ? nil : route.name,
+          steps: steps))
+    }
     do {
       let response = try await MKDirections(request: request).calculateETA()
       return .success(
         TravelEstimateSummary(
           origin: sourceItem.name ?? origin, destination: destItem.name ?? destName,
-          transport: mode.isEmpty ? "driving" : mode,
+          transport: resolvedMode,
           distanceMeters: response.distance,
-          expectedTravelSeconds: response.expectedTravelTime))
+          expectedTravelSeconds: response.expectedTravelTime,
+          originLatitude: originCoord.latitude,
+          originLongitude: originCoord.longitude,
+          originIsCurrentLocation: false,
+          destinationAddress: destItem.address?.fullAddress,
+          destinationLatitude: destCoord.latitude,
+          destinationLongitude: destCoord.longitude,
+          destinationMapItemIdentifier: destItem.identifier?.rawValue))
     } catch {
       return .error("Could not estimate travel time: \(error.localizedDescription)")
     }

@@ -361,13 +361,17 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       topK: resolved.topK, topP: resolved.topP, temperature: resolved.temperature,
       seed: samplingSeed ?? 0)
     let tools = activeTools(toolsEnabled: toolsEnabled, options: options)
+    let toolSchemaTokens = ContextBudget.estimateToolSchemaTokens(
+      ToolManager(tools: tools).toolsJsonDescription)
     let replayed: [(role: ChatRole, text: String)]
     if alreadyTrimmed {
       replayed = history
     } else {
       let budget = ContextBudget.historyBudget(
         maxNumTokens: resolved.maxNumTokens, input: 0, thinkingBudget: resolved.thinkingBudget,
-        preamble: ContextBudget.preambleTokens(systemPrompt: options.systemPrompt, toolCount: tools.count))
+        preamble: ContextBudget.preambleTokens(
+          systemPrompt: options.systemPrompt, toolCount: tools.count,
+          toolSchemaTokens: toolSchemaTokens))
       replayed = ContextBudget.trimmedHistory(history, budget: budget)
     }
     let initial = replayed.map { turn -> LiteRTLM.Message in
@@ -416,8 +420,12 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       history: history, samplingSeed: samplingSeed, alreadyTrimmed: alreadyTrimmed
     )
     self.conversation = conversation
+    let tools = Self.activeTools(toolsEnabled: toolsEnabled, options: options)
+    let toolSchemaTokens = ContextBudget.estimateToolSchemaTokens(
+      ToolManager(tools: tools).toolsJsonDescription)
     seedTokens = await Self.seedTokens(
       conversation, engine: engine, history: history, systemPrompt: options.systemPrompt,
+      toolCount: tools.count, toolSchemaTokens: toolSchemaTokens,
       resolved: resolved, alreadyTrimmed: alreadyTrimmed)
   }
 
@@ -425,14 +433,16 @@ actor LiteRTChatEngine: ChatEngineProtocol {
   /// history as the runtime renders them, plus BOS; estimated if the runtime can't count.
   private static func seedTokens(
     _ conversation: Conversation, engine: Engine, history: [(role: ChatRole, text: String)],
-    systemPrompt: String, resolved: ResolvedInference? = nil, alreadyTrimmed: Bool = false
+    systemPrompt: String, toolCount: Int = 0, toolSchemaTokens: Int? = nil,
+    resolved: ResolvedInference? = nil, alreadyTrimmed: Bool = false
   ) async -> Int {
     if let preface = try? conversation.renderPrefaceIntoString(),
       let exact = try? await engine.countTokens(preface)
     {
       return exact + 1
     }
-    let preamble = ContextBudget.preambleTokens(systemPrompt: systemPrompt)
+    let preamble = ContextBudget.preambleTokens(
+      systemPrompt: systemPrompt, toolCount: toolCount, toolSchemaTokens: toolSchemaTokens)
     let replayed: [(role: ChatRole, text: String)]
     if alreadyTrimmed || resolved == nil {
       replayed = history
@@ -767,6 +777,34 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
   }
 
+  private static func generationStats(
+    started: Date, firstChunkAt: Date?, telemetryBefore: TelemetryTotals?,
+    backend: String, modelID: ModelID
+  ) -> GenerationStats {
+    if let telemetryBefore, let after = RuntimeTelemetry.totals(),
+      let reply = ReplyTelemetry(before: telemetryBefore, after: after)
+    {
+      return GenerationStats(
+        timeToFirstToken: firstChunkAt?.timeIntervalSince(started),
+        totalTime: Date().timeIntervalSince(started),
+        inputTokens: reply.inputTokens,
+        outputTokens: reply.outputTokens,
+        decodeTokensPerSecond: reply.decodeTokensPerSecond,
+        backend: backend,
+        modelID: modelID
+      )
+    }
+    return GenerationStats(
+      timeToFirstToken: firstChunkAt?.timeIntervalSince(started),
+      totalTime: Date().timeIntervalSince(started),
+      inputTokens: nil,
+      outputTokens: nil,
+      decodeTokensPerSecond: nil,
+      backend: backend,
+      modelID: modelID
+    )
+  }
+
   private func runSend(
     text: String, imageData: Data?, audioFileURL: URL?,
     continuation: AsyncThrowingStream<ChatEvent, Error>.Continuation
@@ -859,32 +897,12 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       defer { reportedTools = records.count }
       return Array(records.dropFirst(reportedTools))
     }
-
-    func stats(started: Date, firstChunkAt: Date?) -> GenerationStats {
-      // Token counts and speed from the runtime's telemetry; time to first token from this
-      // reply's own clock (the runtime's figure is the conversation's first reply, not this one).
-      if let telemetryBefore, let after = RuntimeTelemetry.totals(),
-        let reply = ReplyTelemetry(before: telemetryBefore, after: after)
-      {
-        return GenerationStats(
-          timeToFirstToken: firstChunkAt?.timeIntervalSince(started),
-          totalTime: Date().timeIntervalSince(started),
-          inputTokens: reply.inputTokens,
-          outputTokens: reply.outputTokens,
-          decodeTokensPerSecond: reply.decodeTokensPerSecond,
-          backend: resolved.backendLabel,
-          modelID: spec.id
-        )
-      }
-      return GenerationStats(
-        timeToFirstToken: firstChunkAt?.timeIntervalSince(started),
-        totalTime: Date().timeIntervalSince(started),
-        inputTokens: nil,
-        outputTokens: nil,
-        decodeTokensPerSecond: nil,
-        backend: resolved.backendLabel,
-        modelID: spec.id
-      )
+    let cardCursor = ToolCardRecorder.cursor
+    var reportedCards = 0
+    func newActionCards() -> [ActionCardRecord] {
+      let cards = ToolCardRecorder.records(since: cardCursor)
+      defer { reportedCards = cards.count }
+      return Array(cards.dropFirst(reportedCards))
     }
 
     do {
@@ -927,13 +945,15 @@ actor LiteRTChatEngine: ChatEngineProtocol {
           }
         }
         let activity = newToolActivity()
+        let cards = newActionCards()
         continuation.yield(
           .chunk(
             ChatChunk(
               textDelta: chunk.toString,
               thoughtDelta: thought,
               toolNames: chunk.toolCalls.map(\.name) + activity.map(\.name),
-              toolActivity: activity
+              toolActivity: activity,
+              actionCards: cards
             )))
         let emittedTokens = ContextBudget.estimateTextTokens(bytes: emittedBytes, weight: emittedWeight)
         if guardsToolRounds, emittedTokens + ToolBudget.resultTokens > room {
@@ -953,19 +973,22 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         return
       }
       let lateActivity = newToolActivity()
-      if !lateActivity.isEmpty {
+      let lateCards = newActionCards()
+      if !lateActivity.isEmpty || !lateCards.isEmpty {
         continuation.yield(
           .chunk(
             ChatChunk(
               textDelta: "", thoughtDelta: nil, toolNames: lateActivity.map(\.name),
-              toolActivity: lateActivity)))
+              toolActivity: lateActivity, actionCards: lateCards)))
       }
       if cancelRequested {
         Log.generation.info("cancelled (user)")
         continuation.finish(throwing: ChatError.generationCancelled)
         return
       }
-      var final = stats(started: started, firstChunkAt: firstChunkAt)
+      var final = Self.generationStats(
+        started: started, firstChunkAt: firstChunkAt, telemetryBefore: telemetryBefore,
+        backend: resolved.backendLabel, modelID: spec.id)
       // The last round's decode count reached its cap (a later round's when a tool ran).
       let lastCap = reportedTools > 0 ? budget.followUpCap : budget.outputCap
       if let decoded = final.outputTokens, decoded >= lastCap { final.reachedLimit = true }
