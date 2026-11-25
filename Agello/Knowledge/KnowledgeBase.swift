@@ -174,13 +174,22 @@ final class KnowledgeBase {
       }
       let started = ContinuousClock.now
       do {
-        let vectors = try await embedder.embed(documents: inputs)
-        guard !Task.isCancelled, vectors.count == chunks.count, document.modelContext != nil else {
+        if ThermalPolicy.current.pauseBackgroundANE, !embedder.usesGPU {
           return
         }
-        for (chunk, vector) in zip(chunks, vectors) { chunk.embedding = VectorIndex.encode(vector) }
+        // Run embedding + binary encoding at `.utility` QoS so A19 Pro schedules background ANE
+        // indexing onto E-cores without contending with P-core UI or foreground E4B decode.
+        let encoded: (vectors: [[Float]], blobs: [Data]) = try await Task.detached(priority: .utility) {
+          let vectors = try await embedder.embed(documents: inputs)
+          let blobs = vectors.map { VectorIndex.encode($0) }
+          return (vectors, blobs)
+        }.value
+        guard !Task.isCancelled, encoded.vectors.count == chunks.count, document.modelContext != nil else {
+          return
+        }
+        for (chunk, blob) in zip(chunks, encoded.blobs) { chunk.embedding = blob }
         document.indexedWith = embedder.identifier
-        vectorCache[id] = (embedder.identifier, chunks, VectorIndex.Matrix(vectors))
+        vectorCache[id] = (embedder.identifier, chunks, VectorIndex.Matrix(encoded.vectors))
         try? modelContext?.save()
         Log.engine.info(
           "knowledge: indexed \(chunks.count) passages in \(String(describing: ContinuousClock.now - started), privacy: .public)")
@@ -271,19 +280,25 @@ final class KnowledgeBase {
   /// Chats being indexed for search right now.
   @ObservationIgnored private var chatIndexTask: Task<Void, Never>?
 
-  /// Embed chats that need it, in the background (drawer opening).
+  /// Embed chats that need it, in the background (drawer opening). Defers under elevated
+  /// thermal state or Low Power Mode and executes at `.utility` QoS on E-cores + ANE.
   func indexChats(_ threads: [ChatThread]) {
+    let thermal = ThermalPolicy.current
+    guard !thermal.deferBackgroundChatIndexing, !thermal.pauseBackgroundANE else { return }
     guard chatIndexTask == nil, let embedder = currentEmbedder() else { return }
     let pending = threads.filter { Self.needsSearchEmbedding($0, dimensions: embedder.dimensions) }
     guard !pending.isEmpty else { return }
     let inputs = pending.map { (title: "none", text: Self.searchText(for: $0)) }
     chatIndexTask = Task {
       defer { chatIndexTask = nil }
-      guard let vectors = try? await embedder.embed(documents: inputs), vectors.count == pending.count
-      else { return }
+      let blobs: [Data]? = await Task.detached(priority: .utility) {
+        guard let vectors = try? await embedder.embed(documents: inputs) else { return nil }
+        return vectors.map { VectorIndex.encode($0) }
+      }.value
+      guard let blobs, blobs.count == pending.count else { return }
       let now = Date()
-      for (thread, vector) in zip(pending, vectors) where thread.modelContext != nil {
-        thread.searchEmbedding = VectorIndex.encode(vector)
+      for (thread, blob) in zip(pending, blobs) where thread.modelContext != nil {
+        thread.searchEmbedding = blob
         thread.searchEmbeddedAt = now
       }
       try? modelContext?.save()

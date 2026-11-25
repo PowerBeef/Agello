@@ -37,11 +37,25 @@ struct PersonalToolsSettingsView: View {
             tint: Theme.Brand.gold)
         }
         .accessibilityIdentifier("personalTools.maps")
+
+        Toggle(isOn: $appState.personalTools.weather) {
+          RowLabel(
+            title: String(localized: "Weather"), symbol: "cloud.sun.fill",
+            tint: Theme.Brand.glacier)
+        }
+        .accessibilityIdentifier("personalTools.weather")
+
+        Toggle(isOn: $appState.personalTools.alarms) {
+          RowLabel(
+            title: String(localized: "Alarms & Timers"), symbol: "alarm.fill",
+            tint: Theme.Brand.gold)
+        }
+        .accessibilityIdentifier("personalTools.alarms")
       } header: {
         Text("Personal tools").eyebrowStyle()
       } footer: {
         Text(
-          "Every personal tool runs locally on this \(Platform.deviceName) and requests system permission only when first used. Creating a calendar event or reminder always asks for your confirmation in chat before saving."
+          "Every personal tool runs locally on this \(Platform.deviceName) and requests system permission only when first used. Creating, updating, or deleting events, reminders, drafts, timers, or alarms always asks for your confirmation in chat first."
         )
         .foregroundStyle(Theme.Text.tertiary)
       }

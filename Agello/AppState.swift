@@ -38,9 +38,25 @@ final class AppState {
       dataSecurity: enableTools || webSettings.allowed)
     effective.webSearchTool = webSettings.allowed && webSettings.automatic
     effective.workspaceFileTools = activeThreadHasDocuments
-    effective.personalTools = personalTools
+    effective.personalTools = focusFilter.hidePersonalTools ? personalTools.suppressed : personalTools
     return effective
   }
+
+  /// Active iOS Focus Filter overrides (`AgelloFocusFilter`, 0 LLM tool tokens).
+  var focusFilter = FocusFilterOverrides.load() {
+    didSet {
+      if oldValue.hidePersonalTools != focusFilter.hidePersonalTools {
+        scheduleApplyOptions()
+      }
+      if let projectID = focusFilter.defaultProjectID, selectedThreadID == nil, newChatProjectID == nil {
+        newChatProjectID = projectID
+      }
+    }
+  }
+
+  @ObservationIgnored private var focusFilterObserver: NSObjectProtocol?
+  @ObservationIgnored private var thermalObserver: NSObjectProtocol?
+  @ObservationIgnored private var powerModeObserver: NSObjectProtocol?
 
   /// Opt-in native iOS personal context tools (Calendar, Reminders, Contacts, Maps). Off by default.
   var personalTools = PersonalToolsSettings() {
@@ -216,6 +232,29 @@ final class AppState {
         "memory \(level.rawValue, privacy: .public) (\(MemoryProbe.summary, privacy: .public))")
       Task { @MainActor in await self.relieveMemoryPressure(level: level) }
     }
+    focusFilterObserver = NotificationCenter.default.addObserver(
+      forName: FocusFilterOverrides.didChangeNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor [weak self] in
+        self?.focusFilter = FocusFilterOverrides.load()
+      }
+    }
+    let handleThermalChange: @Sendable (Notification) -> Void = { [weak self] _ in
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        if !ThermalPolicy.current.pauseBackgroundANE { self.knowledge.indexPendingIfAvailable() }
+        if self.hasPendingHelpers { self.scheduleHelpers() }
+      }
+    }
+    thermalObserver = NotificationCenter.default.addObserver(
+      forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main,
+      using: handleThermalChange)
+    powerModeObserver = NotificationCenter.default.addObserver(
+      forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main,
+      using: handleThermalChange)
+    if let projectID = focusFilter.defaultProjectID, selectedThreadID == nil, newChatProjectID == nil {
+      newChatProjectID = projectID
+    }
   }
 
   /// The system says memory is low: give back what ``MemoryPolicy`` says for that level.
@@ -292,7 +331,7 @@ final class AppState {
     }
   }
 
-  private func loadIfNeeded() async -> Bool {
+  func loadIfNeeded() async -> Bool {
     if await isActiveModelLoaded() { return true }
     // Never tear down an engine that is mid-reply or benchmarking.
     if isGenerating || isBenchmarking { return false }
@@ -947,12 +986,14 @@ final class AppState {
     scheduleHelpers()
   }
 
-  /// Runs the waiting helpers once the chat has been quiet for a while.
+  /// Runs the waiting helpers once the chat has been quiet for a while (adapting idle delay
+  /// to ``ThermalPolicy`` and deferring discretionary helpers under `.critical` thermal state).
   func scheduleHelpers() {
     helperTimer?.cancel()
-    guard hasPendingHelpers, isInForeground else { return }
-    let delay = HelperTasks.idleDelay
-    helperTimer = Task { [weak self] in
+    guard hasPendingHelpers, isInForeground,
+      let delay = ThermalPolicy.current.helperIdleDelay
+    else { return }
+    helperTimer = Task(priority: .utility) { [weak self] in
       try? await Task.sleep(for: delay)
       guard !Task.isCancelled else { return }
       await self?.runPendingHelpers()

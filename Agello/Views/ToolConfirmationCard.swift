@@ -7,12 +7,40 @@ struct ToolConfirmationCard: View {
   let onApprove: () -> Void
   let onDeny: () -> Void
 
+  private var accentTint: Color {
+    switch request.risk {
+    case .standard: Theme.Brand.gold
+    case .destructive: Theme.Status.critical
+    case .external: Theme.Brand.glacier
+    }
+  }
+
+  private var shieldSymbol: String {
+    switch request.risk {
+    case .standard: "checkmark.shield.fill"
+    case .destructive: "exclamationmark.triangle.fill"
+    case .external: "arrow.up.forward.app.fill"
+    }
+  }
+
+  private var badgeText: String {
+    switch request.risk {
+    case .standard: String(localized: "Confirm")
+    case .destructive: String(localized: "Destructive")
+    case .external: String(localized: "External")
+    }
+  }
+
+  private var approveLabel: String {
+    request.risk == .destructive ? String(localized: "Delete") : String(localized: "Approve")
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
       HStack(spacing: Theme.Spacing.sm) {
-        Image(systemName: "checkmark.shield.fill")
+        Image(systemName: shieldSymbol)
           .font(.title3)
-          .foregroundStyle(Theme.Brand.gold)
+          .foregroundStyle(accentTint)
           .accessibilityHidden(true)
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
           Text(request.title)
@@ -24,7 +52,9 @@ struct ToolConfirmationCard: View {
             .accessibilityIdentifier("tool.confirm.name")
         }
         Spacer(minLength: Theme.Spacing.xs)
-        StatusBadge(text: String(localized: "Confirm"), tone: Theme.Status.guarded)
+        StatusBadge(
+          text: badgeText,
+          tone: request.risk == .destructive ? Theme.Status.critical : Theme.Status.guarded)
       }
 
       Text(request.summary)
@@ -69,14 +99,16 @@ struct ToolConfirmationCard: View {
           Haptics.selection()
           onApprove()
         } label: {
-          Text("Approve")
+          Text(approveLabel)
         }
-        .buttonStyle(LitButtonStyle(tint: Theme.Brand.gold))
+        .buttonStyle(LitButtonStyle(tint: accentTint))
         .accessibilityIdentifier("tool.confirm.approve")
       }
     }
     .padding(Theme.Spacing.lg)
-    .surfaceCard(radius: Theme.Radius.card)
+    .surfaceCard(
+      radius: Theme.Radius.card,
+      stroke: request.risk == .destructive ? Theme.Status.critical.opacity(0.35) : Theme.Surface.hairline)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("tool.confirm.card")
   }

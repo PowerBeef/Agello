@@ -69,6 +69,10 @@ struct ActionCardRecord: Codable, Equatable, Sendable, Identifiable {
     case .messageDraft(let card):
       let recips = card.recipients.map { $0.lowercased() }.joined(separator: ",")
       return "draft:\(card.channel.rawValue):\(recips):\(card.body.prefix(40).lowercased())"
+    case .weather(let card):
+      return "weather:\(card.locationName.lowercased())"
+    case .alarm(let card):
+      return "alarm:\(card.alarmID)"
     case .unknown:
       return "unknown:\(id.uuidString)"
     }
@@ -84,6 +88,8 @@ enum ActionCardPayload: Codable, Equatable, Sendable {
   case reminder(ReminderCard)
   case contact(ContactCard)
   case messageDraft(MessageDraftCard)
+  case weather(WeatherCard)
+  case alarm(AlarmCard)
   case unknown
 
   private enum CodingKeys: String, CodingKey {
@@ -106,6 +112,10 @@ enum ActionCardPayload: Codable, Equatable, Sendable {
       self = (try? .contact(container.decode(ContactCard.self, forKey: .data))) ?? .unknown
     case "messageDraft":
       self = (try? .messageDraft(container.decode(MessageDraftCard.self, forKey: .data))) ?? .unknown
+    case "weather":
+      self = (try? .weather(container.decode(WeatherCard.self, forKey: .data))) ?? .unknown
+    case "alarm":
+      self = (try? .alarm(container.decode(AlarmCard.self, forKey: .data))) ?? .unknown
     default:
       self = .unknown
     }
@@ -131,6 +141,12 @@ enum ActionCardPayload: Codable, Equatable, Sendable {
       try container.encode(card, forKey: .data)
     case .messageDraft(let card):
       try container.encode("messageDraft", forKey: .kind)
+      try container.encode(card, forKey: .data)
+    case .weather(let card):
+      try container.encode("weather", forKey: .kind)
+      try container.encode(card, forKey: .data)
+    case .alarm(let card):
+      try container.encode("alarm", forKey: .kind)
       try container.encode(card, forKey: .data)
     case .unknown:
       try container.encode("unknown", forKey: .kind)
@@ -248,6 +264,67 @@ struct MessageDraftCard: Codable, Equatable, Sendable {
   var body: String
   /// Recipients not found in Contacts or directly typed by the user in this turn.
   var unverifiedRecipients: [String]
+}
+
+struct WeatherCard: Codable, Equatable, Sendable {
+  struct HourItem: Codable, Equatable, Sendable, Identifiable {
+    var id: String { "\(Int(date.timeIntervalSince1970))" }
+    var date: Date
+    var temperature: String
+    var symbolName: String
+    var precipitationPercent: Int
+  }
+
+  struct DayItem: Codable, Equatable, Sendable, Identifiable {
+    var id: String { "\(Int(date.timeIntervalSince1970))" }
+    var date: Date
+    var label: String
+    var high: String
+    var low: String
+    var symbolName: String
+    var precipitationPercent: Int
+  }
+
+  struct AlertItem: Codable, Equatable, Sendable, Identifiable {
+    var id: String { "\(summary)|\(severity)" }
+    var summary: String
+    var severity: String
+    var detailsURL: String?
+  }
+
+  var locationName: String
+  var temperature: String
+  var feelsLike: String?
+  var condition: String
+  var conditionSymbol: String
+  var high: String?
+  var low: String?
+  var humidityPercent: Int?
+  var windSpeed: String?
+  var hourly: [HourItem]
+  var daily: [DayItem]
+  var alerts: [AlertItem]
+  var attributionLegalURL: String?
+}
+
+struct AlarmCard: Codable, Equatable, Sendable {
+  enum Kind: String, Codable, Equatable, Sendable {
+    case timer, alarm
+  }
+
+  enum State: String, Codable, Equatable, Sendable {
+    case scheduled, countdown, paused, alerting, cancelled
+  }
+
+  var alarmID: String
+  var kind: Kind
+  var label: String
+  var fireDate: Date?
+  var hour: Int?
+  var minute: Int?
+  var weekdays: [String]
+  var durationSeconds: Double?
+  var state: State
 }
 
 // MARK: - Merging & Capping

@@ -239,6 +239,7 @@ enum WeatherLookup {
     var now: Now
     var hours: [Hour]
     var days: [Day]
+    var alerts: [Alert] = []
   }
 
   struct Now: Equatable, Sendable {
@@ -246,6 +247,7 @@ enum WeatherLookup {
     var temperature: Measurement<UnitTemperature>
     var feelsLike: Measurement<UnitTemperature>
     var condition: String
+    var symbolName: String = "cloud.sun.fill"
     var windSpeed: Measurement<UnitSpeed>
     var humidity: Double
   }
@@ -254,6 +256,7 @@ enum WeatherLookup {
     var date: Date
     var temperature: Measurement<UnitTemperature>
     var condition: String
+    var symbolName: String = "cloud.sun.fill"
     var precipitationChance: Double
   }
 
@@ -262,7 +265,14 @@ enum WeatherLookup {
     var high: Measurement<UnitTemperature>
     var low: Measurement<UnitTemperature>
     var condition: String
+    var symbolName: String = "cloud.sun.fill"
     var precipitationChance: Double
+  }
+
+  struct Alert: Equatable, Sendable {
+    var summary: String
+    var severity: String
+    var detailsURL: URL?
   }
 
   /// Where the user is, named by its city.
@@ -288,8 +298,8 @@ enum WeatherLookup {
     LanguageSupport.stripWeatherNoise(query)
   }
 
-  /// The weather at `place` (where the user is for "here"): now, the next 12 hours and the next
-  /// 10 days.
+  /// The weather at `place` (where the user is for "here"): now, the next 12 hours, the next
+  /// 10 days, and active severe weather alerts.
   static func report(for query: String) async throws -> Report? {
     let place = placeName(in: query)
     let found: (name: String, location: CLLocation, timeZone: TimeZone)?
@@ -300,23 +310,78 @@ enum WeatherLookup {
       found = try await locate(place)
     }
     guard let (name, location, timeZone) = found else { return nil }
-    let (current, hourly, daily) = try await WeatherService.shared.weather(
-      for: location, including: .current, .hourly, .daily)
+    let (current, hourly, daily, alerts) = try await WeatherService.shared.weather(
+      for: location, including: .current, .hourly, .daily, .alerts)
     return Report(
       place: name, timeZone: timeZone,
       now: Now(
         date: current.date, temperature: current.temperature, feelsLike: current.apparentTemperature,
-        condition: current.condition.description, windSpeed: current.wind.speed, humidity: current.humidity),
+        condition: current.condition.description, symbolName: current.symbolName,
+        windSpeed: current.wind.speed, humidity: current.humidity),
       hours: hourly.forecast.filter { $0.date > current.date }.prefix(12).map {
         Hour(
           date: $0.date, temperature: $0.temperature, condition: $0.condition.description,
-          precipitationChance: $0.precipitationChance)
+          symbolName: $0.symbolName, precipitationChance: $0.precipitationChance)
       },
       days: daily.forecast.prefix(10).map {
         Day(
           date: $0.date, high: $0.highTemperature, low: $0.lowTemperature, condition: $0.condition.description,
-          precipitationChance: $0.precipitationChance)
+          symbolName: $0.symbolName, precipitationChance: $0.precipitationChance)
+      },
+      alerts: (alerts ?? []).prefix(5).map { alert in
+        Alert(
+          summary: alert.summary,
+          severity: String(describing: alert.severity),
+          detailsURL: alert.detailsURL)
       })
+  }
+
+  /// Builds a typed inline ``WeatherCard`` from an Apple Weather report.
+  static func actionCard(
+    _ report: Report, attributionLegalURL: URL? = nil, locale: Locale = .current
+  ) -> ActionCardRecord {
+    func temp(_ value: Measurement<UnitTemperature>) -> String {
+      value.formatted(
+        .measurement(
+          width: .abbreviated, usage: .weather,
+          numberFormatStyle: .number.precision(.fractionLength(0))
+        ).locale(locale))
+    }
+    var dayStyle = Date.FormatStyle(
+      date: .omitted, time: .omitted, locale: locale, timeZone: report.timeZone)
+    dayStyle = dayStyle.weekday(.abbreviated)
+    let wind = report.now.windSpeed.formatted(
+      .measurement(
+        width: .abbreviated, usage: .general,
+        numberFormatStyle: .number.precision(.fractionLength(0))
+      ).locale(locale))
+    let today = report.days.first
+    let card = WeatherCard(
+      locationName: report.place,
+      temperature: temp(report.now.temperature),
+      feelsLike: temp(report.now.feelsLike),
+      condition: report.now.condition,
+      conditionSymbol: report.now.symbolName,
+      high: today.map { temp($0.high) },
+      low: today.map { temp($0.low) },
+      humidityPercent: Int((report.now.humidity * 100).rounded()),
+      windSpeed: wind,
+      hourly: report.hours.prefix(6).map { h in
+        WeatherCard.HourItem(
+          date: h.date, temperature: temp(h.temperature), symbolName: h.symbolName,
+          precipitationPercent: Int((h.precipitationChance * 100).rounded()))
+      },
+      daily: report.days.prefix(5).map { d in
+        WeatherCard.DayItem(
+          date: d.date, label: d.date.formatted(dayStyle), high: temp(d.high), low: temp(d.low),
+          symbolName: d.symbolName, precipitationPercent: Int((d.precipitationChance * 100).rounded()))
+      },
+      alerts: report.alerts.map { a in
+        WeatherCard.AlertItem(
+          summary: a.summary, severity: a.severity, detailsURL: a.detailsURL?.absoluteString)
+      },
+      attributionLegalURL: attributionLegalURL?.absoluteString)
+    return ActionCardRecord(payload: .weather(card))
   }
 
   /// Apple Weather's mark (for dark backgrounds, the app's) and legal page: WeatherKit's terms
@@ -385,6 +450,12 @@ enum WeatherLookup {
       lines.append(
         "  \(label)\(next.date.formatted(day)): \(next.condition.lowercased()), high \(temperature(next.high)), "
           + "low \(temperature(next.low)), \(percent(next.precipitationChance)) chance of precipitation")
+    }
+    if !report.alerts.isEmpty {
+      lines.append("Alerts:")
+      for alert in report.alerts {
+        lines.append("  [\(alert.severity)] \(alert.summary)")
+      }
     }
     return lines.joined(separator: "\n")
   }

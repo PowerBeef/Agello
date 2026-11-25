@@ -1,4 +1,5 @@
 import CoreAI
+import Darwin
 import Foundation
 
 /// Memory-mapped INT4 token embedding table (`embed_tokens.bin`, AGET v1 format):
@@ -26,9 +27,18 @@ struct INT4EmbeddingTable: @unchecked Sendable {
   private let scalesOffset: Int
   private let weightsOffset: Int
   private let packedRowBytes: Int
+  /// Precomputed dequantized row for pad token ID `0` so bucket padding copies via `memcpy`.
+  private let padRow: [Float16]
 
   init(contentsOf url: URL) throws {
     let mapped = try Data(contentsOf: url, options: .alwaysMapped)
+    // Token gathers access random 384-byte rows across a 68 MB table: hint MADV_RANDOM so the
+    // kernel skips wasteful sequential read-ahead page faults.
+    mapped.withUnsafeBytes { raw in
+      if let base = raw.baseAddress, !raw.isEmpty {
+        _ = madvise(UnsafeMutableRawPointer(mutating: base), raw.count, MADV_RANDOM)
+      }
+    }
     try self.init(data: mapped)
   }
 
@@ -65,6 +75,72 @@ struct INT4EmbeddingTable: @unchecked Sendable {
     self.scalesOffset = scalesOffset
     self.weightsOffset = weightsOffset
     self.packedRowBytes = packedRowBytes
+
+    var cachedPad = [Float16](repeating: 0, count: dimension)
+    cachedPad.withUnsafeMutableBufferPointer { dst in
+      if let outBase = dst.baseAddress {
+        data.withUnsafeBytes { raw in
+          let base = raw.baseAddress!  // swiftlint:disable:this force_unwrapping
+          Self.dequantizeRow(
+            id: 0, scalesBase: base.advanced(by: scalesOffset),
+            weightsBase: base.advanced(by: weightsOffset),
+            packedRowBytes: packedRowBytes, scaleMultiplier: Float(bitPattern: mulBits),
+            into: outBase)
+        }
+      }
+    }
+    self.padRow = cachedPad
+  }
+
+  /// Dequantizes a single INT4 row using a 16-entry signed-nibble `Float16` LUT and `SIMD8` stores.
+  @inline(__always)
+  private static func dequantizeRow(
+    id: Int,
+    scalesBase: UnsafeRawPointer,
+    weightsBase: UnsafeRawPointer,
+    packedRowBytes: Int,
+    scaleMultiplier: Float,
+    into outRow: UnsafeMutablePointer<Float16>
+  ) {
+    let rowScale =
+      scalesBase.loadUnaligned(fromByteOffset: id * MemoryLayout<Float>.size, as: Float.self)
+      * scaleMultiplier
+    // 16-entry LUT covers every 4-bit two's-complement value (0...7, -8...-1) with exact Float16 rounding.
+    var lut = (
+      Float16(0 * rowScale), Float16(1 * rowScale), Float16(2 * rowScale), Float16(3 * rowScale),
+      Float16(4 * rowScale), Float16(5 * rowScale), Float16(6 * rowScale), Float16(7 * rowScale),
+      Float16(-8 * rowScale), Float16(-7 * rowScale), Float16(-6 * rowScale), Float16(-5 * rowScale),
+      Float16(-4 * rowScale), Float16(-3 * rowScale), Float16(-2 * rowScale), Float16(-1 * rowScale)
+    )
+    let packedRow = weightsBase.advanced(by: id * packedRowBytes).assumingMemoryBound(to: UInt8.self)
+    withUnsafeBytes(of: &lut) { lutRaw in
+      let table = lutRaw.bindMemory(to: Float16.self).baseAddress!  // swiftlint:disable:this force_unwrapping
+      let simdBlocks = packedRowBytes / 4
+      var byteIndex = 0
+      var outIndex = 0
+      for _ in 0..<simdBlocks {
+        let b0 = packedRow[byteIndex]
+        let b1 = packedRow[byteIndex + 1]
+        let b2 = packedRow[byteIndex + 2]
+        let b3 = packedRow[byteIndex + 3]
+        let vec = SIMD8<Float16>(
+          table[Int(b0 & 0x0F)], table[Int(b0 >> 4)],
+          table[Int(b1 & 0x0F)], table[Int(b1 >> 4)],
+          table[Int(b2 & 0x0F)], table[Int(b2 >> 4)],
+          table[Int(b3 & 0x0F)], table[Int(b3 >> 4)])
+        UnsafeMutableRawPointer(outRow.advanced(by: outIndex))
+          .storeBytes(of: vec, as: SIMD8<Float16>.self)
+        byteIndex += 4
+        outIndex += 8
+      }
+      while byteIndex < packedRowBytes {
+        let b = packedRow[byteIndex]
+        outRow[outIndex] = table[Int(b & 0x0F)]
+        outRow[outIndex + 1] = table[Int(b >> 4)]
+        byteIndex += 1
+        outIndex += 2
+      }
+    }
   }
 
   /// Dequantizes `tokenIDs` (padded with `padID = 0` up to `bucketLength`) into a contiguous
@@ -75,27 +151,29 @@ struct INT4EmbeddingTable: @unchecked Sendable {
     into destination: UnsafeMutablePointer<Float16>
   ) {
     let count = min(tokenIDs.count, bucketLength)
-    data.withUnsafeBytes { raw in
-      let base = raw.baseAddress!  // swiftlint:disable:this force_unwrapping
-      let scalesBase = base.advanced(by: scalesOffset)
-      let weightsBase = base.advanced(by: weightsOffset)
-      for position in 0..<bucketLength {
-        let rawID = position < count ? Int(tokenIDs[position]) : 0
-        let id = (rawID >= 0 && rawID < vocabSize) ? rawID : 0
-        let rowScale =
-          scalesBase.loadUnaligned(
-            fromByteOffset: id * MemoryLayout<Float>.size, as: Float.self) * scaleMultiplier
-        let packedRow = weightsBase.advanced(by: id * packedRowBytes)
-          .assumingMemoryBound(to: UInt8.self)
-        let outRow = destination.advanced(by: position * dimension)
-        for byteIndex in 0..<packedRowBytes {
-          let byte = packedRow[byteIndex]
-          let lo = Int(byte & 0x0F)
-          let hi = Int(byte >> 4)
-          let sLo = Float(lo >= 8 ? lo - 16 : lo)
-          let sHi = Float(hi >= 8 ? hi - 16 : hi)
-          outRow[byteIndex * 2] = Float16(sLo * rowScale)
-          outRow[byteIndex * 2 + 1] = Float16(sHi * rowScale)
+    let rowBytes = dimension * MemoryLayout<Float16>.size
+    padRow.withUnsafeBufferPointer { padBuf in
+      let padPtr = padBuf.baseAddress!  // swiftlint:disable:this force_unwrapping
+      data.withUnsafeBytes { raw in
+        let base = raw.baseAddress!  // swiftlint:disable:this force_unwrapping
+        let scalesBase = base.advanced(by: scalesOffset)
+        let weightsBase = base.advanced(by: weightsOffset)
+        for position in 0..<count {
+          let rawID = Int(tokenIDs[position])
+          let id = (rawID >= 0 && rawID < vocabSize) ? rawID : 0
+          let outRow = destination.advanced(by: position * dimension)
+          if id == 0 {
+            memcpy(outRow, padPtr, rowBytes)
+          } else {
+            Self.dequantizeRow(
+              id: id, scalesBase: scalesBase, weightsBase: weightsBase,
+              packedRowBytes: packedRowBytes, scaleMultiplier: scaleMultiplier, into: outRow)
+          }
+        }
+      }
+      if count < bucketLength {
+        for position in count..<bucketLength {
+          memcpy(destination.advanced(by: position * dimension), padPtr, rowBytes)
         }
       }
     }

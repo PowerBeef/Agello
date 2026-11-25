@@ -60,6 +60,10 @@ struct ActionCardStack: View {
       ContactCardView(card: card)
     case .messageDraft(let card):
       MessageDraftCardView(card: card)
+    case .weather(let card):
+      WeatherCardView(card: card, isCompact: isCompact)
+    case .alarm(let card):
+      AlarmCardView(card: card)
     case .unknown:
       EmptyView()
     }
@@ -485,6 +489,15 @@ private struct CalendarEventCardView: View {
     return "\(day) · \(start) – \(end)"
   }
 
+  private var statusBadge: (text: String, tone: Color) {
+    switch card.status {
+    case .created: (String(localized: "Saved"), Theme.Status.healthy)
+    case .updated: (String(localized: "Updated"), Theme.Brand.glacier)
+    case .deleted: (String(localized: "Deleted"), Theme.Status.critical)
+    case .found: (String(localized: "Calendar"), Theme.Brand.lavender)
+    }
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
       HStack(alignment: .top, spacing: Theme.Spacing.sm) {
@@ -492,7 +505,8 @@ private struct CalendarEventCardView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
           Text(card.title)
             .font(.system(.subheadline, weight: .semibold))
-            .foregroundStyle(Theme.Text.primary)
+            .foregroundStyle(card.status == .deleted ? Theme.Text.tertiary : Theme.Text.primary)
+            .strikethrough(card.status == .deleted)
             .frame(maxWidth: .infinity, alignment: .leading)
           Text(timeSummary)
             .font(.caption)
@@ -504,34 +518,34 @@ private struct CalendarEventCardView: View {
               .lineLimit(1)
           }
         }
-        StatusBadge(
-          text: card.status == .created ? String(localized: "Saved") : String(localized: "Calendar"),
-          tone: card.status == .created ? Theme.Status.healthy : Theme.Brand.lavender)
+        StatusBadge(text: statusBadge.text, tone: statusBadge.tone)
       }
 
-      WrapFlowLayout(horizontalSpacing: Theme.Spacing.sm, verticalSpacing: Theme.Spacing.xs) {
-        ActionCardPrimaryPill(
-          title: String(localized: "View / Edit Event"), symbol: "calendar.badge.clock",
-          tint: Theme.Brand.lavender, id: "actionCard.calendar.edit"
-        ) {
-          showsEditSheet = true
-        }
-        if let location = card.location, !location.isEmpty {
-          ActionCardSecondaryPill(
-            title: String(localized: "Directions"), symbol: "map",
-            id: "actionCard.calendar.directions"
+      if card.status != .deleted {
+        WrapFlowLayout(horizontalSpacing: Theme.Spacing.sm, verticalSpacing: Theme.Spacing.xs) {
+          ActionCardPrimaryPill(
+            title: String(localized: "View / Edit Event"), symbol: "calendar.badge.clock",
+            tint: Theme.Brand.lavender, id: "actionCard.calendar.edit"
           ) {
-            NativeActions.openAddressInMaps(location)
+            showsEditSheet = true
           }
+          if let location = card.location, !location.isEmpty {
+            ActionCardSecondaryPill(
+              title: String(localized: "Directions"), symbol: "map",
+              id: "actionCard.calendar.directions"
+            ) {
+              NativeActions.openAddressInMaps(location)
+            }
+          }
+          ShareLink(
+            item: ICSFileTransfer(card: card),
+            preview: SharePreview(card.title, image: Image(systemName: "calendar"))
+          ) {
+            ActionCardPillLabel(title: String(localized: "Export .ics"), symbol: "square.and.arrow.up")
+          }
+          .buttonStyle(.plain)
+          .accessibilityIdentifier("actionCard.calendar.export")
         }
-        ShareLink(
-          item: ICSFileTransfer(card: card),
-          preview: SharePreview(card.title, image: Image(systemName: "calendar"))
-        ) {
-          ActionCardPillLabel(title: String(localized: "Export .ics"), symbol: "square.and.arrow.up")
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("actionCard.calendar.export")
       }
     }
     .padding(Theme.Spacing.md)
@@ -549,46 +563,77 @@ private struct CalendarEventCardView: View {
 private struct ReminderCardView: View {
   let card: ReminderCard
   @State private var isCompleted: Bool
+  @State private var dueDate: Date?
   @State private var isUpdating = false
 
   init(card: ReminderCard) {
     self.card = card
     _isCompleted = State(initialValue: card.isCompleted)
+    _dueDate = State(initialValue: card.dueDate)
+  }
+
+  private var statusBadge: (text: String, tone: Color)? {
+    switch card.status {
+    case .created: (String(localized: "Saved"), Theme.Status.healthy)
+    case .updated: (String(localized: "Updated"), Theme.Brand.glacier)
+    case .completed: (String(localized: "Done"), Theme.Status.healthy)
+    case .deleted: (String(localized: "Deleted"), Theme.Status.critical)
+    case .found: nil
+    }
   }
 
   var body: some View {
-    HStack(spacing: Theme.Spacing.sm) {
-      Button {
-        toggleCompletion()
-      } label: {
-        Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
-          .font(.title3)
-          .foregroundStyle(isCompleted ? Theme.Status.healthy : Theme.Brand.gold)
-          .frame(width: Theme.Size.target, height: Theme.Size.target)
-      }
-      .buttonStyle(.plain)
-      .disabled(isUpdating || card.reminderIdentifier == nil)
-      .accessibilityLabel(isCompleted ? "Mark reminder incomplete" : "Mark reminder done")
-      .accessibilityIdentifier("actionCard.reminder.toggle")
+    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+      HStack(spacing: Theme.Spacing.sm) {
+        Button {
+          toggleCompletion()
+        } label: {
+          Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
+            .font(.title3)
+            .foregroundStyle(isCompleted ? Theme.Status.healthy : Theme.Brand.gold)
+            .frame(width: Theme.Size.target, height: Theme.Size.target)
+        }
+        .buttonStyle(.plain)
+        .disabled(isUpdating || card.reminderIdentifier == nil || card.status == .deleted)
+        .accessibilityLabel(isCompleted ? "Mark reminder incomplete" : "Mark reminder done")
+        .accessibilityIdentifier("actionCard.reminder.toggle")
 
-      VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-        Text(card.title)
-          .font(.system(.subheadline, weight: .semibold))
-          .foregroundStyle(isCompleted ? Theme.Text.tertiary : Theme.Text.primary)
-          .strikethrough(isCompleted)
-          .frame(maxWidth: .infinity, alignment: .leading)
-        let meta = [
-          card.dueDate.map { $0.formatted(date: .abbreviated, time: .shortened) },
-          card.listName,
-        ].compactMap { $0 }.joined(separator: " · ")
-        if !meta.isEmpty {
-          Text(meta)
-            .font(.caption)
-            .foregroundStyle(Theme.Text.secondary)
+        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+          Text(card.title)
+            .font(.system(.subheadline, weight: .semibold))
+            .foregroundStyle(isCompleted || card.status == .deleted ? Theme.Text.tertiary : Theme.Text.primary)
+            .strikethrough(isCompleted || card.status == .deleted)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          let meta = [
+            dueDate.map { $0.formatted(date: .abbreviated, time: .shortened) },
+            card.listName,
+          ].compactMap { $0 }.joined(separator: " · ")
+          if !meta.isEmpty {
+            Text(meta)
+              .font(.caption)
+              .foregroundStyle(Theme.Text.secondary)
+          }
+        }
+        if let badge = statusBadge {
+          StatusBadge(text: badge.text, tone: badge.tone)
         }
       }
-      if card.status == .created {
-        StatusBadge(text: String(localized: "Saved"), tone: Theme.Status.healthy)
+
+      if !isCompleted, card.status != .deleted, card.reminderIdentifier != nil {
+        WrapFlowLayout(horizontalSpacing: Theme.Spacing.tight, verticalSpacing: Theme.Spacing.xs) {
+          ActionCardSecondaryPill(
+            title: String(localized: "Snooze +1h"), symbol: "clock.arrow.circlepath",
+            id: "actionCard.reminder.snooze1h"
+          ) {
+            snooze(byHours: 1)
+          }
+          ActionCardSecondaryPill(
+            title: String(localized: "Tomorrow 9 AM"), symbol: "sunrise",
+            id: "actionCard.reminder.snoozeTomorrow"
+          ) {
+            snoozeToTomorrowMorning()
+          }
+        }
       }
     }
     .padding(Theme.Spacing.md)
@@ -607,6 +652,35 @@ private struct ReminderCardView: View {
       isUpdating = false
       if case .success(let updated) = result {
         isCompleted = updated.isCompleted
+        Haptics.complete()
+      }
+    }
+  }
+
+  private func snooze(byHours hours: Int) {
+    guard let id = card.reminderIdentifier else { return }
+    let base = max(Date.now, dueDate ?? .now)
+    let next = base.addingTimeInterval(TimeInterval(hours * 3_600))
+    updateDueDate(id: id, to: next)
+  }
+
+  private func snoozeToTomorrowMorning() {
+    guard let id = card.reminderIdentifier else { return }
+    let cal = Calendar.current
+    guard let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: .now)),
+      let morning = cal.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow)
+    else { return }
+    updateDueDate(id: id, to: morning)
+  }
+
+  private func updateDueDate(id: String, to targetDate: Date) {
+    isUpdating = true
+    Task {
+      let result = await PersonalTools.activeBackend.updateReminder(
+        identifier: id, mutation: ReminderMutation(dueDate: targetDate))
+      isUpdating = false
+      if case .success(let updated) = result {
+        dueDate = updated.dueDate ?? targetDate
         Haptics.complete()
       }
     }

@@ -292,7 +292,7 @@ struct WebClient: Sendable {
             title: "\(attribution.name) — \(report.place)", url: attribution.url, snippet: "",
             content: WeatherLookup.describe(report), pinned: true)
         ],
-        []
+        [WeatherLookup.actionCard(report, attributionLegalURL: attribution.url)]
       )
     case .place:
       let found = try await PlaceSearch.search(query)

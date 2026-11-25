@@ -146,4 +146,22 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
       return .error("Could not estimate travel time: \(error.localizedDescription)")
     }
   }
+
+  func fetchWeather(place: String?, scope: String) async -> PersonalToolResult<WeatherSummary> {
+    let query = place?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    do {
+      guard let report = try await WeatherLookup.report(for: query.isEmpty ? "here" : query) else {
+        return .error("Could not find weather for '\(query)'.")
+      }
+      let attribution = await WeatherLookup.attribution()
+      let record = WeatherLookup.actionCard(report, attributionLegalURL: attribution.url)
+      guard case .weather(let card) = record.payload else {
+        return .error("Could not format weather report.")
+      }
+      return .success(
+        WeatherSummary(locationName: report.place, description: WeatherLookup.describe(report), card: card))
+    } catch {
+      return .error("Weather unavailable: \(error.localizedDescription)")
+    }
+  }
 }

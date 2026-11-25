@@ -29,13 +29,12 @@ enum ActiveTools {
         tools.append(QueryTableOrJsonTool())
       }
       if options.personalTools.calendar {
-        tools.append(SearchCalendarEventsTool())
-        tools.append(FindFreeSlotsTool())
-        tools.append(CreateCalendarEventTool())
+        tools.append(ReadCalendarTool())
+        tools.append(ManageCalendarEventTool())
       }
       if options.personalTools.reminders {
         tools.append(ListRemindersTool())
-        tools.append(CreateReminderTool())
+        tools.append(ManageReminderTool())
       }
       if options.personalTools.contacts {
         tools.append(SearchContactsTool())
@@ -44,6 +43,13 @@ enum ActiveTools {
       if options.personalTools.maps {
         tools.append(SearchPlacesTool())
         tools.append(EstimateTravelTimeTool())
+      }
+      if options.personalTools.weather {
+        tools.append(GetWeatherTool())
+      }
+      if options.personalTools.alarms {
+        tools.append(ListAlarmsTool())
+        tools.append(ManageAlarmTool())
       }
     }
     if options.webSearchTool { tools.append(WebSearchTool()) }

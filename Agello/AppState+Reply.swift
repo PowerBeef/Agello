@@ -248,7 +248,7 @@ extension AppState {
             BackgroundWork.shared.stepProgress(
               completed: toolSteps, total: max(toolSteps + 1, 4), subtitle: latest.summary)
           }
-          if ContinuousClock.now - lastFlush >= .milliseconds(100) {
+          if ContinuousClock.now - lastFlush >= ThermalPolicy.current.streamFlushInterval {
             flush()
             stopIfMemoryIsExhausted()
           }

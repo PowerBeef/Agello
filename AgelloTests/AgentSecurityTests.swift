@@ -192,7 +192,8 @@ final class AgentSecurityTests: XCTestCase {
     ToolConfirmationGate.installPresenter(nil)
     ToolConfirmationGate.setTestHandler(nil)
 
-    var calTool = CreateCalendarEventTool()
+    var calTool = ManageCalendarEventTool()
+    calTool.action = "create"
     calTool.title = "Unauthorized Meeting"
     calTool.startDate = "2026-11-23T10:00:00Z"
     calTool.endDate = "2026-11-23T11:00:00Z"
@@ -207,14 +208,15 @@ final class AgentSecurityTests: XCTestCase {
       return .denied(reason: "User tapped Deny.")
     }
 
-    var remTool = CreateReminderTool()
+    var remTool = ManageReminderTool()
+    remTool.action = "create"
     remTool.title = "Buy milk"
     remTool.dueDate = "2026-11-23T18:00:00Z"
     let deniedRes = try await remTool.run() as? [String: Any]
     XCTAssertEqual(deniedRes?["executed"] as? Bool, false)
     XCTAssertTrue(backend.state.withLock { $0.createdReminders.isEmpty })
     let req = try XCTUnwrap(captured.withLock { $0.first })
-    XCTAssertEqual(req.toolName, CreateReminderTool.name)
+    XCTAssertEqual(req.toolName, ManageReminderTool.name)
     XCTAssertEqual(req.parameters.first(where: { $0.name == "title" })?.value, "Buy milk")
 
     // 3) Explicit approval -> executes cleanly.
@@ -233,16 +235,16 @@ final class AgentSecurityTests: XCTestCase {
     let appState = AppState(useMockEngine: true)
     appState.isInForeground = false
     let bgDecision = await appState.requestToolConfirmation(
-      .init(toolName: CreateReminderTool.name, title: "Create reminder", summary: "Test", parameters: []))
+      .init(toolName: ManageReminderTool.name, title: "Create reminder", summary: "Test", parameters: []))
     if case .denied = bgDecision {} else { XCTFail("Must deny in background") }
 
     appState.isInForeground = true
     let request = ToolConfirmationRequest(
-      toolName: CreateCalendarEventTool.name, title: "Create event", summary: "Test",
+      toolName: ManageCalendarEventTool.name, title: "Create event", summary: "Test",
       parameters: [.init(name: "title", value: "Standup")])
     let decisionTask = Task { await appState.requestToolConfirmation(request) }
     await Task.yield()
-    XCTAssertEqual(appState.pendingToolConfirmation?.toolName, CreateCalendarEventTool.name)
+    XCTAssertEqual(appState.pendingToolConfirmation?.toolName, ManageCalendarEventTool.name)
     appState.stop()
     let stoppedDecision = await decisionTask.value
     if case .denied = stoppedDecision {} else { XCTFail("Must deny on stop()") }
@@ -250,14 +252,17 @@ final class AgentSecurityTests: XCTestCase {
   }
 
   func testReadOnlyMetadataMatchesToolMutability() {
-    XCTAssertFalse(CreateCalendarEventTool.isReadOnly)
-    XCTAssertFalse(CreateReminderTool.isReadOnly)
-    XCTAssertTrue(SearchCalendarEventsTool.isReadOnly)
-    XCTAssertTrue(FindFreeSlotsTool.isReadOnly)
+    XCTAssertFalse(ManageCalendarEventTool.isReadOnly)
+    XCTAssertFalse(ManageReminderTool.isReadOnly)
+    XCTAssertFalse(PrepareMessageTool.isReadOnly)
+    XCTAssertFalse(ManageAlarmTool.isReadOnly)
+    XCTAssertTrue(ReadCalendarTool.isReadOnly)
     XCTAssertTrue(ListRemindersTool.isReadOnly)
     XCTAssertTrue(SearchContactsTool.isReadOnly)
     XCTAssertTrue(SearchPlacesTool.isReadOnly)
     XCTAssertTrue(EstimateTravelTimeTool.isReadOnly)
+    XCTAssertTrue(GetWeatherTool.isReadOnly)
+    XCTAssertTrue(ListAlarmsTool.isReadOnly)
   }
 
   func testUntrustedContextBlocksWhitespaceBreakoutsAndUnclosedTails() {
@@ -326,9 +331,9 @@ final class AgentSecurityTests: XCTestCase {
     let appState = AppState(useMockEngine: true)
     appState.isInForeground = true
     let reqA = ToolConfirmationRequest(
-      toolName: CreateReminderTool.name, title: "A", summary: "First", parameters: [])
+      toolName: ManageReminderTool.name, title: "A", summary: "First", parameters: [])
     let reqB = ToolConfirmationRequest(
-      toolName: CreateCalendarEventTool.name, title: "B", summary: "Second", parameters: [])
+      toolName: ManageCalendarEventTool.name, title: "B", summary: "Second", parameters: [])
 
     let taskA = Task { await appState.requestToolConfirmation(reqA) }
     await Task.yield()

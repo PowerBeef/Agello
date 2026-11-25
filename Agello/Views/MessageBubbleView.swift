@@ -337,13 +337,18 @@ struct MessageBubbleView: View {
     case "search_past_chats": String(localized: "Searched past chats")
     case "search_places": String(localized: "Searched Apple Maps")
     case "estimate_travel_time": String(localized: "Checked directions")
-    case "search_calendar_events": String(localized: "Checked calendar")
+    case "read_calendar", "search_calendar_events": String(localized: "Checked calendar")
     case "find_free_slots": String(localized: "Checked free time")
+    case "manage_calendar_event": String(localized: "Updated calendar")
     case "create_calendar_event": String(localized: "Created event")
     case "list_reminders": String(localized: "Checked reminders")
+    case "manage_reminder": String(localized: "Updated reminder")
     case "create_reminder": String(localized: "Created reminder")
     case "search_contacts": String(localized: "Searched contacts")
     case "prepare_message": String(localized: "Drafted message")
+    case "get_weather": String(localized: "Checked weather")
+    case "list_alarms": String(localized: "Checked alarms")
+    case "manage_alarm": String(localized: "Updated alarm")
     case "web_search": String(localized: "Searched the web")
     case "memory": String(localized: "Updated memory")
     default: String(localized: "Used \(name.replacingOccurrences(of: "_", with: " "))")
@@ -361,13 +366,15 @@ struct MessageBubbleView: View {
     case "search_past_chats": "clock.arrow.trianglehead.counterclockwise.rotate.90"
     case "search_places": "mappin.and.ellipse"
     case "estimate_travel_time": "car.fill"
-    case "search_calendar_events": "calendar"
+    case "read_calendar", "search_calendar_events": "calendar"
     case "find_free_slots": "calendar.badge.clock"
-    case "create_calendar_event": "calendar.badge.plus"
+    case "manage_calendar_event", "create_calendar_event": "calendar.badge.plus"
     case "list_reminders": "checklist"
-    case "create_reminder": "checklist.checked"
+    case "manage_reminder", "create_reminder": "checklist.checked"
     case "search_contacts": "person.crop.circle"
     case "prepare_message": "paperplane"
+    case "get_weather": "cloud.sun.fill"
+    case "list_alarms", "manage_alarm": "alarm.fill"
     case "web_search": "globe"
     case "memory": "brain.head.profile"
     default: "wrench.and.screwdriver"

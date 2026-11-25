@@ -1,3 +1,5 @@
+import ActivityKit
+import AlarmKit
 import AppIntents
 import SwiftUI
 import WidgetKit
@@ -6,6 +8,7 @@ import WidgetKit
 struct AgelloWidgets: WidgetBundle {
   var body: some Widget {
     QuickActionsWidget()
+    AgelloAlarmLiveActivity()
     TalkControl()
     NewChatControl()
     SnapAndAskControl()
@@ -184,5 +187,118 @@ struct VoiceWithCameraControl: ControlWidget {
     }
     .displayName("Voice with Camera")
     .description("Start a hands-free voice conversation with the camera on.")
+  }
+}
+
+// MARK: - AlarmKit Live Activity & Dynamic Island
+
+struct AgelloAlarmLiveActivity: Widget {
+  var body: some WidgetConfiguration {
+    ActivityConfiguration(for: AlarmAttributes<AgelloAlarmMetadata>.self) { context in
+      alarmBanner(context: context)
+        .activityBackgroundTint(WidgetPalette.canvas)
+        .activitySystemActionForegroundColor(WidgetPalette.gold)
+    } dynamicIsland: { context in
+      DynamicIsland {
+        DynamicIslandExpandedRegion(.leading) {
+          Label(
+            context.attributes.metadata?.label ?? "Agello",
+            systemImage: context.attributes.metadata?.kind == "alarm" ? "alarm.fill" : "timer"
+          )
+          .font(.subheadline.weight(.semibold))
+          .foregroundStyle(WidgetPalette.text)
+          .lineLimit(1)
+        }
+        DynamicIslandExpandedRegion(.trailing) {
+          alarmTrailingTime(state: context.state)
+            .font(.title3.weight(.semibold).monospacedDigit())
+            .foregroundStyle(WidgetPalette.gold)
+        }
+        DynamicIslandExpandedRegion(.bottom) {
+          HStack(spacing: 10) {
+            alarmControls(state: context.state)
+          }
+          .padding(.top, 4)
+        }
+      } compactLeading: {
+        Image(systemName: context.attributes.metadata?.kind == "alarm" ? "alarm.fill" : "timer")
+          .foregroundStyle(WidgetPalette.gold)
+      } compactTrailing: {
+        alarmTrailingTime(state: context.state)
+          .font(.caption.weight(.semibold).monospacedDigit())
+          .foregroundStyle(WidgetPalette.gold)
+      } minimal: {
+        Image(systemName: context.attributes.metadata?.kind == "alarm" ? "alarm.fill" : "timer")
+          .foregroundStyle(WidgetPalette.gold)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func alarmBanner(context: ActivityViewContext<AlarmAttributes<AgelloAlarmMetadata>>) -> some View {
+    HStack(spacing: 12) {
+      Image(systemName: context.attributes.metadata?.kind == "alarm" ? "alarm.fill" : "timer")
+        .font(.title2)
+        .foregroundStyle(WidgetPalette.gold)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(context.attributes.metadata?.label ?? "Agello")
+          .font(.headline)
+          .foregroundStyle(WidgetPalette.text)
+          .lineLimit(1)
+        alarmTrailingTime(state: context.state)
+          .font(.subheadline.monospacedDigit())
+          .foregroundStyle(WidgetPalette.secondary)
+      }
+      Spacer(minLength: 8)
+      alarmControls(state: context.state)
+    }
+    .padding(14)
+  }
+
+  @ViewBuilder
+  private func alarmTrailingTime(state: AlarmPresentationState) -> some View {
+    switch state.mode {
+    case .countdown(let countdown):
+      Text(timerInterval: Date.now...countdown.fireDate, countsDown: true)
+    case .paused(let paused):
+      let remaining = max(0, paused.totalCountdownDuration - paused.previouslyElapsedDuration)
+      Text("\(Int(remaining.rounded()))s paused")
+    case .alert(let alert):
+      Text(String(format: "%02d:%02d", alert.time.hour, alert.time.minute))
+    @unknown default:
+      Text("Active")
+    }
+  }
+
+  @ViewBuilder
+  private func alarmControls(state: AlarmPresentationState) -> some View {
+    let idString = state.alarmID.uuidString
+    switch state.mode {
+    case .countdown:
+      Button(intent: PauseAgelloAlarmIntent(alarmID: idString)) {
+        Image(systemName: "pause.fill")
+      }
+      .tint(WidgetPalette.glacier)
+      Button(intent: StopAgelloAlarmIntent(alarmID: idString)) {
+        Image(systemName: "xmark")
+      }
+      .tint(WidgetPalette.gold)
+    case .paused:
+      Button(intent: ResumeAgelloAlarmIntent(alarmID: idString)) {
+        Image(systemName: "play.fill")
+      }
+      .tint(WidgetPalette.teal)
+      Button(intent: StopAgelloAlarmIntent(alarmID: idString)) {
+        Image(systemName: "xmark")
+      }
+      .tint(WidgetPalette.gold)
+    case .alert:
+      Button(intent: StopAgelloAlarmIntent(alarmID: idString)) {
+        Label("Stop", systemImage: "stop.fill")
+      }
+      .tint(WidgetPalette.gold)
+    @unknown default:
+      EmptyView()
+    }
   }
 }

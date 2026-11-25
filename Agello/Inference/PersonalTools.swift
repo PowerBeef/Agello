@@ -10,12 +10,19 @@ struct PersonalToolsSettings: Codable, Equatable, Sendable {
   var reminders = false
   var contacts = false
   var maps = false
+  var weather = false
+  var alarms = false
 
-  init(calendar: Bool = false, reminders: Bool = false, contacts: Bool = false, maps: Bool = false) {
+  init(
+    calendar: Bool = false, reminders: Bool = false, contacts: Bool = false, maps: Bool = false,
+    weather: Bool = false, alarms: Bool = false
+  ) {
     self.calendar = calendar
     self.reminders = reminders
     self.contacts = contacts
     self.maps = maps
+    self.weather = weather
+    self.alarms = alarms
   }
 
   /// Tolerant decoding so saved preferences never reset when keys are added.
@@ -25,16 +32,47 @@ struct PersonalToolsSettings: Codable, Equatable, Sendable {
     reminders = try container.decodeIfPresent(Bool.self, forKey: .reminders) ?? false
     contacts = try container.decodeIfPresent(Bool.self, forKey: .contacts) ?? false
     maps = try container.decodeIfPresent(Bool.self, forKey: .maps) ?? false
+    weather = try container.decodeIfPresent(Bool.self, forKey: .weather) ?? false
+    alarms = try container.decodeIfPresent(Bool.self, forKey: .alarms) ?? false
   }
 
-  var anyEnabled: Bool { calendar || reminders || contacts || maps }
+  var anyEnabled: Bool { calendar || reminders || contacts || maps || weather || alarms }
 
   var enabledCount: Int {
-    [calendar, reminders, contacts, maps].filter { $0 }.count
+    [calendar, reminders, contacts, maps, weather, alarms].filter { $0 }.count
   }
 
   var toolSetKey: String {
-    "cal=\(calendar),rem=\(reminders),con=\(contacts),map=\(maps)"
+    "cal=\(calendar),rem=\(reminders),con=\(contacts),map=\(maps),wx=\(weather),alm=\(alarms)"
+  }
+
+  /// Returns a copy with all personal-context domains disabled (used by Focus Filters).
+  var suppressed: PersonalToolsSettings {
+    PersonalToolsSettings()
+  }
+}
+
+/// Active iOS Focus Filter overrides (0 LLM tool tokens). Written by `AgelloFocusFilter`
+/// (`SetFocusFilterIntent`) and observed by `AppState` when resolving `effectiveOptions`.
+struct FocusFilterOverrides: Codable, Equatable, Sendable {
+  var hidePersonalTools = false
+  var defaultProjectID: UUID? = nil
+
+  static let userDefaultsKey = "focusFilterOverrides"
+  static let didChangeNotification = Notification.Name("com.patricedery.agello.focusFilterDidChange")
+
+  static func load() -> FocusFilterOverrides {
+    guard let data = UserDefaults.standard.data(forKey: userDefaultsKey),
+      let decoded = try? JSONDecoder().decode(FocusFilterOverrides.self, from: data)
+    else { return FocusFilterOverrides() }
+    return decoded
+  }
+
+  static func save(_ overrides: FocusFilterOverrides) {
+    if let data = try? JSONEncoder().encode(overrides) {
+      UserDefaults.standard.set(data, forKey: userDefaultsKey)
+    }
+    NotificationCenter.default.post(name: didChangeNotification, object: nil)
   }
 }
 
@@ -110,32 +148,99 @@ struct TravelEstimateSummary: Equatable, Sendable {
   var steps: [RouteCard.Step] = []
 }
 
+struct WeatherSummary: Equatable, Sendable {
+  var locationName: String
+  var description: String
+  var card: WeatherCard
+}
+
+struct AlarmSummary: Equatable, Sendable {
+  var alarmID: String
+  var kind: AlarmCard.Kind
+  var label: String
+  var fireDate: Date? = nil
+  var hour: Int? = nil
+  var minute: Int? = nil
+  var weekdays: [String] = []
+  var durationSeconds: Double? = nil
+  var state: AlarmCard.State = .scheduled
+}
+
+/// Optional options when creating or updating a Calendar event.
+struct CalendarEventMutation: Equatable, Sendable {
+  var title: String? = nil
+  var startDate: Date? = nil
+  var endDate: Date? = nil
+  var location: String? = nil
+  var notes: String? = nil
+  var alarmMinutesBefore: Int? = nil
+  /// `"none"`, `"daily"`, `"weekly"`, `"monthly"`, or `"yearly"`.
+  var recurrence: String? = nil
+}
+
+/// Optional options when creating or updating a Reminder.
+struct ReminderMutation: Equatable, Sendable {
+  var title: String? = nil
+  var dueDate: Date? = nil
+  var clearDueDate: Bool = false
+  var listName: String? = nil
+  var notes: String? = nil
+  var priority: Int? = nil
+  var isCompleted: Bool? = nil
+}
+
 enum PersonalToolResult<Value: Sendable>: Sendable {
   case success(Value)
   case error(String)
 }
 
-/// Platform/test backend executing personal-context operations (`EventKit`, `Contacts`, `MapKit`).
+/// Platform/test backend executing personal-context operations (`EventKit`, `Contacts`, `MapKit`,
+/// `WeatherKit`, `AlarmKit`).
 protocol PersonalContextBackend: Sendable {
   func searchCalendarEvents(
     start: Date, end: Date, query: String?
   ) async -> PersonalToolResult<[CalendarEventSummary]>
 
+  func fetchCalendarEvent(identifier: String) async -> PersonalToolResult<CalendarEventSummary>
+
   func createCalendarEvent(
     title: String, start: Date, end: Date, location: String?, notes: String?
   ) async -> PersonalToolResult<CalendarEventSummary>
+
+  func createCalendarEvent(
+    title: String, start: Date, end: Date, location: String?, notes: String?,
+    alarmMinutesBefore: Int?, recurrence: String?
+  ) async -> PersonalToolResult<CalendarEventSummary>
+
+  func updateCalendarEvent(
+    identifier: String, mutation: CalendarEventMutation
+  ) async -> PersonalToolResult<CalendarEventSummary>
+
+  func deleteCalendarEvent(identifier: String) async -> PersonalToolResult<CalendarEventSummary>
 
   func listReminders(
     includeCompleted: Bool, query: String?
   ) async -> PersonalToolResult<[ReminderSummary]>
 
+  func fetchReminder(identifier: String) async -> PersonalToolResult<ReminderSummary>
+
   func createReminder(
     title: String, dueDate: Date?, notes: String?
+  ) async -> PersonalToolResult<ReminderSummary>
+
+  func createReminder(
+    title: String, dueDate: Date?, listName: String?, notes: String?, priority: Int?
   ) async -> PersonalToolResult<ReminderSummary>
 
   func setReminderCompleted(
     identifier: String, completed: Bool
   ) async -> PersonalToolResult<ReminderSummary>
+
+  func updateReminder(
+    identifier: String, mutation: ReminderMutation
+  ) async -> PersonalToolResult<ReminderSummary>
+
+  func deleteReminder(identifier: String) async -> PersonalToolResult<ReminderSummary>
 
   func searchContacts(
     query: String, limit: Int
@@ -148,13 +253,100 @@ protocol PersonalContextBackend: Sendable {
   func estimateTravelTime(
     origin: String?, destination: String, transport: String
   ) async -> PersonalToolResult<TravelEstimateSummary>
+
+  func fetchWeather(place: String?, scope: String) async -> PersonalToolResult<WeatherSummary>
+
+  func listAlarms() async -> PersonalToolResult<[AlarmSummary]>
+
+  func scheduleTimer(label: String, durationSeconds: Double) async -> PersonalToolResult<AlarmSummary>
+
+  func scheduleAlarm(
+    label: String, hour: Int, minute: Int, weekdays: [String]
+  ) async -> PersonalToolResult<AlarmSummary>
+
+  func cancelAlarm(identifier: String) async -> PersonalToolResult<AlarmSummary>
+
+  func pauseAlarm(identifier: String) async -> PersonalToolResult<AlarmSummary>
+
+  func resumeAlarm(identifier: String) async -> PersonalToolResult<AlarmSummary>
 }
 
 extension PersonalContextBackend {
+  func fetchCalendarEvent(identifier: String) async -> PersonalToolResult<CalendarEventSummary> {
+    .error("Calendar event lookup is unavailable on this backend.")
+  }
+
+  func createCalendarEvent(
+    title: String, start: Date, end: Date, location: String?, notes: String?,
+    alarmMinutesBefore: Int?, recurrence: String?
+  ) async -> PersonalToolResult<CalendarEventSummary> {
+    await createCalendarEvent(title: title, start: start, end: end, location: location, notes: notes)
+  }
+
+  func updateCalendarEvent(
+    identifier: String, mutation: CalendarEventMutation
+  ) async -> PersonalToolResult<CalendarEventSummary> {
+    .error("Updating calendar events is unavailable on this backend.")
+  }
+
+  func deleteCalendarEvent(identifier: String) async -> PersonalToolResult<CalendarEventSummary> {
+    .error("Deleting calendar events is unavailable on this backend.")
+  }
+
+  func fetchReminder(identifier: String) async -> PersonalToolResult<ReminderSummary> {
+    .error("Reminder lookup is unavailable on this backend.")
+  }
+
+  func createReminder(
+    title: String, dueDate: Date?, listName: String?, notes: String?, priority: Int?
+  ) async -> PersonalToolResult<ReminderSummary> {
+    await createReminder(title: title, dueDate: dueDate, notes: notes)
+  }
+
   func setReminderCompleted(
     identifier: String, completed: Bool
   ) async -> PersonalToolResult<ReminderSummary> {
     .error("Updating reminders is unavailable on this backend.")
+  }
+
+  func updateReminder(
+    identifier: String, mutation: ReminderMutation
+  ) async -> PersonalToolResult<ReminderSummary> {
+    .error("Updating reminders is unavailable on this backend.")
+  }
+
+  func deleteReminder(identifier: String) async -> PersonalToolResult<ReminderSummary> {
+    .error("Deleting reminders is unavailable on this backend.")
+  }
+
+  func fetchWeather(place: String?, scope: String) async -> PersonalToolResult<WeatherSummary> {
+    .error("Weather lookup is unavailable on this backend.")
+  }
+
+  func listAlarms() async -> PersonalToolResult<[AlarmSummary]> {
+    .error("Alarms and timers are only available on iOS.")
+  }
+
+  func scheduleTimer(label: String, durationSeconds: Double) async -> PersonalToolResult<AlarmSummary> {
+    .error("Alarms and timers are only available on iOS.")
+  }
+
+  func scheduleAlarm(
+    label: String, hour: Int, minute: Int, weekdays: [String]
+  ) async -> PersonalToolResult<AlarmSummary> {
+    .error("Alarms and timers are only available on iOS.")
+  }
+
+  func cancelAlarm(identifier: String) async -> PersonalToolResult<AlarmSummary> {
+    .error("Alarms and timers are only available on iOS.")
+  }
+
+  func pauseAlarm(identifier: String) async -> PersonalToolResult<AlarmSummary> {
+    .error("Alarms and timers are only available on iOS.")
+  }
+
+  func resumeAlarm(identifier: String) async -> PersonalToolResult<AlarmSummary> {
+    .error("Alarms and timers are only available on iOS.")
   }
 }
 
@@ -371,6 +563,7 @@ enum PersonalToolsLogic {
         ? "\(formatISO(event.startDate, timeZone: timeZone)) (all day)"
         : "\(formatISO(event.startDate, timeZone: timeZone)) to \(formatISO(event.endDate, timeZone: timeZone))"
       var parts = ["- \(event.title) | \(when)"]
+      if let id = event.eventIdentifier, !id.isEmpty { parts.append("id: \(id)") }
       if let loc = event.location, !loc.isEmpty { parts.append("location: \(loc)") }
       if let cal = event.calendarName, !cal.isEmpty { parts.append("calendar: \(cal)") }
       if let notes = event.notes, !notes.isEmpty {
@@ -391,11 +584,83 @@ enum PersonalToolsLogic {
     guard !reminders.isEmpty else { return "No reminders found." }
     return reminders.prefix(30).map { item in
       var parts = ["- [\(item.isCompleted ? "x" : " ")] \(item.title)"]
+      if let id = item.reminderIdentifier, !id.isEmpty { parts.append("id: \(id)") }
       if let due = item.dueDate { parts.append("due: \(formatISO(due, timeZone: timeZone))") }
       if let list = item.listName, !list.isEmpty { parts.append("list: \(list)") }
       if let notes = item.notes, !notes.isEmpty { parts.append("notes: \(String(notes.prefix(180)))") }
       return parts.joined(separator: " | ")
     }.joined(separator: "\n")
+  }
+
+  static func formatAlarms(_ alarms: [AlarmSummary], timeZone: TimeZone = .current) -> String {
+    guard !alarms.isEmpty else { return "No active alarms or timers found." }
+    return alarms.prefix(20).map { alarm in
+      var parts = ["- \(alarm.label) (\(alarm.kind.rawValue), \(alarm.state.rawValue))"]
+      parts.append("id: \(alarm.alarmID)")
+      if let hour = alarm.hour, let minute = alarm.minute {
+        parts.append(String(format: "time: %02d:%02d", hour, minute))
+      } else if let fire = alarm.fireDate {
+        parts.append("ends: \(formatISO(fire, timeZone: timeZone))")
+      } else if let secs = alarm.durationSeconds {
+        parts.append("duration: \(formatDuration(secs))")
+      }
+      if !alarm.weekdays.isEmpty {
+        parts.append("repeats: \(alarm.weekdays.joined(separator: ", "))")
+      }
+      return parts.joined(separator: " | ")
+    }.joined(separator: "\n")
+  }
+
+  static func formatDuration(_ seconds: Double) -> String {
+    let total = max(1, Int(seconds.rounded()))
+    let hours = total / 3_600
+    let mins = (total % 3_600) / 60
+    let secs = total % 60
+    if hours > 0 {
+      return mins > 0 ? "\(hours)h \(mins)m" : "\(hours)h"
+    }
+    if mins > 0 {
+      return secs > 0 ? "\(mins)m \(secs)s" : "\(mins) min"
+    }
+    return "\(secs)s"
+  }
+
+  /// Normalizes weekday names/abbreviations (`"mon"`, `"Monday"`, `"lundi"`, etc.) into canonical
+  /// short English tokens (`mon`..`sun`) for AlarmKit scheduling and display.
+  static func normalizeWeekdays(_ raw: [String]?) -> [String] {
+    guard let raw else { return [] }
+    let table: [(String, [String])] = [
+      ("mon", ["mon", "monday", "lun", "lundi", "lunes", "montag"]),
+      ("tue", ["tue", "tues", "tuesday", "mar", "mardi", "martes", "dienstag"]),
+      ("wed", ["wed", "wednesday", "mer", "mercredi", "miercoles", "miércoles", "mittwoch"]),
+      ("thu", ["thu", "thur", "thurs", "thursday", "jeu", "jeudi", "jueves", "donnerstag"]),
+      ("fri", ["fri", "friday", "ven", "vendredi", "viernes", "freitag"]),
+      ("sat", ["sat", "saturday", "sam", "samedi", "sabado", "sábado", "samstag"]),
+      ("sun", ["sun", "sunday", "dim", "dimanche", "domingo", "sonntag"]),
+    ]
+    var seen = Set<String>()
+    var ordered: [String] = []
+    for item in raw {
+      let token = item.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      if token == "weekdays" || token == "weekday" {
+        for day in ["mon", "tue", "wed", "thu", "fri"] where seen.insert(day).inserted { ordered.append(day) }
+        continue
+      }
+      if token == "weekend" || token == "weekends" {
+        for day in ["sat", "sun"] where seen.insert(day).inserted { ordered.append(day) }
+        continue
+      }
+      if token == "daily" || token == "everyday" || token == "every day" {
+        for day in ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] where seen.insert(day).inserted {
+          ordered.append(day)
+        }
+        continue
+      }
+      if let match = table.first(where: { $0.1.contains(token) })?.0, seen.insert(match).inserted {
+        ordered.append(match)
+      }
+    }
+    return ordered
   }
 
   /// Resolves an optional Calendar search date range cleanly:

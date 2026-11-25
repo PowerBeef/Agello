@@ -59,6 +59,7 @@ struct AppBootstrap {
     // Must be the same context the views use (`.modelContainer` injects
     // mainContext): turns are appended to view-owned threads, then saved here.
     state.modelContext = container.mainContext
+    AppIntentBridge.appState = state
     if let notice = opened.recoveryNotice { state.generationError = notice }
     appState = state
     shell = ShellModel(appState: state, context: container.mainContext)

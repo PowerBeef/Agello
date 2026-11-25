@@ -14,6 +14,10 @@
 	<string>Agello uses your Reminders on this iPhone to read your lists and add reminders you confirm.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Agello searches your Contacts locally on this iPhone to look up names, phone numbers, and email addresses when you ask.</string>
+	<key>NSAlarmKitUsageDescription</key>
+	<string>Agello sets timers and alarms you confirm on this iPhone so they can alert you reliably.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>

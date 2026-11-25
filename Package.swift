@@ -37,6 +37,7 @@ let package = Package(
         "Agello/App", "Agello/Assets.xcassets", "Agello/PrivacyInfo.xcprivacy", "Agello/Resources",
         "Agello/Views", "Agello/Markdown", "Agello/Support/Theme",
         "Agello/Support/Announcements.swift",
+        "Agello/System/AgelloAlarmMetadata.swift",
         "Agello/System/AppEntities.swift",
         "Agello/System/AppIntents.swift", "Agello/System/SharedIntents.swift",
         "Agello/Voice/CameraFeed.swift", "Agello/Voice/LiveSpeechTranscriber.swift",
@@ -49,7 +50,7 @@ let package = Package(
         "Agello/AppState+Reply.swift", "Agello/AppState+Tools.swift", "Agello/AppState+Web.swift",
         "Agello/Inference", "Agello/Knowledge", "Agello/ModelHub", "Agello/Persistence",
         "Agello/Support/Diagnostics.swift", "Agello/Support/ImagePreparer.swift",
-        "Agello/Support/ReplyTrace.swift",
+        "Agello/Support/ReplyTrace.swift", "Agello/Support/ThermalPolicy.swift",
         "Agello/System/ShareInbox.swift", "Agello/System/SharedItems.swift",
         "Agello/System/SpotlightIndex.swift",
         // Logic the engine doesn't call, kept in so its unit tests run here too (`swift test`).

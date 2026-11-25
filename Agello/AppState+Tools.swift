@@ -265,4 +265,65 @@ extension AppState {
     let end = min(formatted.count - 1, bestIndex + 1)
     return formatted[start...end].joined(separator: "\n")
   }
+
+  // MARK: - Composable AppIntents (Foreground Gemma 4 E4B)
+
+  /// Runs a foreground plain-text prompt for composable Shortcuts (`AskAgelloForTextIntent`,
+  /// `SummarizeDocumentIntent`) without disturbing an active chat's KV cache when memory allows.
+  func runIntentText(prompt: String, maxOutputTokens: Int = 768) async throws -> String {
+    guard isInForeground, GPUGate.isOpen else {
+      throw ChatError.underlying(
+        message: String(localized: "Agello must be open in the foreground to run this action."))
+    }
+    guard !isBusy, !isTranscribing else {
+      throw ChatError.underlying(message: String(localized: "Agello is busy with another reply."))
+    }
+    let result: Result<String, Error> = await serialized {
+      guard !self.isGenerating, !self.isPreparing else {
+        return .failure(ChatError.underlying(message: String(localized: "Agello is busy with another reply.")))
+      }
+      guard await self.loadIfNeeded() else { return .failure(ChatError.engineNotReady) }
+      let outcome: Result<String, Error>
+      do {
+        let outputs = try await self.engine.helperTexts([prompt], maxOutputTokens: maxOutputTokens) { _ in }
+        outcome = .success(outputs.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+      } catch {
+        outcome = .failure(error)
+      }
+      await self.afterHelper()
+      return outcome
+    }
+    return try result.get()
+  }
+
+  /// Runs a JSON-Schema constrained foreground extraction (`ExtractStructuredDataIntent`) using
+  /// `helperJSON` (`enable_thinking = false` + `llguidance` + `AGELLO_JSON_MTP`).
+  func runIntentStructuredJSON(
+    prompt: String, schemaJSON: String, maxOutputTokens: Int = 512
+  ) async throws -> String {
+    guard isInForeground, GPUGate.isOpen else {
+      throw ChatError.underlying(
+        message: String(localized: "Agello must be open in the foreground to run this action."))
+    }
+    guard !isBusy, !isTranscribing else {
+      throw ChatError.underlying(message: String(localized: "Agello is busy with another reply."))
+    }
+    let result: Result<String, Error> = await serialized {
+      guard !self.isGenerating, !self.isPreparing else {
+        return .failure(ChatError.underlying(message: String(localized: "Agello is busy with another reply.")))
+      }
+      guard await self.loadIfNeeded() else { return .failure(ChatError.engineNotReady) }
+      let outcome: Result<String, Error>
+      do {
+        let data = try await self.engine.helperJSON(
+          prompt: prompt, schemaJSON: schemaJSON, maxOutputTokens: maxOutputTokens)
+        outcome = .success(String(data: data, encoding: .utf8) ?? "{}")
+      } catch {
+        outcome = .failure(error)
+      }
+      await self.afterHelper()
+      return outcome
+    }
+    return try result.get()
+  }
 }

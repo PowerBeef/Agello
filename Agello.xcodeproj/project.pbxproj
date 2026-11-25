@@ -138,6 +138,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				System/SharedIntents.swift,
+				System/AgelloAlarmMetadata.swift,
 			);
 			target = 600000000000000000000002 /* AgelloWidgets */;
 		};

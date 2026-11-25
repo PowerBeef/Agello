@@ -75,6 +75,13 @@ enum UntrustedContext {
 
 /// Exact details of a mutating tool call presented to the user before execution.
 struct ToolConfirmationRequest: Identifiable, Equatable, Sendable {
+  /// Visual and behavioral risk tier surfaced on the confirmation card.
+  enum RiskTier: String, Codable, Equatable, Sendable {
+    case standard
+    case destructive
+    case external
+  }
+
   struct Parameter: Identifiable, Equatable, Sendable {
     var id: String { name }
     let name: String
@@ -86,16 +93,18 @@ struct ToolConfirmationRequest: Identifiable, Equatable, Sendable {
   let title: String
   let summary: String
   let parameters: [Parameter]
+  let risk: RiskTier
 
   init(
     id: UUID = UUID(), toolName: String, title: String, summary: String,
-    parameters: [Parameter]
+    parameters: [Parameter], risk: RiskTier = .standard
   ) {
     self.id = id
     self.toolName = toolName
     self.title = title
     self.summary = summary
     self.parameters = parameters
+    self.risk = risk
   }
 }
 

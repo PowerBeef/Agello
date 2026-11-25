@@ -1,3 +1,4 @@
+import AppIntents
 import SwiftUI
 
 /// Settings: the model's status on top, then what people change
@@ -133,6 +134,11 @@ struct SettingsView: View {
         if let context = appState.modelContext { SpotlightIndex.refresh(in: context, full: true) }
       }
       .accessibilityIdentifier("settings.spotlight")
+      ShortcutsLink()
+        .shortcutsLinkStyle(.dark)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .themedRow()
+        .accessibilityIdentifier("settings.shortcuts")
     } header: {
       Text("You").eyebrowStyle()
     }
@@ -183,7 +189,7 @@ struct SettingsView: View {
       Text("Model").eyebrowStyle()
     } footer: {
       Text(
-        "Tools let the assistant check the date, calculate, convert units, query files and tables, and optionally access Calendar, Reminders, Contacts, and Maps on this \(Platform.deviceName)."
+        "Tools let the assistant check the date, calculate, convert units, query files and tables, and optionally access Calendar, Reminders, Contacts, Maps, Weather, and Alarms on this \(Platform.deviceName)."
       )
       .foregroundStyle(Theme.Text.tertiary)
     }
