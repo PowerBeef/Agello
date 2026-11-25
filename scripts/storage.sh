@@ -65,6 +65,14 @@ for d in "$MAIN"/build/*; do
     device-harness | mac-harness) row keep "$size" "build/$name: the latest harness results" ;;
     cli) row keep "$size" "build/cli: the Mac command line's builds, one per runtime in use (about 0.3 GB each; test/ is the tests' debug build), its runs and traces (delete runs/ once their numbers are recorded)" ;;
     bench-venv) row keep "$size" "build/bench-venv: pytest for the bench's checks (bench-report.py rebuilds it when missing)" ;;
+    gbench)
+      hf_ds=0
+      if [ -d "$d/hf_datasets" ]; then
+        hf_ds="$(kb "$d/hf_datasets")"
+        row scratch "$hf_ds" "build/gbench/hf_datasets: cached HuggingFace eval datasets (re-downloaded on demand)" "$d/hf_datasets"
+      fi
+      kept=$((size - hf_ds))
+      row keep "$kept" "build/gbench: local gbench checkout, venv, and eval results" ;;
     phone) row keep "$size" "build/phone: the iPhone comparisons of runtime builds (scripts/phone-bench.sh; delete runs/ once their numbers are recorded)" ;;
     device-harness-* | mac-harness-*)
       row scratch "$size" "build/$name: one-off harness results (once their numbers are recorded)" "$d" ;;

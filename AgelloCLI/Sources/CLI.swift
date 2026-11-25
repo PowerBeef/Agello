@@ -10,6 +10,7 @@ struct AgelloCommand {
       agello env                      this Mac, the runtime build, the models and folders in use
       agello ask "prompt" [options]   one message through the app's engine; the reply on stdout
       agello bench [options]          the iPhone bench's cases through the app's engine, one record per reply
+      agello serve [options]          local OpenAI /v1 server (127.0.0.1) for external evals (e.g. gbench)
 
     Options for ask:
       --mock                 the scripted engine: no model, no GPU
@@ -42,6 +43,14 @@ struct AgelloCommand {
       --timeout SECONDS      per turn, instead of each case's own
       --no-helpers           skip the title and memory helpers after each reply
 
+    Options for serve (local-only 127.0.0.1 OpenAI /v1 server):
+      --port PORT            TCP port to bind on 127.0.0.1 (default 8091)
+      --model-id ID          model id reported by /v1/models (default google/gemma-4-E4B-it)
+      --kv N                 context window in tokens (default 65536, capped to the model's export window)
+      --think[=N]            enable Think by default when requests omit enable_thinking
+      --no-think             keep Think off by default (default)
+      --no-mtp               disable speculative decoding even for greedy requests
+
     Everywhere:
       --models DIR           the models folder, read only (default ~/Models/agello)
       --cache DIR            the engine cache root (default ~/Models/agello/cache/agello-cli)
@@ -73,6 +82,8 @@ struct AgelloCommand {
       exit(await ask(&arguments, paths: paths))
     case "bench":
       exit(await Bench.main(&arguments, paths: paths))
+    case "serve":
+      exit(await Serve.main(&arguments, paths: paths))
     default:
       note("Unknown command: \(command)\n\n\(usage)")
       exit(2)

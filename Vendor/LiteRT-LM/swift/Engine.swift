@@ -13,8 +13,8 @@
 // limitations under the License.
 //
 // Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
-// a tokenizer API (tokenize, countTokens), and the native handle declared
-// for Swift 6 language mode.
+// a tokenizer API (tokenize, countTokens), `rawToolsJSON` pass-through, and the
+// native handle declared for Swift 6 language mode.
 
 import Foundation
 import OSLog
@@ -222,7 +222,8 @@ public actor Engine {
     let toolManager = ToolManager(tools: conversationConfig.tools)
 
     let systemMessageJsonStr = (try? conversationConfig.systemMessage?.contents.jsonString) ?? ""
-    let toolDescriptionJsonStr = toolManager.toolsJsonDescription
+    let toolDescriptionJsonStr =
+      conversationConfig.rawToolsJSON ?? toolManager.toolsJsonDescription
 
     let initialMessagesJson = conversationConfig.initialMessages.map { $0.toJson }
     let messagesJsonStr: String

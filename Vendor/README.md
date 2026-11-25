@@ -95,6 +95,10 @@ fixes:
    the immutable native handles of `Conversation`, `Engine` and `EmbeddingEngine` and
    `ToolManager`'s registry are `nonisolated(unsafe)`, each with why; a stream's `yield` takes
    its message as `sending`.
+6. `swift/Config.swift` and `swift/Engine.swift`: optional `ConversationConfig.rawToolsJSON`
+   passes a dynamic OpenAI-style JSON tool-declaration array directly to
+   `litert_lm_conversation_config_set_tools` when supplied (used by `agello serve` for external
+   evaluation harnesses such as `gbench`; `nil` preserves `ToolManager`'s schema generation).
 
 ## Why vendored instead of a remote SPM dependency?
 

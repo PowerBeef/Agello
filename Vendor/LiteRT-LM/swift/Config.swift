@@ -11,6 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
+// optional `rawToolsJSON` on `ConversationConfig` for dynamic runtime tool schemas.
 
 import Foundation
 
@@ -224,6 +227,11 @@ public struct ConversationConfig {
   /// model metadata.
   public let chatTemplate: String?
 
+  /// An optional raw OpenAI-style JSON array of tool declarations passed directly to the native
+  /// conversation config when dynamic runtime schemas are supplied (e.g. evaluation servers).
+  /// When nil, schemas are generated from `tools`.
+  public let rawToolsJSON: String?
+
   /// - Parameters:
   ///   - systemMessage: The system message to be used in the conversation.
   ///   - initialMessages: The initial messages to populate the conversation history.
@@ -248,6 +256,7 @@ public struct ConversationConfig {
   ///   - chatTemplate: An optional Jinja chat template string to override the default template defined
   ///     in the model metadata for this conversation. If nil, the conversation uses the template
   ///     defined in the model metadata.
+  ///   - rawToolsJSON: Optional raw JSON array of tool declarations overriding `tools` schemas.
   public init(
     systemMessage: Message? = nil,
     initialMessages: [Message] = [],
@@ -261,7 +270,8 @@ public struct ConversationConfig {
     enableResponseFormat: Bool = false,
     visualTokenBudget: Int32? = nil,
     enableSpeculativeDecoding: Bool? = nil,
-    chatTemplate: String? = nil
+    chatTemplate: String? = nil,
+    rawToolsJSON: String? = nil
   ) {
     self.systemMessage = systemMessage.flatMap { msg in
       if msg.toString.isEmpty {
@@ -282,6 +292,7 @@ public struct ConversationConfig {
     self.visualTokenBudget = visualTokenBudget
     self.enableSpeculativeDecoding = enableSpeculativeDecoding
     self.chatTemplate = chatTemplate
+    self.rawToolsJSON = rawToolsJSON
   }
 }
 

@@ -78,6 +78,7 @@ agello env                         # this Mac, the runtime build, the models and
 agello ask "prompt" [options]      # one message through the app's engine; the reply on stdout
 agello ask --mock "prompt"         # the scripted engine: no model, no GPU
 agello bench --only todo,email --repeat 3 --warmup --label release --out build/cli/runs/release.jsonl
+agello serve --port 8091 --model-id google/gemma-4-E4B-it
 scripts/cli-report.py build/cli/runs/release.jsonl      # the answer checks, after the measuring
 ```
 
@@ -191,6 +192,32 @@ scripts/cli-report.py build/cli/runs/quality.jsonl
   its 95 % range, per build. They're evidence for the reading (does the code run, did the reply
   end by itself), not the verdict.
 - Search cases vary with the live web: keep them out of comparisons between builds.
+
+## External evaluation harnesses (`agello serve` + `gbench`)
+
+`agello serve` binds a loopback-only (`127.0.0.1`) OpenAI `/v1` server (`GET /health`, `GET /v1/models` with `max_model_len`, `POST /tokenize`, and `POST /v1/chat/completions` supporting streaming SSE, runtime tool schemas via `rawToolsJSON`, multimodal `image_url`/`input_audio` preserving caller part order, `response_format`, `stop` sequences, and `chat_template_kwargs.enable_thinking`) directly in front of Agello's Metal 4 runtime and v2 model. Greedy requests (`temperature <= 0`) use MTP; positive temperature disables MTP so sampling applies.
+
+```sh
+# 1. Start the local server (emulating A19 Pro kernel paths)
+SIM_GPU=Apple_A19_Pro MallocLargeCache=0 \
+  build/cli/release/release/agello serve --port 8091 --model-id google/gemma-4-E4B-it
+
+# 2. Run google-deepmind/gbench's 16-case Golden Set (~17 s)
+GBENCH_SANDBOX=none build/gbench/venv/bin/gbench --golden-only \
+  --remote-endpoint http://127.0.0.1:8091/v1 \
+  --models google/gemma-4-E4B-it --served-model-id google/gemma-4-E4B-it \
+  --tokenizer google/gemma-4-E4B-it --results-dir build/gbench/results/golden
+
+# 3. Run targeted Tier 1 eval slices (e.g. ifeval, chartqa, mrcr up to 64K)
+NLTK_DATA=build/gbench/nltk_data HF_DATASETS_CACHE=build/gbench/hf_datasets \
+  build/gbench/venv/bin/gbench --evals-only \
+  --remote-endpoint http://127.0.0.1:8091/v1 \
+  --models google/gemma-4-E4B-it --served-model-id google/gemma-4-E4B-it \
+  --tokenizer google/gemma-4-E4B-it --evals ifeval chartqa --eval-limit 20 \
+  --eval-concurrency 1 --max-output-tokens 1024 --results-dir build/gbench/results/evals
+```
+
+Keep `build/gbench/hf_datasets` as scratch (`scripts/storage.sh clean` reclaims downloaded HF dataset parquets while keeping the `gbench` checkout and venv intact).
 
 ## The tests, natively
 
