@@ -175,7 +175,7 @@ final class AppState {
   init(useMockEngine: Bool = false, store: ModelStore? = nil) {
     self.store = store ?? ModelStore()
     self.engine =
-      useMockEngine ? MockChatEngine() : LiteRTChatEngine()
+      useMockEngine ? MockChatEngine() : EngineFactory.makeLiveEngine()
     self.knowledge = KnowledgeBase(store: self.store, useHashingEmbedder: useMockEngine)
     let saved = UserDefaults.standard.decoded(InferenceOptions.self, forKey: "inferenceOptions")
     let launched = InferenceOptions.launch(saved: saved, arguments: ProcessInfo.processInfo.arguments)
@@ -228,6 +228,8 @@ final class AppState {
   }
 
   var isMock: Bool { engine is MockChatEngine }
+  var requiresLocalModel: Bool { engine.requiresLocalModelFile }
+  var engineDisplayName: String { engine.engineDisplayName }
 
   /// Stop a running reply (keeping its text) if the app is about to run out
   /// of memory.
@@ -296,8 +298,8 @@ final class AppState {
     if isGenerating || isBenchmarking { return false }
     let spec = store.activeSpec
     let url: URL
-    if isMock {
-      // The scripted engine never reads the file.
+    if !requiresLocalModel {
+      // Scripted or remote-bridge engines do not read a local .litertlm file.
       url = store.localURL(for: spec) ?? FileManager.default.temporaryDirectory
     } else {
       guard store.isDownloaded(spec), let local = store.localURL(for: spec) else {
@@ -360,9 +362,9 @@ final class AppState {
   func scheduleApplyOptions() {
     optionsDirty = true
     applyOptionsTask?.cancel()
-    applyOptionsTask = Task {
+    applyOptionsTask = Task { [weak self] in
       try? await Task.sleep(for: .milliseconds(600))
-      guard !Task.isCancelled else { return }
+      guard !Task.isCancelled, let self else { return }
       await self.applyCurrentOptions()
     }
   }
@@ -385,32 +387,23 @@ final class AppState {
       return
     }
     let newOptions = effectiveOptions
-    if let live = engine as? LiteRTChatEngine {
-      if await live.engineSettingsChanged(for: newOptions) {
-        Log.engine.info("options: engine-level change, full reload")
-        await unloadEngine()
-        _ = await loadIfNeeded()
-      } else {
-        let history = selectedThreadHistory()
-        Log.engine.info("options: conversation-level change, reseed \(history.count) turns")
-        do {
-          resolved = try await live.updateConversationOptions(
-            newOptions, enableTools: enableTools, history: history)
-          appliedSystemPrompt = newOptions.systemPrompt
-          appliedToolSetKey = newOptions.toolSetKey
-          conversationThreadID = selectedThreadID
-          conversationIsEmpty = history.isEmpty
-        } catch {
-          generationError = (error as? ChatError)?.displayMessage ?? error.localizedDescription
-        }
+    if await engine.engineSettingsChanged(for: newOptions) {
+      Log.engine.info("options: engine-level change, full reload")
+      await unloadEngine()
+      _ = await loadIfNeeded()
+    } else {
+      let history = selectedThreadHistory()
+      Log.engine.info("options: conversation-level change, reseed \(history.count) turns")
+      do {
+        resolved = try await engine.updateConversationOptions(
+          newOptions, enableTools: enableTools, history: history)
+        appliedSystemPrompt = newOptions.systemPrompt
+        appliedToolSetKey = newOptions.toolSetKey
+        conversationThreadID = selectedThreadID
+        conversationIsEmpty = history.isEmpty
+      } catch {
+        generationError = (error as? ChatError)?.displayMessage ?? error.localizedDescription
       }
-    } else if let mock = engine as? MockChatEngine {
-      resolved = InferencePlanner.resolve(
-        options: newOptions, model: store.activeModelID,
-        memoryBytes: DeviceProfile.current.physicalMemoryBytes)
-      await mock.applyConversationOptions(newOptions)
-      appliedSystemPrompt = newOptions.systemPrompt
-      appliedToolSetKey = newOptions.toolSetKey
     }
   }
 
@@ -461,15 +454,8 @@ final class AppState {
     if conversationConfigChanged {
       Log.engine.info("conversation config changed: rebuild with \(history.count) turns")
       do {
-        if let live = engine as? LiteRTChatEngine {
-          resolved = try await live.updateConversationOptions(
-            desired, enableTools: enableTools, history: history)
-        } else {
-          if let mock = engine as? MockChatEngine {
-            await mock.applyConversationOptions(desired)
-          }
-          try await engine.reseed(history: history)
-        }
+        resolved = try await engine.updateConversationOptions(
+          desired, enableTools: enableTools, history: history)
       } catch {
         generationError = (error as? ChatError)?.displayMessage ?? error.localizedDescription
         return false

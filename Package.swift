@@ -20,10 +20,13 @@ let package = Package(
     // The module is named Agello, like the app's, so tests can `@testable import Agello`.
     .executableTarget(
       name: "Agello",
-      dependencies: [.product(name: "LiteRTLM", package: "LiteRT-LM")],
+      dependencies: [
+        .product(name: "LiteRTLM", package: "LiteRT-LM"),
+        .product(name: "LiteRTLMTools", package: "LiteRT-LM"),
+      ],
       path: ".",
       exclude: [
-        "Agello.xcodeproj", "AgelloDeviceTests", "AgelloShare", "AgelloTests", "AgelloWidgets",
+        "Agello.xcodeproj", "AgelloDeviceTests", "AgelloShare", "AgelloSim", "AgelloTests", "AgelloWidgets",
         // The UI tests, but for the bench's cases (below).
         "AgelloUITests/AccessibilityAuditUITests.swift", "AgelloUITests/BenchUITests.swift",
         "AgelloUITests/ChatFlowUITests.swift", "AgelloUITests/DeviceFloorUITests.swift",

@@ -195,7 +195,7 @@ scripts/cli-report.py build/cli/runs/quality.jsonl
 
 ## External evaluation harnesses (`agello serve` + `gbench`)
 
-`agello serve` binds a loopback-only (`127.0.0.1`) OpenAI `/v1` server (`GET /health`, `GET /v1/models` with `max_model_len`, `POST /tokenize`, and `POST /v1/chat/completions` supporting streaming SSE, runtime tool schemas via `rawToolsJSON`, multimodal `image_url`/`input_audio` preserving caller part order, `response_format`, `stop` sequences, and `chat_template_kwargs.enable_thinking`) directly in front of Agello's Metal 4 runtime and v2 model. Greedy requests (`temperature <= 0`) use MTP; positive temperature disables MTP so sampling applies.
+`agello serve` binds a loopback-only (`127.0.0.1`) OpenAI `/v1` server (`GET /health`, `GET /v1/models` with `max_model_len`, `POST /tokenize`, `POST /v1/embeddings` on the Mac's ANE `CoreAIEmbedder`, and `POST /v1/chat/completions` supporting true token-by-token SSE streaming, runtime tool schemas via `rawToolsJSON`, multimodal `image_url`/`input_audio` preserving caller part order, `response_format`, `stop` sequences, and `chat_template_kwargs.enable_thinking`) directly in front of Agello's Metal 4 runtime and v2 model. Greedy requests (`temperature <= 0`) use MTP; positive temperature disables MTP so sampling applies.
 
 ```sh
 # 1. Start the local server (emulating A19 Pro kernel paths)
@@ -218,6 +218,18 @@ NLTK_DATA=build/gbench/nltk_data HF_DATASETS_CACHE=build/gbench/hf_datasets \
 ```
 
 Keep `build/gbench/hf_datasets` as scratch (`scripts/storage.sh clean` reclaims downloaded HF dataset parquets while keeping the `gbench` checkout and venv intact).
+
+## iOS Simulator UI & feature bridge (`AgelloSim`)
+
+When the physical iPhone is unavailable, the unshipped `AgelloSim` target (`com.patricedery.agello.sim`, `SUPPORTED_PLATFORMS = iphonesimulator`, `SKIP_INSTALL = YES`) runs Agello's full iOS 27 SwiftUI interface and all 16 Swift tools natively inside the iOS Simulator while proxying inference (`POST /v1/chat/completions` SSE) and ANE embeddings (`POST /v1/embeddings`) to host `agello serve` over `127.0.0.1:8091`.
+
+```sh
+scripts/sim-launch.sh              # boot iPhone 18 Pro Simulator, start agello serve, build, grant perms, launch AgelloSim
+scripts/sim-launch.sh --reset      # clear simulator container for a fresh launch
+scripts/sim-launch.sh --no-build   # relaunch without rebuilding
+```
+
+Use `AgelloSim` to verify answer quality in the real UI (Liquid Glass, Markdown, LaTeX, Think drawer, `ToolConfirmationCard`) and sandboxed iOS features (MapKit with `simctl location` spoofed GPS, EventKit Calendar/Reminders, Contacts, WebSearch, PDF/Files). Hardware speed benchmarks, Metal kernels, jetsam memory envelopes, and App Store screenshots remain physical-iPhone-only. `build/sim/` is tracked as scratch in `scripts/storage.sh`.
 
 ## The tests, natively
 

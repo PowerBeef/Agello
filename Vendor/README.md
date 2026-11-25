@@ -98,7 +98,16 @@ fixes:
 6. `swift/Config.swift` and `swift/Engine.swift`: optional `ConversationConfig.rawToolsJSON`
    passes a dynamic OpenAI-style JSON tool-declaration array directly to
    `litert_lm_conversation_config_set_tools` when supplied (used by `agello serve` for external
-   evaluation harnesses such as `gbench`; `nil` preserves `ToolManager`'s schema generation).
+   evaluation harnesses such as `gbench` and for `AgelloSim`; `nil` preserves `ToolManager`'s
+   schema generation).
+7. `Package.swift`, `swift/tools/`, `swift/LiteRTLMError+Native.swift`, `swift/LiteRTLMExports.swift`,
+   `swift/ConversationStream.swift`, `swift/Conversation.swift`:
+   splits pure-Swift tool/error types (`Tool`, `ToolManager`, `ExperimentalFlags`,
+   `LiteRTLMError`) into a `LiteRTLMTools` library product with no `CLiteRTLM` binary dependency
+   (re-exported by `LiteRTLM` via `@_exported import LiteRTLMTools`), allowing `AgelloSim` to link
+   all 16 Swift tools cleanly on the iOS Simulator without shipping a simulator slice of
+   `CLiteRTLM.xcframework`; also honors `automaticToolCalling == false` in `sendMessageStream` so
+   external clients (`agello serve` SSE) receive `tool_calls` chunks instead of auto-executing them.
 
 ## Why vendored instead of a remote SPM dependency?
 

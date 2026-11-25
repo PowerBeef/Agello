@@ -47,22 +47,19 @@ final class KnowledgeBase {
 
   /// Path to the Core AI Neural Engine EmbeddingGemma 2 bundle when present beside model files.
   nonisolated static func aneBundleURL() -> URL? {
-    guard let dir = try? ModelStore.modelsDirectory() else { return nil }
-    let url = dir.appendingPathComponent(CoreAIEmbedder.bundleDirectoryName, isDirectory: true)
-    return CoreAIEmbedder.isAvailable(at: url) ? url : nil
+    EngineFactory.aneBundleURL()
   }
 
-  /// Whether an embedding model (Core AI ANE bundle or LiteRT-LM fallback) is ready locally.
+  /// Whether an embedding model (Core AI ANE bundle, LiteRT-LM fallback, or Simulator bridge) is ready.
   var hasLocalEmbedder: Bool {
-    useHashingEmbedder || Self.aneBundleURL() != nil
-      || store.isDownloaded(ModelCatalog.embeddingGemma)
+    useHashingEmbedder || EngineFactory.hasLocalEmbedder(store: store)
   }
 
   /// Whether the active embedder uses the Metal GPU (needs cancellation when leaving foreground).
   var usesGPUEmbedder: Bool {
     if let embedder { return embedder.usesGPU }
-    guard !useHashingEmbedder, Self.aneBundleURL() == nil else { return false }
-    return ModelCatalog.embeddingGemma.extractedDirectoryName == nil
+    guard !useHashingEmbedder else { return false }
+    return EngineFactory.usesGPUEmbedderWithoutInstance()
   }
 
   /// The embedder, once its model is on the device; otherwise starts (or
@@ -74,17 +71,8 @@ final class KnowledgeBase {
       embedder = HashingEmbedder()
       return embedder
     }
-    if let aneURL = Self.aneBundleURL() {
-      embedder = CoreAIEmbedder(bundleURL: aneURL)
-      return embedder
-    }
-    let spec = ModelCatalog.embeddingGemma
-    if spec.extractedDirectoryName == nil, store.isDownloaded(spec), let url = store.localURL(for: spec) {
-      embedder = LiteRTEmbedder(modelURL: url)
-      return embedder
-    }
-    store.ensureDownloaded(spec)
-    return nil
+    embedder = EngineFactory.makeLocalEmbedder(store: store)
+    return embedder
   }
 
   /// Release the embedding model's memory (it reloads on next use).

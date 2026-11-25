@@ -87,7 +87,7 @@ struct ContentView: View {
       appState.pruneEmptyThreads()
       appState.knowledge.indexPendingIfAvailable()
       presentOnboarding = OnboardingView.shouldShow(
-        done: onboardingDone, isMock: appState.isMock,
+        done: onboardingDone, isMock: !appState.requiresLocalModel,
         downloaded: appState.store.activeSpecDownloaded)
     }
     .onChange(of: appState.selectedThreadID) { appState.pruneEmptyThreads() }

@@ -29,6 +29,10 @@ let package = Package(
       targets: ["LiteRTLM"]
     ),
     .library(
+      name: "LiteRTLMTools",
+      targets: ["LiteRTLMTools"]
+    ),
+    .library(
       name: "LiteRTLMFoundationModels",
       targets: ["LiteRTLMFoundationModels"]
     ),
@@ -41,14 +45,21 @@ let package = Package(
       url: "https://github.com/PowerBeef/agello-litert-lm/releases/download/agello-one-20261124/CLiteRTLM.xcframework.zip",
       checksum: "336023ee75a69eb03405763f1e3cc0da4e4e902cf825bb36696c88622bf3de7c"
     ),
+    // Pure-Swift tool protocol, schema generator, execution manager, flags, and error types
+    // (zero CLiteRTLM dependency — compiles on iOS Simulator too).
+    .target(
+      name: "LiteRTLMTools",
+      path: "swift/tools"
+    ),
     // The Swift Wrapper Target
     .target(
       name: "LiteRTLM",
-      dependencies: ["CLiteRTLM"],
+      dependencies: ["CLiteRTLM", "LiteRTLMTools"],
       path: "swift",
       exclude: [
         "apple_fm",
         "device_tests",
+        "tools",
         "ModelInfoTests.swift",
         "EngineTests.swift",
         "EmbeddingEngineTests.swift",

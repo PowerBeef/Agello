@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.patricedery.agello.sim.continued.*</string>
+	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Agello uses your Calendar on this iPhone to check your schedule, find free time, and add events you confirm.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Agello uses your Reminders on this iPhone to read your lists and add reminders you confirm.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Agello searches your Contacts locally on this iPhone to look up names, phone numbers, and email addresses when you ask.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.patricedery.agello.sim</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>agello</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

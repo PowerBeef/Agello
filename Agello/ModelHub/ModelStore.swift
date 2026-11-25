@@ -161,7 +161,7 @@ final class ModelStore: NSObject {
   func isDownloaded(_ spec: ModelSpec) -> Bool {
     guard let url = localURL(for: spec) else { return false }
     if spec.extractedDirectoryName != nil {
-      return CoreAIEmbedder.isAvailable(at: url)
+      return EmbeddingBundleLayout.isAvailable(at: url)
     }
     guard let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64
     else { return false }
@@ -675,7 +675,7 @@ extension ModelStore {
             file, fileName: spec.fileName, expectedSize: spec.sizeBytes, expectedSHA256: spec.sha256,
             extractToDirectoryName: spec.extractedDirectoryName,
             validateExtractedDirectory: spec.extractedDirectoryName != nil
-              ? { CoreAIEmbedder.isAvailable(at: $0) } : nil,
+              ? { EmbeddingBundleLayout.isAvailable(at: $0) } : nil,
             in: directory)
         }
         placementError = nil

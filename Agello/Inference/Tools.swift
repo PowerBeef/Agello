@@ -1,5 +1,5 @@
 import Foundation
-import LiteRTLM
+import LiteRTLMTools
 
 /// Boundary sanitization for tool outputs so attacker-controlled strings (CSV headers, file names,
 /// web titles, Maps POIs, echoed expressions) can never inject Gemma 4 control tokens or blow up

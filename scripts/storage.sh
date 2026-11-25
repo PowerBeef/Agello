@@ -74,6 +74,7 @@ for d in "$MAIN"/build/*; do
       kept=$((size - hf_ds))
       row keep "$kept" "build/gbench: local gbench checkout, venv, and eval results" ;;
     phone) row keep "$size" "build/phone: the iPhone comparisons of runtime builds (scripts/phone-bench.sh; delete runs/ once their numbers are recorded)" ;;
+    sim) row scratch "$size" "build/sim: AgelloSim simulator DerivedData and loopback serve logs" "$d" ;;
     device-harness-* | mac-harness-*)
       row scratch "$size" "build/$name: one-off harness results (once their numbers are recorded)" "$d" ;;
     *) other=$((other + ${size:-0})) ;;

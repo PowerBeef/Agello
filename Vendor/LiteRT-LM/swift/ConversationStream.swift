@@ -92,6 +92,8 @@ struct StreamOptions: @unchecked Sendable {
   var responseFormat: ResponseFormat?
   /// Tool rounds the stream may run before it ends with `recurringToolCallLimitExceeded`.
   var maxToolRounds: Int
+  /// When false, `tool_calls` chunks are yielded to the consumer instead of executed automatically.
+  var automaticToolCalling: Bool = true
 }
 
 /// What a stream needs from its conversation; tests record these instead.
@@ -378,10 +380,13 @@ func handleStreamChunk(_ chunk: StreamChunk, id: UInt) {
       else {
         throw LiteRTLMError.conversation(.invalidJson("Invalid JSON chunk"))
       }
-      if let toolCalls = json["tool_calls"] as? [[String: Any]] {
+      let toolCalls = (json["tool_calls"] as? [[String: Any]]) ?? []
+      if context.options.automaticToolCalling, !toolCalls.isEmpty {
         context.addToolCalls(toolCalls)
       }
-      if json["content"] != nil || json["channels"] != nil {
+      if json["content"] != nil || json["channels"] != nil
+        || (!context.options.automaticToolCalling && !toolCalls.isEmpty)
+      {
         context.yield(try Conversation.jsonToMessage(text))
       }
     } catch {

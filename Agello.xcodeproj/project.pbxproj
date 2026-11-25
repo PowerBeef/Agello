@@ -8,10 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		300000000000000000000024 /* LiteRTLM in Frameworks */ = {isa = PBXBuildFile; productRef = 100000000000000000000006 /* LiteRTLM */; };
+		800000000000000000000011 /* LiteRTLMTools in Frameworks */ = {isa = PBXBuildFile; productRef = 800000000000000000000010 /* LiteRTLMTools */; };
 		500000000000000000000003 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 500000000000000000000002 /* Markdown */; };
 		500000000000000000000006 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 500000000000000000000005 /* SwiftMath */; };
 		60000000000000000000000C /* AgelloWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 600000000000000000000001 /* AgelloWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		70000000000000000000000C /* AgelloShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 700000000000000000000001 /* AgelloShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		800000000000000000000013 /* LiteRTLMTools in Frameworks */ = {isa = PBXBuildFile; productRef = 800000000000000000000012 /* LiteRTLMTools */; };
+		800000000000000000000015 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 800000000000000000000014 /* Markdown */; };
+		800000000000000000000017 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 800000000000000000000016 /* SwiftMath */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -79,6 +83,7 @@
 
 /* Begin PBXFileReference section */
 		100000000000000000000016 /* Agello.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Agello.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		800000000000000000000001 /* AgelloSim.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgelloSim.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		100000000000000000000017 /* AgelloTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgelloTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000001 /* AgelloDeviceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgelloDeviceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		400000000000000000000011 /* AgelloUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgelloUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -94,6 +99,33 @@
 				Agello.entitlements,
 			);
 			target = 100000000000000000000002 /* Agello */;
+		};
+		800000000000000000000007 /* Exceptions for "AgelloSim" folder in "AgelloSim" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				AgelloSim.entitlements,
+			);
+			target = 800000000000000000000002 /* AgelloSim */;
+		};
+		800000000000000000000008 /* Exceptions for "Agello" folder in "AgelloSim" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"AppState+Benchmark.swift",
+				Inference/ChatEngine.swift,
+				Knowledge/CoreAIEmbedder.swift,
+				Knowledge/LiteRTEmbedder.swift,
+			);
+			target = 800000000000000000000002 /* AgelloSim */;
+		};
+		80000000000000000000000D /* Exceptions for "AgelloiOS" folder in "AgelloSim" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				Agello.entitlements,
+				Platform/EngineFactory.swift,
+			);
+			target = 800000000000000000000002 /* AgelloSim */;
 		};
 		600000000000000000000007 /* Exceptions for "AgelloWidgets" folder in "AgelloWidgets" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -153,6 +185,7 @@
 			exceptions = (
 				600000000000000000000008 /* Exceptions for "Agello" folder in "AgelloWidgets" target */,
 				700000000000000000000008 /* Exceptions for "Agello" folder in "AgelloShare" target */,
+				800000000000000000000008 /* Exceptions for "Agello" folder in "AgelloSim" target */,
 			);
 			path = Agello;
 			sourceTree = "<group>";
@@ -201,8 +234,17 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				900000000000000000000007 /* Exceptions for "AgelloiOS" folder in "Agello" target */,
+				80000000000000000000000D /* Exceptions for "AgelloiOS" folder in "AgelloSim" target */,
 			);
 			path = AgelloiOS;
+			sourceTree = "<group>";
+		};
+		800000000000000000000006 /* AgelloSim */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				800000000000000000000007 /* Exceptions for "AgelloSim" folder in "AgelloSim" target */,
+			);
+			path = AgelloSim;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -213,8 +255,19 @@
 			buildActionMask = 2147483647;
 			files = (
 				300000000000000000000024 /* LiteRTLM in Frameworks */,
+				800000000000000000000011 /* LiteRTLMTools in Frameworks */,
 				500000000000000000000003 /* Markdown in Frameworks */,
 				500000000000000000000006 /* SwiftMath in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		800000000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				800000000000000000000013 /* LiteRTLMTools in Frameworks */,
+				800000000000000000000015 /* Markdown in Frameworks */,
+				800000000000000000000017 /* SwiftMath in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -261,6 +314,7 @@
 			children = (
 				400000000000000000000041 /* Agello */,
 				900000000000000000000006 /* AgelloiOS */,
+				800000000000000000000006 /* AgelloSim */,
 				400000000000000000000042 /* AgelloTests */,
 				400000000000000000000002 /* AgelloDeviceTests */,
 				400000000000000000000012 /* AgelloUITests */,
@@ -274,6 +328,7 @@
 			isa = PBXGroup;
 			children = (
 				100000000000000000000016 /* Agello.app */,
+				800000000000000000000001 /* AgelloSim.app */,
 				100000000000000000000017 /* AgelloTests.xctest */,
 				400000000000000000000001 /* AgelloDeviceTests.xctest */,
 				400000000000000000000011 /* AgelloUITests.xctest */,
@@ -305,6 +360,7 @@
 			name = Agello;
 			packageProductDependencies = (
 				100000000000000000000006 /* LiteRTLM */,
+				800000000000000000000010 /* LiteRTLMTools */,
 				500000000000000000000002 /* Markdown */,
 				500000000000000000000005 /* SwiftMath */,
 			);
@@ -314,6 +370,33 @@
 			);
 			productName = Agello;
 			productReference = 100000000000000000000016 /* Agello.app */;
+			productType = "com.apple.product-type.application";
+		};
+		800000000000000000000002 /* AgelloSim */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 800000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloSim" */;
+			buildPhases = (
+				800000000000000000000003 /* Sources */,
+				800000000000000000000004 /* Frameworks */,
+				800000000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AgelloSim;
+			packageProductDependencies = (
+				800000000000000000000012 /* LiteRTLMTools */,
+				800000000000000000000014 /* Markdown */,
+				800000000000000000000016 /* SwiftMath */,
+			);
+			fileSystemSynchronizedGroups = (
+				400000000000000000000041 /* Agello */,
+				900000000000000000000006 /* AgelloiOS */,
+				800000000000000000000006 /* AgelloSim */,
+			);
+			productName = AgelloSim;
+			productReference = 800000000000000000000001 /* AgelloSim.app */;
 			productType = "com.apple.product-type.application";
 		};
 		100000000000000000000003 /* AgelloTests */ = {
@@ -450,6 +533,9 @@
 					700000000000000000000002 = {
 						CreatedOnToolsVersion = 27.0;
 					};
+					800000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+					};
 				};
 			};
 			buildConfigurationList = 100000000000000000000018 /* Build configuration list for PBXProject "Agello" */;
@@ -471,6 +557,7 @@
 			projectRoot = "";
 			targets = (
 				100000000000000000000002 /* Agello */,
+				800000000000000000000002 /* AgelloSim */,
 				100000000000000000000003 /* AgelloTests */,
 				400000000000000000000003 /* AgelloDeviceTests */,
 				400000000000000000000013 /* AgelloUITests */,
@@ -482,6 +569,13 @@
 
 /* Begin PBXResourcesBuildPhase section */
 		100000000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		800000000000000000000005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -527,6 +621,13 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		100000000000000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		800000000000000000000003 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -1157,6 +1258,112 @@
 			};
 			name = Bench;
 		};
+		80000000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = AgelloSim/AgelloSim.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGNING_REQUIRED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AgelloSim/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Agello Sim";
+				INFOPLIST_KEY_LSRequiresIPhoneOS = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos and scan documents for the on-device model, and to show it what you see in voice mode.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Agello uses your location only when you ask about places or weather near you, to search Apple Maps and Apple Weather around you. It is not stored or sent anywhere else.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone for voice messages, dictation and voice mode. The on-device model understands your voice; recordings stay on this iPhone.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Agello lets you attach photos for the on-device model to see.";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.agello.sim;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = iphonesimulator;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		80000000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = AgelloSim/AgelloSim.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGNING_REQUIRED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AgelloSim/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Agello Sim";
+				INFOPLIST_KEY_LSRequiresIPhoneOS = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos and scan documents for the on-device model, and to show it what you see in voice mode.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Agello uses your location only when you ask about places or weather near you, to search Apple Maps and Apple Weather around you. It is not stored or sent anywhere else.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone for voice messages, dictation and voice mode. The on-device model understands your voice; recordings stay on this iPhone.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Agello lets you attach photos for the on-device model to see.";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.agello.sim;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = iphonesimulator;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		80000000000000000000000C /* Bench */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = AgelloSim/AgelloSim.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGNING_REQUIRED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AgelloSim/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Agello Sim";
+				INFOPLIST_KEY_LSRequiresIPhoneOS = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Agello uses the camera to take photos and scan documents for the on-device model, and to show it what you see in voice mode.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Agello uses your location only when you ask about places or weather near you, to search Apple Maps and Apple Weather around you. It is not stored or sent anywhere else.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Agello uses the microphone for voice messages, dictation and voice mode. The on-device model understands your voice; recordings stay on this iPhone.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Agello lets you attach photos for the on-device model to see.";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.patricedery.agello.sim;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = iphonesimulator;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) BENCH";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Bench;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1230,6 +1437,16 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		800000000000000000000009 /* Build configuration list for PBXNativeTarget "AgelloSim" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				80000000000000000000000A /* Debug */,
+				80000000000000000000000B /* Release */,
+				80000000000000000000000C /* Bench */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -1270,6 +1487,26 @@
 			productName = Markdown;
 		};
 		500000000000000000000005 /* SwiftMath */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 500000000000000000000004 /* XCRemoteSwiftPackageReference "SwiftMath" */;
+			productName = SwiftMath;
+		};
+		800000000000000000000010 /* LiteRTLMTools */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 100000000000000000000005 /* XCLocalSwiftPackageReference "Vendor/LiteRT-LM" */;
+			productName = LiteRTLMTools;
+		};
+		800000000000000000000012 /* LiteRTLMTools */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 100000000000000000000005 /* XCLocalSwiftPackageReference "Vendor/LiteRT-LM" */;
+			productName = LiteRTLMTools;
+		};
+		800000000000000000000014 /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 500000000000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
+		};
+		800000000000000000000016 /* SwiftMath */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 500000000000000000000004 /* XCRemoteSwiftPackageReference "SwiftMath" */;
 			productName = SwiftMath;

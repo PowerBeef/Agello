@@ -65,7 +65,7 @@ enum ModelCatalog {
     revision: "41026d1cbf50d4825e0b2c91f2cc131f7433f071",
     sha256: "122c2d86657c20aa567fb778801a46e3aec786eec7bbabff618f1c4a531b2ece",
     engineCacheBytes: 180_000_000,
-    extractedDirectoryName: CoreAIEmbedder.bundleDirectoryName
+    extractedDirectoryName: EmbeddingBundleLayout.directoryName
   )
 
   static let all: [ModelSpec] = [e4b, embeddingGemma]

@@ -90,7 +90,7 @@ struct ChatView: View {
     .task(id: thread?.id) {
       if let thread {
         await appState.activate(thread)
-      } else if appState.isMock || appState.store.activeSpecDownloaded {
+      } else if !appState.requiresLocalModel || appState.store.activeSpecDownloaded {
         // Warm the model up while the first message is typed.
         await appState.ensureEngineLoaded()
       }
@@ -112,7 +112,7 @@ struct ChatView: View {
   private var engineBanner: some View {
     switch appState.engineState {
     case .idle:
-      if !appState.isMock, !appState.store.isDownloaded(appState.store.activeSpec) {
+      if appState.requiresLocalModel, !appState.store.isDownloaded(appState.store.activeSpec) {
         InlineBanner(
           symbol: "arrow.down.circle",
           message: String(localized: "Download \(appState.store.activeSpec.displayName) to start chatting."),

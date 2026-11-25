@@ -614,7 +614,8 @@ public final class Conversation: Sendable {
         thinkingConfig: thinkingConfig,
         followUpThinkingConfig: followUpThinkingConfig,
         responseFormat: responseFormat,
-        maxToolRounds: maxToolRounds ?? recurringToolCallLimit
+        maxToolRounds: maxToolRounds ?? recurringToolCallLimit,
+        automaticToolCalling: automaticToolCalling
       )
       let effects = StreamEffects(
         cancelNative: { [weak self] in try? self?.cancel() },
@@ -971,9 +972,9 @@ public final class Conversation: Sendable {
     if let toolCallsArray = jsonObject["tool_calls"] as? [[String: Any]] {
       for item in toolCallsArray {
         if let function = item["function"] as? [String: Any],
-          let name = function["name"] as? String,
-          let args = function["arguments"] as? [String: Any]
+          let name = function["name"] as? String
         {
+          let args = Conversation.toolArguments(function["arguments"]) ?? [:]
           let id = item["id"] as? String ?? ""
           toolCalls.append(ToolCall(name: name, id: id, arguments: args))
         }

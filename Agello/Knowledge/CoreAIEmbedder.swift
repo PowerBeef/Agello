@@ -107,13 +107,13 @@ struct INT4EmbeddingTable: @unchecked Sendable {
 /// Metal GPU completely uncontended so indexing, search, memory ranking, and web reranking run
 /// concurrently with Gemma 4 E4B generation.
 actor CoreAIEmbedder: TextEmbedder {
-  static let bundleDirectoryName = "embeddinggemma-2-text-270m-ane"
+  static let bundleDirectoryName = EmbeddingBundleLayout.directoryName
   static let buckets = [128, 256, 512, 1024]
 
-  nonisolated let dimensions = LiteRTEmbedder.outputSize
+  nonisolated let dimensions = EmbeddingGemmaPrompts.outputSize
   /// Shares the exact vector space (cosine parity >= 0.999 vs FP32 / >= 0.995 vs LiteRT GPU)
   /// so already-indexed SwiftData passages and chats stay valid without re-indexing.
-  nonisolated let identifier = "embeddinggemma-2-text-270m@\(LiteRTEmbedder.outputSize)"
+  nonisolated let identifier = EmbeddingGemmaPrompts.identifier
   nonisolated let relatedThreshold: Float = 0.60
   nonisolated let relatedMargin: Float = 0.07
   nonisolated let usesGPU = false
@@ -148,13 +148,7 @@ actor CoreAIEmbedder: TextEmbedder {
 
   /// Returns `true` when `directory` contains a complete ANE EmbeddingGemma 2 bundle.
   static func isAvailable(at directory: URL) -> Bool {
-    let fm = FileManager.default
-    let model = directory.appendingPathComponent("text_encoder.aimodel/main.mlirb").path
-    let table = directory.appendingPathComponent("embed_tokens.bin").path
-    let tokenizer = directory.appendingPathComponent("tokenizer.model").path
-    return fm.fileExists(atPath: model)
-      && fm.fileExists(atPath: table)
-      && fm.fileExists(atPath: tokenizer)
+    EmbeddingBundleLayout.isAvailable(at: directory)
   }
 
   /// Smallest static ANE bucket >= `tokenCount` (capped at the largest bucket).
@@ -167,7 +161,7 @@ actor CoreAIEmbedder: TextEmbedder {
     vectors.reserveCapacity(documents.count)
     for document in documents {
       try Task.checkCancellation()
-      let prompt = LiteRTEmbedder.documentPrompt(title: document.title, text: document.text)
+      let prompt = EmbeddingGemmaPrompts.documentPrompt(title: document.title, text: document.text)
       vectors.append(try await encode(prompt: prompt))
       await Task.yield()
     }
@@ -179,7 +173,7 @@ actor CoreAIEmbedder: TextEmbedder {
   }
 
   func embed(query: String, task: EmbeddingQueryTask) async throws -> [Float] {
-    try await encode(prompt: LiteRTEmbedder.queryPrompt(query, task: task))
+    try await encode(prompt: EmbeddingGemmaPrompts.queryPrompt(query, task: task))
   }
 
   func unload() async {

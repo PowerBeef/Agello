@@ -3,8 +3,8 @@ import Foundation
 import LiteRTLM
 
 /// Unshipped local-only OpenAI `/v1` HTTP server for running external evaluation harnesses
-/// (such as `gbench --remote-endpoint http://127.0.0.1:PORT/v1`) directly against Agello's
-/// Metal 4 LiteRT-LM runtime and v2 model. Binds strictly to `127.0.0.1`.
+/// (`gbench`) and the iOS Simulator bridge (`AgelloSim`) directly against Agello's Metal 4
+/// LiteRT-LM runtime, v2 model, and ANE CoreAIEmbedder. Binds strictly to `127.0.0.1`.
 enum Serve {
   struct Options: Sendable {
     var port: UInt16 = 8091
@@ -13,6 +13,10 @@ enum Serve {
     var thinkByDefault = false
     var thinkingBudget = DeviceProfile.defaultThinkingBudget
     var allowMTP = true
+  }
+
+  private struct UsageError: Error {
+    let message: String
   }
 
   static func main(_ arguments: inout Arguments, paths: [String: String]) async -> Int32 {
@@ -32,7 +36,8 @@ enum Serve {
 
     let serverEngine: ServeEngine
     do {
-      serverEngine = try await ServeEngine.load(modelURL: modelURL, options: opts)
+      serverEngine = try await ServeEngine.load(
+        modelURL: modelURL, modelsDir: modelsDir, options: opts)
     } catch {
       note("Failed to load engine: \(error)")
       return 1
@@ -45,15 +50,12 @@ enum Serve {
     note(
       "agello serve ready on http://127.0.0.1:\(opts.port)/v1 "
         + "(model=\(modelID), kv=\(serverEngine.allocatedPositions), "
-        + "mtp=\(opts.allowMTP), build=\(EngineCache.runtimeBuildID))"
+        + "mtp=\(opts.allowMTP), embeddings=\(serverEngine.hasEmbedder), "
+        + "build=\(EngineCache.runtimeBuildID))"
     )
 
     await acceptLoop(listenFD: listenFD, engine: serverEngine, modelID: modelID)
     return 0
-  }
-
-  private struct UsageError: Error {
-    let message: String
   }
 
   private static func parseOptions(_ arguments: inout Arguments) throws(UsageError) -> Options {
@@ -163,7 +165,15 @@ enum Serve {
 
     switch (request.method, cleanPath) {
     case ("GET", "/health"), ("GET", "/v1/health"):
-      writeJSON(fd, status: 200, object: ["status": "ok"])
+      writeJSON(
+        fd, status: 200,
+        object: [
+          "status": "ok",
+          "model": modelID,
+          "kv": engine.allocatedPositions,
+          "embeddings": engine.hasEmbedder,
+          "build": EngineCache.runtimeBuildID,
+        ])
     case ("GET", "/v1/models"), ("GET", "/models"):
       writeJSON(
         fd, status: 200,
@@ -183,9 +193,16 @@ enum Serve {
     case ("POST", "/tokenize"), ("POST", "/v1/tokenize"):
       let (status, payload) = await engine.tokenizeEndpoint(requestData: request.body)
       writeRaw(fd, status: status, contentType: "application/json", body: payload)
+    case ("POST", "/v1/embeddings"), ("POST", "/embeddings"):
+      let (status, payload) = await engine.embeddingsEndpoint(requestData: request.body)
+      writeRaw(fd, status: status, contentType: "application/json", body: payload)
     case ("POST", "/v1/chat/completions"), ("POST", "/chat/completions"):
-      let (status, contentType, payload) = await engine.chatCompletion(requestData: request.body)
-      writeRaw(fd, status: status, contentType: contentType, body: payload)
+      if ServeProtocol.wantsStreaming(requestData: request.body) {
+        await engine.streamChatCompletion(requestData: request.body, fd: fd)
+      } else {
+        let (status, contentType, payload) = await engine.chatCompletion(requestData: request.body)
+        writeRaw(fd, status: status, contentType: contentType, body: payload)
+      }
     default:
       writeJSON(
         fd, status: 404,
@@ -279,17 +296,18 @@ enum Serve {
     return out
   }
 
-  private static func writeJSON(_ fd: Int32, status: Int, object: Any) {
+  static func writeJSON(_ fd: Int32, status: Int, object: Any) {
     let data = (try? JSONSerialization.data(withJSONObject: object)) ?? Data("{}".utf8)
     writeRaw(fd, status: status, contentType: "application/json", body: data)
   }
 
-  private static func writeRaw(_ fd: Int32, status: Int, contentType: String, body: Data) {
+  static func writeRaw(_ fd: Int32, status: Int, contentType: String, body: Data) {
     let reason: String
     switch status {
     case 200: reason = "OK"
     case 400: reason = "Bad Request"
     case 404: reason = "Not Found"
+    case 503: reason = "Service Unavailable"
     default: reason = "Internal Server Error"
     }
     let header =
@@ -299,37 +317,68 @@ enum Serve {
       + "Connection: close\r\n\r\n"
     var response = Data(header.utf8)
     response.append(body)
-    response.withUnsafeBytes { rawBuf in
-      guard let base = rawBuf.baseAddress else { return }
+    _ = writeBytes(fd, response)
+  }
+
+  @discardableResult
+  static func writeSSEHeaders(_ fd: Int32) -> Bool {
+    let header =
+      "HTTP/1.1 200 OK\r\n"
+      + "Content-Type: text/event-stream\r\n"
+      + "Cache-Control: no-cache\r\n"
+      + "Connection: close\r\n\r\n"
+    return writeBytes(fd, Data(header.utf8))
+  }
+
+  @discardableResult
+  static func writeSSEObject(_ fd: Int32, _ object: [String: Any]) -> Bool {
+    guard let data = try? JSONSerialization.data(withJSONObject: object),
+      let text = String(data: data, encoding: .utf8)
+    else { return true }
+    return writeBytes(fd, Data("data: \(text)\n\n".utf8))
+  }
+
+  @discardableResult
+  static func writeBytes(_ fd: Int32, _ data: Data) -> Bool {
+    data.withUnsafeBytes { rawBuf in
+      guard let base = rawBuf.baseAddress else { return true }
       var written = 0
-      while written < response.count {
-        let n = Darwin.write(fd, base.advanced(by: written), response.count - written)
-        if n <= 0 { break }
+      while written < data.count {
+        let n = Darwin.write(fd, base.advanced(by: written), data.count - written)
+        if n <= 0 { return false }
         written += n
       }
+      return true
     }
   }
 }
 
-// MARK: - Serialized LiteRT-LM evaluation engine
+// MARK: - Serialized LiteRT-LM evaluation & simulator-bridge engine
 
 private actor ServeEngine {
   private let engine: Engine
   private let options: Serve.Options
   let allocatedPositions: Int
+  let hasEmbedder: Bool
   private let visualTokenBudget: Int32
+  private let embedder: CoreAIEmbedder?
   private var requestCount = 0
 
   private init(
-    engine: Engine, options: Serve.Options, allocatedPositions: Int, visualTokenBudget: Int32
+    engine: Engine, options: Serve.Options, allocatedPositions: Int,
+    visualTokenBudget: Int32, embedder: CoreAIEmbedder?
   ) {
     self.engine = engine
     self.options = options
     self.allocatedPositions = allocatedPositions
     self.visualTokenBudget = visualTokenBudget
+    self.embedder = embedder
+    self.hasEmbedder = embedder != nil
   }
 
-  static func load(modelURL: URL, options: Serve.Options) async throws -> ServeEngine {
+  static func load(
+    modelURL: URL, modelsDir: String, options: Serve.Options
+  ) async throws -> ServeEngine {
     ExperimentalFlags.optIntoExperimentalAPIs()
     ExperimentalFlags.enableBenchmark = false
     ExperimentalFlags.filterChannelContentFromKvCache = true
@@ -360,9 +409,13 @@ private actor ServeEngine {
     let probe = try await engine.createConversation(with: ConversationConfig())
     _ = try await probe.sendMessage(LiteRTLM.Message("Hi"), maxOutputTokens: 1)
 
+    let aneURL = URL(fileURLWithPath: modelsDir)
+      .appendingPathComponent(CoreAIEmbedder.bundleDirectoryName, isDirectory: true)
+    let embedder = CoreAIEmbedder.isAvailable(at: aneURL) ? CoreAIEmbedder(bundleURL: aneURL) : nil
+
     return ServeEngine(
       engine: engine, options: options, allocatedPositions: allocated,
-      visualTokenBudget: visionBudget)
+      visualTokenBudget: visionBudget, embedder: embedder)
   }
 
   func tokenizeEndpoint(requestData: Data) async -> (Int, Data) {
@@ -380,15 +433,34 @@ private actor ServeEngine {
     }
   }
 
+  func embeddingsEndpoint(requestData: Data) async -> (Int, Data) {
+    guard let embedder else {
+      return ServeProtocol.errorResponse(
+        status: 503, message: "EmbeddingGemma ANE bundle not found in models directory.")
+    }
+    return await ServeProtocol.runEmbeddings(embedder: embedder, requestData: requestData)
+  }
+
   func chatCompletion(requestData: Data) async -> (Int, String, Data) {
     requestCount += 1
-    let context = ServeProtocol.ExecutionContext(
+    let context = makeContext()
+    return await ServeProtocol.runCompletion(
+      engine: engine, context: context, requestData: requestData)
+  }
+
+  func streamChatCompletion(requestData: Data, fd: Int32) async {
+    requestCount += 1
+    let context = makeContext()
+    await ServeProtocol.runStreamingCompletion(
+      engine: engine, context: context, requestData: requestData, fd: fd)
+  }
+
+  private func makeContext() -> ServeProtocol.ExecutionContext {
+    ServeProtocol.ExecutionContext(
       options: options,
       allocatedPositions: allocatedPositions,
       visualTokenBudget: visualTokenBudget,
       requestIndex: requestCount
     )
-    return await ServeProtocol.runCompletion(
-      engine: engine, context: context, requestData: requestData)
   }
 }

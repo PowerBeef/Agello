@@ -168,7 +168,7 @@ struct DeveloperSettingsView: View {
     Section {
       LabeledContent("This device", value: DeviceProfile.current.summary)
         .themedRow()
-      LabeledContent("Engine", value: appState.isMock ? "Mock" : "LiteRT-LM")
+      LabeledContent("Engine", value: appState.engineDisplayName)
         .themedRow()
       if let resolved = appState.resolved {
         LabeledContent("Loaded", value: resolvedSummary(resolved))
