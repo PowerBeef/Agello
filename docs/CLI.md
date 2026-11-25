@@ -219,17 +219,18 @@ NLTK_DATA=build/gbench/nltk_data HF_DATASETS_CACHE=build/gbench/hf_datasets \
 
 Keep `build/gbench/hf_datasets` as scratch (`scripts/storage.sh clean` reclaims downloaded HF dataset parquets while keeping the `gbench` checkout and venv intact).
 
-## iOS Simulator UI & feature bridge (`AgelloSim`)
+## iOS Simulator UI, feature & quality bridge (`AgelloSim`)
 
-When the physical iPhone is unavailable, the unshipped `AgelloSim` target (`com.patricedery.agello.sim`, `SUPPORTED_PLATFORMS = iphonesimulator`, `SKIP_INSTALL = YES`) runs Agello's full iOS 27 SwiftUI interface and all 16 Swift tools natively inside the iOS Simulator while proxying inference (`POST /v1/chat/completions` SSE) and ANE embeddings (`POST /v1/embeddings`) to host `agello serve` over `127.0.0.1:8091`.
+The unshipped `AgelloSim` target (`com.patricedery.agello.sim`, `SUPPORTED_PLATFORMS = iphonesimulator`, `SKIP_INSTALL = YES`) is the **primary way** to test Agello's iOS 27 SwiftUI interface, iOS features, and real model output quality inside the shipping app and its 16 Swift tools. It runs the app and all Swift tools natively inside the iOS Simulator while proxying live SSE inference (`POST /v1/chat/completions`) and ANE embeddings (`POST /v1/embeddings`) to host `agello serve` over `127.0.0.1:8091`.
 
 ```sh
-scripts/sim-launch.sh              # boot iPhone 18 Pro Simulator, start agello serve, build, grant perms, launch AgelloSim
+scripts/sim-launch.sh              # boot iPhone 18 Pro Simulator, start agello serve, build, grant perms & spoof GPS, launch AgelloSim
 scripts/sim-launch.sh --reset      # clear simulator container for a fresh launch
 scripts/sim-launch.sh --no-build   # relaunch without rebuilding
+scripts/sim-launch.sh --mock       # launch against MockChatEngine without starting agello serve
 ```
 
-Use `AgelloSim` to verify answer quality in the real UI (Liquid Glass, Markdown, LaTeX, Think drawer, `ToolConfirmationCard`) and sandboxed iOS features (MapKit with `simctl location` spoofed GPS, EventKit Calendar/Reminders, Contacts, WebSearch, PDF/Files). Hardware speed benchmarks, Metal kernels, jetsam memory envelopes, and App Store screenshots remain physical-iPhone-only. `build/sim/` is tracked as scratch in `scripts/storage.sh`.
+Use `AgelloSim` (driven interactively or via `mobilebuildmcp` `ui-automation` + `xcrun simctl openurl <udid> 'agello://ask?q=...'`) to verify answer quality in the real UI (Liquid Glass, Markdown, LaTeX, Think drawer, `ToolConfirmationCard`) and sandboxed iOS features (MapKit with `simctl location` spoofed GPS, EventKit Calendar/Reminders, Contacts, WebSearch, PDF/Files). All benchmarking, hardware test suites (`device-harness.sh`, `phone-bench.sh`), Metal kernels, jetsam memory envelopes, App Store screenshots, and final feature confirmation remain on the physical iPhone. `build/sim/` is tracked as scratch in `scripts/storage.sh`.
 
 ## The tests, natively
 

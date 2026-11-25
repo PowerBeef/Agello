@@ -1,21 +1,39 @@
 ---
 name: agello-device-testing
-description: Run and read Agello's tests on the physical iPhone, or on this Mac running the iPhone app, with scripts/device-harness.sh, and write new tests. Use before running any build or test, when a harness run fails, or when adding or changing tests.
+description: Test Agello's iOS UI, features, and in-app output quality in the iOS Simulator via AgelloSim (scripts/sim-launch.sh + mobilebuildmcp), and run hardware tests and benchmarks on the physical iPhone or Mac with scripts/device-harness.sh and scripts/cli-test.sh. Use before running any build or test, when a run fails, or when adding or changing tests.
 ---
 
-# Agello device testing
+# Agello testing (Simulator, Mac workbench & physical iPhone)
 
-Agello is tested on a physical iPhone, and on this Mac running the iPhone
-app while the phone is away (see "On this Mac"). The simulator has no Metal
-path for LiteRT-LM: never build, test, or take screenshots there.
-`.agents/hooks.json` hard-blocks simulator MCP tools; run builds and tests
-through the harness scripts below, not raw `mobilebuildmcp` tools.
+- **Primary UI, iOS-feature & in-app output quality workbench (`AgelloSim` on iOS Simulator):** Use `scripts/sim-launch.sh` + `mobilebuildmcp` (`ui-automation` + `simulator`) to test the real iOS 27 SwiftUI UI, Liquid Glass, Markdown/LaTeX rendering, Think drawer, `ToolConfirmationCard`, sandboxed iOS features (Maps with `simctl location`, EventKit Calendar/Reminders, Contacts, deep links, Files/PDF), and real Gemma 4 E4B model behavior inside the app with all 16 shipping Swift tools. `AgelloSim` (`com.patricedery.agello.sim`, unshipped) proxies live SSE inference and ANE embeddings over `127.0.0.1:8091` to host `agello serve` (`SIM_GPU=Apple_A19_Pro`).
+- **Physical iPhone (hardware truth & benchmarking):** All benchmarking (`phone-bench.sh`, `bench`), hardware device tests (`scripts/device-harness.sh` — `gate`, `memory`, `soak`, Metal 4 / A19 Pro kernels, on-device ANE `CoreAIEmbedder`, `BGContinuedProcessingTask`, `AVFAudio` / `SpeechAnalyzer`, `WeatherKit`), App Store screenshots, and final feature verification stay on the physical iPhone (`CLiteRTLM.xcframework` has no simulator slice). Run device/CLI suites through the harness scripts below; `.agents/hooks.json` still blocks `axiom_xclog_*`, `asc-shots-pipeline`, and `asc-notarization`.
 
-## Before a run
+## Primary UI, iOS-feature & in-app quality testing (`AgelloSim` Simulator)
+
+```sh
+scripts/sim-launch.sh              # boot iPhone 18 Pro Simulator, start agello serve, build AgelloSim, grant perms & GPS, launch
+scripts/sim-launch.sh --no-build   # fast relaunch without rebuilding
+scripts/sim-launch.sh --reset      # wipe simulator chats/settings for a clean session
+scripts/sim-launch.sh --mock       # launch with --mock-engine (no host server needed)
+```
+
+- **Environment overrides:** `SIM_DEVICE` (default `"iPhone 18 Pro"`), `SIM_PORT` (default `8091`), `SIM_LOCATION` (default `45.5017,-73.5673`, Montreal), `SIM_GPU` (default `Apple_A19_Pro`). Requires `BypassSandbox: true`.
+- **Driving with `mobilebuildmcp`:**
+  1. Enable UI automation once per session: `manage-workflows({ workflowNames: ["ui-automation"], enable: true })`.
+  2. Set defaults: `session_set_defaults({ projectPath: ".../Agello.xcodeproj", scheme: "AgelloSim", simulatorId: "<udid>", simulatorName: "iPhone 18 Pro", bundleId: "com.patricedery.agello.sim", derivedDataPath: ".../build/sim/DerivedData" })`.
+  3. Inspect and drive with `snapshot_ui`, `screenshot` (`returnFormat: "path"` + inspect via `read_file`), `tap`, `batch` (for multiple visible toggles on one screen), `type_text`, and `wait_for_ui` (e.g. wait for `composer.voice` after sending, or `tool.confirm.approve` when testing mutating tools). Note: `snapshot_ui` refs expire quickly — issue `tap`/`batch` promptly after taking a snapshot.
+- **Exact prompts without keyboard autocorrect:** Hardware-key `type_text` goes through the Simulator's keyboard layout/autocorrect (which can mangle LaTeX punctuation or English words under French Canadian keyboards). For exact UTF-8, LaTeX, code, or multilingual prompts, use the app's own deep link:
+  ```sh
+  xcrun simctl openurl <udid> 'agello://ask?q=Find%20three%20coffee%20shops%20near%20me'
+  ```
+  Then refresh `snapshot_ui` and tap `chat.send`.
+- **Inspecting server & Simulator logs:** Host inference/tool-round traffic is logged to `build/sim/serve.log` (PID in `build/sim/serve.pid`); Simulator app logs come from `xcrun simctl spawn <udid> log stream --level debug --predicate 'subsystem == "com.patricedery.agello"'`.
+- **Cleanup when done:** Stop the background server and app cleanly (`kill "$(cat build/sim/serve.pid)" && rm -f build/sim/serve.pid; xcrun simctl terminate <udid> com.patricedery.agello.sim`). `build/sim/` is tracked as scratch in `scripts/storage.sh`.
+
+## Before a physical iPhone run
 
 0. **Ask the user before running tests or benchmarks on the physical iPhone.**
-   Use this M6 Mac mini (`scripts/cli-test.sh`, `PLATFORM=mac scripts/device-harness.sh`)
-   for day-to-day verification, and batch physical iPhone gates after asking the user.
+   Use `AgelloSim` (`scripts/sim-launch.sh`) for iOS UI, features, and in-app output quality, and the Mac workbench (`scripts/cli-test.sh`, `PLATFORM=mac scripts/device-harness.sh`) for fast unit/engine checks; run physical iPhone gates and benchmarks after asking the user.
 1. The iPhone is connected, paired, and **unlocked**, and stays unlocked for
    the whole run. A lock makes Xcode stall ("device is locked") and makes UI
    tests fail with "Timed out while enabling automation mode".
@@ -476,6 +494,7 @@ App logs use subsystem `com.patricedery.agello`, categories `engine`,
 | Name | Effect |
 | --- | --- |
 | `--mock-engine` (or env `AGELLO_MOCK_ENGINE`) | Scripted engine: the whole UI without a model |
+| `--remote-engine <url>` (or env `AGELLO_REMOTE_ENGINE_URL`) | Loopback `agello serve` endpoint for `AgelloSim` (default `http://127.0.0.1:8091/v1`) |
 | `--uitest-reset` | Wipes chats, projects, files, memories and all settings before a UI test (models are kept) |
 | `--uitest-fake-mic` | Fake microphone input (no permission prompt) |
 | `--uitest-sample-file`, `--uitest-sample-report` | Attach sample documents generated in code (`ChatView`) |

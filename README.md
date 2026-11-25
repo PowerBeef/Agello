@@ -136,7 +136,7 @@ Every turn — typed, edited, regenerated, spoken, or shared — enters one pipe
 </tr>
 <tr>
 <td valign="top"><img src="docs/readme/icons/proof.svg" width="40" height="40" alt=""></td>
-<td><b>Proof on real silicon, never a Simulator.</b> <b>573 tests</b> (456 unit, 89 real-model hardware scenarios and probes, 28 real-tap UI and accessibility tests) run across a 25-second M6 <code>SIM_GPU=Apple_A19_Pro</code> CLI workbench, a 200-turn memory soak (<code>+4.95 MB</code>), jetsam ballast envelopes on a 12 GB phone, and physical iPhone 17 Pro gates. Our XCFramework has no simulator slice because the failures that matter only happen on hardware. → <a href="docs/TESTING.md">Testing</a> · <a href="docs/HARNESS.md">Autonomous harness</a></td>
+<td><b>Benchmarked and verified on real silicon.</b> All <b>573 automated tests</b> (456 unit, 89 real-model hardware scenarios and probes, 28 real-tap UI and accessibility tests) and every speed/memory number run on real Apple silicon across a 25-second M6 <code>SIM_GPU=Apple_A19_Pro</code> CLI workbench, a 200-turn memory soak (<code>+4.95 MB</code>), jetsam ballast envelopes on a 12 GB phone, and physical iPhone 17 Pro gates. Our XCFramework ships no simulator slice; for fast UI, iOS-feature, and in-app output-quality iteration, the unshipped <code>AgelloSim</code> target proxies real Metal 4 + ANE inference from host <code>agello serve</code> into the iOS Simulator while executing all 16 Swift tools natively. → <a href="docs/TESTING.md">Testing</a> · <a href="docs/HARNESS.md">Autonomous harness</a></td>
 </tr>
 </table>
 
@@ -152,6 +152,7 @@ Every turn — typed, edited, regenerated, spoken, or shared — enters one pipe
 3. Select the `Agello` scheme and your physical iPhone, and run (**Release** configuration for representative speed, or add `--mock-engine` in scheme launch arguments to explore the UI without downloading models).
 
 ```sh
+scripts/sim-launch.sh                  # iOS Simulator UI, tools & live quality bridge (AgelloSim + agello serve)
 scripts/cli-test.sh unit               # fast Mac CLI unit suite (~25 s, no phone)
 scripts/cli-test.sh security           # 6-vector adversarial prompt-injection gate (~25 s)
 scripts/device-harness.sh gate         # single-build physical iPhone hardware + UI gate

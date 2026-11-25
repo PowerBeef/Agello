@@ -33,7 +33,7 @@ flowchart TB
 | Component | Responsibility |
 | --- | --- |
 | `AppState` | The hub (`+Reply`, `+Tools`, `+Web`, `+Chats`, `+Benchmark`). Runs every engine operation (load, settings change, benchmark, delete, helpers) one at a time; binds the native conversation to the open chat; drives send, regenerate and edit through one generation path; streams replies into SwiftData about ten times a second; manages inline tool confirmations and persists settings. |
-| `LiteRTChatEngine` | The single owner of a LiteRT-LM `Engine` and `Conversation`. Loads on the GPU through a multimodal → text-only ladder, validates each engine, keeps every request inside the KV cache, and runs JSON-constrained helper prompts (with MTP on by default). `MockChatEngine` implements the same `ChatEngineProtocol` with a script, for tests and `--mock-engine`. |
+| `ChatEngineProtocol` & engines | `LiteRTChatEngine` is the single owner of LiteRT-LM `Engine` and `Conversation` (GPU multimodal → text-only load ladder, validation, KV budgeting, MTP JSON-constrained helpers). `RemoteChatEngine` (`AgelloSim/`) implements the same protocol for iOS Simulator UI, feature, and output-quality testing by streaming from host `agello serve` (`127.0.0.1:8091`) while running all 16 Swift tools natively in the Simulator (`RemoteEmbedder` proxies ANE `/v1/embeddings`). `MockChatEngine` implements it with a script for unit tests and `--mock-engine`. Platform `EngineFactory.swift` seams (`AgelloiOS/Platform/`, `AgelloCLI/Sources/Platform/`, `AgelloSim/Platform/`) pick the live engine and embedder with zero `#if targetEnvironment(simulator)` in `Agello/`. |
 | `InferencePlanner`, `ContextBudget` | Pure, tested resolution of options and device memory into KV-cache size, sampler, thinking and visual-token budgets, and speculative decoding; token estimates, token-budgeted history trimming, evicted-turn recall formatting, and reply caps. Decides when a settings change needs an engine rebuild. |
 | `ToolBudget`, tools & security | Offline tools (date/time, calculator, `convert_units`, `search_files`, `read_document_pages`, `search_past_chats`, `query_table_or_json`), automatic `web_search`, and opt-in native iOS personal tools (`EventKit` Calendar & Reminders, `Contacts`, `MapKit` Places & ETA). Parallel read-only tool dispatch (`Tool.isReadOnly`), post-tool Think budgets (`ToolBudget.Plan.followUpThinkingBudget` clamped inside `followUpCap`), `<untrusted_data>` spotlighting & memory quarantine (`UntrustedContext.wrapFitted`), and fail-closed, request-ID-matched confirmation cards (`ToolConfirmationGate`, `ToolConfirmationCard` in both `ChatView` and `VoiceModeView`) for every mutating tool. |
 | `LanguageSupport` | Pure, zero-latency multilingual normalization across 13 languages (EN/FR/ES/DE/IT/PT/NL/PL/RU/AR/JA/ZH/KO) for current-location detection, European + CJK proximity place splitting, weather/store-hours noise stripping, MapKit transport modes, US + European localized numbers, and comparative follow-ups. |
@@ -98,8 +98,10 @@ Agello/
 ├── Voice/              voice mode: capture, speech, turn detection, camera
 ├── Views/              chat, drawer, composer, settings, projects, onboarding; Shell/: the shell's model and routing
 └── Support/            the design system (Theme/), image preparation, diagnostics
-AgelloiOS/             the iPhone app only: app entry, the drawer shell, camera and scanner, background work, Info.plist; Platform/, one file per seam
+AgelloiOS/             the shipped iPhone app: app entry, the drawer shell, camera and scanner, background work, Info.plist; Platform/, one file per seam
+AgelloSim/             unshipped iOS Simulator target (`SKIP_INSTALL = YES`): RemoteChatEngine/Client/Embedder loopback bridge to host `agello serve` + Simulator `EngineFactory`
+AgelloCLI/             unshipped macOS SwiftPM developer CLI (`agello ask`, `bench`, `serve`) + macOS `Platform/` seams
 AgelloWidgets/         Home/Lock Screen widgets and Control Center controls
 AgelloShare/           share extension: "Ask Agello"
-Vendor/LiteRT-LM/       LiteRT-LM Swift package (our runtime release, iPhone and Mac)
+Vendor/LiteRT-LM/       LiteRT-LM Swift package (`LiteRTLM` + pure-Swift `LiteRTLMTools`; our runtime release, iPhone and Mac)
 ```

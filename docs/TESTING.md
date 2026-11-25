@@ -1,6 +1,9 @@
 # Testing
 
-Agello is tested on a physical iPhone, and on an Apple silicon Mac running the iPhone app. The simulator isn't used: our runtime has no simulator build, and the failures that matter (native heap corruption, GPU precision, memory pressure, background termination) only show up on real hardware.
+Agello uses a clear split between fast in-app Simulator testing and physical-hardware verification:
+
+- **iOS Simulator (`AgelloSim` + host `agello serve`):** Primary way to test iOS app features, UI presentation (Liquid Glass, Markdown/LaTeX, Think drawer, `ToolConfirmationCard`, deep links), and real model output quality inside the shipping iOS app and its 16 Swift tools (MapKit with spoofed GPS, EventKit Calendar/Reminders, Contacts, WebSearch, Files/PDF).
+- **Physical iPhone (and Mac Metal CLI):** Source of truth for **all benchmarking, hardware test suites, and final feature verification on real silicon**. Our `CLiteRTLM.xcframework` has no simulator slice, and hardware failures (native heap corruption, Metal GPU precision, jetsam memory pressure, background GPU termination, ANE/audio hardware) only show up on real silicon.
 
 ## The suites
 
@@ -38,6 +41,19 @@ ONLY=AgelloTests/AppStateTests scripts/device-harness.sh unit   # part of a suit
 ```
 
 One run goes at a time on a machine: a second start exits with 3 while the first holds `build/.harness.lock`. An iPhone run starts with a preflight (the phone reachable and unlocked, iPhone Mirroring closed, 10 GB free on this Mac) and exits with 4 and the one thing to fix; [Results](#results) lists every exit code. The script keeps the Mac awake until it ends.
+
+### On the iOS Simulator (`AgelloSim` + `agello serve`)
+
+`AgelloSim` (`com.patricedery.agello.sim`, `SUPPORTED_PLATFORMS = iphonesimulator`, `SKIP_INSTALL = YES`) is the **primary workflow** for testing iOS app features, UI layout/rendering, and end-to-end model output quality from inside the app with the exact system prompt and all 16 shipping Swift tools. It runs the full iOS 27 SwiftUI app, SwiftData store, and native Simulator frameworks (MapKit, EventKit Calendar & Reminders, Contacts, PDFKit/Vision, WebSearch, `ToolConfirmationCard`) locally in the Simulator while proxying token-by-token SSE inference (`POST /v1/chat/completions`) and ANE embeddings (`POST /v1/embeddings`) over `127.0.0.1:8091` to host `agello serve` (`SIM_GPU=Apple_A19_Pro`, Gemma 4 E4B v2 64K + Core AI ANE EmbeddingGemma 2).
+
+```sh
+scripts/sim-launch.sh              # boot iPhone 18 Pro Simulator, start agello serve, build, grant perms & spoof GPS, launch AgelloSim
+scripts/sim-launch.sh --no-build   # fast relaunch without rebuilding
+scripts/sim-launch.sh --reset      # wipe simulator chats and settings for a fresh run
+scripts/sim-launch.sh --mock       # launch against the scripted MockChatEngine (no server)
+```
+
+`SIM_DEVICE`, `SIM_PORT`, `SIM_LOCATION` (default `45.5017,-73.5673` for Maps testing), and `SIM_GPU` override defaults. For scripted UI driving, use `mobilebuildmcp` (`ui-automation` + `simulator` workflows) alongside `xcrun simctl openurl <udid> 'agello://ask?q=...'` to send exact UTF-8/LaTeX prompts cleanly. All benchmarking, hardware test suites, jetsam envelopes, App Store screenshots, and final feature verification remain on the physical iPhone.
 
 ### On a Mac
 

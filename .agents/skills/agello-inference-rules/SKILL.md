@@ -7,7 +7,9 @@ description: Rules that keep LiteRT-LM from crashing or misbehaving in Agello. R
 
 Each rule below comes from a failure reproduced on device. Breaking one
 usually crashes the app (native heap corruption) or silently corrupts output,
-and the simulator can't catch any of them. The runtime mechanisms behind them
+and the iOS Simulator can't catch native Metal/jetsam bugs (`AgelloSim` runs
+the real iOS UI and tools against host `agello serve` for feature and output-quality
+testing, not on-iPhone Metal memory envelopes). The runtime mechanisms behind them
 are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
 `docs/LITERT-LM.md`).
 
@@ -312,6 +314,9 @@ speed, token budget, or output quality:
 
 ## Verify
 
-Engine changes need `scripts/device-harness.sh inference` (plus `files` or
-`web` when retrieval is involved) on the iPhone. Unit tests run the scripted
-`MockChatEngine` and don't exercise LiteRT-LM.
+Verify prompt/tool behavior and UI presentation in `AgelloSim`
+(`scripts/sim-launch.sh`) and fast Mac CLI scenarios (`scripts/cli-test.sh`);
+confirm engine/memory/runtime changes and all benchmarks on the physical iPhone
+(`scripts/device-harness.sh inference`, plus `files`, `web`, or `memory` as
+applicable). Unit tests run the scripted `MockChatEngine` and don't exercise
+LiteRT-LM.
