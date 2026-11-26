@@ -352,8 +352,8 @@ def _pulse_bars(x: float, y: float, width: float, height: float, *, bars: int, g
 
 TAGLINE = ("Your own AI assistant,", "entirely on your iPhone.")
 HERO_COPY = (
-    "Chat, reason, read long PDFs, search the web, take actions, and talk hands-free with Gemma 4 "
-    "— right on your Apple Silicon, with no account and no cloud."
+    "Chat, reason, read documents, search the web, and talk hands-free with Gemma 4 "
+    "on your iPhone's own chip. No account, no subscription, no cloud."
 )
 
 
