@@ -3,8 +3,9 @@ import LiteRTLMTools
 
 /// `ChatEngineProtocol` actor for `AgelloSim` (iOS Simulator).
 /// Streams real Gemma 4 E4B Metal 4 replies from `agello serve` (`127.0.0.1`) while executing
-/// all 16 real Swift tools (EventKit Calendar/Reminders, Contacts, MapKit, WebSearch, Files,
-/// Calculator, Units, CSV/JSON) and `ToolConfirmationGate` natively inside the iOS Simulator.
+/// all 21 real Swift tools (EventKit Calendar/Reminders, Contacts/Messages, MapKit, WeatherKit,
+/// AlarmKit, Photos OCR, Shortcuts, WebSearch, Files, Calculator, Units, CSV/JSON) and
+/// `ToolConfirmationGate` natively inside the iOS Simulator.
 actor RemoteChatEngine: ChatEngineProtocol {
   nonisolated let requiresLocalModelFile = false
   nonisolated let engineDisplayName = "Agello Serve (127.0.0.1)"

@@ -47,7 +47,7 @@ final class Session {
   /// The settings a launch reads: cleared, so each run starts as a fresh install.
   private static let defaultsKeys = [
     "inferenceOptions", "enableTools", "selectedThreadID", "benchmarkReport", "memoryEnabled",
-    "personalization", "webSearch",
+    "personalization", "webSearch", "personalTools",
   ]
 
   init(_ settings: Settings) throws {
@@ -67,6 +67,7 @@ final class Session {
     appState.options = options
     appState.enableTools = settings.tools
     appState.webSettings = WebSearchSettings()
+    appState.personalTools = PersonalToolsSettings()
   }
 
   /// Loads the model (the scripted engine needs none). False with the reason in `engineState`.

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Boot an iOS Simulator, grant sandboxed Calendar/Reminders/Contacts/Location permissions,
+# Boot an iOS Simulator, grant sandboxed Calendar/Reminders/Contacts/Photos/Location permissions,
 # spoof GPS coordinates for Maps testing, ensure `agello serve` is running on 127.0.0.1,
 # build `AgelloSim`, install it, and launch it.
 #
@@ -9,14 +9,13 @@
 #   SIM_DEVICE    Simulator name or UDID (default: "iPhone 18 Pro")
 #   SIM_PORT      agello serve loopback port (default: 8091)
 #   SIM_LOCATION  lat,lon for Maps "near me" testing (default: 45.5017,-73.5673, Montreal)
-#   SIM_GPU       Metal GPU family emulation for agello serve (default: Apple_A19_Pro)
+#   SIM_GPU       Metal GPU family emulation for agello serve (default: Apple_A19_Pro; native/off for native)
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SIM_DEVICE="${SIM_DEVICE:-iPhone 18 Pro}"
 SIM_PORT="${SIM_PORT:-8091}"
 SIM_LOCATION="${SIM_LOCATION:-45.5017,-73.5673}"
-SIM_GPU="${SIM_GPU:-Apple_A19_Pro}"
 BUNDLE_ID="com.patricedery.agello.sim"
 RESET=0
 BUILD=1
@@ -69,10 +68,26 @@ if [ "$START_SERVE" -eq 1 ]; then
       swift build --package-path "$ROOT" -c release --scratch-path "$ROOT/build/cli/release"
     fi
     mkdir -p "$ROOT/build/sim"
-    echo "Starting agello serve on 127.0.0.1:$SIM_PORT (SIM_GPU=$SIM_GPU)..."
-    nohup env SIM_GPU="$SIM_GPU" MallocLargeCache=0 "$BIN" serve \
-      --port "$SIM_PORT" --model-id google/gemma-4-E4B-it \
-      >"$ROOT/build/sim/serve.log" 2>&1 </dev/null &
+    # Translate SIM_GPU to AGELLO_SIMULATE_APPLE_GPU (matching cli-test.sh / cli-bench.sh).
+    if [ -z "${AGELLO_SIMULATE_APPLE_GPU+x}" ]; then
+      SIM_GPU="${SIM_GPU:-Apple_A19_Pro}"
+      case "$SIM_GPU" in
+        native | off | none | "") unset AGELLO_SIMULATE_APPLE_GPU ;;
+        *) export AGELLO_SIMULATE_APPLE_GPU="$SIM_GPU" ;;
+      esac
+    elif [ -z "$AGELLO_SIMULATE_APPLE_GPU" ]; then
+      unset AGELLO_SIMULATE_APPLE_GPU
+    fi
+    echo "Starting agello serve on 127.0.0.1:$SIM_PORT (GPU profile: ${AGELLO_SIMULATE_APPLE_GPU:-native})..."
+    if [ -n "${AGELLO_SIMULATE_APPLE_GPU:-}" ]; then
+      nohup env AGELLO_SIMULATE_APPLE_GPU="$AGELLO_SIMULATE_APPLE_GPU" MallocLargeCache=0 "$BIN" serve \
+        --port "$SIM_PORT" --model-id google/gemma-4-E4B-it \
+        >"$ROOT/build/sim/serve.log" 2>&1 </dev/null &
+    else
+      nohup env MallocLargeCache=0 "$BIN" serve \
+        --port "$SIM_PORT" --model-id google/gemma-4-E4B-it \
+        >"$ROOT/build/sim/serve.log" 2>&1 </dev/null &
+    fi
     echo $! >"$ROOT/build/sim/serve.pid"
     ready=0
     for _ in $(seq 1 60); do

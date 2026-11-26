@@ -112,9 +112,10 @@ enum ToolBudget {
   /// Split `room` (tokens) for one reply. Tool rounds run inside LiteRT-LM, so whenever any tool
   /// is registered (including `web_search` alone) the room is split so every tool result plus its
   /// follow-up generation fits strictly inside `room`:
-  /// - Smaller rooms (`< 16,384` tokens): up to 2 tool calls, an eighth per result.
-  /// - Large rooms (`>= 16,384` tokens, e.g. 64K context): up to 4 tool calls, a sixteenth per
-  ///   result (still 1,000–4,000 tokens per result), enabling multi-step Think + parallel research.
+  /// - Smaller rooms (`< 16,384` tokens): up to 2 tool calls, an eighth per result (`room / 8`).
+  /// - Medium rooms (`16,384..<32,768` tokens): up to 4 tool calls, a sixteenth per result (`room / 16`).
+  /// - Large rooms (`>= 32,768` tokens, e.g. 64K context): up to 5 tool calls, a twentieth per
+  ///   result (`room / 20`), enabling multi-step Think + parallel research and action chains.
   /// Without tools the reply gets the whole room. `maxOutputTokens` caps every round; the reasoning
   /// budget always leaves an answer room.
   static func plan(

@@ -52,10 +52,12 @@ final class DeviceHarness {
   /// Web search as a fresh install has it (allowed, not automatic): the
   /// phone's own saved settings must not decide whether scenarios search.
   let baselineWeb = WebSearchSettings()
+  /// Opt-in personal tools as a fresh install has them (all off).
+  let baselinePersonalTools = PersonalToolsSettings()
 
   private static let defaultsKeys = [
     "inferenceOptions", "enableTools", "selectedThreadID", "benchmarkReport", "memoryEnabled",
-    "personalization", "webSearch",
+    "personalization", "webSearch", "personalTools",
   ]
   private var savedDefaults: [String: Any] = [:]
   private static let snapshotKey = "harnessSettingsSnapshot"
@@ -83,6 +85,7 @@ final class DeviceHarness {
     appState.options = baselineOptions
     appState.enableTools = true
     appState.webSettings = baselineWeb
+    appState.personalTools = baselinePersonalTools
     // Long downloads and generations must not be interrupted by auto-lock (the harness script
     // keeps the Mac that drives the run awake with caffeinate).
     #if canImport(UIKit)
@@ -180,10 +183,12 @@ final class DeviceHarness {
     guard
       appState.options != baselineOptions || !appState.enableTools
         || appState.webSettings != baselineWeb
+        || appState.personalTools != baselinePersonalTools
     else { return }
     appState.options = baselineOptions
     appState.enableTools = true
     appState.webSettings = baselineWeb
+    appState.personalTools = baselinePersonalTools
     await appState.applyCurrentOptions()
   }
 

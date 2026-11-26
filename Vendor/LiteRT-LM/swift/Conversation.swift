@@ -13,15 +13,15 @@
 // limitations under the License.
 //
 // Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
-// a tool call that fails is answered with an error response the model can
-// read, instead of throwing and ending the turn (see handleToolCalls); a
-// stream holds its conversation weakly, so the last reference is never
-// released inside LiteRT-LM's callback, where deleting the conversation
-// deadlocked (see StreamContext); and streams are found by ID instead of a
-// retained pointer, end once however many final chunks LiteRT-LM sends,
-// stop their native work when cancelled (between tool rounds too), and cap
-// their tool rounds (see ConversationStream.swift); the native handle is
-// declared for Swift 6 language mode.
+// failed tool calls return an error response the model can read instead of ending
+// the turn; read-only rounds run concurrently via withThrowingTaskGroup and
+// multi-call mutating rounds support ToolManager.BatchConfirmHandler with 1-to-1
+// skipped_by_user parity (handleToolCalls); streams hold their conversation weakly
+// (deadlock fix), are indexed by ID, end once, stop native/tool work on cancel via
+// sendGateLock and StreamTable.activeToolRounds, respect automaticToolCalling == false,
+// propagate followUpThinkingConfig and extraContext across rounds, cap tool rounds,
+// and expose waitUntilDone() (ConversationStream.swift); JSON payloads validate via
+// safeJSONData; the native handle is declared for Swift 6 language mode.
 
 import Foundation
 import OSLog

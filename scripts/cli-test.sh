@@ -52,7 +52,7 @@ case "$SUITE" in
     export HARNESS_RESEARCH_PROBES=1
     ;;
   calibrate) bundle=AgelloDeviceTests; classes="CalibrationScenarioTests"; export HARNESS_CALIBRATE=1 ;;
-  *) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
+  *) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
 [ $# -gt 0 ] && classes="$*"
 

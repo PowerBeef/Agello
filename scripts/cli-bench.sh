@@ -28,10 +28,10 @@
 #      EXTRA_ROUNDS (the most rounds added to get them, default 3).
 #      ARMENV_<name>: environment assignments for that arm's process only, such as
 #      ARMENV_long="AGELLO_VERIFY8_ROUNDS=1" (two arms of one build that differ by a switch).
-#      ARMOPTS_<name>: options for that arm's agello bench only, such as another models folder
-#      (for an arm w128k=release, the file opened to 128K: ARMOPTS_w128k="--models
-#      $HOME/Models/agello/lab/w128k --cache …"; paths without spaces). The runtime reads that
-#      file's window itself since fork cc97925b, so it needs no AGELLO_EXPORT_WINDOW.
+#      ARMOPTS_<name>: options for that arm's agello bench only, such as a lab model folder or
+#      KV override (e.g. ARMOPTS_lab="--models $HOME/Models/agello/lab/v2 --cache …" or
+#      ARMOPTS_kv16="--kv 16384"; paths without spaces). The runtime reads each model's export
+#      window automatically.
 #
 # One measuring run at a time on this Mac: it takes the harness lock (exit 3 while an iPhone
 # run or another of these holds it) and keeps the Mac awake. Builds happen before any

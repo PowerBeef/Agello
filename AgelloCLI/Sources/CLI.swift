@@ -10,7 +10,7 @@ struct AgelloCommand {
       agello env                      this Mac, the runtime build, the models and folders in use
       agello ask "prompt" [options]   one message through the app's engine; the reply on stdout
       agello bench [options]          the iPhone bench's cases through the app's engine, one record per reply
-      agello serve [options]          local OpenAI /v1 server (127.0.0.1) for external evals (e.g. gbench)
+      agello serve [options]          local OpenAI /v1 + /v1/embeddings server (127.0.0.1) for AgelloSim and evals (gbench)
 
     Options for ask:
       --mock                 the scripted engine: no model, no GPU
@@ -37,13 +37,14 @@ struct AgelloCommand {
                              traces go beside it, in FILE.traces/
       --telemetry 0-4        the runtime's telemetry level (3 also writes each reply's event trace)
       --samples N            after each case, N more replies to its first message, sampled as
-                             Regenerate does (ids end in ~sampled); --seed S sets the first seed
+                             Regenerate does (ids end in ~sampled)
+      --seed S               first sampling seed when --samples N is set
       --timeline-interval S  how often the engine's totals are sampled during a reply (default 1)
       --settle S             the pause before each turn, so the Mac's state is read at rest (default 1)
       --timeout SECONDS      per turn, instead of each case's own
       --no-helpers           skip the title and memory helpers after each reply
 
-    Options for serve (local-only 127.0.0.1 OpenAI /v1 server):
+    Options for serve (local-only 127.0.0.1 OpenAI /v1 + ANE /v1/embeddings server):
       --port PORT            TCP port to bind on 127.0.0.1 (default 8091)
       --model-id ID          model id reported by /v1/models (default google/gemma-4-E4B-it)
       --kv N                 context window in tokens (default 65536, capped to the model's export window)

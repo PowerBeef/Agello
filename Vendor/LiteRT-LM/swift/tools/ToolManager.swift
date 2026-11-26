@@ -13,11 +13,13 @@
 // limitations under the License.
 //
 // Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
-// the tool registry declared for Swift 6 language mode, and tool results/arguments
-// validated for JSONSerialization (non-finite floats stringified before encoding).
+// the tool registry declared for Swift 6 language mode; read-only tool inspection
+// (`isReadOnly`), schema-aware scalar argument coercion (`coerceArgument`),
+// JSONSerialization validation (`normalizeResult` stringifying non-finite floats),
+// and NSLock-backed grouped batch confirmation (`PendingToolInvocation`,
+// `BatchConfirmHandler`).
 
 import Foundation
-import Synchronization
 
 /// A pre-decoded mutating tool invocation queued for grouped pre-execution confirmation.
 public struct PendingToolInvocation: Sendable {
@@ -40,15 +42,33 @@ public final class ToolManager: Sendable {
   /// back to per-tool confirmation.
   public typealias BatchConfirmHandler = @Sendable ([PendingToolInvocation]) async -> Set<Int>?
 
-  private static let batchConfirmLock = Mutex<BatchConfirmHandler?>(nil)
+  /// Holds the optional batch confirmation handler behind an `NSLock`. A `Mutex` in a static
+  /// property crashed optimized builds (fork `82b05ea1`), so we use a locked reference box.
+  private final class BatchConfirmStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handler: BatchConfirmHandler?
+
+    func set(_ handler: BatchConfirmHandler?) {
+      lock.lock()
+      defer { lock.unlock() }
+      self.handler = handler
+    }
+
+    func get() -> BatchConfirmHandler? {
+      lock.lock()
+      defer { lock.unlock() }
+      return handler
+    }
+  }
+
+  private static let batchConfirmStore = BatchConfirmStore()
 
   public static func setBatchConfirmHandler(_ handler: BatchConfirmHandler?) {
-    batchConfirmLock.withLock { $0 = handler }
+    batchConfirmStore.set(handler)
   }
 
   public static func confirmBatch(_ calls: [PendingToolInvocation]) async -> Set<Int>? {
-    let handler = batchConfirmLock.withLock { $0 }
-    guard let handler else { return nil }
+    guard let handler = batchConfirmStore.get() else { return nil }
     return await handler(calls)
   }
 

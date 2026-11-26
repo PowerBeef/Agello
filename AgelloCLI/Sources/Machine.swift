@@ -31,11 +31,22 @@ enum Machine {
 
   /// `agello env`: the machine, the folders in use, the models found, the limit simulated.
   static func environment(paths: [String: String]) -> [String: Any] {
+    let modelsRoot = URL(fileURLWithPath: paths["models"] ?? "", isDirectory: true)
     var models: [String: Any] = [:]
     for spec in ModelCatalog.all {
-      let path = (paths["models"] ?? "") + "/" + spec.fileName
-      let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int64) ?? nil
-      models[spec.fileName] = size == spec.sizeBytes ? "ready" : (size == nil ? "missing" : "wrong size")
+      if let directoryName = spec.extractedDirectoryName {
+        let dirURL = modelsRoot.appendingPathComponent(directoryName, isDirectory: true)
+        if EmbeddingBundleLayout.isAvailable(at: dirURL) {
+          models[directoryName] = "ready"
+        } else {
+          let exists = FileManager.default.fileExists(atPath: dirURL.path)
+          models[directoryName] = exists ? "incomplete" : "missing"
+        }
+      } else {
+        let path = modelsRoot.appendingPathComponent(spec.fileName).path
+        let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int64) ?? nil
+        models[spec.fileName] = size == spec.sizeBytes ? "ready" : (size == nil ? "missing" : "wrong size")
+      }
     }
     return [
       "machine": record, "paths": paths, "models": models,

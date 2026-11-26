@@ -14,9 +14,9 @@
 		<true/>
 	</dict>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Agello uses your Calendar on this iPhone to check your schedule, find free time, and add events you confirm.</string>
+	<string>Agello uses your Calendar on this iPhone to read your schedule, find free time, and create, update, or delete events you confirm.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
-	<string>Agello uses your Reminders on this iPhone to read your lists and add reminders you confirm.</string>
+	<string>Agello uses your Reminders on this iPhone to read your lists and create, update, complete, or delete reminders you confirm.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Agello searches your Contacts locally on this iPhone to look up names, phone numbers, and email addresses when you ask.</string>
 	<key>NSAlarmKitUsageDescription</key>

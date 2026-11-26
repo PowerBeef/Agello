@@ -55,7 +55,6 @@ list() {
 
 # The repository's build folder: the default harness outputs stay, one-off OUT folders go once
 # their numbers are recorded.
-other=0
 repo_build="$(kb "$MAIN/build")"
 for d in "$MAIN"/build/*; do
   [ -d "$d" ] || continue
@@ -63,7 +62,34 @@ for d in "$MAIN"/build/*; do
   size="$(kb "$d")"
   case "$name" in
     device-harness | mac-harness) row keep "$size" "build/$name: the latest harness results" ;;
-    cli) row keep "$size" "build/cli: the Mac command line's builds, one per runtime in use (about 0.3 GB each; test/ is the tests' debug build), its runs and traces (delete runs/ once their numbers are recorded)" ;;
+    cli)
+      cli_sub=0
+      for c in "$d"/*; do
+        [ -d "$c" ] || continue
+        cname="$(basename "$c")"
+        csize="$(kb "$c")"
+        case "$cname" in
+          release | test) ;;
+          test-home)
+            cli_sub=$((cli_sub + ${csize:-0}))
+            row scratch "$csize" "build/cli/test-home: sandboxed HOME for cli-test.sh (recreated on demand)" "$c" ;;
+          traces)
+            cli_sub=$((cli_sub + ${csize:-0}))
+            row scratch "$csize" "build/cli/traces: standalone agello ask reply traces" "$c" ;;
+          runs)
+            cli_sub=$((cli_sub + ${csize:-0}))
+            row review "$csize" "build/cli/runs: recorded cli-bench.sh runs (delete once their numbers are recorded)" ;;
+          arms)
+            cli_sub=$((cli_sub + ${csize:-0}))
+            row review "$csize" "build/cli/arms: saved comparison arm checkouts" ;;
+          *)
+            cli_sub=$((cli_sub + ${csize:-0}))
+            row scratch "$csize" "build/cli/$cname: comparison arm SwiftPM build cache (rebuilds on demand)" "$c" ;;
+        esac
+      done
+      cli_kept=$((size - cli_sub))
+      [ "$cli_kept" -lt 0 ] && cli_kept=0
+      row keep "$cli_kept" "build/cli: Mac CLI release and test builds (plus runtime.log)" ;;
     bench-venv) row keep "$size" "build/bench-venv: pytest for the bench's checks (bench-report.py rebuilds it when missing)" ;;
     gbench)
       hf_ds=0
@@ -72,15 +98,43 @@ for d in "$MAIN"/build/*; do
         row scratch "$hf_ds" "build/gbench/hf_datasets: cached HuggingFace eval datasets (re-downloaded on demand)" "$d/hf_datasets"
       fi
       kept=$((size - hf_ds))
+      [ "$kept" -lt 0 ] && kept=0
       row keep "$kept" "build/gbench: local gbench checkout, venv, and eval results" ;;
-    phone) row keep "$size" "build/phone: the iPhone comparisons of runtime builds (scripts/phone-bench.sh; delete runs/ once their numbers are recorded)" ;;
+    phone)
+      phone_runs=0
+      if [ -d "$d/runs" ]; then
+        phone_runs="$(kb "$d/runs")"
+        row review "$phone_runs" "build/phone/runs: recorded phone-bench.sh runs (delete once their numbers are recorded)"
+      fi
+      kept=$((size - phone_runs))
+      [ "$kept" -lt 0 ] && kept=0
+      row keep "$kept" "build/phone: phone-bench.sh state" ;;
     sim) row scratch "$size" "build/sim: AgelloSim simulator DerivedData and loopback serve logs" "$d" ;;
+    playwright-mcp) row scratch "$size" "build/playwright-mcp: old Playwright browser scratch" "$d" ;;
+    screens) row scratch "$size" "build/screens: old screenshot staging folder" "$d" ;;
+    device-run) row scratch "$size" "build/device-run: ad-hoc device-run.sh logs and screenshots" "$d" ;;
+    lab-3913) row scratch "$size" "build/lab-3913: historical #3913 lab artifacts (superseded by v2)" "$d" ;;
+    crashes)
+      crashes_sub=0
+      for cf in "$d"/*; do
+        [ -e "$cf" ] || continue
+        cfname="$(basename "$cf")"
+        cfsize="$(kb "$cf")"
+        crashes_sub=$((crashes_sub + ${cfsize:-0}))
+        case "$cfname" in
+          iRTChat-*.ips) row scratch "$cfsize" "build/crashes/$cfname: pre-rename iRTChat crash log" "$cf" ;;
+          *) row review "$cfsize" "build/crashes/$cfname: pulled crash log" ;;
+        esac
+      done
+      rem=$((size - crashes_sub))
+      [ "$rem" -gt 0 ] && row review "$rem" "build/crashes: other crash files" ;;
+    drafts) row review "$size" "build/drafts: local notes and draft docs" ;;
+    archive) row review "$size" "build/archive: quarantined historical research and notes" ;;
     device-harness-* | mac-harness-*)
       row scratch "$size" "build/$name: one-off harness results (once their numbers are recorded)" "$d" ;;
-    *) other=$((other + ${size:-0})) ;;
+    *) row review "$size" "build/$name: unclassified build directory (classify in scripts/storage.sh)" ;;
   esac
 done
-row keep "$other" "build/: drafts, crash logs and other notes"
 
 # Worktrees: each has its own build/ and DerivedData; remove them once merged and done.
 git -C "$MAIN" worktree list --porcelain 2>/dev/null |
@@ -110,6 +164,14 @@ for f in "$MODELS"/*; do
   name="$(basename "$f")"
   case "$name" in
     *.litertlm | embeddinggemma-2-text-270m-ane) models=$((models + $(kb "$f"))) ;;
+    embeddinggemma-2-text-270m-ane.aar)
+      if [ -f "$MODELS/embeddinggemma-2-text-270m-ane/text_encoder.aimodel/main.mlirb" ] \
+        && [ -f "$MODELS/embeddinggemma-2-text-270m-ane/embed_tokens.bin" ] \
+        && [ -f "$MODELS/embeddinggemma-2-text-270m-ane/tokenizer.model" ]; then
+        row scratch "$(kb "$f")" "~/Models/agello/$name: archive already unpacked to embeddinggemma-2-text-270m-ane/" "$f"
+      else
+        models=$((models + $(kb "$f")))
+      fi ;;
     lab)
       # agello-bench's runs without --cache leave engine caches beside the lab models.
       lab=0
@@ -228,11 +290,11 @@ for meta in "$CONTAINERS"/*/.com.apple.containermanagerd.metadata.plist; do
     row scratch "$size" "$app: a model copy in Caches ($(basename "$f"))" "$f"
   done
   # Models and lab models: clones of ~/Models/agello cost nothing; a full copy is to review.
+  clones=0
   set -- "$data/Library/Application Support/Models"/*.litertlm "$data"/Documents/lab/*.litertlm
   files=""
   for f in "$@"; do [ -f "$f" ] && files=1; done
   if [ -n "$files" ]; then
-    clones=0
     while IFS="$(printf '\t')" read -r kind size path; do
       counted=$((counted + size))
       if [ "$kind" = clone ]; then
@@ -243,9 +305,63 @@ for meta in "$CONTAINERS"/*/.com.apple.containermanagerd.metadata.plist; do
     done <<EOF
 $(for f in "$@"; do [ -f "$f" ] && printf '%s\n' "$f"; done | tr '\n' '\0' | xargs -0 python3 -I "$MAIN/scripts/lib/clones.py" "$MODELS")
 EOF
-    row clone "$clones" "$app: model files that are clones of ~/Models/agello (no extra space)"
   fi
+  ane_dir="$data/Library/Application Support/Models/embeddinggemma-2-text-270m-ane"
+  if [ -d "$ane_dir" ]; then
+    ane_total="$(kb "$ane_dir")"
+    counted=$((counted + ${ane_total:-0}))
+    ane_out="$(python3 -I - "$MODELS/embeddinggemma-2-text-270m-ane" "$ane_dir" <<'PY'
+import fcntl, os, struct, sys
+
+F_LOG2PHYS_EXT = 65
+ref_root, dst_root = sys.argv[1], sys.argv[2]
+
+def blocks(path):
+    size = os.path.getsize(path)
+    if size == 0:
+        return ()
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        out = []
+        for offset in (0, (size // 2) & ~4095, max(size - 1, 0) & ~4095):
+            res = fcntl.fcntl(fd, F_LOG2PHYS_EXT, struct.pack("<Iqq", 0, 4096, offset))
+            out.append(struct.unpack("<Iqq", res)[2])
+        return tuple(out)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+clone_kb = own_kb = 0
+for folder, _, names in os.walk(dst_root):
+    for name in names:
+        dst = os.path.join(folder, name)
+        if not os.path.isfile(dst) or os.path.islink(dst):
+            continue
+        kb = (os.stat(dst).st_blocks + 1) // 2
+        rel = os.path.relpath(dst, dst_root)
+        ref = os.path.join(ref_root, rel)
+        dst_b = blocks(dst) if os.path.isfile(ref) else None
+        ref_b = blocks(ref) if dst_b is not None else None
+        if dst_b is not None and ref_b is not None and dst_b == ref_b:
+            clone_kb += kb
+        else:
+            own_kb += kb
+print(f"{clone_kb} {own_kb}")
+PY
+)"
+    ane_clone="${ane_out%% *}"
+    ane_own="${ane_out#* }"
+    if [ "${ane_own:-0}" -gt 0 ]; then
+      clones=$((clones + ${ane_clone:-0}))
+      row review "$ane_own" "$app: embeddinggemma-2-text-270m-ane is a full copy, not a clone (cp -cR ~/Models/agello/embeddinggemma-2-text-270m-ane … instead)"
+    else
+      clones=$((clones + ${ane_total:-0}))
+    fi
+  fi
+  row clone "$clones" "$app: model files that are clones of ~/Models/agello (no extra space)"
   rest=$(($(kb "$data") - counted))
+  [ "$rest" -lt 0 ] && rest=0
   row keep "$rest" "$app: chats, files and settings"
 done
 

@@ -4,16 +4,16 @@ import XCTest
 
 @testable import Agello
 
-/// Simulates the smaller memory limit of an 8 GB iPhone (iPhone 15 Pro class)
-/// on a larger device: incompressible "ballast" memory shrinks the app's
-/// usable memory to a target limit, then the real workload runs. If iOS
-/// kills the app, XCTest relaunches and the report shows the last step that
-/// completed. Opt-in: HARNESS_MEMORY=1.
+/// Simulates tighter jetsam memory limits (6.0 / 5.0 / 4.0 / 3.5 GB usable)
+/// on a 12 GB iPhone: incompressible "ballast" memory shrinks the app's
+/// usable headroom to a target limit, then the real workload runs so every
+/// `DeviceProfile` context-window step-down tier (64K → 16K → 8K) is verified.
+/// If iOS kills the app, XCTest relaunches and the report shows the last step
+/// that completed. Opt-in: HARNESS_MEMORY=1.
 ///
-/// Limits of the simulation: speed is not simulated (GPU and memory
-/// bandwidth differ), and the device still has its full physical RAM, so the
-/// memory-mapped model file is under less eviction pressure than on a real
-/// 8 GB phone. Results are an optimistic bound.
+/// Limits of the simulation: the device still has its full 12 GB physical RAM,
+/// so the memory-mapped model file is under less eviction pressure than on a
+/// heavily loaded system. Results are an optimistic bound for the jetsam tier.
 final class MemoryEnvelopeScenarioTests: DeviceTestCase {
   private let ballast = MemoryBallast()
   private var memoryWarnings = 0
@@ -22,7 +22,7 @@ final class MemoryEnvelopeScenarioTests: DeviceTestCase {
   override func setUp() async throws {
     try await super.setUp()
     guard ProcessInfo.processInfo.environment["HARNESS_MEMORY"] == "1" else {
-      throw XCTSkip("Set HARNESS_MEMORY=1 to run the 8 GB memory simulation")
+      throw XCTSkip("Set HARNESS_MEMORY=1 to run the memory envelope simulation")
     }
     memoryWarnings = 0
     warningObserver = NotificationCenter.default.addObserver(
@@ -39,7 +39,7 @@ final class MemoryEnvelopeScenarioTests: DeviceTestCase {
     try await super.tearDown()
   }
 
-  /// Room for the 32K window (5.1 GB left at load, 2026-11-09): 12 GB iPhones only.
+  /// Exercises every context-window tier: 64K (>= 4.2 GB left at load), 16K (>= 3.5 GB), and 8K (< 3.5 GB).
   func test00_E4B_at6_0GB() async throws { try await run(.e4b, limitGB: 6.0) }
   func test01_E4B_at5_0GB() async throws { try await run(.e4b, limitGB: 5.0) }
   func test02_E4B_at4_0GB() async throws { try await run(.e4b, limitGB: 4.0) }
@@ -78,9 +78,9 @@ final class MemoryEnvelopeScenarioTests: DeviceTestCase {
     }
     step("ballast")
 
-    // The app's own window, so every step below runs as users' replies do: 32K on 12 GB devices
-    // with 5.1 GB left at load, 16K with 3.5 GB, 8K below (2026-11-09; 16K or 8K since
-    // 2026-11-02).
+    // The app's own window, so every step below runs as users' replies do: 64K on 12 GB devices
+    // with >= 4.2 GB left at load (`DeviceProfile.roomForLargeContextBytes`), 16K with >= 3.5 GB
+    // (`roomForStandardContextBytes`), and 8K below.
     appState.options.maxNumTokensOverride = nil
     await appState.applyCurrentOptions()
     await appState.ensureEngineLoaded()

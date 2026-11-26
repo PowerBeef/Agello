@@ -1,6 +1,7 @@
 #!/bin/sh
 # On-device test harness for Agello: the physical iPhone, or this Mac running
-# the iPhone app (PLATFORM=mac). Never the simulator.
+# the iPhone app (PLATFORM=mac). Never the simulator (use scripts/sim-launch.sh
+# for AgelloSim iOS Simulator UI and feature testing).
 #
 # Usage:
 #   scripts/device-harness.sh [gate|unit|inference|files|web|security|ui|all|thinking|memory|calibrate|probes|soak|research-probes|screenshots|bench] [extra xcodebuild args...]
@@ -18,7 +19,7 @@
 #              "summarize this 40-page PDF", cited follow-up, workspace/multilingual tools (~2-3 min).
 #   web        Live web search with the real model (needs internet): cited
 #              answer, planned follow-up, automatic mode, 21 decisions, 13 sources (~6-7 min).
-#   security   6-vector adversarial prompt-injection gate (0% breach, ~1 min).
+#   security   12-vector (V1-V12) adversarial prompt-injection gate (0% breach, ~1 min).
 #   ui         Real-tap flows (7 real-GPU E2E streaming/backgrounding tests +
 #              16 --mock-engine UI flows + Floor + Accessibility audit; ~11-15 min).
 #              Pass TEST_RUNNER_UITEST_REAL_ENGINE=1 to run all UI tests on real GPU (~16-18 min).
@@ -48,11 +49,11 @@
 #      DEVICE_ID (iPhone only; default: deviceId from the git-ignored .mobilebuildmcp/config.yaml),
 #      ONLY (run part of a suite: comma- or space-separated test identifiers
 #      inside it, e.g. ONLY=AgelloTests/AppStateTests/testMockModeSendsWithoutDownloadedModel
-#      scripts/device-harness.sh unit; not with `all`),
+#      scripts/device-harness.sh unit; not with `gate` or `all`),
 #      OUT (default: build/device-harness, build/mac-harness with PLATFORM=mac),
 #      AGELLO_TELEMETRY (engine telemetry level in our LiteRT-LM builds, default 2),
-#      AGELLO_SIMULATE_APPLE_GPU (our builds: another Apple GPU's kernel paths, e.g. "Apple A17 Pro";
-#      a runtime debugging aid: no supported iPhone has that GPU),
+#      AGELLO_SIMULATE_APPLE_GPU (our builds: another Apple GPU's kernel paths, e.g. "Apple_A19_Pro"
+#      for iPhone 17 Pro parity on a Mac),
 #      XCBEAUTIFY (path to xcbeautify, or "off" for raw output; default:
 #      Homebrew's, looked up directly so other xcbeautify copies in PATH are ignored).
 # Outputs: $OUT/<suite>.xcresult, $OUT/<suite>.log (raw xcodebuild output),
@@ -136,10 +137,10 @@ mkdir -p "$OUT"
 write_lock_info "$SUITE"
 # Lets the in-app report survive crash relaunches within this run only.
 export TEST_RUNNER_HARNESS_RUN_ID="run-$(date +%s)"
-# Engine telemetry level for our LiteRT-LM builds (ignored by Google's): 2 records span timings
+# Engine telemetry level for our LiteRT-LM runtime: 2 records span timings
 # and GPU time at no measurable cost; each scenario's snapshot lands in its report entry.
 export TEST_RUNNER_AGELLO_TELEMETRY="${AGELLO_TELEMETRY:-2}"
-# Our LiteRT-LM builds: run another Apple GPU's kernel paths ("Apple A17 Pro"); empty for none.
+# Our LiteRT-LM builds: run another Apple GPU's kernel paths (e.g. "Apple_A19_Pro"); empty for none.
 if [ -n "${AGELLO_SIMULATE_APPLE_GPU:-}" ]; then
   export TEST_RUNNER_AGELLO_SIMULATE_APPLE_GPU="$AGELLO_SIMULATE_APPLE_GPU"
 fi

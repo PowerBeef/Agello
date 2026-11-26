@@ -15,7 +15,7 @@
 #           NAME=release|next  the same build under another name (to measure the noise)
 #         Default: release next. The first arm is the base the others are compared with.
 #   CASE  Bench cases (AgelloUITests/BenchCases.swift) without Search. Default: explain email
-#         file-report, the Mac's B3 cases. Only a case's first message is sent.
+#         file-report (pass typo-fix to track verify_8 rewrite speed). Only a case's first message is sent.
 #
 #   scripts/phone-bench.sh release next
 #   ROUNDS=5 scripts/phone-bench.sh release next -- explain email
@@ -34,9 +34,11 @@
 #      WARM_REST (default 90 s after a case that warmed past nominal),
 #      MIN_CLEAN (undisturbed runs wanted of each case and build, default 3 or ROUNDS if less),
 #      EXTRA_ROUNDS (the most rounds added to get them, default 2),
-#      AGELLO_RESIDENT_ROUND (passed to the app for every arm: 0 the GPU-resident round off, 1 with
-#      verify's inputs, 2 its drafter chain only, the default of builds since fork c137900d;
-#      docs/PERFORMANCE.md),
+#      AGELLO_RESIDENT_ROUND, AGELLO_TELEMETRY, AGELLO_KERNEL_SHAPES, AGELLO_FLASH_ATTENTION
+#      (runtime switches forwarded to the app for every arm when set; a build without a switch
+#      ignores it — e.g. AGELLO_RESIDENT_ROUND=0 disables the GPU-resident round,
+#      AGELLO_TELEMETRY=4 records per-op timings, AGELLO_KERNEL_SHAPES=1 dumps kernel shapes,
+#      AGELLO_FLASH_ATTENTION=0/1 toggles fused prefill FlashAttention),
 #      BUILD_PRIORITY (background, the default: the two builds run at background priority and on
 #      BUILD_JOBS jobs (default 4), so other work keeps this Mac and the builds take longer;
 #      normal: full speed), CHECKS (off skips the answer checks).

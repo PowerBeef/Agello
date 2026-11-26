@@ -9,7 +9,7 @@ against the specs in ttl-cache/, and facts are looked for.
 
 The reply's code is the model's: it runs in a throwaway folder, isolated from this environment.
 """
-import json, os, re, shutil, subprocess, sys, tempfile
+import ast, json, os, re, shutil, subprocess, sys, tempfile
 
 root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -149,6 +149,44 @@ def expect(*patterns):
     return check
 
 
+def check_typo_fix(reply):
+    """Whole passage returned with its spelling and grammar typos fixed."""
+    required = [
+        r"\bcommunity\b", r"\bmore than forty\b", r"\bvolunteers\b", r"\bannounced\b",
+        r"\bolder than most\b", r"\bhabit\b", r"\bacross\b", r"\bshelves\b",
+        r"\b(?:doesn['’]t|does not) leak\b", r"\bfinally\b", r"\bits place\b",
+        r"\bwhich nobody expected\b",
+    ]
+    remaining = [
+        word for word in (
+            "comunity", "volunters", "anounced", "habbit", "acros", "shelfs",
+            "dont", "finaly", "wich", "more then", "older then", "it's place",
+        )
+        if re.search(r"(?i)\b" + re.escape(word) + r"\b", reply)
+    ]
+    missing = [pattern for pattern in required if not re.search(r"(?i)" + pattern, reply)]
+    return {"typoFix": {"words": len(reply.split()), "missing": missing, "remainingTypos": remaining}}
+
+
+def check_comment_module(reply):
+    """All five functions present and each given a docstring (paired with check_python)."""
+    expected_funcs = ("load_readings", "by_station", "daily_range", "summary", "warm_spells")
+    blocks = re.findall(r"```python\n(.*?)```", reply, re.S)
+    if not blocks:
+        return {"docstrings": {"missingFunctions": list(expected_funcs), "missingDocstrings": []}}
+    try:
+        tree = ast.parse("\n\n".join(blocks))
+    except SyntaxError:
+        return {"docstrings": {"syntaxError": True}}
+    funcs = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+    missing_funcs = [name for name in expected_funcs if name not in funcs]
+    missing_docs = [
+        name for name in expected_funcs
+        if name in funcs and not (ast.get_docstring(funcs[name]) or "").strip()
+    ]
+    return {"docstrings": {"missingFunctions": missing_funcs, "missingDocstrings": missing_docs}}
+
+
 # Each case's checks, one list per turn (cases are in AgelloUITests/BenchCases.swift).
 CHECKS = {
     "calculator-search": [[check_webapp("calculator")]],
@@ -161,6 +199,8 @@ CHECKS = {
     "trip-search": [[expect(r"\|.*\|", r"(?i)montr[eé]al")]],
     "ttl-cache": [[check_ttl_cache]],
     "followup-search": [[expect(r"Poga[cč]ar", r"\[\d+\]")], [expect(r"\b6\s*(minutes?|min\b|:|′|')")]],
+    "typo-fix": [[check_typo_fix]],
+    "comment-module": [[check_python, check_comment_module]],
     "file-report": [[], [expect(r"(?i)water quality", r"(?i)district\s*4|\b4\b")]],
     "mockup-os-search": [[expect(r"(?i)<html")], [expect(r"(?i)calculator", r"(?i)</html>")]],
 }
@@ -172,6 +212,20 @@ def failed_checks(verdict):
     for pattern, found in verdict.get("expected", {}).items():
         if not found:
             failed.append(f"missing /{pattern}/")
+    typo = verdict.get("typoFix")
+    if typo is not None:
+        if typo["words"] < 150:
+            failed.append(f"truncated ({typo['words']} words)")
+        if typo["missing"]:
+            failed.append(f"{len(typo['missing'])} missing corrections")
+        if typo["remainingTypos"]:
+            failed.append("unfixed typos: " + ", ".join(typo["remainingTypos"][:5]))
+    docs = verdict.get("docstrings")
+    if docs is not None and not docs.get("syntaxError"):
+        if docs.get("missingFunctions"):
+            failed.append("missing functions: " + ", ".join(docs["missingFunctions"]))
+        if docs.get("missingDocstrings"):
+            failed.append("missing docstrings: " + ", ".join(docs["missingDocstrings"]))
     app = verdict.get("webApp")
     if app is not None:
         if not app.get("found"):

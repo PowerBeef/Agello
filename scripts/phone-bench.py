@@ -3,8 +3,8 @@
 
 Usage:
   scripts/phone-bench.py case CASES_SWIFT ID [--cool on|off]
-      How to launch one bench case with no driver: three lines, the launch environment (JSON),
-      the app's arguments, and the most seconds to wait for its trace.
+      How to launch one bench case with no driver: four lines, the launch environment (JSON),
+      the app's arguments, the most seconds to wait for its trace, and the prompt (JSON).
   scripts/phone-bench.py schedule CASES_SWIFT ROUND CASE [CASE ...]
       Case-alternating order for ROUND: separates heavy cases with light cases and reverses on
       even rounds so thermal tails balance across cases and builds.
@@ -149,7 +149,7 @@ def launch_spec(case, cool):
     if cool:
         env["AGELLO_BENCH_COOL"] = "1"
     # The runtime's switches, as set for the run, for every arm (a build without one ignores it):
-    # AGELLO_RESIDENT_ROUND, the GPU-resident round (docs/PERFORMANCE.md).
+    # AGELLO_RESIDENT_ROUND, AGELLO_TELEMETRY, AGELLO_KERNEL_SHAPES, AGELLO_FLASH_ATTENTION.
     for key in ("AGELLO_RESIDENT_ROUND", "AGELLO_TELEMETRY", "AGELLO_KERNEL_SHAPES", "AGELLO_FLASH_ATTENTION"):
         if os.environ.get(key):
             env[key] = os.environ[key]
@@ -428,7 +428,7 @@ def self_test():
             trace = {
                 "startedAt": f"2026-11-12T10:0{index}:20Z", "prompt": 'Say "hi"', "text": "Hi!", "thought": "",
                 "ended": "model", "error": "", "seconds": 3.0,
-                "settings": {"runtimeBuild": build, "thermalState": 0, "window": 32000, "speculativeDecoding": True},
+                "settings": {"runtimeBuild": build, "thermalState": 0, "window": 65536, "speculativeDecoding": True},
                 "stats": {"decodeTokensPerSecond": 40.0, "timeToFirstToken": 0.5, "modelID": "e4b"},
                 "timeline": [{"thermalState": t} for t in timeline],
                 "engineTelemetry": {"before": telemetry(1000, 500, 1000.0, 10000.0, 200, 8000.0),

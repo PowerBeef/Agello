@@ -293,7 +293,7 @@ final class ChatFlowUITests: XCTestCase {
   }
 
   /// Rich replies: code block (with Copy), table and display math render.
-  /// Simulator only: the mock engine answers "markdown" with a fixed sample.
+  /// Runs with `--mock-engine` (on iPhone or Simulator): the scripted engine answers "markdown" with a fixed sample.
   func testMarkdownRendering() throws {
     // The scripted engine answers "markdown" with a fixed rich sample.
     launchApp(mockEngine: true)
