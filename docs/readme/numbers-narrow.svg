@@ -20,7 +20,7 @@
 <text x="214" y="223" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#F2F0EB">faster Vision encode</text>
 <text x="214" y="242" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84">112 ViT linears on matrix</text><text x="214" y="257" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84">units</text>
 <rect x="34" y="276" width="152" height="1" fill="#2F3342"/>
-<text x="34" y="326" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="29" font-weight="700" fill="#8AB0C8" letter-spacing="-0.5">+5 MB</text>
+<text x="34" y="326" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="29" font-weight="700" fill="#8AB0C8" letter-spacing="-0.5">+4.95 MB</text>
 <text x="34" y="351" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#F2F0EB">200-turn soak delta</text>
 <text x="34" y="370" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84">100% shared verify/decode</text><text x="34" y="385" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84">pool</text>
 <rect x="200" y="294" width="1" height="92" fill="#2F3342"/>

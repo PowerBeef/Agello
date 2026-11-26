@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="710" viewBox="0 0 400 710" role="img" aria-labelledby="title desc">
+<title id="title">Context scaling from 4K to 64K and subsystem speedups on Apple Silicon</title>
+<desc id="desc">Stock LiteRT-LM v0.18.0 drops from 43 tok/s at 4K to 27 tok/s at 32K and caps at 32K; Agello sustains 51.9 to 84.3 tok/s at 64K with 12/12 bit-exact copies to position 65,534. Subsystem speedups: 7.6x faster warm 64K load, 4.5x faster Vision ViT encode, 2.2x faster 40-page PDF ANE index, 1.4x faster prefill, and zero host logit readbacks.</desc>
+<defs><linearGradient id="canvas" x1="0" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#161823"/><stop offset="0.45" stop-color="#1C1E26"/><stop offset="1" stop-color="#0C0E14"/></linearGradient><radialGradient id="glow0" cx="60" cy="0" r="280" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#8AB0C8" stop-opacity="0.1"/><stop offset="1" stop-color="#8AB0C8" stop-opacity="0"/></radialGradient><radialGradient id="glow1" cx="340" cy="680" r="280" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#EDCC8A" stop-opacity="0.1"/><stop offset="1" stop-color="#EDCC8A" stop-opacity="0"/></radialGradient></defs>
+<rect width="400" height="710" rx="24" fill="url(#canvas)"/><rect width="400" height="710" rx="24" fill="url(#glow0)"/><rect width="400" height="710" rx="24" fill="url(#glow1)"/><rect x="0.5" y="0.5" width="399" height="709" rx="23.5" fill="none" stroke="#F7EBD1" stroke-opacity="0.10"/>
+<text x="20" y="36" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#948F84" letter-spacing="1.1">SILICON BENCHMARKS · IPHONE 17 PRO</text>
+<rect x="20" y="50" width="360" height="302" rx="18" fill="#0C0E14" fill-opacity="0.6" stroke="#8AB0C8" stroke-opacity="0.22"/>
+<text x="38" y="80" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="600" fill="#F2F0EB">Context scaling (4K → 64K)</text>
+<text x="38" y="99" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#948F84">Decode tok/s · stock 32K wall vs Agello 64K</text>
+<line x1="64" y1="278" x2="356" y2="278" stroke="#2F3342" stroke-width="1"/>
+<text x="56" y="282" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="400" fill="#948F84" text-anchor="end">0</text>
+<line x1="64" y1="236.95" x2="356" y2="236.95" stroke="#2F3342" stroke-width="1"/>
+<text x="56" y="240.95" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="400" fill="#948F84" text-anchor="end">25</text>
+<line x1="64" y1="195.89" x2="356" y2="195.89" stroke="#2F3342" stroke-width="1"/>
+<text x="56" y="199.89" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="400" fill="#948F84" text-anchor="end">50</text>
+<line x1="64" y1="154.84" x2="356" y2="154.84" stroke="#2F3342" stroke-width="1"/>
+<text x="56" y="158.84" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="400" fill="#948F84" text-anchor="end">75</text>
+<text x="82" y="295" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500" fill="#948F84" text-anchor="middle">4K</text>
+<text x="150.5" y="295" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500" fill="#948F84" text-anchor="middle">8K</text>
+<text x="219" y="295" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500" fill="#948F84" text-anchor="middle">16K</text>
+<text x="287.5" y="295" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="500" fill="#948F84" text-anchor="middle">32K</text>
+<text x="356" y="295" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#8AB0C8" text-anchor="middle">64K</text>
+<rect x="342" y="118" width="28" height="160" rx="8" fill="#8AB0C8" fill-opacity="0.09"/>
+<path d="M82 207.39 L150.5 215.6 L219 222.17 L287.5 233.66" fill="none" stroke="#ADB5C2" stroke-width="2" stroke-dasharray="5 4"/>
+<circle cx="82" cy="207.39" r="3.8" fill="#0C0E14" stroke="#ADB5C2" stroke-width="2"/>
+<text x="82" y="198.39" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="600" fill="#ADB5C2" text-anchor="middle">43</text>
+<circle cx="150.5" cy="215.6" r="3.8" fill="#0C0E14" stroke="#ADB5C2" stroke-width="2"/>
+<text x="150.5" y="206.6" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="600" fill="#ADB5C2" text-anchor="middle">38</text>
+<circle cx="219" cy="222.17" r="3.8" fill="#0C0E14" stroke="#ADB5C2" stroke-width="2"/>
+<text x="219" y="213.17" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="600" fill="#ADB5C2" text-anchor="middle">34</text>
+<circle cx="287.5" cy="233.66" r="3.8" fill="#0C0E14" stroke="#ADB5C2" stroke-width="2"/>
+<text x="275.5" y="223.66" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="600" fill="#ADB5C2" text-anchor="middle">27</text>
+<text x="84" y="227.39" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="600" fill="#948F84">Stock v0.18.0</text>
+<line x1="287.5" y1="239.66" x2="287.5" y2="278" stroke="#D98080" stroke-width="1.5" stroke-dasharray="3 3"/>
+<text x="281.5" y="268" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.2" font-weight="600" fill="#D98080" text-anchor="end">32K max</text>
+<line x1="356" y1="139.57" x2="356" y2="192.77" stroke="#8AB0C8" stroke-opacity="0.45" stroke-width="2"/>
+<circle cx="356" cy="139.57" r="8.5" fill="#EDCC8A" fill-opacity="0.22"/>
+<circle cx="356" cy="139.57" r="4.5" fill="#EDCC8A"/>
+<text x="342" y="143.57" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.2" font-weight="700" fill="#EDCC8A" text-anchor="end">84.3 Rewrite</text>
+<circle cx="356" cy="183.09" r="8.5" fill="#8AB0C8" fill-opacity="0.22"/>
+<circle cx="356" cy="183.09" r="4.5" fill="#8AB0C8"/>
+<text x="342" y="180.09" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.2" font-weight="700" fill="#8AB0C8" text-anchor="end">57.8 Chat</text>
+<circle cx="356" cy="192.77" r="8.5" fill="#BFAADC" fill-opacity="0.22"/>
+<circle cx="356" cy="192.77" r="4.5" fill="#BFAADC"/>
+<text x="342" y="203.77" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.2" font-weight="700" fill="#BFAADC" text-anchor="end">51.9 Think</text>
+<rect x="34" y="314" width="332" height="26" rx="9" fill="#232632" fill-opacity="0.82" stroke="#8CC7BF" stroke-opacity="0.28"/>
+<text x="200" y="330.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="600" fill="#8CC7BF" text-anchor="middle">64K: 12/12 bit-exact · 90/90 needles · 3.2–3.5 GB</text>
+<rect x="20" y="366" width="360" height="300" rx="18" fill="#0C0E14" fill-opacity="0.6" stroke="#EDCC8A" stroke-opacity="0.22"/>
+<text x="38" y="396" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15.5" font-weight="600" fill="#F2F0EB">Subsystem speedups</text>
+<text x="38" y="415" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#948F84">Baseline vs Agello (shorter bar = faster)</text>
+<text x="38" y="443" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#F2F0EB">Warm 64K model load</text>
+<rect x="322" y="431" width="40" height="18" rx="9" fill="#8AB0C8" fill-opacity="0.16" stroke="#8AB0C8" stroke-opacity="0.42"/>
+<text x="342" y="443.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="700" fill="#8AB0C8" text-anchor="middle">7.6×</text>
+<rect x="38" y="452" width="228" height="7" rx="3.5" fill="#2F3342"/>
+<text x="274" y="459" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.3" font-weight="400" fill="#948F84">8.4 s cold</text>
+<rect x="38" y="462" width="29.86" height="8" rx="4" fill="#8AB0C8"/>
+<text x="274" y="470" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="600" fill="#8AB0C8">1.1 s archive</text>
+<text x="38" y="492" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#F2F0EB">Vision ViT encode (144 ops)</text>
+<rect x="322" y="480" width="40" height="18" rx="9" fill="#EDCC8A" fill-opacity="0.16" stroke="#EDCC8A" stroke-opacity="0.42"/>
+<text x="342" y="492.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="700" fill="#EDCC8A" text-anchor="middle">4.5×</text>
+<rect x="38" y="501" width="228" height="7" rx="3.5" fill="#2F3342"/>
+<text x="274" y="508" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.3" font-weight="400" fill="#948F84">972 ms</text>
+<rect x="38" y="511" width="50.2" height="8" rx="4" fill="#EDCC8A"/>
+<text x="274" y="519" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="600" fill="#EDCC8A">214 ms MPP</text>
+<text x="38" y="541" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#F2F0EB">40-page PDF RAG index</text>
+<rect x="322" y="529" width="40" height="18" rx="9" fill="#8CC7BF" fill-opacity="0.16" stroke="#8CC7BF" stroke-opacity="0.42"/>
+<text x="342" y="541.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="700" fill="#8CC7BF" text-anchor="middle">2.2×</text>
+<rect x="38" y="550" width="228" height="7" rx="3.5" fill="#2F3342"/>
+<text x="274" y="557" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.3" font-weight="400" fill="#948F84">1.90 s GPU</text>
+<rect x="38" y="560" width="103.2" height="8" rx="4" fill="#8CC7BF"/>
+<text x="274" y="568" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="600" fill="#8CC7BF">0.86 s ANE</text>
+<text x="38" y="590" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#F2F0EB">1K-token prefill time</text>
+<rect x="322" y="578" width="40" height="18" rx="9" fill="#BFAADC" fill-opacity="0.16" stroke="#BFAADC" stroke-opacity="0.42"/>
+<text x="342" y="590.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="700" fill="#BFAADC" text-anchor="middle">1.4×</text>
+<rect x="38" y="599" width="228" height="7" rx="3.5" fill="#2F3342"/>
+<text x="274" y="606" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.3" font-weight="400" fill="#948F84">841 ms card</text>
+<rect x="38" y="609" width="162.66" height="8" rx="4" fill="#BFAADC"/>
+<text x="274" y="617" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="600" fill="#BFAADC">600 ms M4</text>
+<rect x="34" y="628" width="332" height="26" rx="9" fill="#232632" fill-opacity="0.82" stroke="#EDCC8A" stroke-opacity="0.28"/>
+<text x="200" y="644.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="600" fill="#EDCC8A" text-anchor="middle">Host logit reads / reply: &gt;2,000 MB → 0 B</text>
+<text x="200" y="692" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.2" font-weight="400" fill="#948F84" text-anchor="middle">A19 Pro Release · ViT via SIM_GPU=Apple_A19_Pro · 0% ANE GPU</text>
+</svg>

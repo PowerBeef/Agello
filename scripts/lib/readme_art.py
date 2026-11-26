@@ -352,7 +352,7 @@ def _pulse_bars(x: float, y: float, width: float, height: float, *, bars: int, g
 
 TAGLINE = ("Your own AI assistant,", "entirely on your iPhone.")
 HERO_COPY = (
-    "Ask, reason, read documents, search the web and talk hands-free with Gemma 4 "
+    "Chat, reason, read long PDFs, search the web, take actions, and talk hands-free with Gemma 4 "
     "— right on your Apple Silicon, with no account and no cloud."
 )
 
@@ -393,7 +393,7 @@ def hero(root: Path) -> str:
     body.append(_box(544, 34, 300, 316, stroke=GLACIER, opacity=0.22, fill=DEEP, fill_opacity=0.58, radius=22))
     body.append(orb_svg)
     body.append(pulse_svg)
-    body.append(text(694, 336, "Gemma 4 E4B · 64K · Metal 4 & ANE", size=12, fill=MUTED, weight=600, anchor="middle"))
+    body.append(text(694, 336, "Gemma 4 E4B · 64K · Apple Silicon", size=12, fill=MUTED, weight=600, anchor="middle"))
 
     return svg(
         width, height,
@@ -458,10 +458,10 @@ def hero_narrow(root: Path) -> str:
 # --- 2. Modes --------------------------------------------------------------
 
 MODE_CARDS = (
-    ("chat", "chat", "Write, translate, brainstorm and code with rich Markdown, tables and math.", "Any language · Offline"),
-    ("think", "think", "Step-by-step reasoning in a card you can open, using tools when math matters.", "Visible reasoning"),
-    ("search", "search", "Searches open sources when a question needs live facts and cites every claim.", "Numbered citations"),
-    ("voice", "voice", "A natural spoken conversation with live captions and camera. Interrupt any time.", "Instant barge-in"),
+    ("chat", "chat", "Write, code, translate, and brainstorm with rich Markdown, tables, and typeset math.", "Offline · 13+ languages"),
+    ("think", "think", "Step-by-step reasoning in a collapsible card, calling tools when precision matters.", "Visible reasoning"),
+    ("search", "search", "Checks open, key-free sources for live facts and backs every claim with citations.", "Numbered citations"),
+    ("voice", "voice", "Hands-free spoken chats with live captions, optional camera, and instant barge-in.", "Interrupt anytime"),
 )
 
 
@@ -519,13 +519,13 @@ def modes_narrow() -> str:
 # --- 3. Features -----------------------------------------------------------
 
 FEATURES = (
-    ("doc", "PDFs & scans", "Answers cite exact pages", TEAL),
-    ("camera", "Vision & camera", "Photos & scanned paper", GLACIER),
+    ("doc", "PDFs & scans", "Cites exact pages", TEAL),
+    ("camera", "Vision & camera", "Photos & paper scans", GLACIER),
     ("branch", "Projects & branches", "Shared files & ‹ 2/3 ›", LAVENDER),
     ("search", "13+ languages", "Natural prompts & tools", GOLD),
-    ("calendar", "Personal tools", "Gated in-chat approval", LAVENDER),
+    ("calendar", "Personal tools", "Action cards & gate", LAVENDER),
     ("memory", "Editable memory", "See & edit every fact", TEAL),
-    ("spark", "Siri & widgets", "Shortcuts & Spotlight", GLACIER),
+    ("spark", "Siri & Shortcuts", "Widgets & Live Activity", GLACIER),
     ("lock", "100% private", "No account, no cloud", GOLD),
 )
 
@@ -636,8 +636,8 @@ def decode_chart(measured: Measured, *, narrow: bool = False) -> str:
     body.append(text(margin, 44, title_str, size=18 if narrow else 20, weight=600, family=DISPLAY))
     body.append(text(margin, 66, sub_str, size=12.5 if narrow else 13.5, fill=MUTED))
 
-    x0 = margin + (98.0 if narrow else 136.0)
-    x1 = width - margin - (58.0 if narrow else 188.0)
+    x0 = margin + (90.0 if narrow else 132.0)
+    x1 = width - margin - (86.0 if narrow else 244.0)
     max_tok = 100.0
 
     def x_for(val: float) -> float:
@@ -671,6 +671,7 @@ def decode_chart(measured: Measured, *, narrow: bool = False) -> str:
         bw = max(8.0, x_for(tok_s) - x0)
         fill = BAR_COLORS[key]
         accent = MODE_COLORS[mode_key]
+        speedup = f"{tok_s / measured.stock_32k_tok_s:.1f}×"
 
         body.append(f'<circle cx="{num(margin + 6)}" cy="{num(y + bar_h / 2)}" r="4.5" fill="{accent}"/>')
         body.append(text(margin + 18, y + bar_h / 2 + 4.5, label, size=13.5 if narrow else 14.5, weight=600))
@@ -683,14 +684,27 @@ def decode_chart(measured: Measured, *, narrow: bool = False) -> str:
             f'a6 6 0 0 1 -6 6 h-{num(bw - 6)} z" fill="{fill}"/>'
         )
         val_label = f"{tok_s:.1f}" if narrow else f"{tok_s:.1f} tok/s"
-        body.append(text(x0 + bw + 8, y + bar_h / 2 + 4.5, val_label, size=13, weight=700, fill=TEXT))
+        val_x = x0 + bw + 8
+        body.append(text(val_x, y + bar_h / 2 + 4.5, val_label, size=12.5 if narrow else 13, weight=700, fill=TEXT))
+        badge_x = val_x + text_width(val_label, 12.5 if narrow else 13, bold=True) + (6 if narrow else 8)
+        badge_w = 38.0 if narrow else 42.0
+        body.append(
+            f'<rect x="{num(badge_x)}" y="{num(y + 3)}" width="{num(badge_w)}" height="{num(bar_h - 6)}" rx="10" '
+            f'fill="{accent}" fill-opacity="0.16" stroke="{accent}" stroke-opacity="0.42"/>'
+        )
+        body.append(
+            text(
+                badge_x + badge_w / 2, y + bar_h / 2 + 4, speedup,
+                size=10.8 if narrow else 11.2, weight=700, fill=accent, anchor="middle",
+            )
+        )
         if not narrow:
             body.append(
                 text(
-                    x0 + bw + 8 + text_width(val_label, 13, bold=True) + 8,
+                    badge_x + badge_w + 8,
                     y + bar_h / 2 + 4.5,
                     f"· {note}",
-                    size=12,
+                    size=11.8,
                     fill=MUTED,
                 )
             )
@@ -706,6 +720,220 @@ def decode_chart(measured: Measured, *, narrow: bool = False) -> str:
         "Sustained decode speed at 64K context",
         "Bar chart of sustained decode speed on iPhone 17 Pro at 64K context: Rewrite 84.3 tok/s, Chat 57.8 tok/s, "
         "Document Q&A 56.9 tok/s, and Think 51.9 tok/s — each well above upstream v0.18.0's 27 tok/s at 32K.",
+        body, defs,
+    )
+
+
+# --- 5b. Context Scaling & Subsystem Speedups ------------------------------
+
+SUBSYSTEM_SPEEDUPS = (
+    ("Warm 64K model load", "8.4 s cold", "1.1 s archive", 1.1 / 8.4, "7.6×", GLACIER),
+    ("Vision ViT encode (144 ops)", "972 ms", "214 ms MPP", 214.0 / 972.0, "4.5×", GOLD),
+    ("40-page PDF RAG index", "1.90 s GPU", "0.86 s ANE", 0.86 / 1.90, "2.2×", TEAL),
+    ("1K-token prefill time", "841 ms card", "600 ms M4", 600.0 / 841.0, "1.4×", LAVENDER),
+)
+
+STOCK_CONTEXT_CURVE = (
+    ("4K", 43.0),
+    ("8K", 38.0),
+    ("16K", 34.0),
+    ("32K", 27.0),
+)
+
+
+def _draw_context_panel(px: float, py: float, pw: float, ph: float, *, compact: bool) -> list[str]:
+    coral = "#D98080"
+    parts = [
+        _box(px, py, pw, ph, stroke=GLACIER, opacity=0.22, fill=DEEP, fill_opacity=0.60, radius=18),
+        text(px + 18, py + 30, "Context scaling (4K → 64K)", size=15.5 if compact else 16.5, weight=600, family=DISPLAY),
+        text(
+            px + 18, py + 49,
+            "Decode tok/s · stock 32K wall vs Agello 64K" if compact else "Sustained decode (tok/s) · stock 32K wall vs Agello 64K",
+            size=11 if compact else 11.5, fill=MUTED,
+        ),
+    ]
+
+    gx0 = px + 44
+    gx1 = px + pw - 24
+    gy0 = py + 72
+    gy1 = py + ph - 74
+    max_y = 95.0
+
+    def y_for(val: float) -> float:
+        return gy1 - (val / max_y) * (gy1 - gy0)
+
+    # Horizontal grid + Y ticks
+    for tick in (0, 25, 50, 75):
+        ty = y_for(tick)
+        parts.append(f'<line x1="{num(gx0)}" y1="{num(ty)}" x2="{num(gx1)}" y2="{num(ty)}" stroke="{FIELD}" stroke-width="1"/>')
+        parts.append(text(gx0 - 8, ty + 4, str(tick), size=10.5, fill=MUTED, anchor="end"))
+
+    # X axis ticks (log2 steps: 4K, 8K, 16K, 32K, 64K) with left breathing room from Y ticks
+    labels = ("4K", "8K", "16K", "32K", "64K")
+    plot_x0 = gx0 + 18.0
+    xs = [plot_x0 + idx * (gx1 - plot_x0) / 4.0 for idx in range(5)]
+    for idx, lab in enumerate(labels):
+        parts.append(
+            text(
+                xs[idx], gy1 + 17, lab,
+                size=11, fill=GLACIER if idx == 4 else MUTED, weight=700 if idx == 4 else 500, anchor="middle",
+            )
+        )
+
+    # Glowing 64K lane
+    x64 = xs[4]
+    parts.append(
+        f'<rect x="{num(x64 - 14)}" y="{num(gy0 - 4)}" width="28" height="{num(gy1 - gy0 + 4)}" rx="8" '
+        f'fill="{GLACIER}" fill-opacity="0.09"/>'
+    )
+
+    # Stock v0.18.0 dashed curve (4K -> 32K)
+    pts = [(xs[idx], y_for(val)) for idx, (_, val) in enumerate(STOCK_CONTEXT_CURVE)]
+    poly = " ".join(f"{'M' if i == 0 else 'L'}{num(x)} {num(y)}" for i, (x, y) in enumerate(pts))
+    parts.append(f'<path d="{poly}" fill="none" stroke="{SILVER}" stroke-width="2" stroke-dasharray="5 4"/>')
+    for idx, (x, y) in enumerate(pts):
+        val = int(STOCK_CONTEXT_CURVE[idx][1])
+        parts.append(f'<circle cx="{num(x)}" cy="{num(y)}" r="3.8" fill="{DEEP}" stroke="{SILVER}" stroke-width="2"/>')
+        ly = y - 9 if idx < 3 else y - 10
+        lx = x if idx < 3 else x - 12
+        parts.append(text(lx, ly, str(val), size=10.5, fill=SILVER, weight=600, anchor="middle"))
+
+    parts.append(
+        text(
+            xs[0] + 2, y_for(43.0) + 20, "Stock v0.18.0",
+            size=10.5, fill=MUTED, weight=600,
+        )
+    )
+
+    # 32K wall marker
+    x32 = xs[3]
+    parts.append(
+        f'<line x1="{num(x32)}" y1="{num(y_for(27.0) + 6)}" x2="{num(x32)}" y2="{num(gy1)}" '
+        f'stroke="{coral}" stroke-width="1.5" stroke-dasharray="3 3"/>'
+    )
+    parts.append(text(x32 - 6, gy1 - 10, "32K max", size=10.2, fill=coral, weight=600, anchor="end"))
+
+    # Agello 64K spine & markers
+    y_rw = y_for(84.3)
+    y_ch = y_for(57.8)
+    y_th = y_for(51.9)
+    parts.append(f'<line x1="{num(x64)}" y1="{num(y_rw)}" x2="{num(x64)}" y2="{num(y_th)}" stroke="{GLACIER}" stroke-opacity="0.45" stroke-width="2"/>')
+
+    agello_pts = (
+        (y_rw, "84.3 Rewrite", GOLD, y_rw + 4),
+        (y_ch, "57.8 Chat", GLACIER, y_ch - 3),
+        (y_th, "51.9 Think", LAVENDER, y_th + 11),
+    )
+    for py_pt, plabel, col, text_y in agello_pts:
+        parts.append(f'<circle cx="{num(x64)}" cy="{num(py_pt)}" r="8.5" fill="{col}" fill-opacity="0.22"/>')
+        parts.append(f'<circle cx="{num(x64)}" cy="{num(py_pt)}" r="4.5" fill="{col}"/>')
+        parts.append(text(x64 - 14, text_y, plabel, size=11.2, fill=col, weight=700, anchor="end"))
+
+    # Fidelity pill footer inside panel
+    pill_y = py + ph - 38
+    parts.append(_box(px + 14, pill_y, pw - 28, 26, stroke=TEAL, opacity=0.28, fill=RAISED, fill_opacity=0.82, radius=9))
+    pill_txt = (
+        "64K: 12/12 bit-exact · 90/90 needles · 3.2–3.5 GB"
+        if compact
+        else "64K: 12/12 bit-exact to 65,534 · 90/90 needles · 3.2–3.5 GB"
+    )
+    parts.append(text(px + pw / 2, pill_y + 16.5, pill_txt, size=10.5, fill=TEAL, weight=600, anchor="middle"))
+    return parts
+
+
+def _draw_subsystems_panel(px: float, py: float, pw: float, ph: float, *, compact: bool) -> list[str]:
+    parts = [
+        _box(px, py, pw, ph, stroke=GOLD, opacity=0.22, fill=DEEP, fill_opacity=0.60, radius=18),
+        text(px + 18, py + 30, "Subsystem speedups", size=15.5 if compact else 16.5, weight=600, family=DISPLAY),
+        text(px + 18, py + 49, "Baseline vs Agello (shorter bar = faster)", size=11 if compact else 11.5, fill=MUTED),
+    ]
+
+    bar_x = px + 18
+    label_pad = 96.0 if compact else 108.0
+    max_bw = pw - 36 - label_pad
+    row_y0 = py + 66
+    row_step = 49.0 if compact else 52.0
+
+    for idx, (title, base_lbl, new_lbl, ratio, mult, col) in enumerate(SUBSYSTEM_SPEEDUPS):
+        ry = row_y0 + idx * row_step
+        parts.append(text(bar_x, ry + 11, title, size=12 if compact else 12.5, weight=600, fill=TEXT))
+
+        # Speedup pill right-aligned
+        bw_pill = 40.0
+        bx_pill = px + pw - 18 - bw_pill
+        parts.append(
+            f'<rect x="{num(bx_pill)}" y="{num(ry - 1)}" width="{num(bw_pill)}" height="18" rx="9" '
+            f'fill="{col}" fill-opacity="0.16" stroke="{col}" stroke-opacity="0.42"/>'
+        )
+        parts.append(text(bx_pill + bw_pill / 2, ry + 11.5, mult, size=10.5, weight=700, fill=col, anchor="middle"))
+
+        # Baseline bar (100% width)
+        by1 = ry + 20
+        parts.append(f'<rect x="{num(bar_x)}" y="{num(by1)}" width="{num(max_bw)}" height="7" rx="3.5" fill="{FIELD}"/>')
+        parts.append(text(bar_x + max_bw + 8, by1 + 7, base_lbl, size=10.3, fill=MUTED))
+
+        # Agello bar (proportional)
+        by2 = by1 + 10
+        ag_w = max(14.0, max_bw * ratio)
+        parts.append(f'<rect x="{num(bar_x)}" y="{num(by2)}" width="{num(ag_w)}" height="8" rx="4" fill="{col}"/>')
+        parts.append(text(bar_x + max_bw + 8, by2 + 8, new_lbl, size=10.5, fill=col, weight=600))
+
+    # Zero-copy NEON callout pill at bottom
+    pill_y = py + ph - 38
+    parts.append(_box(px + 14, pill_y, pw - 28, 26, stroke=GOLD, opacity=0.28, fill=RAISED, fill_opacity=0.82, radius=9))
+    pill_txt = (
+        "Host logit reads / reply: >2,000 MB → 0 B"
+        if compact
+        else "Host logit readbacks / reply: >2,000 MB → 0 B (NEON)"
+    )
+    parts.append(text(px + pw / 2, pill_y + 16.5, pill_txt, size=10.5, fill=GOLD, weight=600, anchor="middle"))
+    return parts
+
+
+def silicon_benchmarks(measured: Measured, *, narrow: bool = False) -> str:
+    if narrow:
+        width, height = NARROW, 710
+        defs, bg = card(width, height, glows=((60, 0, 280, GLACIER, 0.10), (340, 680, 280, GOLD, 0.10)))
+        body = [
+            bg,
+            text(20, 36, "SILICON BENCHMARKS · IPHONE 17 PRO", size=11, fill=MUTED, weight=600, spacing=1.1),
+        ]
+        body.extend(_draw_context_panel(20, 50, width - 40, 302, compact=True))
+        body.extend(_draw_subsystems_panel(20, 366, width - 40, 300, compact=True))
+        body.append(
+            text(
+                width / 2, height - 18,
+                "A19 Pro Release · ViT via SIM_GPU=Apple_A19_Pro · 0% ANE GPU",
+                size=10.2, fill=MUTED, anchor="middle",
+            )
+        )
+    else:
+        width, height = WIDE, 412
+        defs, bg = card(width, height, glows=((160, 0, 380, GLACIER, 0.10), (740, 412, 360, GOLD, 0.09)))
+        body = [
+            bg,
+            text(
+                30, 38,
+                f"SILICON BENCHMARKS · {measured.hardware.upper()} · {measured.os_version.upper()}",
+                size=11.5, fill=MUTED, weight=600, spacing=1.1,
+            ),
+        ]
+        body.extend(_draw_context_panel(30, 54, 402, 316, compact=False))
+        body.extend(_draw_subsystems_panel(448, 54, 402, 316, compact=False))
+        body.append(
+            text(
+                width / 2, height - 18,
+                "iPhone 17 Pro (A19 Pro, 12 GB) · Vision ViT encode measured via SIM_GPU=Apple_A19_Pro (0.90 s warm init on phone) · 0% GPU load on ANE",
+                size=10.8, fill=MUTED, anchor="middle",
+            )
+        )
+    return svg(
+        width, height,
+        "Context scaling from 4K to 64K and subsystem speedups on Apple Silicon",
+        "Stock LiteRT-LM v0.18.0 drops from 43 tok/s at 4K to 27 tok/s at 32K and caps at 32K; Agello sustains "
+        "51.9 to 84.3 tok/s at 64K with 12/12 bit-exact copies to position 65,534. Subsystem speedups: 7.6x faster "
+        "warm 64K load, 4.5x faster Vision ViT encode, 2.2x faster 40-page PDF ANE index, 1.4x faster prefill, and "
+        "zero host logit readbacks.",
         body, defs,
     )
 
@@ -890,7 +1118,7 @@ NUMBERS = (
     ("0", "host read copies", "zero-copy NEON greedy on Metal", GLACIER),
     ("0%", "GPU load during RAG", "EmbeddingGemma 2 on 16-Core ANE", TEAL),
     ("4.5×", "faster Vision encode", "112 ViT linears on matrix units", GOLD),
-    ("+5 MB", "200-turn soak delta", "100% shared verify/decode pool", GLACIER),
+    ("+4.95 MB", "200-turn soak delta", "100% shared verify/decode pool", GLACIER),
     ("622", "automated tests", "iPhone 17 Pro gates + AgelloSim UI", TEAL),
 )
 
@@ -994,6 +1222,8 @@ def render(root: Path, measured: Measured) -> dict[str, str]:
         "performance-narrow.svg": performance(measured, narrow=True),
         "decode-by-mode.svg": decode_chart(measured, narrow=False),
         "decode-by-mode-narrow.svg": decode_chart(measured, narrow=True),
+        "silicon-benchmarks.svg": silicon_benchmarks(measured, narrow=False),
+        "silicon-benchmarks-narrow.svg": silicon_benchmarks(measured, narrow=True),
         "architecture.svg": architecture(),
         "architecture-narrow.svg": architecture_narrow(),
         "numbers.svg": numbers(3),
