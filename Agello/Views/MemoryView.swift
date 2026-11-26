@@ -33,7 +33,7 @@ struct MemoryView: View {
         }
         ForEach(memories) { memory in
           Button {
-            draft = memory.text
+            draft = String(memory.text.prefix(HelperTasks.maxMemoryLength))
             editing = memory
           } label: {
             HStack(spacing: Theme.Spacing.md) {
@@ -76,16 +76,28 @@ struct MemoryView: View {
     }
     .themedList(Theme.Brand.lavender)
     .navigationTitle("Memory")
+    .onChange(of: draft) { _, value in
+      if value.count > HelperTasks.maxMemoryLength {
+        draft = String(value.prefix(HelperTasks.maxMemoryLength))
+      }
+    }
     .alert("Add memory", isPresented: $adding) {
       TextField("e.g. Prefers metric units", text: $draft)
         .accessibilityIdentifier("memory.field")
       Button("Save") { addMemory() }
-      Button("Cancel", role: .cancel) {}
+        .disabled(cleanedDraft.isEmpty)
+      Button("Cancel", role: .cancel) { draft = "" }
+    } message: {
+      Text(draftCounter)
     }
     .alert("Edit memory", isPresented: isEditing) {
       TextField("Memory", text: $draft)
+        .accessibilityIdentifier("memory.edit.field")
       Button("Save") { saveEdit() }
-      Button("Cancel", role: .cancel) {}
+        .disabled(cleanedDraft.isEmpty)
+      Button("Cancel", role: .cancel) { draft = "" }
+    } message: {
+      Text(draftCounter)
     }
     .confirmationDialog(
       "Delete all memories?", isPresented: $confirmDeleteAll, titleVisibility: .visible
@@ -101,6 +113,10 @@ struct MemoryView: View {
     Binding(get: { editing != nil }, set: { if !$0 { editing = nil } })
   }
 
+  private var draftCounter: String {
+    String(localized: "\(draft.count)/\(HelperTasks.maxMemoryLength) characters")
+  }
+
   private var cleanedDraft: String {
     String(
       draft.trimmingCharacters(in: .whitespacesAndNewlines).prefix(HelperTasks.maxMemoryLength))
@@ -109,17 +125,16 @@ struct MemoryView: View {
   private func addMemory() {
     guard !cleanedDraft.isEmpty else { return }
     context.insert(MemoryItem(text: cleanedDraft))
+    draft = ""
     save()
   }
 
   private func saveEdit() {
-    guard let memory = editing else { return }
-    if cleanedDraft.isEmpty {
-      context.delete(memory)
-    } else {
-      memory.text = cleanedDraft
-      memory.updatedAt = Date()
-    }
+    guard let memory = editing, !cleanedDraft.isEmpty else { return }
+    memory.text = cleanedDraft
+    memory.updatedAt = Date()
+    editing = nil
+    draft = ""
     save()
   }
 

@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 struct ActionCardStack: View {
   let cards: [ActionCardRecord]
   var isCompact = false
+  var onUpdateCard: ((ActionCardRecord) -> Void)? = nil
 
   var body: some View {
     let renderable = cards.filter(\.isRenderable)
@@ -53,9 +54,13 @@ struct ActionCardStack: View {
     case .route(let card):
       RouteCardView(card: card, isCompact: isCompact)
     case .calendarEvent(let card):
-      CalendarEventCardView(card: card)
+      CalendarEventCardView(card: card) { updated in
+        onUpdateCard?(ActionCardRecord(id: record.id, payload: .calendarEvent(updated)))
+      }
     case .reminder(let card):
-      ReminderCardView(card: card)
+      ReminderCardView(card: card) { updated in
+        onUpdateCard?(ActionCardRecord(id: record.id, payload: .reminder(updated)))
+      }
     case .contact(let card):
       ContactCardView(card: card)
     case .messageDraft(let card):
@@ -63,7 +68,9 @@ struct ActionCardStack: View {
     case .weather(let card):
       WeatherCardView(card: card, isCompact: isCompact)
     case .alarm(let card):
-      AlarmCardView(card: card)
+      AlarmCardView(card: card) { updated in
+        onUpdateCard?(ActionCardRecord(id: record.id, payload: .alarm(updated)))
+      }
     case .automationHandoff(let card):
       AutomationHandoffCardView(card: card)
     case .unknown:
@@ -311,12 +318,21 @@ private struct RouteCardView: View {
   let card: RouteCard
   var isCompact = false
   @State private var selectedMode: String
+  @State private var routesByMode: [String: RouteCard]
+  @State private var loadingMode: String?
+  @State private var failedModes: Set<String> = []
   @State private var showsSteps = false
 
   init(card: RouteCard, isCompact: Bool = false) {
     self.card = card
     self.isCompact = isCompact
-    _selectedMode = State(initialValue: card.transport)
+    let initialMode = card.transport.lowercased()
+    _selectedMode = State(initialValue: initialMode)
+    _routesByMode = State(initialValue: [initialMode: card])
+  }
+
+  private var activeRoute: RouteCard? {
+    routesByMode[selectedMode]
   }
 
   private var modeSymbol: String {
@@ -328,8 +344,16 @@ private struct RouteCardView: View {
     }
   }
 
+  private var modeDisplayName: String {
+    switch selectedMode {
+    case "walking": String(localized: "walking")
+    case "cycling": String(localized: "cycling")
+    case "transit": String(localized: "transit")
+    default: String(localized: "driving")
+    }
+  }
+
   var body: some View {
-    let mins = max(1, Int((card.expectedTravelSeconds / 60.0).rounded()))
     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
       HStack(alignment: .top, spacing: Theme.Spacing.sm) {
         TintTile(symbol: modeSymbol, tint: Theme.Brand.glacier)
@@ -340,7 +364,7 @@ private struct RouteCardView: View {
             .lineLimit(2)
             .frame(maxWidth: .infinity, alignment: .leading)
           let subtitle = [
-            card.routeName.map { "via \($0)" },
+            activeRoute?.routeName.map { "via \($0)" },
             card.destinationAddress,
           ].compactMap { $0 }.joined(separator: " · ")
           if !subtitle.isEmpty {
@@ -351,24 +375,43 @@ private struct RouteCardView: View {
               .frame(maxWidth: .infinity, alignment: .leading)
           }
         }
-        VStack(alignment: .trailing, spacing: 2) {
-          Text("\(mins) min")
-            .font(.system(.subheadline, weight: .bold))
-            .monospacedDigit()
-            .foregroundStyle(Theme.Brand.glacier)
-          Text(PersonalToolsLogic.formatDistance(card.distanceMeters))
-            .font(.caption2)
-            .monospacedDigit()
+        if let route = activeRoute {
+          let mins = max(1, Int((route.expectedTravelSeconds / 60.0).rounded()))
+          VStack(alignment: .trailing, spacing: 2) {
+            Text("\(mins) min")
+              .font(.system(.subheadline, weight: .bold))
+              .monospacedDigit()
+              .foregroundStyle(Theme.Brand.glacier)
+            Text(PersonalToolsLogic.formatDistance(route.distanceMeters))
+              .font(.caption2)
+              .monospacedDigit()
+              .foregroundStyle(Theme.Text.tertiary)
+          }
+        } else if loadingMode == selectedMode {
+          ProgressView()
+            .controlSize(.small)
+            .accessibilityLabel("Calculating \(modeDisplayName) route")
+        } else {
+          Text(String(localized: "In Maps"))
+            .font(.caption.weight(.semibold))
             .foregroundStyle(Theme.Text.tertiary)
         }
       }
 
       if !isCompact {
         modePicker
-        if !card.steps.isEmpty {
-          stepsDisclosure
+        if let route = activeRoute, !route.steps.isEmpty {
+          stepsDisclosure(steps: route.steps)
+        } else if loadingMode == selectedMode {
+          Text("Calculating \(modeDisplayName) route…")
+            .font(.caption)
+            .foregroundStyle(Theme.Text.tertiary)
         } else if selectedMode == "transit" {
           Text("Live transit lines and departures open in Apple Maps.")
+            .font(.caption)
+            .foregroundStyle(Theme.Text.tertiary)
+        } else if failedModes.contains(selectedMode) {
+          Text("Live \(modeDisplayName) estimate unavailable here; open in Apple Maps.")
             .font(.caption)
             .foregroundStyle(Theme.Text.tertiary)
         }
@@ -381,13 +424,27 @@ private struct RouteCardView: View {
         fullWidth: true,
         id: "actionCard.route.startInMaps"
       ) {
-        NativeActions.openRouteInMaps(card, transportOverride: selectedMode)
+        NativeActions.openRouteInMaps(activeRoute ?? card, transportOverride: selectedMode)
       }
     }
     .padding(Theme.Spacing.md)
     .surfaceCard(radius: Theme.Radius.card)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("actionCard.route")
+    .task(id: selectedMode) {
+      let mode = selectedMode
+      guard routesByMode[mode] == nil else { return }
+      loadingMode = mode
+      let recalculated = await NativeActions.recalculateRoute(from: card, transport: mode)
+      guard !Task.isCancelled else { return }
+      if loadingMode == mode { loadingMode = nil }
+      if let recalculated {
+        routesByMode[mode] = recalculated
+        failedModes.remove(mode)
+      } else {
+        failedModes.insert(mode)
+      }
+    }
   }
 
   private var modePicker: some View {
@@ -402,13 +459,16 @@ private struct RouteCardView: View {
         let active = selectedMode == mode.id
         Button {
           Haptics.selection()
-          selectedMode = mode.id
+          if selectedMode != mode.id {
+            showsSteps = false
+            selectedMode = mode.id
+          }
         } label: {
           Label(mode.label, systemImage: mode.symbol)
             .font(.caption.weight(.medium))
             .foregroundStyle(active ? Theme.Text.primary : Theme.Text.secondary)
             .lineLimit(1)
-            .fixedSize()
+            .minimumScaleFactor(0.85)
             .padding(.horizontal, Theme.Spacing.sm)
             .frame(minHeight: 32)
             .background {
@@ -426,14 +486,14 @@ private struct RouteCardView: View {
     }
   }
 
-  private var stepsDisclosure: some View {
+  private func stepsDisclosure(steps: [RouteCard.Step]) -> some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
       Button {
         withAppAnimation(Theme.Motion.easeOut) { showsSteps.toggle() }
         Haptics.selection()
       } label: {
         HStack(spacing: Theme.Spacing.tight) {
-          Text("\(card.steps.count) turn-by-turn steps")
+          Text("\(steps.count) turn-by-turn steps")
             .font(.footnote.weight(.medium))
             .foregroundStyle(Theme.Text.secondary)
           Spacer()
@@ -450,7 +510,7 @@ private struct RouteCardView: View {
 
       if showsSteps {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-          ForEach(card.steps) { step in
+          ForEach(steps) { step in
             HStack(alignment: .top, spacing: Theme.Spacing.sm) {
               Text("\(step.id + 1).")
                 .font(.caption.monospacedDigit())
@@ -479,20 +539,49 @@ private struct RouteCardView: View {
 
 private struct CalendarEventCardView: View {
   let card: CalendarEventCard
+  var onUpdate: ((CalendarEventCard) -> Void)? = nil
+  @State private var currentCard: CalendarEventCard
   @State private var showsEditSheet = false
 
+  init(card: CalendarEventCard, onUpdate: ((CalendarEventCard) -> Void)? = nil) {
+    self.card = card
+    self.onUpdate = onUpdate
+    _currentCard = State(initialValue: card)
+  }
+
   private var timeSummary: String {
-    if card.isAllDay {
-      return card.startDate.formatted(date: .abbreviated, time: .omitted) + " · All day"
+    let cal = Calendar.current
+    let sameDay = cal.isDate(currentCard.startDate, inSameDayAs: currentCard.endDate)
+    if currentCard.isAllDay {
+      let startDay = currentCard.startDate.formatted(date: .abbreviated, time: .omitted)
+      if sameDay {
+        return "\(startDay) · All day"
+      }
+      let endIsMidnight = cal.isDate(
+        currentCard.endDate, equalTo: cal.startOfDay(for: currentCard.endDate), toGranularity: .second)
+      let displayEnd =
+        endIsMidnight
+        ? (cal.date(byAdding: .day, value: -1, to: currentCard.endDate) ?? currentCard.endDate)
+        : currentCard.endDate
+      if cal.isDate(currentCard.startDate, inSameDayAs: displayEnd) {
+        return "\(startDay) · All day"
+      }
+      let endDay = displayEnd.formatted(date: .abbreviated, time: .omitted)
+      return "\(startDay) – \(endDay) · All day"
     }
-    let day = card.startDate.formatted(date: .abbreviated, time: .omitted)
-    let start = card.startDate.formatted(date: .omitted, time: .shortened)
-    let end = card.endDate.formatted(date: .omitted, time: .shortened)
-    return "\(day) · \(start) – \(end)"
+    if sameDay {
+      let day = currentCard.startDate.formatted(date: .abbreviated, time: .omitted)
+      let start = currentCard.startDate.formatted(date: .omitted, time: .shortened)
+      let end = currentCard.endDate.formatted(date: .omitted, time: .shortened)
+      return "\(day) · \(start) – \(end)"
+    }
+    let startFull = currentCard.startDate.formatted(date: .abbreviated, time: .shortened)
+    let endFull = currentCard.endDate.formatted(date: .abbreviated, time: .shortened)
+    return "\(startFull) – \(endFull)"
   }
 
   private var statusBadge: (text: String, tone: Color) {
-    switch card.status {
+    switch currentCard.status {
     case .created: (String(localized: "Saved"), Theme.Status.healthy)
     case .updated: (String(localized: "Updated"), Theme.Brand.glacier)
     case .deleted: (String(localized: "Deleted"), Theme.Status.critical)
@@ -505,15 +594,15 @@ private struct CalendarEventCardView: View {
       HStack(alignment: .top, spacing: Theme.Spacing.sm) {
         TintTile(symbol: "calendar", tint: Theme.Brand.lavender)
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-          Text(card.title)
+          Text(currentCard.title)
             .font(.system(.subheadline, weight: .semibold))
-            .foregroundStyle(card.status == .deleted ? Theme.Text.tertiary : Theme.Text.primary)
-            .strikethrough(card.status == .deleted)
+            .foregroundStyle(currentCard.status == .deleted ? Theme.Text.tertiary : Theme.Text.primary)
+            .strikethrough(currentCard.status == .deleted)
             .frame(maxWidth: .infinity, alignment: .leading)
           Text(timeSummary)
             .font(.caption)
             .foregroundStyle(Theme.Text.secondary)
-          if let location = card.location, !location.isEmpty {
+          if let location = currentCard.location, !location.isEmpty {
             Label(location, systemImage: "mappin")
               .font(.caption)
               .foregroundStyle(Theme.Text.tertiary)
@@ -523,7 +612,7 @@ private struct CalendarEventCardView: View {
         StatusBadge(text: statusBadge.text, tone: statusBadge.tone)
       }
 
-      if card.status != .deleted {
+      if currentCard.status != .deleted {
         WrapFlowLayout(horizontalSpacing: Theme.Spacing.sm, verticalSpacing: Theme.Spacing.xs) {
           ActionCardPrimaryPill(
             title: String(localized: "View / Edit Event"), symbol: "calendar.badge.clock",
@@ -531,7 +620,7 @@ private struct CalendarEventCardView: View {
           ) {
             showsEditSheet = true
           }
-          if let location = card.location, !location.isEmpty {
+          if let location = currentCard.location, !location.isEmpty {
             ActionCardSecondaryPill(
               title: String(localized: "Directions"), symbol: "map",
               id: "actionCard.calendar.directions"
@@ -540,8 +629,8 @@ private struct CalendarEventCardView: View {
             }
           }
           ShareLink(
-            item: ICSFileTransfer(card: card),
-            preview: SharePreview(card.title, image: Image(systemName: "calendar"))
+            item: ICSFileTransfer(card: currentCard),
+            preview: SharePreview(currentCard.title, image: Image(systemName: "calendar"))
           ) {
             ActionCardPillLabel(title: String(localized: "Export .ics"), symbol: "square.and.arrow.up")
           }
@@ -554,8 +643,28 @@ private struct CalendarEventCardView: View {
     .surfaceCard(radius: Theme.Radius.card)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("actionCard.calendar")
+    .onChange(of: card) { _, latest in
+      currentCard = latest
+    }
     .sheet(isPresented: $showsEditSheet) {
-      CalendarEventEditSheet(card: card)
+      CalendarEventEditSheet(card: currentCard) { outcome in
+        switch outcome {
+        case .saved(let updated):
+          currentCard = updated
+          onUpdate?(updated)
+          Haptics.complete()
+        case .deleted:
+          var removed = currentCard
+          removed.status = .deleted
+          currentCard = removed
+          onUpdate?(removed)
+          Haptics.complete()
+        case .cancelled:
+          break
+        }
+      }
+      .ignoresSafeArea()
+      .interactiveDismissDisabled()
     }
   }
 }
@@ -564,23 +673,33 @@ private struct CalendarEventCardView: View {
 
 private struct ReminderCardView: View {
   let card: ReminderCard
+  var onUpdate: ((ReminderCard) -> Void)? = nil
   @State private var isCompleted: Bool
   @State private var dueDate: Date?
+  @State private var status: ReminderCard.Status
   @State private var isUpdating = false
+  @State private var errorMessage: String?
 
-  init(card: ReminderCard) {
+  init(card: ReminderCard, onUpdate: ((ReminderCard) -> Void)? = nil) {
     self.card = card
+    self.onUpdate = onUpdate
     _isCompleted = State(initialValue: card.isCompleted)
     _dueDate = State(initialValue: card.dueDate)
+    _status = State(initialValue: card.status)
   }
 
   private var statusBadge: (text: String, tone: Color)? {
-    switch card.status {
-    case .created: (String(localized: "Saved"), Theme.Status.healthy)
-    case .updated: (String(localized: "Updated"), Theme.Brand.glacier)
-    case .completed: (String(localized: "Done"), Theme.Status.healthy)
-    case .deleted: (String(localized: "Deleted"), Theme.Status.critical)
-    case .found: nil
+    if status == .deleted {
+      return (String(localized: "Deleted"), Theme.Status.critical)
+    }
+    if isCompleted {
+      return (String(localized: "Done"), Theme.Status.healthy)
+    }
+    switch status {
+    case .created: return (String(localized: "Saved"), Theme.Status.healthy)
+    case .updated: return (String(localized: "Updated"), Theme.Brand.glacier)
+    case .completed, .found: return nil
+    case .deleted: return (String(localized: "Deleted"), Theme.Status.critical)
     }
   }
 
@@ -596,15 +715,15 @@ private struct ReminderCardView: View {
             .frame(width: Theme.Size.target, height: Theme.Size.target)
         }
         .buttonStyle(.plain)
-        .disabled(isUpdating || card.reminderIdentifier == nil || card.status == .deleted)
+        .disabled(isUpdating || card.reminderIdentifier == nil || status == .deleted)
         .accessibilityLabel(isCompleted ? "Mark reminder incomplete" : "Mark reminder done")
         .accessibilityIdentifier("actionCard.reminder.toggle")
 
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
           Text(card.title)
             .font(.system(.subheadline, weight: .semibold))
-            .foregroundStyle(isCompleted || card.status == .deleted ? Theme.Text.tertiary : Theme.Text.primary)
-            .strikethrough(isCompleted || card.status == .deleted)
+            .foregroundStyle(isCompleted || status == .deleted ? Theme.Text.tertiary : Theme.Text.primary)
+            .strikethrough(isCompleted || status == .deleted)
             .frame(maxWidth: .infinity, alignment: .leading)
           let meta = [
             dueDate.map { $0.formatted(date: .abbreviated, time: .shortened) },
@@ -621,17 +740,24 @@ private struct ReminderCardView: View {
         }
       }
 
-      if !isCompleted, card.status != .deleted, card.reminderIdentifier != nil {
+      if let errorMessage, !errorMessage.isEmpty {
+        Label(errorMessage, systemImage: "exclamationmark.circle")
+          .font(.caption)
+          .foregroundStyle(Theme.Status.critical)
+          .accessibilityIdentifier("actionCard.reminder.error")
+      }
+
+      if !isCompleted, status != .deleted, card.reminderIdentifier != nil {
         WrapFlowLayout(horizontalSpacing: Theme.Spacing.tight, verticalSpacing: Theme.Spacing.xs) {
           ActionCardSecondaryPill(
             title: String(localized: "Snooze +1h"), symbol: "clock.arrow.circlepath",
-            id: "actionCard.reminder.snooze1h"
+            id: "actionCard.reminder.snooze1h", isDisabled: isUpdating
           ) {
             snooze(byHours: 1)
           }
           ActionCardSecondaryPill(
             title: String(localized: "Tomorrow 9 AM"), symbol: "sunrise",
-            id: "actionCard.reminder.snoozeTomorrow"
+            id: "actionCard.reminder.snoozeTomorrow", isDisabled: isUpdating
           ) {
             snoozeToTomorrowMorning()
           }
@@ -642,32 +768,45 @@ private struct ReminderCardView: View {
     .surfaceCard(radius: Theme.Radius.card)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("actionCard.reminder")
+    .onChange(of: card) { _, latest in
+      isCompleted = latest.isCompleted
+      dueDate = latest.dueDate
+      status = latest.status
+    }
   }
 
   private func toggleCompletion() {
-    guard let id = card.reminderIdentifier else { return }
+    guard !isUpdating, let id = card.reminderIdentifier else { return }
     let target = !isCompleted
+    errorMessage = nil
     isUpdating = true
     Task {
+      defer { isUpdating = false }
       let result = await PersonalTools.activeBackend.setReminderCompleted(
         identifier: id, completed: target)
-      isUpdating = false
-      if case .success(let updated) = result {
+      switch result {
+      case .success(let updated):
         isCompleted = updated.isCompleted
+        if let nextDue = updated.dueDate { dueDate = nextDue }
+        status = updated.isCompleted ? .completed : .updated
+        emitUpdate()
         Haptics.complete()
+      case .error(let message):
+        errorMessage = message
+        Haptics.error()
       }
     }
   }
 
   private func snooze(byHours hours: Int) {
-    guard let id = card.reminderIdentifier else { return }
+    guard !isUpdating, let id = card.reminderIdentifier else { return }
     let base = max(Date.now, dueDate ?? .now)
     let next = base.addingTimeInterval(TimeInterval(hours * 3_600))
     updateDueDate(id: id, to: next)
   }
 
   private func snoozeToTomorrowMorning() {
-    guard let id = card.reminderIdentifier else { return }
+    guard !isUpdating, let id = card.reminderIdentifier else { return }
     let cal = Calendar.current
     guard let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: .now)),
       let morning = cal.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow)
@@ -676,16 +815,33 @@ private struct ReminderCardView: View {
   }
 
   private func updateDueDate(id: String, to targetDate: Date) {
+    guard !isUpdating else { return }
+    errorMessage = nil
     isUpdating = true
     Task {
+      defer { isUpdating = false }
       let result = await PersonalTools.activeBackend.updateReminder(
         identifier: id, mutation: ReminderMutation(dueDate: targetDate))
-      isUpdating = false
-      if case .success(let updated) = result {
+      switch result {
+      case .success(let updated):
         dueDate = updated.dueDate ?? targetDate
+        isCompleted = updated.isCompleted
+        status = updated.isCompleted ? .completed : .updated
+        emitUpdate()
         Haptics.complete()
+      case .error(let message):
+        errorMessage = message
+        Haptics.error()
       }
     }
+  }
+
+  private func emitUpdate() {
+    var updated = card
+    updated.isCompleted = isCompleted
+    updated.dueDate = dueDate
+    updated.status = status
+    onUpdate?(updated)
   }
 }
 
@@ -792,6 +948,7 @@ private struct MessageDraftCardView: View {
   @State private var showsSMSComposer = false
   @State private var showsMailComposer = false
   @State private var copied = false
+  @State private var composerNotice: String?
 
   private var canCompose: Bool {
     card.channel == .sms ? NativeActions.canSendText : NativeActions.canSendMail
@@ -846,7 +1003,14 @@ private struct MessageDraftCardView: View {
       .padding(Theme.Spacing.sm)
       .surfaceCard(radius: Theme.Radius.row, fill: Theme.Surface.card)
 
-      HStack(spacing: Theme.Spacing.sm) {
+      if let composerNotice, !composerNotice.isEmpty {
+        Label(composerNotice, systemImage: "exclamationmark.circle")
+          .font(.caption)
+          .foregroundStyle(Theme.Status.guarded)
+          .accessibilityIdentifier("actionCard.draft.notice")
+      }
+
+      WrapFlowLayout(horizontalSpacing: Theme.Spacing.sm, verticalSpacing: Theme.Spacing.xs) {
         if canCompose {
           ActionCardPrimaryPill(
             title: String(localized: "Open Composer"),
@@ -854,7 +1018,7 @@ private struct MessageDraftCardView: View {
             tint: Theme.Brand.gold,
             id: "actionCard.draft.openComposer"
           ) {
-            if card.channel == .sms { showsSMSComposer = true } else { showsMailComposer = true }
+            openComposerIfAvailable()
           }
         } else {
           ActionCardPrimaryPill(
@@ -880,9 +1044,36 @@ private struct MessageDraftCardView: View {
     .accessibilityIdentifier("actionCard.draft")
     .sheet(isPresented: $showsSMSComposer) {
       MessageComposeSheet(recipients: card.recipients, body: card.body)
+        .ignoresSafeArea()
+        .interactiveDismissDisabled()
     }
     .sheet(isPresented: $showsMailComposer) {
       MailComposeSheet(recipients: card.recipients, subject: card.subject, body: card.body)
+        .ignoresSafeArea()
+        .interactiveDismissDisabled()
+    }
+  }
+
+  private func openComposerIfAvailable() {
+    composerNotice = nil
+    if card.channel == .sms {
+      if NativeActions.canSendText {
+        showsSMSComposer = true
+      } else {
+        Platform.copy(card.body)
+        copied = true
+        composerNotice = String(localized: "Messages is unavailable on this device. Copied draft.")
+        Haptics.error()
+      }
+    } else {
+      if NativeActions.canSendMail {
+        showsMailComposer = true
+      } else {
+        Platform.copy(card.body)
+        copied = true
+        composerNotice = String(localized: "Mail is not configured on this device. Copied draft.")
+        Haptics.error()
+      }
     }
   }
 }
@@ -906,7 +1097,7 @@ private struct ActionCardPrimaryPill: View {
         .font(.system(.footnote, weight: .semibold))
         .foregroundStyle(Theme.Text.primary)
         .lineLimit(1)
-        .fixedSize(horizontal: !fullWidth, vertical: true)
+        .minimumScaleFactor(0.85)
         .padding(.horizontal, Theme.Spacing.md)
         .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: 36)
         .background { LitTintBackground(shape: Capsule(), tint: tint, strength: .pill) }
@@ -922,6 +1113,7 @@ private struct ActionCardSecondaryPill: View {
   let title: String
   let symbol: String
   let id: String
+  var isDisabled = false
   let action: () -> Void
 
   var body: some View {
@@ -932,6 +1124,8 @@ private struct ActionCardSecondaryPill: View {
       ActionCardPillLabel(title: title, symbol: symbol)
     }
     .buttonStyle(.plain)
+    .disabled(isDisabled)
+    .opacity(isDisabled ? 0.55 : 1)
     .accessibilityIdentifier(id)
   }
 }
@@ -945,7 +1139,7 @@ private struct ActionCardPillLabel: View {
       .font(.system(.footnote, weight: .medium))
       .foregroundStyle(Theme.Text.secondary)
       .lineLimit(1)
-      .fixedSize()
+      .minimumScaleFactor(0.85)
       .padding(.horizontal, Theme.Spacing.md)
       .frame(minHeight: 36)
       .background { QuietBackground(shape: Capsule()) }
@@ -962,8 +1156,7 @@ private struct ICSFileTransfer: Transferable {
       Data(NativeActionURLs.icsString(for: item.card).utf8)
     }
     .suggestedFileName { item in
-      let slug = item.card.title.replacingOccurrences(of: "/", with: "-")
-      return "\(slug.isEmpty ? "event" : slug).ics"
+      "\(NativeActionURLs.sanitizedFileName(item.card.title, fallback: "event")).ics"
     }
   }
 }
@@ -976,8 +1169,7 @@ private struct VCardFileTransfer: Transferable {
       Data(NativeActionURLs.vCardString(for: item.card).utf8)
     }
     .suggestedFileName { item in
-      let slug = item.card.fullName.replacingOccurrences(of: "/", with: "-")
-      return "\(slug.isEmpty ? "contact" : slug).vcf"
+      "\(NativeActionURLs.sanitizedFileName(item.card.fullName, fallback: "contact")).vcf"
     }
   }
 }

@@ -5,6 +5,7 @@ import VisionKit
 /// multiple pages); returns the scanned pages as images.
 struct DocumentScanner: UIViewControllerRepresentable {
   var onScan: ([Data]) -> Void
+  var onError: ((Error) -> Void)?
   @Environment(\.dismiss) private var dismiss
 
   static var isAvailable: Bool { VNDocumentCameraViewController.isSupported }
@@ -15,13 +16,15 @@ struct DocumentScanner: UIViewControllerRepresentable {
     return scanner
   }
 
-  func updateUIViewController(_ controller: VNDocumentCameraViewController, context: Context) {}
+  func updateUIViewController(_ controller: VNDocumentCameraViewController, context: Context) {
+    context.coordinator.parent = self
+  }
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
   @MainActor
   final class Coordinator: NSObject, @preconcurrency VNDocumentCameraViewControllerDelegate {
-    let parent: DocumentScanner
+    var parent: DocumentScanner
     init(_ parent: DocumentScanner) { self.parent = parent }
 
     func documentCameraViewController(
@@ -45,6 +48,8 @@ struct DocumentScanner: UIViewControllerRepresentable {
     func documentCameraViewController(
       _ controller: VNDocumentCameraViewController, didFailWithError error: Error
     ) {
+      Log.lifecycle.error("document scanner failed: \(error.localizedDescription, privacy: .public)")
+      parent.onError?(error)
       parent.dismiss()
     }
   }

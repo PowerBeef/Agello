@@ -1,10 +1,87 @@
 import Foundation
 import LiteRTLMTools
+import ObjectiveC
 import SwiftData
+
+/// Thread-safe one-shot wrapper around `CheckedContinuation` that guarantees resumption on
+/// cancellation or deallocation (eliminating continuation leaks if `AppState` deallocates while
+/// a confirmation card is awaiting user input).
+private final class ConfirmationContinuationBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var continuation: CheckedContinuation<ToolConfirmationDecision, Never>?
+  private var resolvedDecision: ToolConfirmationDecision?
+
+  @discardableResult
+  func attach(_ continuation: CheckedContinuation<ToolConfirmationDecision, Never>) -> Bool {
+    let immediate: ToolConfirmationDecision? = lock.withLock {
+      if let resolvedDecision { return resolvedDecision }
+      self.continuation = continuation
+      return nil
+    }
+    if let immediate {
+      continuation.resume(returning: immediate)
+      return false
+    }
+    return true
+  }
+
+  @discardableResult
+  func resume(returning decision: ToolConfirmationDecision) -> Bool {
+    let cont: CheckedContinuation<ToolConfirmationDecision, Never>? = lock.withLock {
+      guard resolvedDecision == nil else { return nil }
+      resolvedDecision = decision
+      let pending = continuation
+      continuation = nil
+      return pending
+    }
+    cont?.resume(returning: decision)
+    return cont != nil
+  }
+
+  deinit {
+    let cont: CheckedContinuation<ToolConfirmationDecision, Never>? = lock.withLock {
+      let pending = continuation
+      continuation = nil
+      return pending
+    }
+    cont?.resume(returning: .denied(reason: "Agello is unavailable; action was not executed."))
+  }
+}
+
+private struct QueuedToolConfirmation {
+  let request: ToolConfirmationRequest
+  let threadID: UUID?
+  let box: ConfirmationContinuationBox
+}
+
+/// Per-`AppState` FIFO queue of pending tool confirmations. Retained via Objective-C association
+/// so `AppState` deallocation automatically releases the store and fails-closes every suspended
+/// confirmation continuation cleanly.
+private final class ToolConfirmationQueueStore {
+  var active: QueuedToolConfirmation?
+  var waiting: [QueuedToolConfirmation] = []
+
+  deinit {
+    active?.box.resume(returning: .denied(reason: "Agello is unavailable; action was not executed."))
+    for item in waiting {
+      item.box.resume(returning: .denied(reason: "Agello is unavailable; action was not executed."))
+    }
+  }
+}
+
+nonisolated(unsafe) private var toolConfirmationQueueKey: UInt8 = 0
 
 /// On-device workspace tool wiring (`search_files`, `read_document_pages`, `search_past_chats`,
 /// `query_table_or_json`). Part of ``AppState``, scoped to the active chat and its project.
 extension AppState {
+  private var confirmationQueue: ToolConfirmationQueueStore {
+    if let existing = objc_getAssociatedObject(self, &toolConfirmationQueueKey) as? ToolConfirmationQueueStore {
+      return existing
+    }
+    let created = ToolConfirmationQueueStore()
+    objc_setAssociatedObject(self, &toolConfirmationQueueKey, created, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+    return created
+  }
   /// Installs the `@Sendable` handlers read by workspace tools during replies.
   func installWorkspaceTools() {
     WorkspaceTools.searchFilesHandler = { [weak self] query, fileName, limit in
@@ -47,6 +124,9 @@ extension AppState {
     ToolManager.setBatchConfirmHandler { invocations in
       await BatchConfirmationPlanner.confirmBatch(invocations)
     }
+    ToolManager.setBatchEndHandler {
+      ToolConfirmationGate.clearBatchGrants()
+    }
     ShortcutCallbackBroker.shared.setAppInForeground(isInForeground)
     ShortcutCallbackBroker.shared.setForegroundReadyCheck {
       GPUGate.isOpen
@@ -55,6 +135,7 @@ extension AppState {
 
   /// Presents a pre-execution confirmation card in the active chat stream (or Voice Mode overlay)
   /// and suspends until the user approves, denies, stops the reply, or backgrounds the app.
+  /// Concurrent confirmation requests are queued FIFO instead of fail-closing the active prompt.
   func requestToolConfirmation(_ request: ToolConfirmationRequest) async -> ToolConfirmationDecision {
     guard isInForeground, GPUGate.isOpen else {
       return .denied(reason: "Foreground confirmation is required before running \(request.toolName).")
@@ -65,9 +146,9 @@ extension AppState {
     guard !Task.isCancelled else {
       return .denied(reason: "Cancelled before approval.")
     }
-    // Fail-close any stale request before displaying the new one.
-    cancelPendingToolConfirmation(reason: "Superseded by a new action.")
     let ownerThreadID = generatingThreadID ?? preparingThreadID ?? selectedThreadID
+    let box = ConfirmationContinuationBox()
+    let entry = QueuedToolConfirmation(request: request, threadID: ownerThreadID, box: box)
     return await withTaskCancellationHandler {
       await withCheckedContinuation { continuation in
         if Task.isCancelled
@@ -77,12 +158,19 @@ extension AppState {
           continuation.resume(returning: .denied(reason: "Cancelled before approval."))
           return
         }
-        pendingToolConfirmation = request
-        pendingToolConfirmationThreadID = ownerThreadID
-        pendingToolConfirmationContinuation = continuation
-        Haptics.selection()
+        guard box.attach(continuation) else { return }
+        let queue = confirmationQueue
+        if queue.active == nil {
+          queue.active = entry
+          pendingToolConfirmation = request
+          pendingToolConfirmationThreadID = ownerThreadID
+          Haptics.selection()
+        } else {
+          queue.waiting.append(entry)
+        }
       }
     } onCancel: {
+      box.resume(returning: .denied(reason: "Cancelled before approval."))
       Task { @MainActor [weak self] in
         self?.cancelPendingToolConfirmation(id: request.id, reason: "Cancelled before approval.")
       }
@@ -106,16 +194,15 @@ extension AppState {
   }
 
   private func resolvePendingToolConfirmation(id: UUID?, decision: ToolConfirmationDecision) {
-    if let id, pendingToolConfirmation?.id != id { return }
-    guard let continuation = pendingToolConfirmationContinuation else {
-      pendingToolConfirmation = nil
-      pendingToolConfirmationThreadID = nil
-      return
-    }
+    let queue = confirmationQueue
+    if let id, queue.active?.request.id != id { return }
+    let finished = queue.active
+    queue.active = nil
     pendingToolConfirmation = nil
     pendingToolConfirmationThreadID = nil
     pendingToolConfirmationContinuation = nil
-    continuation.resume(returning: decision)
+    finished?.box.resume(returning: decision)
+    promoteNextToolConfirmation()
   }
 
   /// Resolves an unresolved external Shortcut wait when the user returns manually without a callback.
@@ -125,18 +212,52 @@ extension AppState {
   }
 
   /// Cancels any pending confirmation card (or only the card matching `id`) with a fail-closed
-  /// `.denied` decision.
+  /// `.denied` decision. When `id == nil`, drains and denies the entire FIFO queue.
   func cancelPendingToolConfirmation(id: UUID? = nil, reason: String) {
-    if let id, pendingToolConfirmation?.id != id { return }
-    guard let continuation = pendingToolConfirmationContinuation else {
-      pendingToolConfirmation = nil
-      pendingToolConfirmationThreadID = nil
+    let queue = confirmationQueue
+    if let id {
+      if queue.active?.request.id == id {
+        let finished = queue.active
+        queue.active = nil
+        pendingToolConfirmation = nil
+        pendingToolConfirmationThreadID = nil
+        pendingToolConfirmationContinuation = nil
+        finished?.box.resume(returning: .denied(reason: reason))
+        promoteNextToolConfirmation()
+      } else if let idx = queue.waiting.firstIndex(where: { $0.request.id == id }) {
+        let removed = queue.waiting.remove(at: idx)
+        removed.box.resume(returning: .denied(reason: reason))
+      }
       return
     }
+    let active = queue.active
+    let waiting = queue.waiting
+    queue.active = nil
+    queue.waiting.removeAll()
     pendingToolConfirmation = nil
     pendingToolConfirmationThreadID = nil
     pendingToolConfirmationContinuation = nil
-    continuation.resume(returning: .denied(reason: reason))
+    active?.box.resume(returning: .denied(reason: reason))
+    for item in waiting {
+      item.box.resume(returning: .denied(reason: reason))
+    }
+  }
+
+  private func promoteNextToolConfirmation() {
+    let queue = confirmationQueue
+    while queue.active == nil, !queue.waiting.isEmpty {
+      let next = queue.waiting.removeFirst()
+      if !isInForeground || !GPUGate.isOpen
+        || (activeGenerationStopCount != nil && stopCount != activeGenerationStopCount)
+      {
+        next.box.resume(returning: .denied(reason: "Cancelled before approval."))
+        continue
+      }
+      queue.active = next
+      pendingToolConfirmation = next.request
+      pendingToolConfirmationThreadID = next.threadID
+      Haptics.selection()
+    }
   }
 
   /// Documents visible to the currently generating or selected thread (thread files + project files).

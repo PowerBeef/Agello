@@ -9,18 +9,11 @@ import Photos
 import SwiftUI
 import Vision
 
-/// Native iOS implementation of ``PersonalContextBackend`` backed by EventKit, Contacts, MapKit,
-/// WeatherKit, and AlarmKit. All queries and writes stay strictly on-device; permission is requested
-/// lazily on first opted-in use.
-final class PersonalContextService: PersonalContextBackend, @unchecked Sendable {
-  static let shared = PersonalContextService()
-
+/// Serializes all non-UI EventKit reads and writes onto a dedicated actor owning its own
+/// `EKEventStore`, preventing concurrent background tool calls and `@MainActor` sheets from
+/// sharing a non-thread-safe `EKEventStore` instance.
+private actor EventKitStoreActor {
   private let eventStore = EKEventStore()
-  private let contactStore = CNContactStore()
-
-  private init() {}
-
-  // MARK: - Calendar
 
   private func ensureCalendarAccess() async -> String? {
     let status = EKEventStore.authorizationStatus(for: .event)
@@ -85,14 +78,6 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
       return .error("Calendar event not found for that id.")
     }
     return .success(eventSummary(from: event))
-  }
-
-  func createCalendarEvent(
-    title: String, start: Date, end: Date, location: String?, notes: String?
-  ) async -> PersonalToolResult<CalendarEventSummary> {
-    await createCalendarEvent(
-      title: title, start: start, end: end, location: location, notes: notes,
-      alarmMinutesBefore: nil, recurrence: nil)
   }
 
   func createCalendarEvent(
@@ -174,8 +159,6 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     }
   }
 
-  // MARK: - Reminders
-
   private func ensureRemindersAccess() async -> String? {
     let status = EKEventStore.authorizationStatus(for: .reminder)
     switch status {
@@ -189,7 +172,7 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     }
   }
 
-  private func reminderSummary(from item: EKReminder) -> ReminderSummary {
+  private nonisolated static func reminderSummary(from item: EKReminder) -> ReminderSummary {
     ReminderSummary(
       reminderIdentifier: item.calendarItemIdentifier,
       title: item.title ?? "Untitled",
@@ -220,14 +203,13 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
       : eventStore.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: nil)
     let filter = query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let summaries: [ReminderSummary] = await withCheckedContinuation { continuation in
-      eventStore.fetchReminders(matching: predicate) { [weak self] items in
-        guard let self else { return continuation.resume(returning: []) }
+      eventStore.fetchReminders(matching: predicate) { items in
         let matched = (items ?? []).filter { item in
           guard !filter.isEmpty else { return true }
           let haystack = [item.title, item.notes, item.calendar?.title].compactMap { $0 }.joined(separator: " ")
           return haystack.localizedCaseInsensitiveContains(filter)
         }
-        continuation.resume(returning: Array(matched.prefix(30).map(self.reminderSummary(from:))))
+        continuation.resume(returning: Array(matched.prefix(30).map(Self.reminderSummary(from:))))
       }
     }
     return .success(summaries)
@@ -238,13 +220,7 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     guard let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else {
       return .error("Reminder not found for that id.")
     }
-    return .success(reminderSummary(from: reminder))
-  }
-
-  func createReminder(
-    title: String, dueDate: Date?, notes: String?
-  ) async -> PersonalToolResult<ReminderSummary> {
-    await createReminder(title: title, dueDate: dueDate, listName: nil, notes: notes, priority: nil)
+    return .success(Self.reminderSummary(from: reminder))
   }
 
   func createReminder(
@@ -265,7 +241,7 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     }
     do {
       try eventStore.save(reminder, commit: true)
-      return .success(reminderSummary(from: reminder))
+      return .success(Self.reminderSummary(from: reminder))
     } catch {
       return .error("Could not save reminder: \(error.localizedDescription)")
     }
@@ -282,7 +258,7 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     reminder.completionDate = completed ? Date() : nil
     do {
       try eventStore.save(reminder, commit: true)
-      return .success(reminderSummary(from: reminder))
+      return .success(Self.reminderSummary(from: reminder))
     } catch {
       return .error("Could not update reminder: \(error.localizedDescription)")
     }
@@ -313,7 +289,7 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     }
     do {
       try eventStore.save(reminder, commit: true)
-      return .success(reminderSummary(from: reminder))
+      return .success(Self.reminderSummary(from: reminder))
     } catch {
       return .error("Could not update reminder: \(error.localizedDescription)")
     }
@@ -324,7 +300,7 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     guard let reminder = eventStore.calendarItem(withIdentifier: identifier) as? EKReminder else {
       return .error("Reminder not found for that id.")
     }
-    let snapshot = reminderSummary(from: reminder)
+    let snapshot = Self.reminderSummary(from: reminder)
     do {
       try eventStore.remove(reminder, commit: true)
       return .success(snapshot)
@@ -332,14 +308,120 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
       return .error("Could not delete reminder: \(error.localizedDescription)")
     }
   }
+}
 
-  /// Looks up an EventKit event for native `EKEventViewController` / `EKEventEditViewController`.
-  func event(withIdentifier identifier: String) -> EKEvent? {
-    eventStore.event(withIdentifier: identifier)
+private final class OnceFlag: @unchecked Sendable {
+  private let lock = NSLock()
+  private var claimed = false
+
+  func claim() -> Bool {
+    lock.withLock {
+      guard !claimed else { return false }
+      claimed = true
+      return true
+    }
+  }
+}
+
+private struct SendableContactBox: @unchecked Sendable {
+  let contact: CNContact?
+}
+
+private struct SendableKeyDescriptors: @unchecked Sendable {
+  let keys: [CNKeyDescriptor]
+}
+
+/// Native iOS implementation of ``PersonalContextBackend`` backed by EventKit, Contacts, MapKit,
+/// WeatherKit, and AlarmKit. All queries and writes stay strictly on-device; permission is requested
+/// lazily on first opted-in use.
+final class PersonalContextService: PersonalContextBackend, @unchecked Sendable {
+  static let shared = PersonalContextService()
+
+  private let eventKit = EventKitStoreActor()
+  private let contactStore = CNContactStore()
+  private let alarmMetaLock = NSLock()
+
+  private init() {}
+
+  // MARK: - Calendar
+
+  func searchCalendarEvents(
+    start: Date, end: Date, query: String?
+  ) async -> PersonalToolResult<[CalendarEventSummary]> {
+    await eventKit.searchCalendarEvents(start: start, end: end, query: query)
   }
 
-  /// Shared store for native `EKEventEditViewController` presentation.
-  var sharedEventStore: EKEventStore { eventStore }
+  func fetchCalendarEvent(identifier: String) async -> PersonalToolResult<CalendarEventSummary> {
+    await eventKit.fetchCalendarEvent(identifier: identifier)
+  }
+
+  func createCalendarEvent(
+    title: String, start: Date, end: Date, location: String?, notes: String?
+  ) async -> PersonalToolResult<CalendarEventSummary> {
+    await eventKit.createCalendarEvent(
+      title: title, start: start, end: end, location: location, notes: notes,
+      alarmMinutesBefore: nil, recurrence: nil)
+  }
+
+  func createCalendarEvent(
+    title: String, start: Date, end: Date, location: String?, notes: String?,
+    alarmMinutesBefore: Int?, recurrence: String?
+  ) async -> PersonalToolResult<CalendarEventSummary> {
+    await eventKit.createCalendarEvent(
+      title: title, start: start, end: end, location: location, notes: notes,
+      alarmMinutesBefore: alarmMinutesBefore, recurrence: recurrence)
+  }
+
+  func updateCalendarEvent(
+    identifier: String, mutation: CalendarEventMutation
+  ) async -> PersonalToolResult<CalendarEventSummary> {
+    await eventKit.updateCalendarEvent(identifier: identifier, mutation: mutation)
+  }
+
+  func deleteCalendarEvent(identifier: String) async -> PersonalToolResult<CalendarEventSummary> {
+    await eventKit.deleteCalendarEvent(identifier: identifier)
+  }
+
+  // MARK: - Reminders
+
+  func listReminders(
+    includeCompleted: Bool, query: String?
+  ) async -> PersonalToolResult<[ReminderSummary]> {
+    await eventKit.listReminders(includeCompleted: includeCompleted, query: query)
+  }
+
+  func fetchReminder(identifier: String) async -> PersonalToolResult<ReminderSummary> {
+    await eventKit.fetchReminder(identifier: identifier)
+  }
+
+  func createReminder(
+    title: String, dueDate: Date?, notes: String?
+  ) async -> PersonalToolResult<ReminderSummary> {
+    await eventKit.createReminder(title: title, dueDate: dueDate, listName: nil, notes: notes, priority: nil)
+  }
+
+  func createReminder(
+    title: String, dueDate: Date?, listName: String?, notes: String?, priority: Int?
+  ) async -> PersonalToolResult<ReminderSummary> {
+    await eventKit.createReminder(
+      title: title, dueDate: dueDate, listName: listName, notes: notes, priority: priority)
+  }
+
+  func setReminderCompleted(
+    identifier: String, completed: Bool
+  ) async -> PersonalToolResult<ReminderSummary> {
+    await eventKit.setReminderCompleted(identifier: identifier, completed: completed)
+  }
+
+  func updateReminder(
+    identifier: String, mutation: ReminderMutation
+  ) async -> PersonalToolResult<ReminderSummary> {
+    await eventKit.updateReminder(identifier: identifier, mutation: mutation)
+  }
+
+  func deleteReminder(identifier: String) async -> PersonalToolResult<ReminderSummary> {
+    await eventKit.deleteReminder(identifier: identifier)
+  }
 
   // MARK: - Contacts
 
@@ -419,9 +501,14 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     }
   }
 
-  /// Fetches a full `CNContact` for native `CNContactViewController` presentation or vCard export.
-  func contact(withIdentifier identifier: String, keysToFetch: [CNKeyDescriptor]) -> CNContact? {
-    try? contactStore.unifiedContact(withIdentifier: identifier, keysToFetch: keysToFetch)
+  /// Fetches a full `CNContact` off the MainActor for native `CNContactViewController` presentation.
+  func fetchContact(withIdentifier identifier: String, keysToFetch: [CNKeyDescriptor]) async -> CNContact? {
+    let keyBox = SendableKeyDescriptors(keys: keysToFetch)
+    let boxed = await Task.detached(priority: .userInitiated) { [self] in
+      let found = try? self.contactStore.unifiedContact(withIdentifier: identifier, keysToFetch: keyBox.keys)
+      return SendableContactBox(contact: found)
+    }.value
+    return boxed.contact
   }
 
   // MARK: - Maps & Places (MapKit)
@@ -604,21 +691,37 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     var minute: Int?
     var weekdays: [String]
     var durationSeconds: Double?
+    var remainingSeconds: Double?
   }
 
   private static let alarmMetaKey = "agello.alarmKitMetadata"
 
-  private func loadAlarmMeta() -> [String: StoredAlarmRecord] {
+  private static func clampedAlarmLabel(_ raw: String, fallback: String) -> String {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    let clamped = String(trimmed.prefix(80))
+    return clamped.isEmpty ? fallback : clamped
+  }
+
+  private func loadAlarmMetaUnlocked() -> [String: StoredAlarmRecord] {
     guard let data = UserDefaults.standard.data(forKey: Self.alarmMetaKey),
       let decoded = try? JSONDecoder().decode([String: StoredAlarmRecord].self, from: data)
     else { return [:] }
     return decoded
   }
 
-  private func saveAlarmMeta(_ records: [String: StoredAlarmRecord]) {
+  private func saveAlarmMetaUnlocked(_ records: [String: StoredAlarmRecord]) {
     if let data = try? JSONEncoder().encode(records) {
       UserDefaults.standard.set(data, forKey: Self.alarmMetaKey)
     }
+  }
+
+  private func withAlarmMeta<T>(_ body: (inout [String: StoredAlarmRecord]) -> T) -> T {
+    alarmMetaLock.lock()
+    defer { alarmMetaLock.unlock() }
+    var records = loadAlarmMetaUnlocked()
+    let result = body(&records)
+    saveAlarmMetaUnlocked(records)
+    return result
   }
 
   private func ensureAlarmAccess() async -> String? {
@@ -679,7 +782,15 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     } else if case .fixed(let date) = alarm.schedule {
       fireDate = date
     }
+    let mappedState = mapAlarmState(alarm.state)
     let kind: AlarmCard.Kind = meta?.kind ?? (alarm.countdownDuration != nil ? .timer : .alarm)
+    if mappedState == .paused {
+      fireDate = nil
+    }
+    let duration =
+      mappedState == .paused
+      ? (meta?.remainingSeconds ?? meta?.durationSeconds ?? alarm.countdownDuration?.preAlert)
+      : (meta?.durationSeconds ?? alarm.countdownDuration?.preAlert)
     return AlarmSummary(
       alarmID: alarm.id.uuidString,
       kind: kind,
@@ -688,18 +799,21 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
       hour: hour,
       minute: minute,
       weekdays: weekdays,
-      durationSeconds: meta?.durationSeconds ?? alarm.countdownDuration?.preAlert,
-      state: mapAlarmState(alarm.state))
+      durationSeconds: duration,
+      state: mappedState)
   }
 
   func listAlarms() async -> PersonalToolResult<[AlarmSummary]> {
     if let err = await ensureAlarmAccess() { return .error(err) }
     do {
       let active = try AlarmManager.shared.alarms
-      let meta = loadAlarmMeta()
       let activeIDs = Set(active.map { $0.id.uuidString })
-      let pruned = meta.filter { activeIDs.contains($0.key) }
-      if pruned.count != meta.count { saveAlarmMeta(pruned) }
+      let pruned: [String: StoredAlarmRecord] = alarmMetaLock.withLock {
+        let meta = loadAlarmMetaUnlocked()
+        let kept = meta.filter { activeIDs.contains($0.key) }
+        if kept.count != meta.count { saveAlarmMetaUnlocked(kept) }
+        return kept
+      }
       return .success(active.map { alarmSummary(from: $0, meta: pruned[$0.id.uuidString]) })
     } catch {
       return .error("Could not list alarms: \(error.localizedDescription)")
@@ -709,7 +823,8 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
   func scheduleTimer(label: String, durationSeconds: Double) async -> PersonalToolResult<AlarmSummary> {
     if let err = await ensureAlarmAccess() { return .error(err) }
     let id = UUID()
-    let titleResource = LocalizedStringResource(stringLiteral: label)
+    let safeLabel = Self.clampedAlarmLabel(label, fallback: "Timer")
+    let titleResource = LocalizedStringResource(stringLiteral: safeLabel)
     let presentation = AlarmPresentation(
       alert: AlarmPresentation.Alert(title: titleResource),
       countdown: AlarmPresentation.Countdown(
@@ -720,7 +835,7 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
         resumeButton: AlarmButton(text: "Resume", textColor: .white, systemImageName: "play.fill")))
     let attributes = AlarmAttributes(
       presentation: presentation,
-      metadata: AgelloAlarmMetadata(label: label, kind: "timer"),
+      metadata: AgelloAlarmMetadata(label: safeLabel, kind: "timer"),
       tintColor: Color(red: 0.929, green: 0.800, blue: 0.541))
     let config = AlarmManager.AlarmConfiguration.timer(
       duration: durationSeconds,
@@ -730,11 +845,11 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
       let scheduled = try await AlarmManager.shared.schedule(id: id, configuration: config)
       let fireDate = Date.now.addingTimeInterval(durationSeconds)
       let record = StoredAlarmRecord(
-        label: label, kind: .timer, fireDate: fireDate, hour: nil, minute: nil, weekdays: [],
-        durationSeconds: durationSeconds)
-      var meta = loadAlarmMeta()
-      meta[id.uuidString] = record
-      saveAlarmMeta(meta)
+        label: safeLabel, kind: .timer, fireDate: fireDate, hour: nil, minute: nil, weekdays: [],
+        durationSeconds: durationSeconds, remainingSeconds: nil)
+      withAlarmMeta { meta in
+        meta[id.uuidString] = record
+      }
       return .success(alarmSummary(from: scheduled, meta: record))
     } catch {
       return .error("Could not start timer: \(error.localizedDescription)")
@@ -746,12 +861,13 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
   ) async -> PersonalToolResult<AlarmSummary> {
     if let err = await ensureAlarmAccess() { return .error(err) }
     let id = UUID()
-    let titleResource = LocalizedStringResource(stringLiteral: label)
+    let safeLabel = Self.clampedAlarmLabel(label, fallback: "Alarm")
+    let titleResource = LocalizedStringResource(stringLiteral: safeLabel)
     let presentation = AlarmPresentation(
       alert: AlarmPresentation.Alert(title: titleResource))
     let attributes = AlarmAttributes(
       presentation: presentation,
-      metadata: AgelloAlarmMetadata(label: label, kind: "alarm"),
+      metadata: AgelloAlarmMetadata(label: safeLabel, kind: "alarm"),
       tintColor: Color(red: 0.929, green: 0.800, blue: 0.541))
     let mappedDays = localeWeekdays(from: weekdays)
     let schedule = Alarm.Schedule.relative(
@@ -765,11 +881,11 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     do {
       let scheduled = try await AlarmManager.shared.schedule(id: id, configuration: config)
       let record = StoredAlarmRecord(
-        label: label, kind: .alarm, fireDate: nil, hour: hour, minute: minute, weekdays: weekdays,
-        durationSeconds: nil)
-      var meta = loadAlarmMeta()
-      meta[id.uuidString] = record
-      saveAlarmMeta(meta)
+        label: safeLabel, kind: .alarm, fireDate: nil, hour: hour, minute: minute, weekdays: weekdays,
+        durationSeconds: nil, remainingSeconds: nil)
+      withAlarmMeta { meta in
+        meta[id.uuidString] = record
+      }
       return .success(alarmSummary(from: scheduled, meta: record))
     } catch {
       return .error("Could not schedule alarm: \(error.localizedDescription)")
@@ -779,17 +895,17 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
   func cancelAlarm(identifier: String) async -> PersonalToolResult<AlarmSummary> {
     if let err = await ensureAlarmAccess() { return .error(err) }
     guard let uuid = UUID(uuidString: identifier) else { return .error("Invalid alarm ID.") }
-    var meta = loadAlarmMeta()
-    let existingMeta = meta.removeValue(forKey: identifier)
     do {
       try AlarmManager.shared.cancel(id: uuid)
-      saveAlarmMeta(meta)
+      let existingMeta = withAlarmMeta { meta in
+        meta.removeValue(forKey: identifier)
+      }
       return .success(
         AlarmSummary(
           alarmID: identifier,
           kind: existingMeta?.kind ?? .alarm,
           label: existingMeta?.label ?? "Alarm",
-          fireDate: existingMeta?.fireDate,
+          fireDate: nil,
           hour: existingMeta?.hour,
           minute: existingMeta?.minute,
           weekdays: existingMeta?.weekdays ?? [],
@@ -805,17 +921,28 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     guard let uuid = UUID(uuidString: identifier) else { return .error("Invalid alarm ID.") }
     do {
       try AlarmManager.shared.pause(id: uuid)
-      let meta = loadAlarmMeta()[identifier]
+      let now = Date.now
+      let updatedMeta: StoredAlarmRecord? = withAlarmMeta { meta in
+        guard var existing = meta[identifier] else { return nil }
+        let remaining =
+          existing.fireDate.map { max(1, $0.timeIntervalSince(now)) }
+          ?? existing.remainingSeconds
+          ?? existing.durationSeconds
+        existing.remainingSeconds = remaining
+        existing.fireDate = nil
+        meta[identifier] = existing
+        return existing
+      }
       return .success(
         AlarmSummary(
           alarmID: identifier,
-          kind: meta?.kind ?? .timer,
-          label: meta?.label ?? "Timer",
+          kind: updatedMeta?.kind ?? .timer,
+          label: updatedMeta?.label ?? "Timer",
           fireDate: nil,
-          hour: meta?.hour,
-          minute: meta?.minute,
-          weekdays: meta?.weekdays ?? [],
-          durationSeconds: meta?.durationSeconds,
+          hour: updatedMeta?.hour,
+          minute: updatedMeta?.minute,
+          weekdays: updatedMeta?.weekdays ?? [],
+          durationSeconds: updatedMeta?.remainingSeconds ?? updatedMeta?.durationSeconds,
           state: .paused))
     } catch {
       return .error("Could not pause timer: \(error.localizedDescription)")
@@ -827,17 +954,25 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     guard let uuid = UUID(uuidString: identifier) else { return .error("Invalid alarm ID.") }
     do {
       try AlarmManager.shared.resume(id: uuid)
-      let meta = loadAlarmMeta()[identifier]
+      let now = Date.now
+      let updatedMeta: StoredAlarmRecord? = withAlarmMeta { meta in
+        guard var existing = meta[identifier] else { return nil }
+        let remaining = existing.remainingSeconds ?? existing.durationSeconds
+        existing.fireDate = remaining.map { now.addingTimeInterval(max(1, $0)) }
+        existing.remainingSeconds = nil
+        meta[identifier] = existing
+        return existing
+      }
       return .success(
         AlarmSummary(
           alarmID: identifier,
-          kind: meta?.kind ?? .timer,
-          label: meta?.label ?? "Timer",
-          fireDate: meta?.fireDate,
-          hour: meta?.hour,
-          minute: meta?.minute,
-          weekdays: meta?.weekdays ?? [],
-          durationSeconds: meta?.durationSeconds,
+          kind: updatedMeta?.kind ?? .timer,
+          label: updatedMeta?.label ?? "Timer",
+          fireDate: updatedMeta?.fireDate,
+          hour: updatedMeta?.hour,
+          minute: updatedMeta?.minute,
+          weekdays: updatedMeta?.weekdays ?? [],
+          durationSeconds: updatedMeta?.durationSeconds,
           state: .countdown))
     } catch {
       return .error("Could not resume timer: \(error.localizedDescription)")
@@ -971,11 +1106,10 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     options.isNetworkAccessAllowed = false
     options.isSynchronous = false
     let data: Data? = await withCheckedContinuation { continuation in
-      var resumed = false
+      let once = OnceFlag()
       PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) {
         imageData, _, _, _ in
-        guard !resumed else { return }
-        resumed = true
+        guard once.claim() else { return }
         continuation.resume(returning: imageData)
       }
     }

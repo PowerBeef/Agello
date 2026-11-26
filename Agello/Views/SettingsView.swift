@@ -9,6 +9,7 @@ import SwiftUI
 struct SettingsView: View {
   @Environment(AppState.self) private var appState
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.dynamicTypeSize) private var typeSize
   @AppStorage(SpotlightIndex.enabledKey) private var spotlightEnabled = true
   @State private var showDeveloper = false
 
@@ -42,22 +43,38 @@ struct SettingsView: View {
 
   private var statusSection: some View {
     Section {
-      HStack(spacing: Theme.Spacing.md) {
-        TintTile(symbol: "sparkles", tint: Theme.Brand.glacier, size: 44)
-        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-          Text(activeSpec.displayName)
-            .font(.headline)
-            .foregroundStyle(Theme.Text.primary)
-          Text(statusLine)
-            .font(.caption)
-            .foregroundStyle(Theme.Text.tertiary)
-            .accessibilityIdentifier("settings.status")
+      Group {
+        if typeSize.isAccessibilitySize {
+          VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(alignment: .top, spacing: Theme.Spacing.md) {
+              TintTile(symbol: "sparkles", tint: Theme.Brand.glacier, size: 44)
+              statusHeaderText
+            }
+            StatusBadge(text: status.word, tone: status.tone)
+          }
+        } else {
+          HStack(spacing: Theme.Spacing.md) {
+            TintTile(symbol: "sparkles", tint: Theme.Brand.glacier, size: 44)
+            statusHeaderText
+            Spacer(minLength: Theme.Spacing.sm)
+            StatusBadge(text: status.word, tone: status.tone)
+          }
         }
-        Spacer(minLength: Theme.Spacing.sm)
-        StatusBadge(text: status.word, tone: status.tone)
       }
       .padding(.vertical, Theme.Spacing.xs)
       .themedRow()
+    }
+  }
+
+  private var statusHeaderText: some View {
+    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+      Text(activeSpec.displayName)
+        .font(.headline)
+        .foregroundStyle(Theme.Text.primary)
+      Text(statusLine)
+        .font(.caption)
+        .foregroundStyle(Theme.Text.tertiary)
+        .accessibilityIdentifier("settings.status")
     }
   }
 
@@ -153,7 +170,11 @@ struct SettingsView: View {
   private var personalizationSummary: String {
     let p = appState.personalization
     guard p.enabled else { return String(localized: "Off") }
-    let customized = !p.name.isEmpty || !p.aboutYou.isEmpty || !p.instructions.isEmpty
+    let customized =
+      p.style != .standard
+      || !p.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      || !p.aboutYou.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      || !p.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     return customized ? p.style.displayName : String(localized: "Not set")
   }
 
@@ -193,7 +214,6 @@ struct SettingsView: View {
           tint: Theme.Brand.glacier, value: automationsSummary)
       }
       .themedRow()
-      .disabled(!appState.enableTools)
       .accessibilityIdentifier("settings.automations")
     } header: {
       Text("Model").eyebrowStyle()
@@ -214,6 +234,8 @@ struct SettingsView: View {
 
   private var automationsSummary: String {
     _ = appState.automationRegistryVersion
+    guard appState.enableTools else { return String(localized: "Off") }
+    if appState.focusFilter.hidePersonalTools { return String(localized: "Off (Focus)") }
     let count = AutomationRegistry.shared.enabledShortcuts.count
     return count == 0 ? String(localized: "Off") : String(localized: "\(count) allowed")
   }

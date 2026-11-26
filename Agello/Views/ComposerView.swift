@@ -61,18 +61,25 @@ struct ChatComposerView: View {
   @State private var showCamera = false
   @State private var showFiles = false
   @State private var showScanner = false
+  private struct PendingFile: Identifiable, Equatable {
+    let id = UUID()
+    let document: ExtractedDocument
+  }
+
   /// Files read and waiting to be sent with the next message.
-  @State private var pendingFiles: [ExtractedDocument] = []
-  /// Bumped when the chat changes: files still being read belong to the chat they were picked in.
+  @State private var pendingFiles: [PendingFile] = []
+  /// Bumped when the chat changes: async work still running belongs to the chat it started in.
   @State private var composerGeneration = 0
-  @State private var fileReads: [Task<Void, Never>] = []
-  /// Files being read right now.
-  @State private var readingFiles = 0
+  /// Active file-extraction tasks keyed by ID so finished reads prune and chat switches reset immediately.
+  @State private var fileReads: [UUID: Task<Void, Never>] = [:]
+  @State private var photoLoadTask: Task<Void, Never>?
   /// The recording in progress is dictation (text for the composer), not a voice message.
   @State private var dictating = false
   /// The user message being edited in the composer, if any.
   @State private var editingTurn: ChatTurn?
   @FocusState private var inputFocused: Bool
+
+  private var isReadingFiles: Bool { !fileReads.isEmpty }
 
   /// What the next message does; tints the composer chrome, pills and send button.
   private var mode: Theme.Mode {
@@ -118,8 +125,10 @@ struct ChatComposerView: View {
       pendingImage = nil
       // Files, the Search toggle and a voice message belong to the chat they were added in.
       composerGeneration += 1
-      for read in fileReads { read.cancel() }
-      fileReads = []
+      for task in fileReads.values { task.cancel() }
+      fileReads.removeAll()
+      photoLoadTask?.cancel()
+      photoLoadTask = nil
       pendingFiles = []
       bridge.searchWeb = false
       dictating = false
@@ -136,7 +145,14 @@ struct ChatComposerView: View {
       if thread == nil { takeRequestedCamera() }
     }
     .onDisappear {
+      composerGeneration += 1
+      for task in fileReads.values { task.cancel() }
+      fileReads.removeAll()
+      photoLoadTask?.cancel()
+      photoLoadTask = nil
+      dictating = false
       liveDictation.cancel()
+      recorder.stop()
     }
     .onAppear {
       // Debug and Bench builds only (2026-11-17).
@@ -180,7 +196,7 @@ struct ChatComposerView: View {
       if thread == nil, pendingFiles.isEmpty,
         let sample = SampleDocuments.named(in: ProcessInfo.processInfo.arguments)
       {
-        pendingFiles = [sample]
+        pendingFiles = [PendingFile(document: sample)]
       }
     }
   }
@@ -262,18 +278,19 @@ struct ChatComposerView: View {
 
   @ViewBuilder
   private var pendingBar: some View {
-    if !pendingFiles.isEmpty || readingFiles > 0 {
+    if !pendingFiles.isEmpty || isReadingFiles {
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: Theme.Spacing.sm) {
-          ForEach(Array(pendingFiles.enumerated()), id: \.offset) { index, file in
+          ForEach(pendingFiles) { pending in
+            let file = pending.document
             FileChip(
               name: file.name, kind: file.kind, pageCount: file.isPaged ? file.pages.count : 0,
               cut: file.truncated
             ) {
-              pendingFiles.remove(at: index)
+              pendingFiles.removeAll { $0.id == pending.id }
             }
           }
-          if readingFiles > 0 {
+          if isReadingFiles {
             HStack(spacing: Theme.Spacing.tight) {
               ProgressView().controlSize(.mini)
               Text("Reading…").font(.caption).foregroundStyle(Theme.Text.secondary)
@@ -409,13 +426,29 @@ struct ChatComposerView: View {
     .padding(.bottom, Theme.Spacing.tight)
     .photosPicker(isPresented: $showPhotos, selection: $photoItem, matching: .images)
     .onChange(of: photoItem) { _, item in
-      Task {
-        if let item, let data = try? await item.loadTransferable(type: Data.self) {
-          pendingImage = await Task.detached(priority: .userInitiated) {
+      guard let item else { return }
+      photoItem = nil
+      photoLoadTask?.cancel()
+      let generation = composerGeneration
+      photoLoadTask = Task {
+        do {
+          guard let data = try await item.loadTransferable(type: Data.self) else {
+            if generation == composerGeneration, !Task.isCancelled {
+              appState.generationError = String(localized: "Couldn't load the selected photo.")
+            }
+            return
+          }
+          let prepared = await Task.detached(priority: .userInitiated) {
             ImagePreparer.prepare(data) ?? data
           }.value
+          guard generation == composerGeneration, !Task.isCancelled else { return }
+          pendingImage = prepared
+        } catch {
+          guard generation == composerGeneration, !Task.isCancelled, !(error is CancellationError) else {
+            return
+          }
+          appState.generationError = error.localizedDescription
         }
-        photoItem = nil
       }
     }
     .captureSources(camera: $showCamera, scanner: $showScanner) { data in
@@ -458,10 +491,14 @@ struct ChatComposerView: View {
 
   /// Read a file in the background into the pending attachments of the chat it was picked in.
   private func read(_ extract: @escaping @Sendable () async throws -> ExtractedDocument) {
-    readingFiles += 1
     let generation = composerGeneration
+    let readID = UUID()
     let task = Task {
-      defer { readingFiles -= 1 }
+      defer {
+        if generation == composerGeneration {
+          fileReads.removeValue(forKey: readID)
+        }
+      }
       let extraction = Task.detached(priority: .userInitiated) { try await extract() }
       do {
         let document = try await withTaskCancellationHandler {
@@ -470,20 +507,25 @@ struct ChatComposerView: View {
           extraction.cancel()
         }
         guard generation == composerGeneration else { return }
-        pendingFiles.append(document)
+        pendingFiles.append(PendingFile(document: document))
       } catch {
         guard generation == composerGeneration, !(error is CancellationError) else { return }
         appState.generationError = error.localizedDescription
       }
     }
-    fileReads.append(task)
+    fileReads[readID] = task
   }
 
   private func scanName() -> String {
     "Scan \(Date.now.formatted(date: .abbreviated, time: .shortened))"
   }
 
-  private var attachDisabled: Bool { appState.isBusy || editingTurn != nil }
+  private var attachDisabled: Bool {
+    appState.isBusy || editingTurn != nil
+      || liveDictation.isListening || liveDictation.isStarting
+      || recorder.isRecording || recorder.isStarting
+      || appState.isTranscribing
+  }
 
   private var attachMenu: some View {
     Menu {
@@ -582,7 +624,10 @@ struct ChatComposerView: View {
         button.buttonStyle(QuietCircleButtonStyle())
       }
     }
-    .disabled(appState.isTranscribing || (recorder.isRecording && !dictating))
+    .disabled(
+      appState.isTranscribing || liveDictation.isStarting || recorder.isStarting
+        || (recorder.isRecording && !dictating)
+    )
     .accessibilityLabel(listening ? "Finish dictation" : "Dictate")
     .accessibilityValue(appState.isTranscribing ? "Transcribing" : listening ? "Listening" : "")
     .accessibilityIdentifier("composer.mic")
@@ -590,9 +635,10 @@ struct ChatComposerView: View {
 
   private func toggleDictation() {
     if liveDictation.isListening {
+      let generation = composerGeneration
       Task {
         await liveDictation.stop()
-        inputFocused = true
+        if generation == composerGeneration { inputFocused = true }
       }
       return
     }
@@ -600,12 +646,19 @@ struct ChatComposerView: View {
       recorder.stop()  // transcribed in onChange(of: isRecording)
       return
     }
+    guard !liveDictation.isStarting, !recorder.isStarting else { return }
     onStopReading()
+    let generation = composerGeneration
     let baseDraft = draft
     Task {
-      let startedLive = await liveDictation.start(baseDraft: baseDraft) { updated in
+      let startedLive = await liveDictation.start(
+        baseDraft: baseDraft,
+        currentDraft: { draft }
+      ) { updated in
+        guard generation == composerGeneration else { return }
         draft = updated
       }
+      guard generation == composerGeneration else { return }
       if startedLive || liveDictation.permissionDenied { return }
       // Fallback: Gemma 4 audio transcription when ANE Speech asset isn't installed (or fake mic).
       guard !appState.isBusy else {
@@ -614,6 +667,11 @@ struct ChatComposerView: View {
       }
       dictating = true
       await recorder.toggle()
+      guard generation == composerGeneration else {
+        dictating = false
+        recorder.discard()
+        return
+      }
       if !recorder.isRecording { dictating = false }
     }
   }
@@ -621,10 +679,12 @@ struct ChatComposerView: View {
   /// The dictation recording became text: append it to the draft.
   private func finishDictation() {
     dictating = false
-    guard let url = recorder.finishedURL else { return }
+    guard let url = recorder.takeFinishedURL() else { return }
+    let generation = composerGeneration
     Task {
+      defer { try? FileManager.default.removeItem(at: url) }
       let text = await appState.transcribe(url)
-      recorder.discard()
+      guard generation == composerGeneration else { return }
       if let text, !text.isEmpty {
         draft = Dictation.insert(text, into: draft)
         inputFocused = true
@@ -664,7 +724,8 @@ struct ChatComposerView: View {
   private var primaryAction: PrimaryAction {
     if appState.isBusy { return .stop }
     // Nothing to send: talk instead (voice mode).
-    if !canSend, !recorder.isRecording, !liveDictation.isListening, !appState.isTranscribing,
+    if !canSend, !recorder.isRecording, !recorder.isStarting,
+      !liveDictation.isListening, !liveDictation.isStarting, !appState.isTranscribing,
       editingTurn == nil
     {
       return .voice
@@ -704,7 +765,8 @@ struct ChatComposerView: View {
   }
 
   private var canSend: Bool {
-    guard readingFiles == 0, !recorder.isRecording, !liveDictation.isListening, !appState.isTranscribing
+    guard !isReadingFiles, !recorder.isRecording, !recorder.isStarting,
+      !liveDictation.isListening, !liveDictation.isStarting, !appState.isTranscribing
     else { return false }
     return !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       || pendingImage != nil || voiceMessageURL != nil || !pendingFiles.isEmpty
@@ -712,6 +774,7 @@ struct ChatComposerView: View {
 
   private func send() {
     onStopReading()
+    let generation = composerGeneration
     if let editingTurn, let thread {
       let text = draft
       draft = ""
@@ -720,7 +783,7 @@ struct ChatComposerView: View {
       Haptics.send()
       Task {
         let accepted = await appState.edit(editingTurn, text: text, in: thread)
-        if !accepted, draft.isEmpty {
+        if !accepted, generation == composerGeneration, draft.isEmpty {
           draft = text
           self.editingTurn = editingTurn
         }
@@ -740,7 +803,9 @@ struct ChatComposerView: View {
     Haptics.send()
     let target = thread ?? makeThread()
     // Files belong to the chat from now on (indexed in the background).
-    let added = files.compactMap { file in appState.knowledge.add(file, threadID: target.id).map { (file, $0) } }
+    let added = files.compactMap { pending in
+      appState.knowledge.add(pending.document, threadID: target.id).map { (pending.document, $0) }
+    }
     let documents = added.map(\.1)
     let records = added.map { file, document in
       FileRecord(
@@ -752,10 +817,11 @@ struct ChatComposerView: View {
         text: text, imageData: image, audioFileURL: audioURL, files: records,
         webSearch: webSearch, in: target)
       if accepted {
-        recorder.discard()
+        if generation == composerGeneration { recorder.discard() }
       } else {
-        // Nothing was sent: give the user their input back (the recording was never discarded).
+        // Nothing was sent: remove orphaned documents and restore input only if still on the same chat.
         for document in documents { appState.knowledge.delete(document) }
+        guard generation == composerGeneration else { return }
         if draft.isEmpty { draft = text }
         if pendingImage == nil { pendingImage = image }
         if pendingFiles.isEmpty { pendingFiles = files }

@@ -138,6 +138,7 @@ final class LiveDictation {
   static let maxDuration: TimeInterval = 120
 
   private(set) var isListening = false
+  private(set) var isStarting = false
   private(set) var elapsed: TimeInterval = 0
   var permissionDenied = false
   var errorMessage: String?
@@ -147,13 +148,31 @@ final class LiveDictation {
   @ObservationIgnored private var feeder: SpeechAudioFeeder?
   @ObservationIgnored private var analyzerTask: Task<CMTime?, Never>?
   @ObservationIgnored private var resultsTask: Task<Void, Never>?
-  @ObservationIgnored private var timer: Timer?
-  @ObservationIgnored private var autoStopTask: Task<Void, Never>?
-  @ObservationIgnored private var observers: [NSObjectProtocol] = []
+  @ObservationIgnored private nonisolated(unsafe) var timer: Timer?
+  @ObservationIgnored private nonisolated(unsafe) var autoStopTask: Task<Void, Never>?
+  @ObservationIgnored private nonisolated(unsafe) var observers: [NSObjectProtocol] = []
   @ObservationIgnored private var transcript = Dictation.LiveTranscript()
+  @ObservationIgnored private var baseOverride: String?
+  @ObservationIgnored private var lastDeliveredDraft = ""
+  @ObservationIgnored private var skipCurrentVolatile = false
+  @ObservationIgnored private var currentDraft: (@MainActor () -> String)?
   @ObservationIgnored private var onDraftChange: (@MainActor (String) -> Void)?
   @ObservationIgnored private var startedAt: Date?
   @ObservationIgnored private var stopping = false
+  @ObservationIgnored private var startGeneration = 0
+
+  deinit {
+    autoStopTask?.cancel()
+    if let timer {
+      if Thread.isMainThread {
+        timer.invalidate()
+      } else {
+        nonisolated(unsafe) let mainTimer = timer
+        DispatchQueue.main.async { mainTimer.invalidate() }
+      }
+    }
+    for observer in observers { NotificationCenter.default.removeObserver(observer) }
+  }
 
   #if DEBUG || BENCH
     private static let fakeMic = ProcessInfo.processInfo.arguments.contains("--uitest-fake-mic")
@@ -161,19 +180,38 @@ final class LiveDictation {
     private static let fakeMic = false
   #endif
 
+  /// Installed from a nonisolated context so Swift 6 does not inherit `@MainActor` isolation on
+  /// the CoreAudio real-time thread callback.
+  private nonisolated static func installTap(
+    on inputNode: AVAudioInputNode,
+    format: AVAudioFormat,
+    feeder: SpeechAudioFeeder
+  ) throws {
+    try inputNode.installAudioTap(onBus: 0, bufferSize: 1_024, format: format) { buffer, _ in
+      feeder.feed(AVAudioPCMBuffer(copying: buffer))
+    }
+  }
+
   /// Attempts to start live ANE streaming dictation. Returns `true` if streaming started, or
   /// `false` if unavailable/denied (check `permissionDenied` before falling back to Gemma audio).
   func start(
     baseDraft: String,
+    currentDraft: (@MainActor () -> String)? = nil,
     onDraftChange: @escaping @MainActor (String) -> Void
   ) async -> Bool {
-    guard !isListening, !stopping else { return false }
+    guard !isListening, !isStarting, !stopping else { return false }
     errorMessage = nil
     permissionDenied = false
     // UI tests drive AudioRecorder's fake microphone path without system prompts.
     guard !Self.fakeMic else { return false }
 
+    isStarting = true
+    startGeneration &+= 1
+    let generation = startGeneration
+    defer { isStarting = false }
+
     let granted = await AVAudioApplication.requestRecordPermission()
+    guard !Task.isCancelled, startGeneration == generation else { return false }
     guard granted else {
       permissionDenied = true
       return false
@@ -183,6 +221,7 @@ final class LiveDictation {
       Log.lifecycle.info("dictation: no installed ANE Speech asset; falling back to Gemma audio")
       return false
     }
+    guard !Task.isCancelled, startGeneration == generation else { return false }
 
     do {
       try AudioSessionControl.activateForRecording()
@@ -192,7 +231,11 @@ final class LiveDictation {
         let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
           compatibleWith: [resolved.module], considering: inputFormat)
       else {
-        AudioSessionControl.deactivate()
+        AudioSessionControl.deactivate(resumingOthers: true)
+        return false
+      }
+      guard !Task.isCancelled, startGeneration == generation else {
+        AudioSessionControl.deactivate(resumingOthers: true)
         return false
       }
 
@@ -201,17 +244,24 @@ final class LiveDictation {
         options: .init(priority: .userInitiated, modelRetention: .lingering)
       )
       try await speechAnalyzer.prepareToAnalyze(in: analyzerFormat)
+      guard !Task.isCancelled, startGeneration == generation else {
+        await speechAnalyzer.cancelAndFinishNow()
+        AudioSessionControl.deactivate(resumingOthers: true)
+        return false
+      }
 
       let bufferFeeder = SpeechAudioFeeder(analyzerFormat: analyzerFormat)
       transcript = Dictation.LiveTranscript(base: baseDraft)
+      baseOverride = nil
+      lastDeliveredDraft = baseDraft
+      skipCurrentVolatile = false
+      self.currentDraft = currentDraft
       self.onDraftChange = onDraftChange
       self.engine = audioEngine
       self.analyzer = speechAnalyzer
       self.feeder = bufferFeeder
 
-      audioEngine.inputNode.installTap(onBus: 0, bufferSize: 1_024, format: inputFormat) { buffer, _ in
-        bufferFeeder.feed(buffer)
-      }
+      try Self.installTap(on: audioEngine.inputNode, format: inputFormat, feeder: bufferFeeder)
       audioEngine.prepare()
       try audioEngine.start()
 
@@ -236,7 +286,10 @@ final class LiveDictation {
       stopping = false
       isListening = false
       elapsed = 0
+      currentDraft = nil
       onDraftChange = nil
+      baseOverride = nil
+      skipCurrentVolatile = false
     }
 
     stopTimersAndObservers()
@@ -258,14 +311,21 @@ final class LiveDictation {
     currentResultsTask?.cancel()
     _ = await currentResultsTask?.value
 
-    let finalDraft = transcript.commitVolatile()
-    onDraftChange?(finalDraft)
+    let editedManually = currentDraft.map { $0() != lastDeliveredDraft } ?? false
+    if !editedManually, !skipCurrentVolatile {
+      _ = transcript.commitVolatile()
+      let finalDraft = composedDraft
+      lastDeliveredDraft = finalDraft
+      onDraftChange?(finalDraft)
+    }
     AudioSessionControl.deactivate(resumingOthers: true)
   }
 
   /// Immediately aborts dictation (e.g. switching threads or dismissing chat).
   func cancel() {
-    guard isListening || analyzer != nil else { return }
+    startGeneration &+= 1
+    let hadActiveResources = isListening || analyzer != nil || engine != nil
+    guard hadActiveResources || isStarting else { return }
     stopTimersAndObservers()
     teardownAudioEngineOnly()
     feeder?.finish()
@@ -278,13 +338,52 @@ final class LiveDictation {
     resultsTask = nil
     isListening = false
     elapsed = 0
+    currentDraft = nil
     onDraftChange = nil
-    AudioSessionControl.deactivate(resumingOthers: true)
-    Task {
-      currentAnalyzerTask?.cancel()
-      currentResultsTask?.cancel()
-      await currentAnalyzer?.cancelAndFinishNow()
+    baseOverride = nil
+    skipCurrentVolatile = false
+    if hadActiveResources {
+      AudioSessionControl.deactivate(resumingOthers: true)
     }
+    if currentAnalyzer != nil || currentAnalyzerTask != nil || currentResultsTask != nil {
+      Task {
+        currentAnalyzerTask?.cancel()
+        currentResultsTask?.cancel()
+        await currentAnalyzer?.cancelAndFinishNow()
+      }
+    }
+  }
+
+  private var composedDraft: String {
+    Dictation.insert(transcript.spokenText, into: baseOverride ?? transcript.base)
+  }
+
+  /// Preserves manual edits the user makes to the draft while live dictation is running.
+  private func syncWithManualEdits() {
+    guard let live = currentDraft?(), live != lastDeliveredDraft else { return }
+    let existingSpoken = transcript.spokenText
+    if !existingSpoken.isEmpty, live.hasSuffix(existingSpoken) {
+      baseOverride = String(live.dropLast(existingSpoken.count))
+    } else {
+      let hadVolatile = !transcript.volatile.isEmpty
+      baseOverride = live
+      transcript = Dictation.LiveTranscript(base: live)
+      skipCurrentVolatile = hadVolatile
+    }
+    lastDeliveredDraft = live
+  }
+
+  private func applyResult(text: String, isFinal: Bool) {
+    guard isListening || stopping else { return }
+    syncWithManualEdits()
+    if skipCurrentVolatile {
+      if isFinal { skipCurrentVolatile = false }
+      return
+    }
+    transcript.apply(text: text, isFinal: isFinal)
+    let updated = composedDraft
+    lastDeliveredDraft = updated
+    onDraftChange?(updated)
   }
 
   private func startTasks(
@@ -294,9 +393,7 @@ final class LiveDictation {
       do {
         try await module.consumeResults { [weak self] text, isFinal, _ in
           await MainActor.run {
-            guard let self, self.isListening || self.stopping else { return }
-            self.transcript.apply(text: text, isFinal: isFinal)
-            self.onDraftChange?(self.transcript.composedDraft)
+            self?.applyResult(text: text, isFinal: isFinal)
           }
         }
       } catch is CancellationError {
@@ -328,8 +425,12 @@ final class LiveDictation {
   private func startTimers() {
     startedAt = Date()
     elapsed = 0
-    timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-      Task { @MainActor in
+    timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
+      guard self != nil else {
+        timer.invalidate()
+        return
+      }
+      Task { @MainActor [weak self] in
         guard let self, let startedAt = self.startedAt else { return }
         self.elapsed = Date().timeIntervalSince(startedAt)
       }
@@ -363,7 +464,11 @@ final class LiveDictation {
     feeder?.finish()
     feeder = nil
     analyzer = nil
-    AudioSessionControl.deactivate()
+    currentDraft = nil
+    onDraftChange = nil
+    baseOverride = nil
+    skipCurrentVolatile = false
+    AudioSessionControl.deactivate(resumingOthers: true)
   }
 
   private static func finalizeWithTimeout(analyzer: SpeechAnalyzer, through lastTime: CMTime?) async {
@@ -402,10 +507,13 @@ final class VoiceSpeechMonitor: @unchecked Sendable {
     inputFormat: AVAudioFormat,
     onTranscript: @escaping @Sendable (_ text: String, _ isFinal: Bool) -> Void
   ) async -> Bool {
+    guard !Task.isCancelled, !lock.withLock({ stopped }) else { return false }
     guard let resolved = await SpeechAnalyzerModule.resolveInstalled() else { return false }
+    guard !Task.isCancelled, !lock.withLock({ stopped }) else { return false }
     guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
       compatibleWith: [resolved.module], considering: inputFormat)
     else { return false }
+    guard !Task.isCancelled, !lock.withLock({ stopped }) else { return false }
 
     do {
       let speechAnalyzer = SpeechAnalyzer(
@@ -416,7 +524,7 @@ final class VoiceSpeechMonitor: @unchecked Sendable {
 
       let bufferFeeder = SpeechAudioFeeder(analyzerFormat: analyzerFormat)
       let alreadyStopped: Bool = lock.withLock {
-        if stopped { return true }
+        if stopped || Task.isCancelled { return true }
         analyzer = speechAnalyzer
         feeder = bufferFeeder
         return false
@@ -451,9 +559,24 @@ final class VoiceSpeechMonitor: @unchecked Sendable {
       let aTask = Task {
         _ = try? await speechAnalyzer.analyzeSequence(bufferFeeder.stream)
       }
-      lock.withLock {
+      let stoppedDuringTaskStart: Bool = lock.withLock {
+        if stopped || Task.isCancelled {
+          feeder = nil
+          analyzer = nil
+          resultsTask = nil
+          analyzerTask = nil
+          return true
+        }
         resultsTask = rTask
         analyzerTask = aTask
+        return false
+      }
+      if stoppedDuringTaskStart {
+        rTask.cancel()
+        aTask.cancel()
+        bufferFeeder.finish()
+        await speechAnalyzer.cancelAndFinishNow()
+        return false
       }
       Log.lifecycle.info("voice: ANE neural turn monitor active")
       return true

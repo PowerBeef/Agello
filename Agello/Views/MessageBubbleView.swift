@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 
 /// What a message can do. Closures are supplied by the chat screen.
@@ -17,6 +18,7 @@ struct MessageActions {
 /// tools, actions). Color stays in the content layer: no glass here.
 struct MessageBubbleView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.modelContext) private var modelContext
   let turn: ChatTurn
   var isStreaming: Bool = false
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
@@ -129,31 +131,41 @@ struct MessageBubbleView: View {
       if !turn.toolNames.isEmpty {
         toolChips
       }
-      if !isStreaming, !turn.text.isEmpty {
+      if !isStreaming {
         let parts = turn.parts
-        if !parts.actionCards.isEmpty {
-          ActionCardStack(cards: parts.actionCards)
+        let hasWeatherCard = parts.actionCards.contains {
+          if case .weather = $0.payload { return true }
+          return false
         }
-        if !parts.sources.isEmpty {
-          sourcesCard(parts.sources)
-          if parts.sources.contains(where: { WeatherLookup.isAttribution($0.url) }) {
-            WeatherAttributionMark()
+        if !parts.actionCards.isEmpty {
+          ActionCardStack(cards: parts.actionCards) { updated in
+            persistCardUpdate(updated)
           }
         }
-        if parts.incomplete {
-          Label("Incomplete reply", systemImage: "exclamationmark.circle")
-            .font(.footnote)
-            .foregroundStyle(Theme.Text.tertiary)
-            .accessibilityIdentifier("message.incomplete")
+        if !turn.text.isEmpty || !parts.actionCards.isEmpty {
+          if !parts.sources.isEmpty {
+            sourcesCard(parts.sources)
+            if !hasWeatherCard, parts.sources.contains(where: { WeatherLookup.isAttribution($0.url) }) {
+              WeatherAttributionMark()
+            }
+          }
+          if parts.incomplete {
+            Label("Incomplete reply", systemImage: "exclamationmark.circle")
+              .font(.footnote)
+              .foregroundStyle(Theme.Text.tertiary)
+              .accessibilityIdentifier("message.incomplete")
+          }
+          if let memory = parts.toolActivity.last(where: { $0.name == "memory" }) {
+            Label("Memory updated", systemImage: "brain.head.profile")
+              .font(.footnote)
+              .foregroundStyle(Theme.Text.tertiary)
+              .accessibilityValue(memory.summary)
+              .accessibilityIdentifier("message.memory")
+          }
+          if !turn.text.isEmpty || versions.count > 1 || actions.canRegenerate {
+            actionRow
+          }
         }
-        if let memory = parts.toolActivity.last(where: { $0.name == "memory" }) {
-          Label("Memory updated", systemImage: "brain.head.profile")
-            .font(.footnote)
-            .foregroundStyle(Theme.Text.tertiary)
-            .accessibilityValue(memory.summary)
-            .accessibilityIdentifier("message.memory")
-        }
-        actionRow
       }
       if showsStats, let stats = turn.stats {
         Text(stats.footerLine)
@@ -317,7 +329,6 @@ struct MessageBubbleView: View {
           .font(.system(.caption, weight: .medium))
           .foregroundStyle(Theme.Text.secondary)
           .lineLimit(1)
-          .fixedSize()
           .padding(.horizontal, Theme.Spacing.snug)
           .padding(.vertical, Theme.Spacing.xs)
           .background { QuietBackground(shape: Capsule()) }
@@ -394,7 +405,7 @@ struct MessageBubbleView: View {
       if versions.count > 1 {
         versionSwitcher
       }
-      if !isError {
+      if !isError, !turn.text.isEmpty {
         actionButton(
           copied ? "checkmark" : "doc.on.doc", copied ? "Copied" : "Copy", id: "message.copy"
         ) {
@@ -412,7 +423,7 @@ struct MessageBubbleView: View {
         )
         .disabled(actions.isBusy)
       }
-      if !isError {
+      if !isError, !turn.text.isEmpty {
         ShareLink(item: turn.text) {
           Image(systemName: "square.and.arrow.up")
             .frame(width: Theme.Size.target, height: Theme.Size.target)
@@ -444,6 +455,7 @@ struct MessageBubbleView: View {
     let index = versions.firstIndex { $0.id == turn.id } ?? 0
     return HStack(spacing: 0) {
       Button {
+        guard index > 0, versions.indices.contains(index - 1) else { return }
         Haptics.selection()
         actions.selectVersion(versions[index - 1])
       } label: {
@@ -460,6 +472,7 @@ struct MessageBubbleView: View {
         .accessibilityLabel("Version \(index + 1) of \(versions.count)")
         .accessibilityIdentifier("message.version")
       Button {
+        guard versions.indices.contains(index + 1) else { return }
         Haptics.selection()
         actions.selectVersion(versions[index + 1])
       } label: {
@@ -473,6 +486,19 @@ struct MessageBubbleView: View {
     .font(.system(.footnote, weight: .medium))
     .foregroundStyle(Theme.Text.tertiary)
     .buttonStyle(.borderless)
+  }
+
+  private func persistCardUpdate(_ updatedCard: ActionCardRecord) {
+    guard !turn.isDeleted else { return }
+    var parts = turn.parts
+    let key = updatedCard.deduplicationKey
+    if let index = parts.actionCards.firstIndex(where: { $0.deduplicationKey == key || $0.id == updatedCard.id }) {
+      parts.actionCards[index] = updatedCard
+    } else {
+      parts.actionCards.append(updatedCard)
+    }
+    turn.parts = parts
+    try? (turn.modelContext ?? modelContext).save()
   }
 
   private func copy(_ text: String) {
@@ -607,24 +633,44 @@ private extension View {
 /// tucked in the collapsed sources, as WeatherKit's terms and App Review require.
 struct WeatherAttributionMark: View {
   @State private var mark: WeatherLookup.Mark?
+  @State private var loaded = false
   @ScaledMetric(relativeTo: .caption2) private var height = Theme.Size.attributionMark
 
   var body: some View {
-    Group {
-      if let mark {
-        Link(destination: mark.legal) {
-          AsyncImage(url: mark.image) { image in
-            image.resizable().scaledToFit()
-          } placeholder: {
-            Text(mark.name).font(.caption2).foregroundStyle(Theme.Text.tertiary)
+    let legalURL = mark?.legal ?? WeatherLookup.fallbackLegalURL
+    let serviceName = mark?.name ?? String(localized: "Apple Weather")
+    Link(destination: legalURL) {
+      Group {
+        if let imageURL = mark?.image {
+          AsyncImage(url: imageURL) { phase in
+            switch phase {
+            case .success(let image):
+              image.resizable().scaledToFit()
+                .frame(height: height)
+            case .empty, .failure:
+              fallbackLabel(serviceName)
+            @unknown default:
+              fallbackLabel(serviceName)
+            }
           }
-          .frame(height: height)
-          .frame(minHeight: Theme.Size.target, alignment: .leading)
+        } else {
+          fallbackLabel(serviceName)
         }
-        .accessibilityLabel("\(mark.name), legal attribution")
-        .accessibilityIdentifier("message.weatherAttribution")
       }
+      .frame(minHeight: Theme.Size.target, alignment: .leading)
     }
-    .task { if mark == nil { mark = await WeatherLookup.mark() } }
+    .accessibilityLabel("\(serviceName), legal attribution")
+    .accessibilityIdentifier("message.weatherAttribution")
+    .task {
+      guard !loaded else { return }
+      loaded = true
+      mark = await WeatherLookup.mark()
+    }
+  }
+
+  private func fallbackLabel(_ name: String) -> some View {
+    Text(name)
+      .font(.caption2)
+      .foregroundStyle(Theme.Text.tertiary)
   }
 }

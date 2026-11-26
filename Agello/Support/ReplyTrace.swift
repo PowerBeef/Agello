@@ -92,6 +92,7 @@ enum ReplyTrace {
 
   private static let running = Mutex<Running?>(nil)
   private static let finished = Mutex<Finished?>(nil)
+  private static let sampleTask = Mutex<Task<Void, Never>?>(nil)
   /// The same steps as events in Instruments (Points of Interest).
   private static let signposter = OSSignposter(subsystem: "com.patricedery.agello", category: .pointsOfInterest)
 
@@ -123,8 +124,12 @@ enum ReplyTrace {
     mark("send")
     FrameMonitor.start()
     // The timeline: memory, heat and how far decoding is, once a second until the reply ends.
-    Task.detached(priority: .utility) {
-      while sample(generation) { try? await Task.sleep(for: .seconds(1)) }
+    let task = Task.detached(priority: .utility) {
+      while !Task.isCancelled, sample(generation) { try? await Task.sleep(for: .seconds(1)) }
+    }
+    sampleTask.withLock { existing in
+      existing?.cancel()
+      existing = task
     }
   }
 
@@ -240,7 +245,12 @@ enum ReplyTrace {
     text: String, thought: String, stats: GenerationStats?, sources: [String] = [], frames: [String: Double] = [:],
     error: String?, notice: String?
   ) {
-    guard isEnabled, let trace = running.withLock({ trace in
+    guard isEnabled else { return }
+    sampleTask.withLock { existing in
+      existing?.cancel()
+      existing = nil
+    }
+    guard let trace = running.withLock({ trace in
       defer { trace = nil }
       return trace
     }) else { return }

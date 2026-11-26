@@ -136,8 +136,7 @@ struct OnboardingView: View {
           appState.store.download(spec) { cellularSpec = $0 }
         }
       case .failed(let message):
-        note(message)
-          .foregroundStyle(Theme.Status.critical)
+        note(message, color: Theme.Status.critical)
         primary("Try again", id: "onboarding.download") {
           appState.store.download(spec) { cellularSpec = $0 }
         }
@@ -155,10 +154,10 @@ struct OnboardingView: View {
     }
   }
 
-  private func note(_ text: String) -> some View {
+  private func note(_ text: String, color: Color = Theme.Text.tertiary) -> some View {
     Text(text)
       .font(.footnote)
-      .foregroundStyle(Theme.Text.tertiary)
+      .foregroundStyle(color)
       .multilineTextAlignment(.center)
       .frame(maxWidth: .infinity)
   }

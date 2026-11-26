@@ -8,14 +8,15 @@ import SwiftUI
 /// `run_shortcut`, and every run still requires explicit confirmation via `ToolConfirmationCard`.
 struct AutomationGalleryView: View {
   @Environment(AppState.self) private var appState
-  @Environment(\.dismiss) private var dismiss
 
   @State private var shortcuts: [RegisteredShortcut] = AutomationRegistry.shared.shortcuts
+  @State private var recipes: [AutomationRecipe] = AutomationRegistry.shared.allRecipes
   @State private var showAddSheet = false
   @State private var newName = ""
   @State private var newSummary = ""
   @State private var newInputMode: RegisteredShortcut.PayloadMode = .text
   @State private var newOutputMode: RegisteredShortcut.PayloadMode = .text
+  @State private var addError: String?
 
   var body: some View {
     Form {
@@ -30,6 +31,7 @@ struct AutomationGalleryView: View {
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
         Button {
+          resetAddSheet()
           showAddSheet = true
         } label: {
           Label("Add Shortcut", systemImage: "plus")
@@ -37,15 +39,35 @@ struct AutomationGalleryView: View {
         .accessibilityIdentifier("automations.add")
       }
     }
-    .sheet(isPresented: $showAddSheet) {
+    .sheet(isPresented: $showAddSheet, onDismiss: resetAddSheet) {
       addShortcutSheet
     }
     .onAppear { reload() }
     .onChange(of: appState.automationRegistryVersion) { _, _ in reload() }
   }
 
+  private var allowlistNotice: String? {
+    if !appState.enableTools {
+      return String(
+        localized: "On-device tools are off in Settings. Turn them on so Agello can offer to run allowed Shortcuts; Recipes below still work.")
+    }
+    if appState.focusFilter.hidePersonalTools {
+      return String(
+        localized: "Your current Focus hides personal tools and allowed Shortcuts from the assistant.")
+    }
+    return nil
+  }
+
   private var allowlistSection: some View {
     Section {
+      if let allowlistNotice {
+        Label(allowlistNotice, systemImage: "info.circle")
+          .font(.footnote)
+          .foregroundStyle(Theme.Status.guarded)
+          .padding(.vertical, Theme.Spacing.xxs)
+          .themedRow()
+          .accessibilityIdentifier("automations.allowlist.notice")
+      }
       if shortcuts.isEmpty {
         Text("No Shortcuts registered yet. Add one below or pick a starter template so Agello can offer to run it after your confirmation.")
           .font(.subheadline)
@@ -106,7 +128,9 @@ struct AutomationGalleryView: View {
   private var starterTemplatesSection: some View {
     Section {
       ForEach(StarterShortcutTemplate.curated) { template in
-        let isRegistered = shortcuts.contains { $0.id == template.id || $0.name == template.name }
+        let isRegistered = shortcuts.contains {
+          $0.id == template.id || $0.name.caseInsensitiveCompare(template.name) == .orderedSame
+        }
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
           HStack(spacing: Theme.Spacing.md) {
             TintTile(symbol: template.symbol, tint: Theme.Brand.gold)
@@ -147,10 +171,9 @@ struct AutomationGalleryView: View {
 
   private var recipesSection: some View {
     Section {
-      ForEach(AutomationRegistry.shared.allRecipes) { recipe in
+      ForEach(recipes) { recipe in
         Button {
           AppRouter.shared.handle(.runRecipe(recipe.id))
-          dismiss()
         } label: {
           HStack(spacing: Theme.Spacing.md) {
             TintTile(symbol: recipe.symbol, tint: Theme.Brand.lavender)
@@ -196,9 +219,18 @@ struct AutomationGalleryView: View {
       Form {
         Section {
           TextField("Exact Shortcut name", text: $newName)
+            .onChange(of: newName) { _, _ in
+              if addError != nil { addError = nil }
+            }
             .accessibilityIdentifier("automations.add.name")
           TextField("What it does (1 line for Agello)", text: $newSummary)
             .accessibilityIdentifier("automations.add.summary")
+          if let addError {
+            Text(addError)
+              .font(.footnote)
+              .foregroundStyle(Theme.Status.critical)
+              .accessibilityIdentifier("automations.add.error")
+          }
         } header: {
           Text("Shortcut Details").eyebrowStyle()
         } footer: {
@@ -234,11 +266,15 @@ struct AutomationGalleryView: View {
             let item = RegisteredShortcut(
               name: newName, summary: newSummary,
               inputMode: newInputMode, outputMode: newOutputMode)
-            AutomationRegistry.shared.upsert(item)
-            newName = ""
-            newSummary = ""
-            reload()
-            showAddSheet = false
+            do {
+              try AutomationRegistry.shared.register(item)
+              reload()
+              Haptics.success()
+              showAddSheet = false
+            } catch {
+              addError = error.localizedDescription
+              Haptics.error()
+            }
           }
           .disabled(newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
           .accessibilityIdentifier("automations.add.save")
@@ -247,7 +283,16 @@ struct AutomationGalleryView: View {
     }
   }
 
+  private func resetAddSheet() {
+    newName = ""
+    newSummary = ""
+    newInputMode = .text
+    newOutputMode = .text
+    addError = nil
+  }
+
   private func reload() {
     shortcuts = AutomationRegistry.shared.shortcuts
+    recipes = AutomationRegistry.shared.allRecipes
   }
 }

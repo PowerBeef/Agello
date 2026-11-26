@@ -423,6 +423,8 @@ public final class Conversation: Sendable {
   /// (`Tool.isReadOnly`), they run concurrently via `withTaskGroup` and their
   /// results are returned in original call order for a single batched prefill.
   fileprivate func handleToolCalls(_ toolCalls: [[String: Any]]) async throws -> [String: Any] {
+    defer { ToolManager.endBatch() }
+
     struct ParsedCall {
       let index: Int
       let name: String

@@ -8,17 +8,24 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
   private let queue = DispatchQueue(label: "agello.camera")
   private let lock = NSLock()
   private var latest: CVPixelBuffer?
+  private var activeDevice: AVCaptureDevice?
   private let context = CIContext()
   /// Keeps frames level with the horizon whichever way the phone is held (they were always
   /// rotated for portrait, so a landscape snapshot came out sideways).
   private var rotation: AVCaptureDevice.RotationCoordinator?
   private var rotationObservation: NSKeyValueObservation?
 
+  var captureDevice: AVCaptureDevice? { lock.withLock { activeDevice } }
+
+  deinit {
+    rotationObservation?.invalidate()
+  }
+
   static var isAvailable: Bool { AVCaptureDevice.default(for: .video) != nil }
 
   /// Ask for access (first use) and start the camera.
   func start() async -> Bool {
-    guard await AVCaptureDevice.requestAccess(for: .video) else { return false }
+    guard await AVCaptureDevice.requestAccess(for: .video), !Task.isCancelled else { return false }
     return await withCheckedContinuation { continuation in
       queue.async { [self] in
         if session.inputs.isEmpty {
@@ -31,6 +38,7 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
             continuation.resume(returning: false)
             return
           }
+          lock.withLock { activeDevice = device }
           session.addInput(input)
           let output = AVCaptureVideoDataOutput()
           output.alwaysDiscardsLateVideoFrames = true

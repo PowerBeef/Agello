@@ -335,6 +335,7 @@ extension AppState {
 
   func stop() {
     cancelPendingToolConfirmation(reason: "Stopped by the user.")
+    ToolConfirmationGate.clearBatchGrants()
     if BackgroundWork.shared.isPendingOrActive {
       stopCount &+= 1
       drainingBackgroundWork = true
@@ -406,6 +407,7 @@ extension AppState {
     if knowledge.usesGPUEmbedder { knowledge.cancelIndexing() }
     if isBusy {
       Log.lifecycle.info("background: stopping generation and draining GPU")
+      ToolConfirmationGate.clearBatchGrants()
       stopCount &+= 1
       preparationTask?.cancel()
       webTask?.cancel()

@@ -9,18 +9,41 @@ import SwiftUI
 final class ShellModel {
   var showSettings = false
   var openProject: Project?
+  /// Decided once at launch by `ContentView`, so finishing the download doesn't dismiss the
+  /// welcome screen before "Start chatting".
+  var presentOnboarding = false
   /// The chat being renamed, and the title being typed.
   var renaming: ChatThread?
   var renameText = ""
   /// The chat waiting for the delete confirmation.
   var deleting: ChatThread?
+  /// Incremented whenever an external request must dismiss child covers (Voice Mode, Camera,
+  /// Document Scanner) before presenting a follow-up modal.
+  var dismissCoversToken = 0
+  /// Whether a composer capture cover (`CameraPicker` / `DocumentScanner`) is active.
+  var isPresentingCaptureCover = false
 
   @ObservationIgnored let appState: AppState
   @ObservationIgnored let context: ModelContext
+  /// Queued follow-up presentation executed once active sheets/covers finish dismissing.
+  @ObservationIgnored private var pendingAfterDismiss: (@MainActor () -> Void)?
+
+  var hasPendingPresentation: Bool { pendingAfterDismiss != nil }
 
   init(appState: AppState, context: ModelContext) {
     self.appState = appState
     self.context = context
+  }
+
+  /// Called from `.sheet(..., onDismiss:)` and cover dismissals once a modal finishes tearing
+  /// down, running any queued follow-up presentation cleanly.
+  func handleModalDismissed() {
+    guard !showSettings, openProject == nil, !presentOnboarding,
+      !appState.voiceModeActive, !isPresentingCaptureCover
+    else { return }
+    guard let pending = pendingAfterDismiss else { return }
+    pendingAfterDismiss = nil
+    pending()
   }
 
   // MARK: - Chats
@@ -94,47 +117,72 @@ final class ShellModel {
     Task { await appState.answerSharedItems() }
   }
 
-  /// Carry out a request from Siri, Shortcuts, widgets, Spotlight, or a link. Settings and a
-  /// project close first; the shell also closes its own panels.
+  /// Carry out a request from Siri, Shortcuts, widgets, Spotlight, or a link. Settings, a
+  /// project, onboarding, dialogs, and active covers close first; follow-up sheets or covers
+  /// wait for dismissal via `handleModalDismissed()` instead of racing SwiftUI presentation.
   func perform(_ action: AppRouter.Action) {
-    let wasPresentingSheet = showSettings || openProject != nil
+    renaming = nil
+    deleting = nil
+    pendingAfterDismiss = nil
+
+    let wasPresentingVoice = appState.voiceModeActive
+    let wasPresentingCapture = isPresentingCaptureCover
+    let wasPresentingModal =
+      showSettings || openProject != nil || presentOnboarding
+      || wasPresentingVoice || wasPresentingCapture
+
     showSettings = false
     openProject = nil
-    func presentCover(_ request: @escaping @MainActor () -> Void) {
-      guard wasPresentingSheet else {
+    presentOnboarding = false
+    if wasPresentingVoice || wasPresentingCapture {
+      dismissCoversToken &+= 1
+    }
+
+    func afterModalDismissal(_ request: @escaping @MainActor () -> Void) {
+      guard wasPresentingModal else {
         request()
         return
       }
-      Task { @MainActor in
-        try? await Task.sleep(for: .milliseconds(350))
-        request()
-      }
+      pendingAfterDismiss = request
     }
+
     switch action {
     case .newChat:
       newChat()
     case .voice:
       newChat()
-      presentCover { AppRouter.shared.voiceRequested = true }
+      afterModalDismissal { AppRouter.shared.voiceRequested = true }
     case .voiceWithCamera:
       newChat()
-      presentCover { AppRouter.shared.voiceWithCameraRequested = true }
+      afterModalDismissal { AppRouter.shared.voiceWithCameraRequested = true }
     case .snapAndAsk:
       newChat()
-      presentCover { AppRouter.shared.cameraRequested = true }
+      afterModalDismissal { AppRouter.shared.cameraRequested = true }
     case .openChat(let id):
       appState.newChatProjectID = nil
-      if threadExists(id) { appState.selectedThreadID = id }
+      if threadExists(id) {
+        appState.selectedThreadID = id
+      } else {
+        appState.notice = String(localized: "That chat is no longer available.")
+      }
     case .openProject(let id):
-      if let project = project(withID: id) { openProject = project }
+      if let project = project(withID: id) {
+        afterModalDismissal { [weak self] in self?.openProject = project }
+      } else {
+        appState.notice = String(localized: "That project is no longer available.")
+      }
     case .openDocument(let id):
       if let document = document(withID: id) {
         if let threadID = document.threadID, threadExists(threadID) {
           appState.newChatProjectID = nil
           appState.selectedThreadID = threadID
         } else if let projectID = document.projectID, let project = project(withID: projectID) {
-          openProject = project
+          afterModalDismissal { [weak self] in self?.openProject = project }
+        } else {
+          appState.notice = String(localized: "That document is no longer available.")
         }
+      } else {
+        appState.notice = String(localized: "That document is no longer available.")
       }
     case .ask(let question):
       guard !appState.isBusy else {
@@ -147,11 +195,14 @@ final class ShellModel {
       Task { await appState.send(text: question, imageData: nil, audioFileURL: nil, in: thread) }
     case .draft(let text):
       newChat()
-      AppRouter.shared.draftRequested = text
+      afterModalDismissal { AppRouter.shared.draftRequested = text }
     case .runRecipe(let id):
-      guard let recipe = AutomationRegistry.shared.recipe(id: id) else { return }
+      guard let recipe = AutomationRegistry.shared.recipe(id: id) else {
+        appState.notice = String(localized: "That recipe is no longer available.")
+        return
+      }
       newChat()
-      AppRouter.shared.draftRequested = recipe.prompt
+      afterModalDismissal { AppRouter.shared.draftRequested = recipe.prompt }
     }
   }
 

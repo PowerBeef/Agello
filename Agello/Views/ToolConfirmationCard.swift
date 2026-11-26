@@ -27,9 +27,17 @@ struct ToolConfirmationCard: View {
     _selectedSteps = State(initialValue: Set(request.steps.map(\.index)))
   }
 
+  private var validStepIndices: Set<Int> {
+    Set(request.steps.map(\.index))
+  }
+
+  private var activeSelectedSteps: Set<Int> {
+    selectedSteps.intersection(validStepIndices)
+  }
+
   private var effectiveRisk: ToolConfirmationRequest.RiskTier {
     guard request.isPlanBatch else { return request.risk }
-    let active = request.steps.filter { selectedSteps.contains($0.index) }
+    let active = request.steps.filter { activeSelectedSteps.contains($0.index) }
     if active.contains(where: { $0.risk == .destructive }) { return .destructive }
     if active.contains(where: { $0.risk == .external }) { return .external }
     return .standard
@@ -54,15 +62,18 @@ struct ToolConfirmationCard: View {
 
   private var badgeText: String {
     switch effectiveRisk {
-    case .standard: request.isPlanBatch ? String(localized: "Plan") : String(localized: "Confirm")
-    case .destructive: String(localized: "Destructive")
-    case .external: String(localized: "External")
+    case .standard:
+      return request.isPlanBatch ? String(localized: "Plan") : String(localized: "Confirm")
+    case .destructive:
+      return String(localized: "Destructive")
+    case .external:
+      return String(localized: "External")
     }
   }
 
   private var approveLabel: String {
     if request.isPlanBatch {
-      let count = selectedSteps.count
+      let count = activeSelectedSteps.count
       return count == 1
         ? String(localized: "Run 1 Action")
         : String(localized: "Run \(count) Actions")
@@ -100,6 +111,9 @@ struct ToolConfirmationCard: View {
       stroke: effectiveRisk == .destructive ? Theme.Status.critical.opacity(0.35) : Theme.Surface.hairline)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier(request.isPlanBatch ? "tool.plan.card" : "tool.confirm.card")
+    .onChange(of: request.id) { _, _ in
+      selectedSteps = Set(request.steps.map(\.index))
+    }
   }
 
   private var header: some View {
@@ -147,7 +161,7 @@ struct ToolConfirmationCard: View {
   private var planStepsList: some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
       ForEach(request.steps) { step in
-        let isSelected = selectedSteps.contains(step.index)
+        let isSelected = activeSelectedSteps.contains(step.index)
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
           Button {
             Haptics.selection()
@@ -162,6 +176,7 @@ struct ToolConfirmationCard: View {
                 .font(.title3)
                 .foregroundStyle(isSelected ? tint(for: step.risk) : Theme.Text.tertiary)
                 .frame(width: 28, height: Theme.Size.target)
+                .accessibilityHidden(true)
               VStack(alignment: .leading, spacing: 2) {
                 Text(step.title)
                   .font(.system(.subheadline, weight: .semibold))
@@ -181,7 +196,9 @@ struct ToolConfirmationCard: View {
             .contentShape(.rect)
           }
           .buttonStyle(.plain)
-          .accessibilityLabel("\(step.title), \(isSelected ? "selected" : "unselected")")
+          .accessibilityLabel(stepAccessibilityLabel(for: step))
+          .accessibilityValue(isSelected ? String(localized: "Selected") : String(localized: "Not selected"))
+          .accessibilityAddTraits(.isToggle)
           .accessibilityIdentifier("tool.plan.step.\(step.index)")
 
           if isSelected, !step.parameters.isEmpty {
@@ -246,7 +263,7 @@ struct ToolConfirmationCard: View {
       Button {
         Haptics.selection()
         if request.isPlanBatch, let onApproveSteps {
-          onApproveSteps(selectedSteps)
+          onApproveSteps(activeSelectedSteps)
         } else {
           onApprove()
         }
@@ -254,9 +271,22 @@ struct ToolConfirmationCard: View {
         Text(approveLabel)
       }
       .buttonStyle(LitButtonStyle(tint: accentTint))
-      .disabled(request.isPlanBatch && selectedSteps.isEmpty)
+      .disabled(request.isPlanBatch && activeSelectedSteps.isEmpty)
       .accessibilityIdentifier("tool.confirm.approve")
     }
+  }
+
+  private func stepAccessibilityLabel(for step: ToolConfirmationRequest.Step) -> String {
+    var parts = [step.title, step.summary]
+    switch step.risk {
+    case .destructive:
+      parts.append(String(localized: "Destructive"))
+    case .external:
+      parts.append(String(localized: "External"))
+    case .standard:
+      break
+    }
+    return parts.filter { !$0.isEmpty }.joined(separator: ". ")
   }
 
   private func tint(for risk: ToolConfirmationRequest.RiskTier) -> Color {

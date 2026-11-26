@@ -10,6 +10,7 @@ struct DeveloperSettingsView: View {
   @AppStorage("showPerformanceDetails") private var showStats = false
   @State private var memorySnapshot = MemoryProbe.capture()
   @State private var telemetrySummary = MetricsReporter.summarize()
+  @State private var benchmarkError: String?
 
   var body: some View {
     Form {
@@ -54,15 +55,37 @@ struct DeveloperSettingsView: View {
         .themedRow()
       } else {
         Button {
-          Task { await appState.runBenchmark() }
+          benchmarkError = nil
+          Task {
+            appState.generationError = nil
+            await appState.runBenchmark()
+            if let error = appState.generationError {
+              benchmarkError = error
+            }
+          }
         } label: {
           Label("Run benchmark", systemImage: "speedometer")
         }
         .buttonStyle(LitButtonStyle(tint: Theme.Brand.glacier))
-        .disabled(!appState.store.isDownloaded(appState.store.activeSpec))
+        .disabled(
+          !appState.store.isDownloaded(appState.store.activeSpec)
+            || appState.isBusy || appState.isTranscribing)
         .listRowBackground(Color.clear)
         .listRowInsets(EdgeInsets())
         .accessibilityIdentifier("settings.benchmark")
+        if appState.isBusy || appState.isTranscribing {
+          Text("Finish the active reply or dictation before running the benchmark.")
+            .font(.footnote)
+            .foregroundStyle(Theme.Text.tertiary)
+            .themedRow()
+        }
+      }
+      if let benchmarkError {
+        Text(benchmarkError)
+          .font(.footnote)
+          .foregroundStyle(Theme.Status.critical)
+          .themedRow()
+          .accessibilityIdentifier("developer.benchmark.error")
       }
       if let report = appState.benchmarkReport {
         benchmarkStats(report)

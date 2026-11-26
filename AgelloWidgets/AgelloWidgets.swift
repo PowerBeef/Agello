@@ -68,6 +68,7 @@ enum WidgetPalette {
 }
 
 enum WidgetLinks {
+  static let open = URL(string: "agello://open")!
   static let newChat = URL(string: "agello://new")!
   static let voice = URL(string: "agello://voice")!
   static let snapAndAsk = URL(string: "agello://camera")!
@@ -195,108 +196,190 @@ struct VoiceWithCameraControl: ControlWidget {
 struct AgelloAlarmLiveActivity: Widget {
   var body: some WidgetConfiguration {
     ActivityConfiguration(for: AlarmAttributes<AgelloAlarmMetadata>.self) { context in
-      alarmBanner(context: context)
+      AlarmBannerView(context: context)
         .activityBackgroundTint(WidgetPalette.canvas)
         .activitySystemActionForegroundColor(WidgetPalette.gold)
+        .widgetURL(WidgetLinks.open)
     } dynamicIsland: { context in
-      DynamicIsland {
+      let isAlarm = context.attributes.metadata?.kind == "alarm"
+      let symbol = isAlarm ? "alarm.fill" : "timer"
+      let kindLabel = isAlarm ? String(localized: "Alarm") : String(localized: "Timer")
+      return DynamicIsland {
         DynamicIslandExpandedRegion(.leading) {
           Label(
             context.attributes.metadata?.label ?? "Agello",
-            systemImage: context.attributes.metadata?.kind == "alarm" ? "alarm.fill" : "timer"
+            systemImage: symbol
           )
           .font(.subheadline.weight(.semibold))
           .foregroundStyle(WidgetPalette.text)
           .lineLimit(1)
         }
         DynamicIslandExpandedRegion(.trailing) {
-          alarmTrailingTime(state: context.state)
+          AlarmTrailingTimeView(state: context.state, compact: false)
             .font(.title3.weight(.semibold).monospacedDigit())
             .foregroundStyle(WidgetPalette.gold)
         }
         DynamicIslandExpandedRegion(.bottom) {
           HStack(spacing: 10) {
-            alarmControls(state: context.state)
+            AlarmControlsView(state: context.state)
           }
           .padding(.top, 4)
         }
       } compactLeading: {
-        Image(systemName: context.attributes.metadata?.kind == "alarm" ? "alarm.fill" : "timer")
+        Image(systemName: symbol)
           .foregroundStyle(WidgetPalette.gold)
+          .accessibilityLabel(kindLabel)
       } compactTrailing: {
-        alarmTrailingTime(state: context.state)
+        AlarmTrailingTimeView(state: context.state, compact: true)
           .font(.caption.weight(.semibold).monospacedDigit())
           .foregroundStyle(WidgetPalette.gold)
       } minimal: {
-        Image(systemName: context.attributes.metadata?.kind == "alarm" ? "alarm.fill" : "timer")
+        Image(systemName: symbol)
           .foregroundStyle(WidgetPalette.gold)
+          .accessibilityLabel(kindLabel)
       }
+      .widgetURL(WidgetLinks.open)
     }
   }
+}
 
-  @ViewBuilder
-  private func alarmBanner(context: ActivityViewContext<AlarmAttributes<AgelloAlarmMetadata>>) -> some View {
+private struct AlarmBannerView: View {
+  let context: ActivityViewContext<AlarmAttributes<AgelloAlarmMetadata>>
+  @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+  private var isAlarm: Bool {
+    context.attributes.metadata?.kind == "alarm"
+  }
+
+  var body: some View {
     HStack(spacing: 12) {
-      Image(systemName: context.attributes.metadata?.kind == "alarm" ? "alarm.fill" : "timer")
+      Image(systemName: isAlarm ? "alarm.fill" : "timer")
         .font(.title2)
-        .foregroundStyle(WidgetPalette.gold)
+        .foregroundStyle(WidgetPalette.gold.opacity(isLuminanceReduced ? 0.65 : 1))
+        .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 2) {
         Text(context.attributes.metadata?.label ?? "Agello")
           .font(.headline)
-          .foregroundStyle(WidgetPalette.text)
+          .foregroundStyle(WidgetPalette.text.opacity(isLuminanceReduced ? 0.8 : 1))
           .lineLimit(1)
-        alarmTrailingTime(state: context.state)
+        AlarmTrailingTimeView(state: context.state, compact: false)
           .font(.subheadline.monospacedDigit())
           .foregroundStyle(WidgetPalette.secondary)
       }
       Spacer(minLength: 8)
-      alarmControls(state: context.state)
+      if !isLuminanceReduced {
+        AlarmControlsView(state: context.state)
+      }
     }
     .padding(14)
   }
+}
 
-  @ViewBuilder
-  private func alarmTrailingTime(state: AlarmPresentationState) -> some View {
+private struct AlarmTrailingTimeView: View {
+  let state: AlarmPresentationState
+  var compact: Bool = false
+  @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+  var body: some View {
     switch state.mode {
     case .countdown(let countdown):
-      Text(timerInterval: Date.now...countdown.fireDate, countsDown: true)
+      let now = Date.now
+      if isLuminanceReduced {
+        Text(countdown.fireDate.formatted(Date.FormatStyle(date: .omitted, time: .shortened)))
+          .lineLimit(1)
+          .minimumScaleFactor(0.8)
+          .frame(maxWidth: compact ? 56 : nil, alignment: .trailing)
+      } else if countdown.fireDate > now {
+        Text(timerInterval: now...max(now, countdown.fireDate), countsDown: true)
+          .multilineTextAlignment(.trailing)
+          .lineLimit(1)
+          .minimumScaleFactor(0.8)
+          .frame(maxWidth: compact ? 56 : nil, alignment: .trailing)
+      } else {
+        Text("0:00")
+          .lineLimit(1)
+          .frame(maxWidth: compact ? 56 : nil, alignment: .trailing)
+      }
     case .paused(let paused):
       let remaining = max(0, paused.totalCountdownDuration - paused.previouslyElapsedDuration)
-      Text("\(Int(remaining.rounded()))s paused")
+      Text(Self.formatPausedDuration(remaining, compact: compact))
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+        .frame(maxWidth: compact ? 56 : nil, alignment: .trailing)
     case .alert(let alert):
-      Text(String(format: "%02d:%02d", alert.time.hour, alert.time.minute))
+      Text(Self.formatAlertTime(hour: alert.time.hour, minute: alert.time.minute))
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
     @unknown default:
       Text("Active")
+        .lineLimit(1)
     }
   }
 
-  @ViewBuilder
-  private func alarmControls(state: AlarmPresentationState) -> some View {
+  private static func formatPausedDuration(_ seconds: TimeInterval, compact: Bool) -> String {
+    let total = max(0, Int(seconds.rounded()))
+    let hours = total / 3_600
+    let minutes = (total % 3_600) / 60
+    let secs = total % 60
+    let clock =
+      hours > 0
+      ? String(format: "%d:%02d:%02d", hours, minutes, secs)
+      : String(format: "%d:%02d", minutes, secs)
+    return compact ? clock : "\(clock) paused"
+  }
+
+  private static func formatAlertTime(hour: Int, minute: Int) -> String {
+    var comps = Calendar.current.dateComponents([.year, .month, .day], from: .now)
+    comps.hour = hour
+    comps.minute = minute
+    if let date = Calendar.current.date(from: comps) {
+      return date.formatted(Date.FormatStyle(date: .omitted, time: .shortened))
+    }
+    return String(format: "%02d:%02d", hour, minute)
+  }
+}
+
+private struct AlarmControlsView: View {
+  let state: AlarmPresentationState
+
+  var body: some View {
     let idString = state.alarmID.uuidString
     switch state.mode {
     case .countdown:
       Button(intent: PauseAgelloAlarmIntent(alarmID: idString)) {
         Image(systemName: "pause.fill")
       }
+      .buttonStyle(.bordered)
       .tint(WidgetPalette.glacier)
+      .accessibilityLabel(String(localized: "Pause timer"))
+
       Button(intent: StopAgelloAlarmIntent(alarmID: idString)) {
         Image(systemName: "xmark")
       }
+      .buttonStyle(.bordered)
       .tint(WidgetPalette.gold)
+      .accessibilityLabel(String(localized: "Cancel timer"))
     case .paused:
       Button(intent: ResumeAgelloAlarmIntent(alarmID: idString)) {
         Image(systemName: "play.fill")
       }
+      .buttonStyle(.borderedProminent)
       .tint(WidgetPalette.teal)
+      .accessibilityLabel(String(localized: "Resume timer"))
+
       Button(intent: StopAgelloAlarmIntent(alarmID: idString)) {
         Image(systemName: "xmark")
       }
+      .buttonStyle(.bordered)
       .tint(WidgetPalette.gold)
+      .accessibilityLabel(String(localized: "Cancel timer"))
     case .alert:
       Button(intent: StopAgelloAlarmIntent(alarmID: idString)) {
         Label("Stop", systemImage: "stop.fill")
       }
+      .buttonStyle(.borderedProminent)
       .tint(WidgetPalette.gold)
+      .accessibilityLabel(String(localized: "Stop alarm"))
     @unknown default:
       EmptyView()
     }

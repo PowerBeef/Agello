@@ -19,9 +19,11 @@ final class PhaseCAutomationTests: XCTestCase {
     ToolConfirmationGate.setTestHandler(nil)
     ToolConfirmationGate.clearBatchGrants()
     ToolManager.setBatchConfirmHandler(nil)
+    ToolManager.setBatchEndHandler(nil)
     ToolBudget.reset()
     ToolCardRecorder.reset()
     PersonalTools.setTestBackend(nil)
+    TurnContactRoster.reset()
     ShortcutCallbackBroker.shared.resetForTesting()
   }
 
@@ -31,9 +33,11 @@ final class PhaseCAutomationTests: XCTestCase {
     ToolConfirmationGate.setTestHandler(nil)
     ToolConfirmationGate.clearBatchGrants()
     ToolManager.setBatchConfirmHandler(nil)
+    ToolManager.setBatchEndHandler(nil)
     ToolBudget.reset()
     ToolCardRecorder.reset()
     PersonalTools.setTestBackend(nil)
+    TurnContactRoster.reset()
     ShortcutCallbackBroker.shared.resetForTesting()
     super.tearDown()
   }
@@ -323,6 +327,88 @@ final class PhaseCAutomationTests: XCTestCase {
     XCTAssertEqual(promptsSeen.withLock { $0.count }, 1, "Pre-approved step must not re-prompt!")
     XCTAssertEqual(backend.events.count, 1)
     XCTAssertEqual(backend.reminders.count, 0)
+  }
+
+  func testBatchGrantsClearedOnRoundEndKeyedByRiskAndValidatePlannerInputs() async throws {
+    let backend = MockPhotosBackend()
+    PersonalTools.setTestBackend(backend)
+
+    // 1. A .standard grant must NEVER auto-approve a .destructive request for the same tool.
+    let promptsSeen = Mutex<[ToolConfirmationRequest]>([])
+    ToolConfirmationGate.setTestHandler { req in
+      promptsSeen.withLock { $0.append(req) }
+      return .denied(reason: "Denied destructive")
+    }
+    ToolConfirmationGate.grantBatchStep(toolName: ManageCalendarEventTool.name, risk: .standard)
+    let destructiveReq = ToolConfirmationRequest(
+      toolName: ManageCalendarEventTool.name, title: "Delete event", summary: "Delete",
+      parameters: [], risk: .destructive)
+    let destructiveDecision = await ToolConfirmationGate.confirm(destructiveReq)
+    if case .denied = destructiveDecision {} else {
+      XCTFail("A .standard batch grant must never auto-approve a .destructive call")
+    }
+    XCTAssertEqual(promptsSeen.withLock { $0.count }, 1)
+
+    // 2. ToolManager.endBatch() clears any unconsumed grant before the next round.
+    ToolManager.setBatchEndHandler { ToolConfirmationGate.clearBatchGrants() }
+    ToolConfirmationGate.grantBatchStep(toolName: ManageCalendarEventTool.name, risk: .standard)
+    ToolManager.endBatch()
+    let nextRoundReq = ToolConfirmationRequest(
+      toolName: ManageCalendarEventTool.name, title: "Create event", summary: "Create",
+      parameters: [], risk: .standard)
+    let nextRoundDecision = await ToolConfirmationGate.confirm(nextRoundReq)
+    if case .denied = nextRoundDecision {} else {
+      XCTFail("Unconsumed batch grants must not survive ToolManager.endBatch()")
+    }
+    XCTAssertEqual(promptsSeen.withLock { $0.count }, 2)
+
+    // 3. Invalid calendar dates in a batch are rejected by BatchConfirmationPlanner (no phantom grant).
+    let badCalArgs = try JSONSerialization.data(withJSONObject: [
+      "action": "create",
+      "title": "Broken Date",
+      "start_date": "not-a-date",
+      "end_date": "2026-12-03T15:00:00",
+    ])
+    let validRemArgs = try JSONSerialization.data(withJSONObject: [
+      "action": "create",
+      "title": "Valid Reminder",
+    ])
+    let skippedBatch = await BatchConfirmationPlanner.confirmBatch([
+      PendingToolInvocation(index: 0, name: ManageCalendarEventTool.name, argumentsJSON: badCalArgs),
+      PendingToolInvocation(index: 1, name: ManageReminderTool.name, argumentsJSON: validRemArgs),
+    ])
+    XCTAssertNil(skippedBatch, "Batch with <2 valid steps must fall back without granting phantom steps")
+
+    // 4. buildMessageStep surfaces unverifiedRecipients warning and email subject.
+    TurnContactRoster.reset()
+    TurnContactRoster.register([
+      ContactSummary(fullName: "Alice", phones: [], emails: ["alice@example.com"])
+    ])
+    let capturedPlan = Mutex<ToolConfirmationRequest?>(nil)
+    ToolConfirmationGate.setTestHandler { req in
+      capturedPlan.withLock { $0 = req }
+      return .denied(reason: "Inspecting plan")
+    }
+    let msgArgs = try JSONSerialization.data(withJSONObject: [
+      "channel": "email",
+      "recipients": ["alice@example.com", "exfil@evil.example"],
+      "subject": "Quarterly Report",
+      "body": "Attached is the summary.",
+    ])
+    let remArgs = try JSONSerialization.data(withJSONObject: [
+      "action": "create",
+      "title": "Follow up",
+    ])
+    _ = await BatchConfirmationPlanner.confirmBatch([
+      PendingToolInvocation(index: 0, name: PrepareMessageTool.name, argumentsJSON: msgArgs),
+      PendingToolInvocation(index: 1, name: ManageReminderTool.name, argumentsJSON: remArgs),
+    ])
+    let plan = try XCTUnwrap(capturedPlan.withLock { $0 })
+    let msgStep = try XCTUnwrap(plan.steps.first { $0.toolName == PrepareMessageTool.name })
+    XCTAssertEqual(msgStep.parameters.first(where: { $0.name == "subject" })?.value, "Quarterly Report")
+    let warning = try XCTUnwrap(msgStep.parameters.first(where: { $0.name == "warning" })?.value)
+    XCTAssertTrue(warning.contains("exfil@evil.example"))
+    XCTAssertFalse(warning.contains("alice@example.com"))
   }
 
   // MARK: - AppRouter recipe & shortcut-result + FolderBookmarks

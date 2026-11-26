@@ -14,10 +14,14 @@ struct LossyArray<Element: Codable & Equatable & Sendable>: Codable, Equatable, 
     var container = try decoder.unkeyedContainer()
     var decoded: [Element] = []
     while !container.isAtEnd {
+      let before = container.currentIndex
       if let item = try? container.decode(Element.self) {
         decoded.append(item)
       } else {
-        _ = try? container.decode(IgnoredValue.self)
+        _ = try? container.decode(AnyDecodable.self)
+      }
+      if container.currentIndex == before {
+        break
       }
     }
     self.elements = decoded
@@ -29,8 +33,44 @@ struct LossyArray<Element: Codable & Equatable & Sendable>: Codable, Equatable, 
       try container.encode(element)
     }
   }
+}
 
-  private struct IgnoredValue: Decodable {}
+/// Untyped sentinel capable of consuming any JSON token (null, primitive, nested array, or object)
+/// so corrupt or forward-incompatible entries always advance the unkeyed container index.
+private struct AnyDecodable: Decodable {
+  private struct AnyCodingKey: CodingKey {
+    var stringValue: String
+    var intValue: Int?
+
+    init?(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) {
+      self.stringValue = "\(intValue)"
+      self.intValue = intValue
+    }
+  }
+
+  init(from decoder: Decoder) throws {
+    if let single = try? decoder.singleValueContainer() {
+      if single.decodeNil() { return }
+      if (try? single.decode(Bool.self)) != nil { return }
+      if (try? single.decode(Int64.self)) != nil { return }
+      if (try? single.decode(Double.self)) != nil { return }
+      if (try? single.decode(String.self)) != nil { return }
+    }
+    if var unkeyed = try? decoder.unkeyedContainer() {
+      while !unkeyed.isAtEnd {
+        let before = unkeyed.currentIndex
+        _ = try? unkeyed.decode(AnyDecodable.self)
+        if unkeyed.currentIndex == before { break }
+      }
+      return
+    }
+    if let keyed = try? decoder.container(keyedBy: AnyCodingKey.self) {
+      for key in keyed.allKeys {
+        _ = try? keyed.decode(AnyDecodable.self, forKey: key)
+      }
+    }
+  }
 }
 
 /// Typed, Swift-verified action card recorded out-of-band by tools or structured web lookups

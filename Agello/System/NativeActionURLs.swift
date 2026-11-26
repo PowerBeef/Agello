@@ -123,23 +123,52 @@ enum NativeActionURLs {
 
   // MARK: - Portable RFC exports (.ics / .vcf)
 
-  static func icsString(for event: CalendarEventCard) -> String {
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = TimeZone(secondsFromGMT: 0)
-    formatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
-    let nowStamp = formatter.string(from: Date())
-    let startStamp = formatter.string(from: event.startDate)
-    let endStamp = formatter.string(from: event.endDate)
+  static func icsString(for event: CalendarEventCard, timeZone: TimeZone = .current) -> String {
+    let utcFormatter = DateFormatter()
+    utcFormatter.locale = Locale(identifier: "en_US_POSIX")
+    utcFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+    utcFormatter.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+    let nowStamp = utcFormatter.string(from: Date())
+
+    let startLine: String
+    let endLine: String
+    if event.isAllDay {
+      var cal = Calendar(identifier: .gregorian)
+      cal.timeZone = timeZone
+      let dateFormatter = DateFormatter()
+      dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+      dateFormatter.timeZone = timeZone
+      dateFormatter.dateFormat = "yyyyMMdd"
+
+      let startDay = cal.startOfDay(for: event.startDate)
+      let minNextDay = cal.date(byAdding: .day, value: 1, to: startDay) ?? startDay
+      let endDayStart = cal.startOfDay(for: event.endDate)
+      let exclusiveEndDay: Date
+      if event.endDate > endDayStart {
+        exclusiveEndDay = cal.date(byAdding: .day, value: 1, to: endDayStart) ?? minNextDay
+      } else {
+        exclusiveEndDay = endDayStart
+      }
+      let finalEnd = max(minNextDay, exclusiveEndDay)
+      startLine = "DTSTART;VALUE=DATE:\(dateFormatter.string(from: startDay))"
+      endLine = "DTEND;VALUE=DATE:\(dateFormatter.string(from: finalEnd))"
+    } else {
+      startLine = "DTSTART:\(utcFormatter.string(from: event.startDate))"
+      endLine = "DTEND:\(utcFormatter.string(from: event.endDate))"
+    }
+
+    let safeUID = (event.eventIdentifier ?? UUID().uuidString)
+      .replacingOccurrences(of: "\r", with: "")
+      .replacingOccurrences(of: "\n", with: "")
     var lines = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
       "PRODID:-//Agello//On-Device Assistant//EN",
       "BEGIN:VEVENT",
-      "UID:\(event.eventIdentifier ?? UUID().uuidString)@agello.local",
+      "UID:\(safeUID)@agello.local",
       "DTSTAMP:\(nowStamp)",
-      "DTSTART:\(startStamp)",
-      "DTEND:\(endStamp)",
+      startLine,
+      endLine,
       "SUMMARY:\(escapeICSText(event.title))",
     ]
     if let location = event.location, !location.isEmpty {
@@ -151,9 +180,14 @@ enum NativeActionURLs {
   }
 
   static func vCardString(for contact: ContactCard) -> String {
+    let trimmedName = contact.fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+    let nameParts = trimmedName.split(whereSeparator: \.isWhitespace).map(String.init)
+    let given = nameParts.first ?? ""
+    let family = nameParts.count > 1 ? nameParts.dropFirst().joined(separator: " ") : ""
     var lines = [
       "BEGIN:VCARD",
       "VERSION:3.0",
+      "N:\(escapeICSText(family));\(escapeICSText(given));;;",
       "FN:\(escapeICSText(contact.fullName))",
     ]
     if let org = contact.organization, !org.isEmpty {
@@ -172,10 +206,27 @@ enum NativeActionURLs {
     return lines.joined(separator: "\r\n") + "\r\n"
   }
 
+  /// Produces a safe portable filename stem (no path separators, traversal dots, control characters,
+  /// or filesystem-reserved characters) capped to 64 characters.
+  static func sanitizedFileName(_ raw: String, fallback: String) -> String {
+    let forbidden = CharacterSet(charactersIn: "/\\:*?\"<>|\0")
+      .union(.controlCharacters)
+      .union(.newlines)
+    let replaced = raw.unicodeScalars.map { forbidden.contains($0) ? "-" : String($0) }.joined()
+    let collapsed = replaced
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      .replacingOccurrences(of: #"-{2,}"#, with: "-", options: .regularExpression)
+      .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".-")))
+    let capped = String(collapsed.prefix(64))
+      .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ".-")))
+    return capped.isEmpty ? fallback : capped
+  }
+
   private static func escapeICSText(_ raw: String) -> String {
     raw
       .replacingOccurrences(of: "\\", with: "\\\\")
       .replacingOccurrences(of: "\r\n", with: "\\n")
+      .replacingOccurrences(of: "\r", with: "\\n")
       .replacingOccurrences(of: "\n", with: "\\n")
       .replacingOccurrences(of: ";", with: "\\;")
       .replacingOccurrences(of: ",", with: "\\,")

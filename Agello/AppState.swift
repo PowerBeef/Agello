@@ -140,6 +140,11 @@ final class AppState {
   /// The chat whose reply is streaming (only it shows the live cursor and
   /// can't be deleted mid-reply).
   var generatingThreadID: UUID?
+  /// Bumped whenever send, edit, or regenerate attaches a new reply bubble so `ChatView`
+  /// re-engages bottom-tracking and scrolls to the live reply (not on branch switches).
+  var scrollToLatestToken = 0
+  /// Thread whose generation bumped `scrollToLatestToken`.
+  var scrollToLatestThreadID: UUID?
   /// What a running tool is doing ("Searched the web for …"), shown in the
   /// live reply; nil when no tool has run in the current reply.
   var toolStatus: String?
@@ -401,18 +406,41 @@ final class AppState {
   }
 
   /// Delete a downloaded model, unloading it first if the engine holds it.
-  func deleteModel(_ spec: ModelSpec) async {
-    await serialized {
-      if await self.engine.currentModelID == spec.id {
-        guard !self.isGenerating, !self.isBenchmarking else {
-          self.generationError = "Wait for the current reply to finish before deleting the model."
-          return
-        }
+  /// Returns `nil` on success, or a user-facing reason when deletion is refused.
+  @discardableResult
+  func deleteModel(_ spec: ModelSpec) async -> String? {
+    if let refusal = deleteModelRefusalReason(for: spec, loadedModelID: nil) {
+      return refusal
+    }
+    return await serialized {
+      let loadedID = await self.engine.currentModelID
+      if let refusal = self.deleteModelRefusalReason(for: spec, loadedModelID: loadedID) {
+        return refusal
+      }
+      if loadedID == spec.id {
         await self.unloadEngine()
       }
       if spec.id == ModelCatalog.embeddingGemma.id { await self.knowledge.resetEmbedder() }
       self.store.deleteModel(spec)
+      return nil
     }
+  }
+
+  private func deleteModelRefusalReason(for spec: ModelSpec, loadedModelID: ModelID?) -> String? {
+    if spec.id == ModelCatalog.embeddingGemma.id {
+      if !knowledge.indexing.isEmpty || isPreparing {
+        return String(localized: "Wait for document indexing to finish before deleting the model.")
+      }
+      return nil
+    }
+    let targetsChatModel = loadedModelID == spec.id || store.activeModelID == spec.id
+    if targetsChatModel, isBenchmarking {
+      return String(localized: "Wait for the benchmark to finish before deleting the model.")
+    }
+    if targetsChatModel, isGenerating || isPreparing || isTranscribing {
+      return String(localized: "Wait for the current reply to finish before deleting the model.")
+    }
+    return nil
   }
 
   // MARK: - Options
@@ -482,23 +510,27 @@ final class AppState {
   func activate(_ thread: ChatThread) async -> Bool {
     selectedThreadID = thread.id
     let threadID = thread.id
+    // Never race a send that is already preparing (new-chat first send, file/web prep) or streaming.
+    guard !isGenerating, !isPreparing else { return false }
     // Leaving a chat: its helpers run now, before the switch rebuilds the conversation anyway.
     if hasPendingHelpers, conversationThreadID != threadID { await runPendingHelpers() }
+    guard !isGenerating, !isPreparing else { return false }
     let history = thread.textHistory
     if let first = thread.orderedTurns.first(where: \.isUser)?.text {
       await selectMemories(for: thread, firstMessage: first)
     }
     return await serialized {
-      await self.prepareConversation(threadID: threadID, history: history)
+      guard !self.isGenerating, !self.isPreparing else { return false }
+      return await self.prepareConversation(threadID: threadID, history: history, forSend: false)
     }
   }
 
   private func prepareConversation(
-    threadID: UUID, history: [(role: ChatRole, text: String)]
+    threadID: UUID, history: [(role: ChatRole, text: String)], forSend: Bool = false
   ) async -> Bool {
     guard await loadIfNeeded() else { return false }
-    // Never swap the conversation out from under a live reply.
-    if isGenerating { return false }
+    // Never swap the conversation out from under a live reply or an in-flight send preparation.
+    if isGenerating || (isPreparing && !forSend) { return false }
     // Refresh workspace file availability & project context before deciding whether to rebuild.
     activeProject = projectContext(for: threadID)
     if let context = modelContext {
@@ -652,6 +684,8 @@ final class AppState {
     isPreparing = true
     preparingThreadID = thread.id
     defer {
+      // Guarantees FrameMonitor and the timeline sampler stop even on early returns.
+      ReplyTrace.end(reply: nil, error: generationError, notice: notice)
       isPreparing = false
       preparingThreadID = nil
       preparingStatus = nil
@@ -745,7 +779,7 @@ final class AppState {
     let prepared: PreparedSend = await serialized {
       // Rewinding: the engine holds later turns that must not stay in context.
       if rewound != nil, self.conversationThreadID == threadID { self.conversationThreadID = nil }
-      guard await self.prepareConversation(threadID: threadID, history: history) else {
+      guard await self.prepareConversation(threadID: threadID, history: history, forSend: true) else {
         return .notReady
       }
       // Regenerate: a reply that differs from the one it replaces. A rebuilt conversation repeats
@@ -828,6 +862,8 @@ final class AppState {
     activeGenerationStopCount = stopsAtStart
     isPreparing = false
     generatingThreadID = threadID
+    scrollToLatestThreadID = threadID
+    scrollToLatestToken &+= 1
     engineState = .generating
     conversationIsEmpty = false
 

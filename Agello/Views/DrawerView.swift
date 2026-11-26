@@ -12,8 +12,10 @@ struct DrawerView: View {
   /// The search the list shows: `query` once typing pauses. Matching reads every message of
   /// every chat, too much to redo at each keystroke.
   @State private var appliedQuery = ""
-  /// Chats related in meaning to the search (beyond the text matches).
-  @State private var related: [Row] = []
+  /// IDs of chats related in meaning to the search, resolved against live `@Query threads` so
+  /// deleted models are never retained across renders.
+  @State private var relatedIDs: [UUID] = []
+  @State private var showAllProjects = false
   @FocusState private var searchFocused: Bool
 
   var onSelect: (ChatThread) -> Void
@@ -25,6 +27,7 @@ struct DrawerView: View {
   var onOpenProject: (Project) -> Void
   var onNewProject: () -> Void
   var onMove: (ChatThread, UUID?) -> Void
+  var onSearchFocusChanged: ((Bool) -> Void)?
 
   private struct Row: Identifiable {
     var thread: ChatThread
@@ -36,7 +39,7 @@ struct DrawerView: View {
   /// Project chats live in their project, but search finds them too.
   private var rows: [Row] {
     threads.compactMap { thread in
-      guard !thread.turns.isEmpty else { return nil }
+      guard !thread.isDeleted, thread.modelContext != nil, !thread.turns.isEmpty else { return nil }
       if appliedQuery.isEmpty { return thread.projectID == nil ? Row(thread: thread) : nil }
       let messages = thread.orderedTurns.map(\.text)
       return ThreadGrouping.match(query: appliedQuery, title: thread.title, messages: messages)
@@ -44,17 +47,47 @@ struct DrawerView: View {
     }
   }
 
+  /// Projects matching the active search query so projects beyond the collapsed preview remain
+  /// discoverable via search as well as "Show all".
+  private var matchingProjects: [Project] {
+    guard !appliedQuery.isEmpty else { return [] }
+    let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+    return projects.filter { project in
+      guard !project.isDeleted, project.modelContext != nil else { return false }
+      return project.name.range(of: appliedQuery, options: options) != nil
+        || project.instructions.range(of: appliedQuery, options: options) != nil
+    }
+  }
+
+  private func isBusy(_ thread: ChatThread) -> Bool {
+    appState.generatingThreadID == thread.id || appState.preparingThreadID == thread.id
+  }
+
   var body: some View {
     let rows = rows
-    let relatedRows = appliedQuery.isEmpty ? [] : related.filter { hit in !rows.contains { $0.id == hit.id } }
+    let rowIDs = Set(rows.map(\.id))
+    let liveThreadsByID = Dictionary(
+      uniqueKeysWithValues: threads.compactMap { thread -> (UUID, ChatThread)? in
+        guard !thread.isDeleted, thread.modelContext != nil, !thread.turns.isEmpty else { return nil }
+        return (thread.id, thread)
+      })
+    let relatedRows: [Row] = appliedQuery.isEmpty
+      ? []
+      : relatedIDs.compactMap { id in
+        guard !rowIDs.contains(id), let thread = liveThreadsByID[id] else { return nil }
+        return Row(thread: thread)
+      }
+    let matchedProjects = matchingProjects
     VStack(spacing: 0) {
       header
       ScrollView {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
           if appliedQuery.isEmpty {
             projectsSection
+          } else if !matchedProjects.isEmpty {
+            matchedProjectsSection(matchedProjects)
           }
-          if rows.isEmpty, relatedRows.isEmpty {
+          if rows.isEmpty, relatedRows.isEmpty, matchedProjects.isEmpty {
             Group {
               if appliedQuery.isEmpty {
                 EmptyStateView(
@@ -67,7 +100,7 @@ struct DrawerView: View {
               }
             }
             .padding(.top, Theme.Spacing.sm)
-          } else {
+          } else if !rows.isEmpty || !relatedRows.isEmpty {
             chatGroups(rows, related: relatedRows)
           }
         }
@@ -77,29 +110,33 @@ struct DrawerView: View {
       .scrollDismissesKeyboard(.immediately)
       footer
     }
+    .onChange(of: searchFocused) { _, focused in
+      onSearchFocusChanged?(focused)
+    }
     .onAppear {
       // Ready for search by meaning by the time the user types.
-      appState.knowledge.indexChats(threads.filter { !$0.turns.isEmpty })
+      appState.knowledge.indexChats(
+        threads.filter { !$0.isDeleted && $0.modelContext != nil && !$0.turns.isEmpty })
     }
     .task(id: query) {
       // Results for the previous query must not linger while typing.
-      related = []
+      relatedIDs = []
       let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
       // Clearing the search shows every chat at once; typing filters when it pauses.
-      guard !query.isEmpty else {
+      guard !text.isEmpty else {
         appliedQuery = ""
         return
       }
       try? await Task.sleep(for: .milliseconds(200))
       guard !Task.isCancelled else { return }
-      appliedQuery = query
+      appliedQuery = text
       guard text.count >= 3 else { return }
       try? await Task.sleep(for: .milliseconds(150))
       guard !Task.isCancelled else { return }
-      let hits = await appState.knowledge.relatedChats(
-        text, in: threads.filter { !$0.turns.isEmpty }, limit: 6)
+      let liveChats = threads.filter { !$0.isDeleted && $0.modelContext != nil && !$0.turns.isEmpty }
+      let hits = await appState.knowledge.relatedChats(text, in: liveChats, limit: 6)
       guard !Task.isCancelled else { return }
-      related = hits.map { Row(thread: $0.thread) }
+      relatedIDs = hits.map(\.thread.id)
     }
   }
 
@@ -167,8 +204,11 @@ struct DrawerView: View {
 
   // MARK: - Projects
 
+  private static let collapsedProjectLimit = 6
+
   private var projectsSection: some View {
-    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+    let visibleProjects = showAllProjects ? projects : Array(projects.prefix(Self.collapsedProjectLimit))
+    return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
       HStack {
         Text("Projects").eyebrowStyle().accessibilityAddTraits(.isHeader)
         Spacer()
@@ -176,7 +216,7 @@ struct DrawerView: View {
           Image(systemName: "plus")
             .font(.system(.footnote, weight: .semibold))
             .foregroundStyle(Theme.Brand.glacier)
-            .frame(width: Theme.Size.target, height: Theme.Size.glyph)
+            .frame(width: Theme.Size.target, height: Theme.Size.target)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -190,24 +230,63 @@ struct DrawerView: View {
           .foregroundStyle(Theme.Text.tertiary)
           .padding(.horizontal, Theme.Spacing.sm)
       }
-      ForEach(projects.prefix(6)) { project in
+      ForEach(visibleProjects) { project in
+        projectRow(project)
+      }
+      if projects.count > Self.collapsedProjectLimit {
         Button {
-          onOpenProject(project)
+          withAppAnimation(Theme.Motion.easeOut) { showAllProjects.toggle() }
         } label: {
-          HStack(spacing: Theme.Spacing.md) {
-            TintTile(symbol: "folder.fill", tint: Theme.Brand.glacier)
-            Text(project.name)
-              .font(.rowTitle)
-              .foregroundStyle(Theme.Text.primary)
-              .lineLimit(1)
-            Spacer(minLength: 0)
+          HStack(spacing: Theme.Spacing.xs) {
+            Text(
+              showAllProjects
+                ? String(localized: "Show fewer")
+                : String(localized: "Show all (\(projects.count))"))
+              .font(.footnote.weight(.medium))
+              .foregroundStyle(Theme.Brand.glacier)
+            Image(systemName: showAllProjects ? "chevron.up" : "chevron.down")
+              .font(.caption2.weight(.semibold))
+              .foregroundStyle(Theme.Brand.glacier)
           }
-          .drawerRow(selected: false)
+          .padding(.horizontal, Theme.Spacing.sm)
+          .frame(maxWidth: .infinity, minHeight: Theme.Size.target, alignment: .leading)
+          .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("drawer.project")
+        .accessibilityIdentifier("drawer.projects.toggle")
       }
     }
+  }
+
+  private func matchedProjectsSection(_ matched: [Project]) -> some View {
+    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+      Text("Projects")
+        .eyebrowStyle()
+        .accessibilityAddTraits(.isHeader)
+        .padding(.horizontal, Theme.Spacing.sm)
+      ForEach(matched) { project in
+        projectRow(project)
+      }
+    }
+  }
+
+  private func projectRow(_ project: Project) -> some View {
+    Button {
+      searchFocused = false
+      onOpenProject(project)
+    } label: {
+      HStack(spacing: Theme.Spacing.md) {
+        TintTile(symbol: "folder.fill", tint: Theme.Brand.glacier)
+        Text(project.name)
+          .font(.rowTitle)
+          .foregroundStyle(Theme.Text.primary)
+          .lineLimit(1)
+        Spacer(minLength: 0)
+      }
+      .drawerRow(selected: false)
+    }
+    .buttonStyle(.plain)
+    .accessibilityIdentifier("drawer.project")
   }
 
   // MARK: - Chats
@@ -249,7 +328,7 @@ struct DrawerView: View {
             .foregroundStyle(selected ? Theme.Text.primary : Theme.Text.secondary)
             // At accessibility sizes one line holds only a word or two.
             .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
-          if appState.generatingThreadID == thread.id {
+          if isBusy(thread) {
             ProgressView().controlSize(.mini)
           }
           if thread.isPinned {
@@ -291,14 +370,14 @@ struct DrawerView: View {
         }
       }
       Button("Delete", systemImage: "trash", role: .destructive) { onDelete(thread) }
-        // Its reply is still being written into this chat.
-        .disabled(appState.generatingThreadID == thread.id)
+        // Its reply is still being prepared or written into this chat.
+        .disabled(isBusy(thread))
     }
     // The long-press menu as actions VoiceOver and Switch Control can reach.
     .accessibilityAction(named: thread.isPinned ? "Unpin" : "Pin") { onTogglePin(thread) }
     .accessibilityAction(named: "Rename") { onRename(thread) }
     .accessibilityAction(named: "Delete") {
-      if appState.generatingThreadID != thread.id { onDelete(thread) }
+      if !isBusy(thread) { onDelete(thread) }
     }
     .accessibilityIdentifier("drawer.row")
   }
@@ -308,7 +387,10 @@ struct DrawerView: View {
   private var footer: some View {
     VStack(spacing: 0) {
       Rectangle().fill(Theme.Surface.hairline).frame(height: Theme.Stroke.hairline)
-      Button(action: onSettings) {
+      Button {
+        searchFocused = false
+        onSettings()
+      } label: {
         HStack(spacing: Theme.Spacing.md) {
           TintTile(symbol: "gearshape.fill", tint: Theme.Brand.silver)
           Text("Settings")

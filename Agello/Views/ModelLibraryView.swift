@@ -2,14 +2,29 @@ import SwiftUI
 
 struct ModelLibraryView: View {
   @Environment(AppState.self) private var appState
+  @State private var deletingModelID: ModelID?
+  @State private var deleteError: String?
 
   /// Hosts provide the NavigationStack (Settings pushes it; the chat's
   /// download banner presents it in a sheet).
   var body: some View {
     ScrollView {
       LazyVStack(spacing: Theme.Spacing.md) {
+        if let deleteError {
+          InlineBanner(
+            symbol: "exclamationmark.triangle",
+            message: deleteError,
+            tint: Theme.Status.critical,
+            identifier: "models.error"
+          ) {
+            Button("Dismiss") { self.deleteError = nil }
+          }
+        }
         ForEach(ModelCatalog.all) { spec in
-          ModelCardView(spec: spec)
+          ModelCardView(
+            spec: spec,
+            deletingModelID: $deletingModelID,
+            deleteError: $deleteError)
         }
         Text(
           "Models download once from Hugging Face and stay on this \(Platform.deviceName). Downloads continue if you leave the app."
@@ -65,10 +80,21 @@ extension ModelStore {
 private struct ModelCardView: View {
   @Environment(AppState.self) private var appState
   let spec: ModelSpec
+  @Binding var deletingModelID: ModelID?
+  @Binding var deleteError: String?
   @State private var cellularSpec: ModelSpec?
+  @State private var confirmDelete = false
 
   private var state: ModelStore.DownloadState {
     appState.store.states[spec.id] ?? .notDownloaded
+  }
+
+  private var isVerifying: Bool {
+    appState.store.isVerifying(spec.id)
+  }
+
+  private var isPausing: Bool {
+    appState.store.isPausing(spec.id)
   }
 
   /// The chat model sparkles; the search model finds passages.
@@ -98,6 +124,27 @@ private struct ModelCardView: View {
     .padding(Theme.Spacing.lg)
     .surfaceCard(radius: Theme.Radius.group)
     .cellularDownloadConfirmation($cellularSpec)
+    .confirmationDialog(
+      "Delete \(spec.displayName)?",
+      isPresented: $confirmDelete,
+      titleVisibility: .visible
+    ) {
+      Button("Delete (\(spec.sizeDisplay))", role: .destructive) {
+        guard deletingModelID == nil else { return }
+        deleteError = nil
+        deletingModelID = spec.id
+        Task {
+          defer { deletingModelID = nil }
+          if let error = await appState.deleteModel(spec) {
+            deleteError = error
+            Haptics.error()
+          }
+        }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("This removes \(spec.sizeDisplay) from this \(Platform.deviceName). You can download it again later.")
+    }
   }
 
   @ViewBuilder
@@ -113,14 +160,17 @@ private struct ModelCardView: View {
       .accessibilityIdentifier("models.download.\(spec.id.rawValue)")
     case .downloading(let progress):
       VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-        ProgressView(value: progress)
-          .accessibilityLabel("\(spec.displayName) download")
-          .tint(tint)
+        if isVerifying {
+          ProgressView()
+            .accessibilityLabel("\(spec.displayName) verifying")
+            .tint(tint)
+        } else {
+          ProgressView(value: progress)
+            .accessibilityLabel("\(spec.displayName) download")
+            .tint(tint)
+        }
         HStack {
-          Text(
-            appState.store.waitingForWiFi.contains(spec.id)
-              ? Platform.waitingForUnmeteredNetwork
-              : String(localized: "Downloading… \(Int(progress * 100))%"))
+          Text(downloadingStatusText(progress: progress))
             .font(.caption)
             .monospacedDigit()
             .foregroundStyle(Theme.Text.secondary)
@@ -128,13 +178,19 @@ private struct ModelCardView: View {
           Spacer()
           Button("Pause") { appState.store.pauseDownload(spec) }
             .buttonStyle(QuietCapsuleButtonStyle())
+            .disabled(isVerifying || isPausing)
           Button("Cancel", role: .cancel) { appState.store.cancelDownload(spec) }
             .buttonStyle(QuietCapsuleButtonStyle(tint: Theme.Text.secondary))
+            .disabled(isVerifying)
         }
       }
     case .paused(let progress):
       HStack {
-        StatusBadge(text: String(localized: "Paused at \(Int(progress * 100))%"), tone: Theme.Status.guarded)
+        StatusBadge(
+          text: isPausing
+            ? String(localized: "Pausing…")
+            : String(localized: "Paused at \(Int(progress * 100))%"),
+          tone: Theme.Status.guarded)
         Spacer()
         Button("Resume") { appState.store.download(spec) { cellularSpec = $0 } }
           .buttonStyle(QuietCapsuleButtonStyle(tint: tint))
@@ -146,8 +202,12 @@ private struct ModelCardView: View {
         StatusBadge(text: String(localized: "Ready"), tone: Theme.Status.healthy)
           .accessibilityIdentifier("models.ready.\(spec.id.rawValue)")
         Spacer()
-        Button("Delete", role: .destructive) { Task { await appState.deleteModel(spec) } }
-          .buttonStyle(QuietCapsuleButtonStyle(tint: Theme.Status.critical))
+        Button(deletingModelID == spec.id ? "Deleting…" : "Delete", role: .destructive) {
+          confirmDelete = true
+        }
+        .buttonStyle(QuietCapsuleButtonStyle(tint: Theme.Status.critical))
+        .disabled(deletingModelID != nil)
+        .accessibilityIdentifier("models.delete.\(spec.id.rawValue)")
       }
     case .failed(let message):
       VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
@@ -158,5 +218,15 @@ private struct ModelCardView: View {
           .buttonStyle(QuietCapsuleButtonStyle(tint: tint))
       }
     }
+  }
+
+  private func downloadingStatusText(progress: Double) -> String {
+    if isVerifying {
+      return String(localized: "Verifying…")
+    }
+    if appState.store.waitingForWiFi.contains(spec.id) {
+      return Platform.waitingForUnmeteredNetwork
+    }
+    return String(localized: "Downloading… \(Int(progress * 100))%")
   }
 }

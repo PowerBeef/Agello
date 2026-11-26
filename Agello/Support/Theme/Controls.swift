@@ -140,7 +140,7 @@ struct TintTile: View {
   @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
 
   var body: some View {
-    let side = size * scale
+    let side = size * min(scale, 1.5)
     Image(systemName: symbol)
       .font(.system(size: side * 0.48, weight: .semibold))
       .foregroundStyle(tint)

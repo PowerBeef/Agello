@@ -33,6 +33,7 @@ struct ChatView: View {
     let versions = versionGroups()
     VStack(spacing: 0) {
       engineBanner
+      pendingConfirmationBanner
       noticeBanner
       messagesList(turns, versions: versions)
         .frame(maxHeight: .infinity)
@@ -53,6 +54,7 @@ struct ChatView: View {
     }
     .appAnimation(Theme.Motion.easeOut, value: appState.generationError)
     .appAnimation(Theme.Motion.easeOut, value: appState.notice)
+    .appAnimation(Theme.Motion.easeOut, value: appState.pendingToolConfirmation?.id)
     // The banner appears without moving VoiceOver's focus: say it.
     .onChange(of: appState.generationError) { _, message in
       if let message { Haptics.announce(message) }
@@ -135,6 +137,25 @@ struct ChatView: View {
       .bannerInsets()
     case .ready, .generating:
       EmptyView()
+    }
+  }
+
+  /// Subtle reminder when another chat has a mutating action parked on user approval.
+  @ViewBuilder
+  private var pendingConfirmationBanner: some View {
+    if let confirmation = appState.pendingToolConfirmation,
+      let ownerID = appState.generatingThreadID ?? appState.pendingToolConfirmationThreadID,
+      thread?.id != ownerID
+    {
+      InlineBanner(
+        symbol: "hand.raised.circle",
+        message: String(localized: "“\(confirmation.title)” is waiting for approval in another chat."),
+        tint: confirmation.risk == .destructive ? Theme.Status.critical : Theme.Status.guarded,
+        identifier: "chat.banner.pendingApproval"
+      ) {
+        Button("Review") { AppRouter.shared.handle(.openChat(ownerID)) }
+      }
+      .bannerInsets()
     }
   }
 
@@ -222,8 +243,8 @@ struct ChatView: View {
           } action: { _, atBottom in
             followsLatest = atBottom
           }
-          .onChange(of: turns.count) { old, new in
-            guard new > old, let latest = turns.last?.id else { return }
+          .onChange(of: appState.scrollToLatestToken) { _, _ in
+            guard appState.scrollToLatestThreadID == thread?.id, let latest = turns.last?.id else { return }
             followsLatest = true
             withAppAnimation(Theme.Motion.easeOut) {
               proxy.scrollTo(latest, anchor: .bottom)

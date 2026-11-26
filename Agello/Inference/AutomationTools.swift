@@ -237,7 +237,7 @@ enum BatchConfirmationPlanner {
 
     ToolConfirmationGate.clearBatchGrants()
     for step in steps where approved.contains(step.index) {
-      ToolConfirmationGate.grantBatchStep(toolName: step.toolName)
+      ToolConfirmationGate.grantBatchStep(toolName: step.toolName, risk: step.risk)
     }
     return approved
   }
@@ -276,10 +276,16 @@ enum BatchConfirmationPlanner {
       let title = (args["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
       let start = args["start_date"] as? String ?? ""
       let end = args["end_date"] as? String ?? ""
-      guard !title.isEmpty, !start.isEmpty, !end.isEmpty else { return nil }
+      guard !title.isEmpty,
+        let parsedStart = PersonalToolsLogic.parseDate(start, endOfDay: false),
+        let parsedEnd = PersonalToolsLogic.parseDate(end, endOfDay: false),
+        parsedEnd > parsedStart
+      else { return nil }
       var params: [ToolConfirmationRequest.Parameter] = [
         .init(name: "title", value: title),
-        .init(name: "time", value: "\(start) – \(end)"),
+        .init(
+          name: "time",
+          value: "\(PersonalToolsLogic.formatISO(parsedStart)) – \(PersonalToolsLogic.formatISO(parsedEnd))"),
       ]
       if let loc = args["location"] as? String, !loc.isEmpty { params.append(.init(name: "location", value: loc)) }
       return ToolConfirmationRequest.Step(
@@ -292,6 +298,21 @@ enum BatchConfirmationPlanner {
         case .success(let existing) = await PersonalTools.activeBackend.fetchCalendarEvent(identifier: id)
       else { return nil }
       let isDelete = action == "delete"
+      if !isDelete {
+        var newStart: Date?
+        var newEnd: Date?
+        if let rawStart = args["start_date"] as? String, !rawStart.isEmpty {
+          guard let parsed = PersonalToolsLogic.parseDate(rawStart, endOfDay: false) else { return nil }
+          newStart = parsed
+        }
+        if let rawEnd = args["end_date"] as? String, !rawEnd.isEmpty {
+          guard let parsed = PersonalToolsLogic.parseDate(rawEnd, endOfDay: false) else { return nil }
+          newEnd = parsed
+        }
+        let effectiveStart = newStart ?? existing.startDate
+        let effectiveEnd = newEnd ?? existing.endDate
+        guard effectiveEnd > effectiveStart else { return nil }
+      }
       return ToolConfirmationRequest.Step(
         index: index, toolName: ManageCalendarEventTool.name,
         title: isDelete ? String(localized: "Delete calendar event") : String(localized: "Update calendar event"),
@@ -317,7 +338,12 @@ enum BatchConfirmationPlanner {
       let title = (args["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
       guard !title.isEmpty else { return nil }
       var params: [ToolConfirmationRequest.Parameter] = [.init(name: "title", value: title)]
-      if let due = args["due_date"] as? String, !due.isEmpty { params.append(.init(name: "due", value: due)) }
+      if let due = (args["due_date"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !due.isEmpty
+      {
+        guard let parsed = PersonalToolsLogic.parseDate(due, endOfDay: false) else { return nil }
+        params.append(.init(name: "due", value: PersonalToolsLogic.formatISO(parsed)))
+      }
       return ToolConfirmationRequest.Step(
         index: index, toolName: ManageReminderTool.name,
         title: String(localized: "Create reminder"),
@@ -327,6 +353,13 @@ enum BatchConfirmationPlanner {
         !id.isEmpty,
         case .success(let existing) = await PersonalTools.activeBackend.fetchReminder(identifier: id)
       else { return nil }
+      if action == "update",
+        let due = (args["due_date"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !due.isEmpty,
+        PersonalToolsLogic.parseDate(due, endOfDay: false) == nil
+      {
+        return nil
+      }
       let isDelete = action == "delete"
       return ToolConfirmationRequest.Step(
         index: index, toolName: ManageReminderTool.name,
@@ -349,7 +382,7 @@ enum BatchConfirmationPlanner {
     case "set_timer":
       let label = (args["label"] as? String) ?? "Timer"
       let secs = (args["duration_seconds"] as? NSNumber)?.doubleValue ?? 0
-      guard secs >= 5 else { return nil }
+      guard secs.isFinite, secs >= 5, secs <= 24 * 3_600 else { return nil }
       return ToolConfirmationRequest.Step(
         index: index, toolName: ManageAlarmTool.name,
         title: String(localized: "Start timer"),
@@ -358,7 +391,8 @@ enum BatchConfirmationPlanner {
     case "set_alarm":
       let label = (args["label"] as? String) ?? "Alarm"
       guard let h = (args["hour"] as? NSNumber)?.intValue,
-        let m = (args["minute"] as? NSNumber)?.intValue
+        let m = (args["minute"] as? NSNumber)?.intValue,
+        (0...23).contains(h), (0...59).contains(m)
       else { return nil }
       let timeText = String(format: "%02d:%02d", h, m)
       return ToolConfirmationRequest.Step(
@@ -385,20 +419,35 @@ enum BatchConfirmationPlanner {
   private static func buildMessageStep(
     index: Int, args: [String: Any]
   ) -> ToolConfirmationRequest.Step? {
-    let channel = (args["channel"] as? String ?? "").lowercased()
-    let recipients = (args["recipients"] as? [String]) ?? []
+    let channel = (args["channel"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let cleanRecipients = ((args["recipients"] as? [String]) ?? [])
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
     let body = (args["body"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-    guard (channel == "sms" || channel == "email"), !recipients.isEmpty, !body.isEmpty else {
+    guard channel == "sms" || channel == "email", !cleanRecipients.isEmpty, !body.isEmpty else {
       return nil
     }
+    let cleanSubject = (args["subject"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let unverified = TurnContactRoster.unverifiedRecipients(from: cleanRecipients)
+    var params: [ToolConfirmationRequest.Parameter] = [
+      .init(name: "channel", value: channel == "sms" ? "SMS" : "Email"),
+      .init(name: "to", value: cleanRecipients.joined(separator: ", ")),
+    ]
+    if !unverified.isEmpty {
+      params.append(
+        .init(
+          name: "warning",
+          value: "Unverified recipient (not in Contacts): \(unverified.joined(separator: ", "))"))
+    }
+    if let cleanSubject, !cleanSubject.isEmpty {
+      params.append(.init(name: "subject", value: cleanSubject))
+    }
+    params.append(.init(name: "body", value: String(body.prefix(120))))
     return ToolConfirmationRequest.Step(
       index: index, toolName: PrepareMessageTool.name,
       title: channel == "email" ? String(localized: "Draft email") : String(localized: "Draft text message"),
-      summary: "Prepare a draft for \(recipients.joined(separator: ", ")).",
-      parameters: [
-        .init(name: "to", value: recipients.joined(separator: ", ")),
-        .init(name: "body", value: String(body.prefix(120))),
-      ],
+      summary: "Prepare a draft for \(cleanRecipients.joined(separator: ", ")).",
+      parameters: params,
       risk: .standard)
   }
 

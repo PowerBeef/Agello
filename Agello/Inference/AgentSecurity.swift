@@ -198,12 +198,18 @@ enum ToolConfirmationDecision: Equatable, Sendable {
 enum ToolConfirmationGate {
   typealias Handler = @Sendable (ToolConfirmationRequest) async -> ToolConfirmationDecision
 
+  private struct BatchGrantKey: Hashable {
+    let toolName: String
+    let risk: ToolConfirmationRequest.RiskTier
+  }
+
   private struct State {
     var presenter: Handler?
     var testOverride: Handler?
-    /// Single-use per-tool grants issued strictly after a grouped `PlanConfirmationCard` approval
-    /// so pre-decoded approved steps execute once without double-prompting (zero TOCTOU).
-    var batchGrants: [String: Int] = [:]
+    /// Single-use per-(tool, risk) grants issued strictly after a grouped `PlanConfirmationCard`
+    /// approval so pre-decoded approved steps execute once without double-prompting (zero TOCTOU)
+    /// and a `.standard` grant can never auto-approve a `.destructive`/`.external` call.
+    var batchGrants: [BatchGrantKey: Int] = [:]
   }
 
   private static let state = Mutex(State())
@@ -221,10 +227,14 @@ enum ToolConfirmationGate {
     }
   }
 
-  /// Grants one pre-approved execution for `toolName` after a grouped `PlanConfirmationCard`
-  /// decision has already been approved by the user for that exact pre-decoded step.
-  static func grantBatchStep(toolName: String) {
-    state.withLock { $0.batchGrants[toolName, default: 0] += 1 }
+  /// Grants one pre-approved execution for `toolName` at `risk` after a grouped
+  /// `PlanConfirmationCard` decision has already been approved by the user for that exact
+  /// pre-decoded step.
+  static func grantBatchStep(
+    toolName: String, risk: ToolConfirmationRequest.RiskTier = .standard
+  ) {
+    let key = BatchGrantKey(toolName: toolName, risk: risk)
+    state.withLock { $0.batchGrants[key, default: 0] += 1 }
   }
 
   /// Clears any unconsumed batch grants at the end of a tool round or on cancel/stop.
@@ -238,12 +248,13 @@ enum ToolConfirmationGate {
       return .denied(reason: "Cancelled before confirmation.")
     }
     if !request.isPlanBatch {
+      let key = BatchGrantKey(toolName: request.toolName, risk: request.risk)
       let consumed = state.withLock { s -> Bool in
-        guard let count = s.batchGrants[request.toolName], count > 0 else { return false }
+        guard let count = s.batchGrants[key], count > 0 else { return false }
         if count == 1 {
-          s.batchGrants.removeValue(forKey: request.toolName)
+          s.batchGrants.removeValue(forKey: key)
         } else {
-          s.batchGrants[request.toolName] = count - 1
+          s.batchGrants[key] = count - 1
         }
         return true
       }

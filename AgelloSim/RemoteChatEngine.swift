@@ -229,6 +229,7 @@ actor RemoteChatEngine: ChatEngineProtocol {
     generating = true
     cancelRequested = false
     defer {
+      ToolConfirmationGate.clearBatchGrants()
       generating = false
       activeTask = nil
     }
@@ -432,6 +433,7 @@ actor RemoteChatEngine: ChatEngineProtocol {
   private func executeToolCalls(
     _ calls: [RemoteChatClient.ToolCallItem], using toolManager: ToolManager
   ) async -> [[String: Any]] {
+    defer { ToolManager.endBatch() }
     let allReadOnly = calls.count > 1 && calls.allSatisfy { toolManager.isReadOnly(name: $0.name) }
     if allReadOnly {
       let messages = await withTaskGroup(of: (Int, ToolCallMessage).self) { group in

@@ -165,6 +165,66 @@ enum NativeActions {
     return try? await MKLookAroundSceneRequest(coordinate: coord).scene
   }
 
+  /// Recalculates travel time, distance, and turn-by-turn steps via MapKit when the user switches
+  /// transport mode (`driving` / `walking` / `cycling` / `transit`) inside ``RouteCardView``.
+  static func recalculateRoute(from card: RouteCard, transport mode: String) async -> RouteCard? {
+    let normalized = mode.lowercased()
+    let destItem = await resolveMapItem(
+      identifier: card.destinationMapItemIdentifier,
+      name: card.destinationName,
+      latitude: card.destinationLatitude,
+      longitude: card.destinationLongitude)
+    let sourceItem: MKMapItem
+    if card.originIsCurrentLocation {
+      sourceItem = MKMapItem.forCurrentLocation()
+    } else if let lat = card.originLatitude, let lon = card.originLongitude {
+      sourceItem = MKMapItem(location: CLLocation(latitude: lat, longitude: lon), address: nil)
+      sourceItem.name = card.originName
+    } else {
+      sourceItem = MKMapItem.forCurrentLocation()
+    }
+
+    let request = MKDirections.Request()
+    request.source = sourceItem
+    request.destination = destItem
+    switch normalized {
+    case "walking": request.transportType = .walking
+    case "cycling": request.transportType = .cycling
+    case "transit": request.transportType = .transit
+    default: request.transportType = .automobile
+    }
+
+    var updated = card
+    updated.transport = normalized
+
+    if request.transportType != .transit,
+      let routeResponse = try? await MKDirections(request: request).calculate(),
+      let route = routeResponse.routes.first
+    {
+      updated.distanceMeters = route.distance
+      updated.expectedTravelSeconds = route.expectedTravelTime
+      updated.routeName = route.name.isEmpty ? nil : route.name
+      updated.steps = route.steps
+        .filter { !$0.instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .prefix(15)
+        .enumerated()
+        .map { idx, step in
+          RouteCard.Step(
+            id: idx,
+            instruction: step.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
+            distanceMeters: step.distance)
+        }
+      return updated
+    }
+
+    guard let eta = try? await MKDirections(request: request).calculateETA() else { return nil }
+    updated.distanceMeters = eta.distance
+    updated.expectedTravelSeconds = eta.expectedTravelTime
+    updated.routeName = nil
+    updated.steps = []
+    return updated
+  }
+
   private nonisolated static func boundingRegion(
     for coords: [CLLocationCoordinate2D]
   ) -> MKCoordinateRegion {
@@ -211,20 +271,30 @@ enum NativeActions {
 
 // MARK: - Out-of-process Native iOS Sheets (EventKitUI, ContactsUI, MessageUI, SwiftUI Map)
 
+enum CalendarEventEditOutcome: Equatable {
+  case saved(CalendarEventCard)
+  case deleted
+  case cancelled
+}
+
 struct CalendarEventEditSheet: UIViewControllerRepresentable {
   let card: CalendarEventCard
+  var onComplete: ((CalendarEventEditOutcome) -> Void)? = nil
   @Environment(\.dismiss) private var dismiss
 
-  func makeCoordinator() -> Coordinator { Coordinator(dismiss: dismiss) }
+  func makeCoordinator() -> Coordinator {
+    Coordinator(card: card, dismiss: dismiss, onComplete: onComplete)
+  }
 
   func makeUIViewController(context: Context) -> EKEventEditViewController {
-    let store = PersonalContextService.shared.sharedEventStore
+    let store = context.coordinator.store
     let controller = EKEventEditViewController()
     controller.eventStore = store
-    if let id = card.eventIdentifier, let existing = PersonalContextService.shared.event(withIdentifier: id) {
+    if let id = card.eventIdentifier, let existing = store.event(withIdentifier: id) {
       controller.event = existing
     } else {
       let event = EKEvent(eventStore: store)
+      event.calendar = store.defaultCalendarForNewEvents
       event.title = card.title
       event.startDate = card.startDate
       event.endDate = card.endDate
@@ -236,30 +306,110 @@ struct CalendarEventEditSheet: UIViewControllerRepresentable {
     return controller
   }
 
-  func updateUIViewController(_ uiViewController: EKEventEditViewController, context: Context) {}
+  func updateUIViewController(_ uiViewController: EKEventEditViewController, context: Context) {
+    context.coordinator.card = card
+    context.coordinator.onComplete = onComplete
+  }
 
+  @MainActor
   final class Coordinator: NSObject, @preconcurrency EKEventEditViewDelegate {
+    let store = EKEventStore()
+    var card: CalendarEventCard
     let dismiss: DismissAction
-    init(dismiss: DismissAction) { self.dismiss = dismiss }
-    @MainActor
+    var onComplete: ((CalendarEventEditOutcome) -> Void)?
+
+    init(
+      card: CalendarEventCard, dismiss: DismissAction,
+      onComplete: ((CalendarEventEditOutcome) -> Void)?
+    ) {
+      self.card = card
+      self.dismiss = dismiss
+      self.onComplete = onComplete
+    }
+
     func eventEditViewController(
       _ controller: EKEventEditViewController, didCompleteWith action: EKEventEditViewAction
     ) {
+      switch action {
+      case .saved:
+        if let saved = controller.event {
+          let updated = CalendarEventCard(
+            status: card.eventIdentifier == nil ? .created : .updated,
+            eventIdentifier: saved.eventIdentifier ?? card.eventIdentifier,
+            title: saved.title?.isEmpty == false ? (saved.title ?? card.title) : card.title,
+            startDate: saved.startDate ?? card.startDate,
+            endDate: saved.endDate ?? card.endDate,
+            isAllDay: saved.isAllDay,
+            location: saved.location,
+            calendarName: saved.calendar?.title ?? card.calendarName)
+          onComplete?(.saved(updated))
+        } else {
+          onComplete?(.cancelled)
+        }
+      case .deleted:
+        onComplete?(.deleted)
+      case .canceled:
+        onComplete?(.cancelled)
+      @unknown default:
+        onComplete?(.cancelled)
+      }
       dismiss()
     }
   }
 }
 
-struct ContactDetailSheet: UIViewControllerRepresentable {
+struct ContactDetailSheet: View {
   let card: ContactCard
+  @Environment(\.dismiss) private var dismiss
+  @State private var resolvedContact: CNContact?
+  @State private var didResolve = false
+
+  var body: some View {
+    Group {
+      if didResolve || card.contactIdentifier == nil {
+        ContactDetailViewControllerRepresentable(
+          card: card, existingContact: resolvedContact, dismiss: dismiss
+        )
+        .ignoresSafeArea()
+      } else {
+        NavigationStack {
+          ProgressView()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.Surface.canvas.ignoresSafeArea())
+            .navigationTitle(card.fullName)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+              ToolbarItem(placement: .cancellationAction) {
+                Button("Done") { dismiss() }
+              }
+            }
+        }
+      }
+    }
+    .task(id: card.contactIdentifier) {
+      guard let id = card.contactIdentifier else {
+        didResolve = true
+        return
+      }
+      resolvedContact = await PersonalContextService.shared.fetchContact(
+        withIdentifier: id,
+        keysToFetch: [CNContactViewController.descriptorForRequiredKeys()])
+      didResolve = true
+    }
+  }
+}
+
+private struct ContactDetailViewControllerRepresentable: UIViewControllerRepresentable {
+  let card: ContactCard
+  let existingContact: CNContact?
+  let dismiss: DismissAction
+
+  func makeCoordinator() -> Coordinator { Coordinator(dismiss: dismiss) }
 
   func makeUIViewController(context: Context) -> UINavigationController {
     let controller: CNContactViewController
-    if let id = card.contactIdentifier,
-      let existing = PersonalContextService.shared.contact(
-        withIdentifier: id, keysToFetch: [CNContactViewController.descriptorForRequiredKeys()])
-    {
-      controller = CNContactViewController(for: existing)
+    if let existingContact {
+      controller = CNContactViewController(for: existingContact)
     } else {
       let mutable = CNMutableContact()
       let parts = card.fullName.split(separator: " ", maxSplits: 1)
@@ -272,13 +422,56 @@ struct ContactDetailSheet: UIViewControllerRepresentable {
       mutable.emailAddresses = card.emails.map {
         CNLabeledValue(label: CNLabelHome, value: $0 as NSString)
       }
+      if let address = card.postalAddress, !address.isEmpty {
+        let postal = CNMutablePostalAddress()
+        postal.street = address
+        mutable.postalAddresses = [CNLabeledValue(label: CNLabelHome, value: postal)]
+      }
       controller = CNContactViewController(forUnknownContact: mutable)
+      controller.contactStore = CNContactStore()
+      controller.delegate = context.coordinator
     }
     controller.allowsEditing = false
+    let close = dismiss
+    controller.navigationItem.rightBarButtonItem = UIBarButtonItem(
+      systemItem: .done,
+      primaryAction: UIAction { _ in close() })
     return UINavigationController(rootViewController: controller)
   }
 
   func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {}
+
+  @MainActor
+  final class Coordinator: NSObject, @preconcurrency CNContactViewControllerDelegate {
+    let dismiss: DismissAction
+    init(dismiss: DismissAction) { self.dismiss = dismiss }
+
+    func contactViewController(
+      _ viewController: CNContactViewController, didCompleteWith contact: CNContact?
+    ) {
+      dismiss()
+    }
+  }
+}
+
+private final class DismissingFallbackViewController: UIViewController {
+  private let onAppearDismiss: () -> Void
+  private var didDismiss = false
+
+  init(onAppearDismiss: @escaping () -> Void) {
+    self.onAppearDismiss = onAppearDismiss
+    super.init(nibName: nil, bundle: nil)
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    guard !didDismiss else { return }
+    didDismiss = true
+    onAppearDismiss()
+  }
 }
 
 struct MessageComposeSheet: UIViewControllerRepresentable {
@@ -288,7 +481,11 @@ struct MessageComposeSheet: UIViewControllerRepresentable {
 
   func makeCoordinator() -> Coordinator { Coordinator(dismiss: dismiss) }
 
-  func makeUIViewController(context: Context) -> MFMessageComposeViewController {
+  func makeUIViewController(context: Context) -> UIViewController {
+    guard MFMessageComposeViewController.canSendText() else {
+      let close = dismiss
+      return DismissingFallbackViewController { close() }
+    }
     let controller = MFMessageComposeViewController()
     controller.recipients = recipients
     controller.body = body
@@ -296,7 +493,7 @@ struct MessageComposeSheet: UIViewControllerRepresentable {
     return controller
   }
 
-  func updateUIViewController(_ uiViewController: MFMessageComposeViewController, context: Context) {}
+  func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 
   final class Coordinator: NSObject, @preconcurrency MFMessageComposeViewControllerDelegate {
     let dismiss: DismissAction
@@ -318,7 +515,11 @@ struct MailComposeSheet: UIViewControllerRepresentable {
 
   func makeCoordinator() -> Coordinator { Coordinator(dismiss: dismiss) }
 
-  func makeUIViewController(context: Context) -> MFMailComposeViewController {
+  func makeUIViewController(context: Context) -> UIViewController {
+    guard MFMailComposeViewController.canSendMail() else {
+      let close = dismiss
+      return DismissingFallbackViewController { close() }
+    }
     let controller = MFMailComposeViewController()
     controller.setToRecipients(recipients)
     if let subject { controller.setSubject(subject) }
@@ -327,7 +528,7 @@ struct MailComposeSheet: UIViewControllerRepresentable {
     return controller
   }
 
-  func updateUIViewController(_ uiViewController: MFMailComposeViewController, context: Context) {}
+  func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 
   final class Coordinator: NSObject, @preconcurrency MFMailComposeViewControllerDelegate {
     let dismiss: DismissAction

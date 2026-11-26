@@ -42,11 +42,17 @@ public final class ToolManager: Sendable {
   /// back to per-tool confirmation.
   public typealias BatchConfirmHandler = @Sendable ([PendingToolInvocation]) async -> Set<Int>?
 
-  /// Holds the optional batch confirmation handler behind an `NSLock`. A `Mutex` in a static
+  /// Optional app-provided hook invoked in `defer` when every tool round finishes (including on
+  /// cancellation or early error) so single-use batch confirmation grants never survive to the
+  /// next tool round.
+  public typealias BatchEndHandler = @Sendable () -> Void
+
+  /// Holds the optional batch confirmation hooks behind an `NSLock`. A `Mutex` in a static
   /// property crashed optimized builds (fork `82b05ea1`), so we use a locked reference box.
   private final class BatchConfirmStore: @unchecked Sendable {
     private let lock = NSLock()
     private var handler: BatchConfirmHandler?
+    private var endHandler: BatchEndHandler?
 
     func set(_ handler: BatchConfirmHandler?) {
       lock.lock()
@@ -59,6 +65,18 @@ public final class ToolManager: Sendable {
       defer { lock.unlock() }
       return handler
     }
+
+    func setEnd(_ handler: BatchEndHandler?) {
+      lock.lock()
+      defer { lock.unlock() }
+      self.endHandler = handler
+    }
+
+    func getEnd() -> BatchEndHandler? {
+      lock.lock()
+      defer { lock.unlock() }
+      return endHandler
+    }
   }
 
   private static let batchConfirmStore = BatchConfirmStore()
@@ -67,9 +85,17 @@ public final class ToolManager: Sendable {
     batchConfirmStore.set(handler)
   }
 
+  public static func setBatchEndHandler(_ handler: BatchEndHandler?) {
+    batchConfirmStore.setEnd(handler)
+  }
+
   public static func confirmBatch(_ calls: [PendingToolInvocation]) async -> Set<Int>? {
     guard let handler = batchConfirmStore.get() else { return nil }
     return await handler(calls)
+  }
+
+  public static func endBatch() {
+    batchConfirmStore.getEnd()?()
   }
 
   /// A map of tool names to their corresponding Swift Types.

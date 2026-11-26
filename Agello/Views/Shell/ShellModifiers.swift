@@ -36,8 +36,13 @@ private struct ShellDialogs: ViewModifier {
             shell.renaming = nil
           }
           .accessibilityIdentifier("rename.field")
-        Button("Save") { shell.commitRename() }
-        Button("Cancel", role: .cancel) {}
+        Button("Save") {
+          shell.commitRename()
+          shell.renaming = nil
+        }
+        Button("Cancel", role: .cancel) {
+          shell.renaming = nil
+        }
       }
       .confirmationDialog(
         "Delete this chat?", isPresented: isDeleting, titleVisibility: .visible,
@@ -45,6 +50,7 @@ private struct ShellDialogs: ViewModifier {
       ) { thread in
         Button("Delete", role: .destructive) {
           shell.delete(thread)
+          shell.deleting = nil
         }
       } message: { _ in
         Text("It will be removed from this \(Platform.deviceName).")
@@ -52,7 +58,14 @@ private struct ShellDialogs: ViewModifier {
   }
 
   private var isRenaming: Binding<Bool> {
-    Binding(get: { shell.renaming != nil }, set: { if !$0 { shell.renaming = nil } })
+    Binding(
+      get: { shell.renaming != nil },
+      set: {
+        if !$0 {
+          shell.renaming = nil
+          shell.renameText = ""
+        }
+      })
   }
 
   private var isDeleting: Binding<Bool> {

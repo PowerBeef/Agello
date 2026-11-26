@@ -156,8 +156,10 @@ final class BenchUITests: XCTestCase {
     let bubble = bubbles.element(boundBy: max(0, bubbles.count - 1))
     let spoken = bubble.exists ? bubble.label : ""
     turn["screenCharacters"] = spoken.count
-    turn["notice"] = element("chat.banner.notice").exists ? element("chat.banner.notice").label : ""
-    turn["error"] = element("chat.banner.error").exists ? element("chat.banner.error").label : ""
+    let noticeBanner = element("chat.banner.notice")
+    let failedBanner = element("chat.banner.failed")
+    turn["notice"] = noticeBanner.exists ? noticeBanner.label : ""
+    turn["error"] = failedBanner.exists ? failedBanner.label : ""
     attach(Data(spoken.utf8), named: "\(name)-screen.txt")
     attachScreenshot("\(name)-end")
     return turn

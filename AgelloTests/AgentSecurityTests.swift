@@ -327,7 +327,7 @@ final class AgentSecurityTests: XCTestCase {
   }
 
   @MainActor
-  func testToolConfirmationMatchesRequestIDAndDeniesAfterStop() async {
+  func testToolConfirmationQueuesFIFOMatchesRequestIDAndDeniesAfterStop() async {
     let appState = AppState(useMockEngine: true)
     appState.isInForeground = true
     let reqA = ToolConfirmationRequest(
@@ -337,26 +337,76 @@ final class AgentSecurityTests: XCTestCase {
 
     let taskA = Task { await appState.requestToolConfirmation(reqA) }
     await Task.yield()
-    // Superseding reqA with reqB denies reqA and shows reqB.
+    XCTAssertEqual(appState.pendingToolConfirmation?.id, reqA.id)
+
+    // Concurrent reqB queues FIFO behind reqA instead of fail-closing reqA.
     let taskB = Task { await appState.requestToolConfirmation(reqB) }
     await Task.yield()
+    XCTAssertEqual(appState.pendingToolConfirmation?.id, reqA.id)
+
+    // A tap carrying reqB's ID while reqA is active must NOT resolve reqA.
+    appState.resolvePendingToolConfirmation(id: reqB.id, approved: true)
+    XCTAssertEqual(appState.pendingToolConfirmation?.id, reqA.id)
+
+    // Approving reqA resolves taskA and automatically promotes reqB.
+    appState.resolvePendingToolConfirmation(id: reqA.id, approved: true)
     let decisionA = await taskA.value
-    if case .denied = decisionA {} else { XCTFail("Superseded request must deny") }
+    XCTAssertEqual(decisionA, .approved)
+    XCTAssertEqual(appState.pendingToolConfirmation?.id, reqB.id)
 
     // A stale tap carrying reqA's ID must NOT approve reqB.
     appState.resolvePendingToolConfirmation(id: reqA.id, approved: true)
     XCTAssertEqual(appState.pendingToolConfirmation?.id, reqB.id)
 
-    // Matching reqB's ID approves cleanly.
+    // Matching reqB's ID approves cleanly and empties the queue.
     appState.resolvePendingToolConfirmation(id: reqB.id, approved: true)
     let decisionB = await taskB.value
     XCTAssertEqual(decisionB, .approved)
+    XCTAssertNil(appState.pendingToolConfirmation)
 
-    // Stop during an active generation immediately denies subsequent confirmation calls.
+    // Stop drains and denies BOTH active and queued confirmation requests.
+    let taskC = Task { await appState.requestToolConfirmation(reqA) }
+    await Task.yield()
+    let taskD = Task { await appState.requestToolConfirmation(reqB) }
+    await Task.yield()
     appState.activeGenerationStopCount = appState.stopCount
     appState.stop()
+    let decisionC = await taskC.value
+    let decisionD = await taskD.value
+    if case .denied = decisionC {} else { XCTFail("Active request must deny on stop") }
+    if case .denied = decisionD {} else { XCTFail("Queued request must deny on stop") }
+    XCTAssertNil(appState.pendingToolConfirmation)
+
+    // Stop during an active generation immediately denies subsequent confirmation calls.
     let afterStop = await appState.requestToolConfirmation(reqA)
     if case .denied = afterStop {} else { XCTFail("Must deny after stop") }
     appState.activeGenerationStopCount = nil
+
+    // Cancelling an active request denies it and promotes the next queued request;
+    // cancelling a queued request denies it without disturbing the active request.
+    let cancelActive = Task { await appState.requestToolConfirmation(reqA) }
+    await Task.yield()
+    let promoted = Task { await appState.requestToolConfirmation(reqB) }
+    await Task.yield()
+    let reqC = ToolConfirmationRequest(
+      toolName: ManageReminderTool.name, title: "C", summary: "Third", parameters: [])
+    let cancelQueued = Task { await appState.requestToolConfirmation(reqC) }
+    await Task.yield()
+
+    cancelQueued.cancel()
+    let queuedDecision = await cancelQueued.value
+    if case .denied = queuedDecision {} else { XCTFail("Cancelled queued request must deny") }
+    XCTAssertEqual(appState.pendingToolConfirmation?.id, reqA.id)
+
+    cancelActive.cancel()
+    let activeDecision = await cancelActive.value
+    if case .denied = activeDecision {} else { XCTFail("Cancelled active request must deny") }
+    await Task.yield()
+    XCTAssertEqual(appState.pendingToolConfirmation?.id, reqB.id)
+
+    appState.resolvePendingToolConfirmation(id: reqB.id, approved: true)
+    let promotedDecision = await promoted.value
+    XCTAssertEqual(promotedDecision, .approved)
+    XCTAssertNil(appState.pendingToolConfirmation)
   }
 }

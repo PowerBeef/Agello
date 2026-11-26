@@ -105,6 +105,37 @@ final class ActionCardsAndToolsTests: XCTestCase {
     }
   }
 
+  func testLossyArrayHandlesCorruptNullPrimitivesAndNestedArraysWithoutHanging() throws {
+    let corruptJSON = """
+      {
+        "toolActivity": [{"name": "list_reminders", "summary": "OK"}],
+        "sources": [{"index": 1, "title": "Ref"}],
+        "actionCards": [
+          null,
+          42,
+          3.14159,
+          true,
+          false,
+          "unexpected string",
+          [1, "nested", null, [true, {"k": "v"}]],
+          {"unexpectedObject": [null, 1, "two"]},
+          {"id": "00000000-0000-0000-0000-000000000009",
+           "payload": {"kind": "reminder",
+                       "data": {"status": "created", "title": "Survived", "isCompleted": false}}}
+        ]
+      }
+      """
+    let decoded = try JSONDecoder().decode(MessageParts.self, from: Data(corruptJSON.utf8))
+    XCTAssertEqual(decoded.sources.count, 1)
+    XCTAssertEqual(decoded.toolActivity.count, 1)
+    XCTAssertEqual(decoded.actionCards.count, 1)
+    if case .reminder(let rem) = decoded.actionCards.first?.payload {
+      XCTAssertEqual(rem.title, "Survived")
+    } else {
+      XCTFail("Expected valid trailing reminder card to survive corrupt non-object entries")
+    }
+  }
+
   func testActionCardsMergeDeduplicatesAndCapsAtSix() {
     let initial = [
       ActionCardRecord(
@@ -152,7 +183,7 @@ final class ActionCardsAndToolsTests: XCTestCase {
 
   // MARK: - NativeActionURLs (App Store 2.5.1 hygiene)
 
-  func testNativeActionURLsSanitizeAndBlockUnsafeSchemes() {
+  func testNativeActionURLsSanitizeAndBlockUnsafeSchemes() throws {
     XCTAssertEqual(NativeActionURLs.phone("+1 (514) 555-0199")?.absoluteString, "tel:+15145550199")
     XCTAssertNil(NativeActionURLs.phone("12"))
     XCTAssertEqual(NativeActionURLs.sms(recipient: "514-555-0199")?.scheme, "sms")
@@ -183,7 +214,35 @@ final class ActionCardsAndToolsTests: XCTestCase {
         fullName: "John Appleseed", organization: "Apple", phones: ["+15145550100"],
         emails: ["john@example.com"], postalAddress: "1 Infinite Loop"))
     XCTAssertTrue(vcf.contains("BEGIN:VCARD"))
+    XCTAssertTrue(vcf.contains("N:Appleseed;John;;;"))
+    XCTAssertTrue(vcf.contains("FN:John Appleseed"))
     XCTAssertTrue(vcf.contains("TEL;TYPE=CELL:+15145550100"))
+
+    // All-day ICS must emit VALUE=DATE (not UTC timestamps) and sanitize lone \r injection.
+    let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+    var cal = Calendar(identifier: .gregorian)
+    cal.timeZone = utc
+    let dayStart = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 12, day: 25, hour: 0, minute: 0)))
+    let dayEnd = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 12, day: 25, hour: 23, minute: 59)))
+    let allDayICS = NativeActionURLs.icsString(
+      for: CalendarEventCard(
+        status: .created, eventIdentifier: "uid\r\nINJECT:1", title: "Holiday\rBreak",
+        startDate: dayStart, endDate: dayEnd, isAllDay: true, location: "Home\rOffice",
+        calendarName: nil),
+      timeZone: utc)
+    XCTAssertTrue(allDayICS.contains("DTSTART;VALUE=DATE:20261225\r\n"))
+    XCTAssertTrue(allDayICS.contains("DTEND;VALUE=DATE:20261226\r\n"))
+    XCTAssertTrue(allDayICS.contains(#"SUMMARY:Holiday\nBreak"#))
+    XCTAssertTrue(allDayICS.contains(#"LOCATION:Home\nOffice"#))
+    XCTAssertTrue(allDayICS.contains("UID:uidINJECT:1@agello.local\r\n"))
+
+    // Filename sanitization blocks path separators, traversal dots, and control chars.
+    XCTAssertEqual(NativeActionURLs.sanitizedFileName("../Team: Q4/Plan?\n", fallback: "event"), "Team- Q4-Plan")
+    XCTAssertEqual(NativeActionURLs.sanitizedFileName("...///:::", fallback: "event"), "event")
+
+    // Static WeatherKit legal fallback stays valid offline/unsigned.
+    XCTAssertEqual(WeatherLookup.fallbackLegalURL.host(), "weatherkit.apple.com")
+    XCTAssertTrue(WeatherLookup.isAttribution(WeatherLookup.fallbackLegalURL.absoluteString))
   }
 
   // MARK: - ToolManager scalar coercion & @ToolParam(allowedValues:) (B7 & B8)

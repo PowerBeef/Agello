@@ -384,6 +384,11 @@ enum WeatherLookup {
     return ActionCardRecord(payload: .weather(card))
   }
 
+  /// Static legal attribution fallback when `WeatherService.shared.attribution` is unreachable
+  /// offline or in unsigned builds, so legal attribution always remains visible.
+  static let fallbackServiceName = "Apple Weather"
+  static let fallbackLegalURL = URL(string: "https://weatherkit.apple.com/legal-attribution.html")!
+
   /// Apple Weather's mark (for dark backgrounds, the app's) and legal page: WeatherKit's terms
   /// and App Review require both wherever its data shows (`WeatherAttributionMark`).
   struct Mark: Equatable, Sendable {
@@ -408,7 +413,7 @@ enum WeatherLookup {
     if let attribution = try? await WeatherService.shared.attribution {
       return (attribution.serviceName, attribution.legalPageURL)
     }
-    return ("Apple Weather", URL(string: "https://weatherkit.apple.com/legal-attribution.html")!)
+    return (fallbackServiceName, fallbackLegalURL)
   }
 
   /// The source's text, in the place's own time and the user's units.

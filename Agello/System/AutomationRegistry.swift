@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Synchronization
 
@@ -46,14 +47,22 @@ struct RegisteredShortcut: Codable, Equatable, Identifiable, Sendable {
   }
 
   static func slug(from name: String) -> String {
-    let folded = name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let folded = trimmed.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil)
     let scalars = folded.unicodeScalars.map { scalar -> Character in
       CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : "_"
     }
     let collapsed = String(scalars)
       .split(separator: "_", omittingEmptySubsequences: true)
       .joined(separator: "_")
-    return collapsed.isEmpty ? UUID().uuidString.prefix(8).lowercased() : String(collapsed.prefix(40))
+    if !collapsed.isEmpty {
+      return String(collapsed.prefix(40))
+    }
+    guard !trimmed.isEmpty else { return "" }
+    // Deterministic hash for emoji- or symbol-only names so duplicates resolve to the same slug.
+    let digest = SHA256.hash(data: Data(trimmed.lowercased().utf8))
+    let hex = digest.prefix(5).map { String(format: "%02x", $0) }.joined()
+    return "sc_\(hex)"
   }
 }
 
@@ -249,17 +258,102 @@ final class AutomationRegistry: @unchecked Sendable {
     return ids
   }
 
+  enum RegistrationError: Error, LocalizedError, Equatable {
+    case emptyName
+    case duplicateName(existing: String)
+    case slugCollision(existing: String)
+
+    var errorDescription: String? {
+      switch self {
+      case .emptyName:
+        return String(localized: "Enter a Shortcut name.")
+      case .duplicateName(let existing):
+        return String(localized: "A Shortcut named \"\(existing)\" is already registered.")
+      case .slugCollision(let existing):
+        return String(
+          localized: "That name conflicts with the existing Shortcut \"\(existing)\". Choose a distinct name.")
+      }
+    }
+  }
+
+  /// Registers a brand-new Shortcut, rejecting empty names, duplicate names (including emoji-only
+  /// names), and slug collisions instead of silently overwriting an existing entry.
+  @discardableResult
+  func register(_ shortcut: RegisteredShortcut) throws -> RegisteredShortcut {
+    let cleanName = shortcut.name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanName.isEmpty else { throw RegistrationError.emptyName }
+    let cleanID = shortcut.id.trimmingCharacters(in: .whitespacesAndNewlines)
+    let resolvedID = cleanID.isEmpty ? RegisteredShortcut.slug(from: cleanName) : cleanID
+    var item = shortcut
+    item.name = cleanName
+    item.id = resolvedID
+
+    let result: Result<[RegisteredShortcut], RegistrationError> = state.withLock { s in
+      if let duplicate = s.shortcuts.first(where: {
+        $0.name.caseInsensitiveCompare(cleanName) == .orderedSame
+      }) {
+        return .failure(.duplicateName(existing: duplicate.name))
+      }
+      if let colliding = s.shortcuts.first(where: {
+        $0.id.caseInsensitiveCompare(resolvedID) == .orderedSame
+      }) {
+        return .failure(.slugCollision(existing: colliding.name))
+      }
+      s.shortcuts.append(item)
+      return .success(s.shortcuts)
+    }
+    switch result {
+    case .success(let snapshot):
+      persist(shortcuts: snapshot)
+      return item
+    case .failure(let error):
+      throw error
+    }
+  }
+
+  /// Inserts or updates a Shortcut safely: updates in place when matching by exact name or
+  /// matching ID+name, deduplicates identical names (including emoji-only), and disambiguates
+  /// colliding slugs so an unrelated Shortcut is never silently overwritten.
   func upsert(_ shortcut: RegisteredShortcut) {
-    guard !shortcut.name.isEmpty else { return }
+    let cleanName = shortcut.name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanName.isEmpty else { return }
     let snapshot: [RegisteredShortcut] = state.withLock { s in
-      if let idx = s.shortcuts.firstIndex(where: { $0.id == shortcut.id }) {
-        s.shortcuts[idx] = shortcut
+      var item = shortcut
+      item.name = cleanName
+      if item.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        item.id = RegisteredShortcut.slug(from: cleanName)
+      }
+      if let nameIdx = s.shortcuts.firstIndex(where: {
+        $0.name.caseInsensitiveCompare(cleanName) == .orderedSame
+      }) {
+        item.id = s.shortcuts[nameIdx].id
+        s.shortcuts[nameIdx] = item
+      } else if s.shortcuts.contains(where: {
+        $0.id.caseInsensitiveCompare(item.id) == .orderedSame
+      }) {
+        // Different name folded to the same slug: assign a unique disambiguated ID instead of
+        // overwriting the existing Shortcut.
+        item.id = Self.uniqueSlug(base: item.id, existing: s.shortcuts)
+        s.shortcuts.append(item)
       } else {
-        s.shortcuts.append(shortcut)
+        s.shortcuts.append(item)
       }
       return s.shortcuts
     }
     persist(shortcuts: snapshot)
+  }
+
+  private static func uniqueSlug(base: String, existing: [RegisteredShortcut]) -> String {
+    let used = Set(existing.map { $0.id.lowercased() })
+    if !used.contains(base.lowercased()) { return base }
+    var suffix = 2
+    while true {
+      let tag = "_\(suffix)"
+      let prefix = String(base.prefix(max(1, 40 - tag.count)))
+      let candidate = prefix + tag
+      if !used.contains(candidate.lowercased()) { return candidate }
+      suffix += 1
+    }
   }
 
   func removeShortcut(id: String) {

@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import UIKit
 
@@ -7,20 +8,26 @@ struct CameraPicker: UIViewControllerRepresentable {
   @Environment(\.dismiss) private var dismiss
 
   static var isAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
+  static var isAuthorized: Bool { AVCaptureDevice.authorizationStatus(for: .video) == .authorized }
 
   func makeUIViewController(context: Context) -> UIImagePickerController {
     let picker = UIImagePickerController()
-    picker.sourceType = .camera
+    if Self.isAvailable {
+      picker.sourceType = .camera
+    }
     picker.delegate = context.coordinator
     return picker
   }
 
-  func updateUIViewController(_ picker: UIImagePickerController, context: Context) {}
+  func updateUIViewController(_ picker: UIImagePickerController, context: Context) {
+    context.coordinator.parent = self
+  }
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
+  @MainActor
   final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
-    let parent: CameraPicker
+    var parent: CameraPicker
     init(_ parent: CameraPicker) { self.parent = parent }
 
     func imagePickerController(

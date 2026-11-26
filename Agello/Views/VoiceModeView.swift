@@ -5,6 +5,8 @@ import SwiftUI
 struct VoiceModeView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.verticalSizeClass) private var verticalSizeClass
+  @Environment(ShellModel.self) private var shell: ShellModel?
   let session: VoiceSession
 
   private let tint = Theme.Mode.voice.tint
@@ -14,69 +16,109 @@ struct VoiceModeView: View {
   }
 
   var body: some View {
-    VStack(spacing: Theme.Spacing.xxl) {
-      if session.cameraOn {
-        CameraPreview(session: session.camera.session)
-          .clipShape(.rect(cornerRadius: Theme.Radius.composer, style: .continuous))
-          .overlay {
-            RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous)
-              .stroke(Theme.Surface.stroke, lineWidth: Theme.Stroke.hairline)
+    let isCompact = verticalSizeClass == .compact
+    VStack(spacing: Theme.Spacing.md) {
+      GeometryReader { geometry in
+        ScrollViewReader { proxy in
+          ScrollView {
+            VStack(spacing: isCompact ? Theme.Spacing.md : Theme.Spacing.xl) {
+              if session.cameraOn {
+                CameraPreview(session: session.camera.session, device: session.camera.captureDevice)
+                  .clipShape(.rect(cornerRadius: Theme.Radius.composer, style: .continuous))
+                  .overlay {
+                    RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous)
+                      .stroke(Theme.Surface.stroke, lineWidth: Theme.Stroke.hairline)
+                  }
+                  .frame(
+                    minHeight: isCompact ? 120 : 160,
+                    maxHeight: isCompact ? 160 : (session.pendingToolConfirmation != nil ? 180 : 320))
+                  .padding(.horizontal, Theme.Spacing.lg)
+                  .accessibilityLabel("Camera preview")
+                  .accessibilityIdentifier("voice.camera")
+              } else {
+                Spacer(minLength: 0)
+              }
+              orb(isCompact: isCompact)
+              Text(session.state.label)
+                .font(.system(.headline, weight: .semibold))
+                .foregroundStyle(Theme.Text.secondary)
+                .contentTransition(.opacity)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .accessibilityIdentifier("voice.state")
+              captions(isCompact: isCompact)
+              if let confirmation = session.pendingToolConfirmation {
+                ToolConfirmationCard(
+                  request: confirmation,
+                  onApprove: { session.resolveToolConfirmation(id: confirmation.id, approved: true) },
+                  onApproveSteps: { selected in
+                    session.resolveToolConfirmation(id: confirmation.id, approvedSteps: selected)
+                  },
+                  onDeny: { session.resolveToolConfirmation(id: confirmation.id, approved: false) }
+                )
+                .id(confirmation.id)
+                .layoutPriority(1)
+                .padding(.horizontal, Theme.Spacing.lg)
+              } else if !session.latestActionCards.isEmpty {
+                ActionCardStack(cards: session.latestActionCards, isCompact: true)
+                  .padding(.horizontal, Theme.Spacing.lg)
+                  .accessibilityIdentifier("voice.actionCards")
+              }
+              Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+            .padding(.top, Theme.Spacing.sm)
+            .padding(.bottom, Theme.Spacing.md)
           }
-          .frame(maxHeight: 360)
-          .padding(.horizontal, Theme.Spacing.lg)
-          .accessibilityLabel("Camera preview")
-          .accessibilityIdentifier("voice.camera")
-      } else {
-        Spacer()
-      }
-      orb
-      Text(session.state.label)
-        .font(.system(.headline, weight: .semibold))
-        .foregroundStyle(Theme.Text.secondary)
-        .contentTransition(.opacity)
-        .accessibilityIdentifier("voice.state")
-      captions
-      if let confirmation = session.pendingToolConfirmation {
-        ScrollView {
-          ToolConfirmationCard(
-            request: confirmation,
-            onApprove: { session.resolveToolConfirmation(id: confirmation.id, approved: true) },
-            onApproveSteps: { selected in
-              session.resolveToolConfirmation(id: confirmation.id, approvedSteps: selected)
-            },
-            onDeny: { session.resolveToolConfirmation(id: confirmation.id, approved: false) }
-          )
-          .padding(.horizontal, Theme.Spacing.lg)
+          .scrollBounceBehavior(.basedOnSize)
+          .onChange(of: session.pendingToolConfirmation?.id) { _, newID in
+            if let newID, let confirmation = session.pendingToolConfirmation {
+              withAppAnimation(Theme.Motion.easeOut) {
+                proxy.scrollTo(newID, anchor: .bottom)
+              }
+              Haptics.announce(confirmation.summary)
+            }
+          }
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .frame(maxHeight: 340)
-      } else if !session.latestActionCards.isEmpty {
-        ActionCardStack(cards: session.latestActionCards, isCompact: true)
-          .accessibilityIdentifier("voice.actionCards")
       }
-      Spacer()
+      if let cameraError = session.cameraError {
+        Text(cameraError)
+          .font(.footnote)
+          .foregroundStyle(Theme.Status.guarded)
+          .multilineTextAlignment(.center)
+          .padding(.horizontal, Theme.Spacing.lg)
+      }
       controls
+        .layoutPriority(1)
     }
-    .padding(.vertical, Theme.Spacing.lg)
+    .padding(.vertical, Theme.Spacing.md)
     .frame(maxWidth: .infinity)
     .ambientBackdrop(tint, intensity: .loud)
     .task { await session.start() }
-    .onDisappear { session.end() }
+    .onDisappear {
+      session.end()
+      if let shell {
+        Task { @MainActor in shell.handleModalDismissed() }
+      }
+    }
+    .onChange(of: shell?.dismissCoversToken) { old, new in
+      if old != nil, old != new { dismiss() }
+    }
     // Only failures and explicit tool confirmations are announced: speech would reach the mic.
     .onChange(of: session.state) { _, state in
       if case .failed(let message) = state { Haptics.announce(message) }
     }
-    .onChange(of: session.pendingToolConfirmation?.id) { _, newID in
-      if newID != nil, let confirmation = session.pendingToolConfirmation {
-        Haptics.announce(confirmation.summary)
-      }
-    }
     .preferredColorScheme(.dark)
   }
 
-  private var orb: some View {
-    let active = session.state == .hearing || session.state == .speaking
-    let size: CGFloat = session.pendingToolConfirmation != nil ? 80 : (session.cameraOn ? 96 : 200)
+  private func orb(isCompact: Bool) -> some View {
+    let active = session.state == .hearing
+    let size: CGFloat =
+      if isCompact {
+        session.pendingToolConfirmation != nil ? 64 : (session.cameraOn ? 72 : 112)
+      } else {
+        session.pendingToolConfirmation != nil ? 80 : (session.cameraOn ? 96 : 200)
+      }
     let scale = 1 + (active ? session.level * 0.35 : 0)
     let core = ZStack {
       // Halo: a soft bloom in the voice color.
@@ -98,6 +140,7 @@ struct VoiceModeView: View {
     .opacity(session.state == .thinking ? 0.75 : 1)
     .appAnimation(Theme.Motion.stateChange, value: session.level)
     .appAnimation(Theme.Motion.slide, value: session.cameraOn)
+    .appAnimation(Theme.Motion.slide, value: session.pendingToolConfirmation != nil)
     return Group {
       if reduceMotion {
         core
@@ -117,13 +160,16 @@ struct VoiceModeView: View {
 
   /// The words being said, newest at the bottom: a long answer scrolls rather than stopping at
   /// six lines of its start.
-  private var captions: some View {
-    ScrollView {
-      captionText
+  @ViewBuilder
+  private func captions(isCompact: Bool) -> some View {
+    if !session.heard.isEmpty || !session.answer.isEmpty {
+      ScrollView {
+        captionText
+      }
+      .defaultScrollAnchor(.bottom)
+      .scrollBounceBehavior(.basedOnSize)
+      .frame(maxHeight: session.pendingToolConfirmation != nil ? 100 : (isCompact ? 120 : 240))
     }
-    .defaultScrollAnchor(.bottom)
-    .scrollBounceBehavior(.basedOnSize)
-    .frame(maxHeight: 260)
   }
 
   private var captionText: some View {
