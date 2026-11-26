@@ -17,12 +17,10 @@ Agello is a private AI assistant for your iPhone. Ask a question, attach a 60-pa
 
 There is no account, no subscription, no API key and no cloud. Your conversations, photos, documents, voice recordings and memories stay on your iPhone. Once the models download, Agello works completely offline — touching the network only when you ask it to search the web, enable opt-in Apple Weather or Apple Maps personal tools, or confirm an allowlisted Apple Shortcut that accesses the network.
 
-<table>
-<tr>
-<td width="50%" align="center"><img src="docs/images/chat.jpg" width="290" alt="A chat in Agello explaining how a Bloom filter works, with formatted headings, bold text, a numbered breakdown, and the Liquid Glass composer at the bottom."></td>
-<td width="50%" align="center"><img src="docs/images/voice-mode.jpg" width="290" alt="Hands-free Voice Mode in Agello: a glowing gold orb listening, with camera, microphone mute, and close controls."></td>
-</tr>
-</table>
+<p align="center">
+  <img src="docs/images/chat.png" width="290" alt="Full-screen chat in Agello explaining how a Bloom filter works, with typeset LaTeX equations, syntax-highlighted Swift code, and the centered Liquid Glass composer at the bottom.">
+  <img src="docs/images/voice-mode.png" width="290" alt="Hands-free Voice Mode in Agello: a glowing gold orb listening, with Liquid Glass camera, microphone mute, and end controls.">
+</p>
 
 ## What it does
 
@@ -36,23 +34,44 @@ There is no account, no subscription, no API key and no cloud. Your conversation
 - **Search.** One tap lets Agello look things up only when your question needs fresh facts: it searches open, key-free sources (Wikipedia, Wikidata, Wikivoyage, Apple Weather and Maps, European Central Bank rates, Crossref and PubMed), reads the top pages, and cites every claim with `[1]`-style links.
 - **Voice & vision.** Share photos or scan paper with the camera, dictate live in your language, send voice messages Gemma hears directly, or open **Voice Mode** for a hands-free spoken conversation with live captions, optional camera, and instant barge-in when you speak over it.
 
+<p align="center">
+  <img src="docs/images/think.png" width="290" alt="Think mode answering a dinner tip and three-way split question, showing the collapsible Reasoning card, the Used the calculator chip, and the lavender Think composer.">
+  <img src="docs/images/web-search.png" width="290" alt="Cited web search answering Who won the 2026 Tour de France with inline numbered links and expanded Wikipedia source cards.">
+</p>
+
+<p align="center">
+  <img src="docs/images/document.png" width="290" alt="A 60-page PDF report summarized in bullet points on the Neural Engine, showing the expanded coastal-report.pdf source drawer.">
+  <img src="docs/images/drawer.png" width="290" alt="The concentric slide-over drawer showing search, Projects, Today's chats, and Settings alongside the active conversation.">
+</p>
+
 <picture>
   <source media="(max-width: 700px)" srcset="docs/readme/features-narrow.svg">
   <img src="docs/readme/features.svg" width="100%" alt="Built for everyday work on iPhone: PDFs and scans that cite exact pages, vision and camera, projects and message branches, 13+ languages, personal tools with gated in-chat approval, editable memory, Siri and widgets, and 100% on-device privacy.">
 </picture>
 
-Group related work into **Projects** with shared instructions, reference files, and security-scoped **linked folders**, search your history by words or by meaning (*"Japan vacation"* finds *"Kyoto itinerary"*), and opt in to **Personal tools** across **7 domains** (Calendar, Reminders, Contacts, Maps & Places, Weather, Alarms & Timers, and Photos OCR) plus an allowlisted **Shortcuts Bridge** and saved **Recipes**. Replies surface **9 interactive inline Action Cards** (Maps with Look Around and turn-by-turn routes, Weather with alerts, Calendar, Reminders with live Complete and Snooze, Contacts, native SMS/Email Drafts, live Alarm/Timer countdowns, and Automation Handoffs), while every mutating or external action requires explicit approval on a tiered `.standard`/`.destructive`/`.external` confirmation card or multi-step `PlanConfirmationCard` (with a provenance warning banner whenever untrusted content is in context). Agello integrates across iOS 27 with Siri and composable **Shortcuts** actions (including silent background ANE file search), **Focus Filters**, the Action Button, Spotlight, Home and Lock Screen widgets, Control Center, **Live Activities** (long synthesis, research, and `AlarmKit` timers), and the Share Sheet. → [User guide](docs/USER_GUIDE.md) · [Privacy policy](https://powerbeef.github.io/Agello/privacy)
+Group related work into **Projects** with shared instructions, reference files, and security-scoped **linked folders**, search your history by words or by meaning (*"Japan vacation"* finds *"Kyoto itinerary"*), and opt in to **Personal tools** across **7 domains** (Calendar, Reminders, Contacts, Maps & Places, Weather, Alarms & Timers, and Photos OCR) plus an allowlisted **Shortcuts Bridge** and saved **Recipes**. Replies surface **9 interactive inline Action Cards** (Maps with Look Around and turn-by-turn routes, Weather with alerts, Calendar, Reminders with live Complete and Snooze, Contacts, native SMS/Email Drafts, live Alarm/Timer countdowns, and Automation Handoffs), while every mutating or external action requires explicit approval on a tiered confirmation card or multi-step plan checklist (with a provenance warning banner whenever untrusted content is in context). Agello integrates across iOS 27 with Siri and composable **Shortcuts** actions (including silent background ANE file search), **Focus Filters**, the Action Button, Spotlight, Home and Lock Screen widgets, Control Center, **Live Activities** (long synthesis, research, and `AlarmKit` timers), and the Share Sheet. → [User guide](docs/USER_GUIDE.md) · [Privacy policy](https://powerbeef.github.io/Agello/privacy)
 
-<table>
-<tr>
-<td width="50%" align="center"><img src="docs/images/think.jpg" width="290" alt="Think mode answering a dinner tip and three-way split question, showing the collapsible Reasoning card and the Used the calculator chip."></td>
-<td width="50%" align="center"><img src="docs/images/web-search.jpg" width="290" alt="Web search answering Who won the 2026 Tour de France with numbered inline citations and a 5 sources dropdown."></td>
-</tr>
-<tr>
-<td width="50%" align="center"><img src="docs/images/document.jpg" width="290" alt="A 60-page PDF report summarized in bullet points, each citing exact page ranges such as coastal-report.pdf, p. 1–15."></td>
-<td width="50%" align="center"><img src="docs/images/models.jpg" width="290" alt="The Models screen showing Gemma 4 E4B (3.69 GB) and EmbeddingGemma (128.2 MB) downloaded and ready on the iPhone."></td>
-</tr>
-</table>
+<p align="center">
+  <img src="docs/images/places-maps.png" width="290" alt="An Apple Maps & Places inline Action Card showing nearby coffee shops on a 3x dark map with pins, distance badges, Open in Maps, Directions, Look Around, and ranked results.">
+  <img src="docs/images/confirmation-gate.png" width="290" alt="A multi-step plan confirmation card reviewing two actions — creating a Flight to Tokyo calendar event and a Pack Passport reminder — with individual checkboxes before anything runs.">
+</p>
+
+<p align="center">
+  <img src="docs/images/action-cards.png" width="290" alt="Interactive inline Calendar and Reminder Action Cards right after approving a plan, with View / Edit Event, Export .ics, Snooze +1h, and Tomorrow 9 AM buttons.">
+  <img src="docs/images/settings.png" width="290" alt="Settings showing Gemma 4 E4B ready on GPU with 65K context, Personalization, Memory, Web search, Models, Personal tools, and Automations & Shortcuts.">
+</p>
+
+<details>
+<summary><b>Personal tools &amp; Shortcuts allowlist screens</b></summary>
+
+<br>
+
+<p align="center">
+  <img src="docs/images/personal-tools.png" width="290" alt="Personal Tools settings with individual opt-in toggles for Calendar, Reminders, Contacts, Maps & Places, Weather, Alarms & Timers, and Photos OCR.">
+  <img src="docs/images/automations.png" width="290" alt="Automations & Shortcuts settings showing allowlisted Apple Shortcuts and one-tap starter templates.">
+</p>
+
+</details>
 
 > [!NOTE]
 > Agello isn't on the App Store yet. You can [build it from source](#build-from-source) for any 12 GB iPhone running iOS 27 (iPhone 17 Pro, iPhone 17 Pro Max, iPhone Air, or newer).
@@ -110,7 +129,7 @@ Every turn — typed, edited, regenerated, spoken, or shared — enters one pipe
 
 <picture>
   <source media="(max-width: 700px)" srcset="docs/readme/numbers-narrow.svg">
-  <img src="docs/readme/numbers.svg" width="100%" alt="Agello engineering by the numbers: 64K exact token context, 0 host read copies, 0% GPU load during RAG on the 16-Core ANE, 4.5x faster Vision encode, +5 MB across a 200-turn soak, and 594 automated tests (476 unit, 90 device, 28 UI) across real iPhone 17 Pro hardware gates and AgelloSim.">
+  <img src="docs/readme/numbers.svg" width="100%" alt="Agello engineering by the numbers: 64K exact token context, 0 host read copies, 0% GPU load during RAG on the 16-Core ANE, 4.5x faster Vision encode, +5 MB across a 200-turn soak, and 622 automated tests (493 unit, 90 device, 39 UI) across real iPhone 17 Pro hardware gates and AgelloSim.">
 </picture>
 
 <table>
@@ -132,11 +151,11 @@ Every turn — typed, edited, regenerated, spoken, or shared — enters one pipe
 </tr>
 <tr>
 <td valign="top"><img src="docs/readme/icons/tree.svg" width="40" height="40" alt=""></td>
-<td><b>Branching SwiftData history, isolated UI and safe background GPU drain.</b> Conversations form a versioned SwiftData tree (<code>V3</code>) where edit and regenerate move <code>activeLeafID</code> without cross-branch or cancelled-helper KV bleed. <code>ComposerBridge</code> isolates keystrokes from message-list diffing; Conformer audio loads lazily on P-cores in <b>3 ms</b> (<code>1 ms</code> unload); and synchronous <code>GPUGate</code> + <code>BGContinuedProcessingTask</code> guards drain Metal work cleanly before suspension (and park active Shortcut handoffs safely).</td>
+<td><b>Branching SwiftData history, 120 Hz Liquid Glass UI and safe background GPU drain.</b> Conversations form a versioned SwiftData tree (<code>V3</code>) where edit and regenerate move <code>activeLeafID</code> without cross-branch or cancelled-helper KV bleed. <code>ComposerBridge</code> and fine-grained <code>@Observable</code> boundaries isolate keystrokes and timers from message-list diffing; native iOS 27 Liquid Glass <code>.safeAreaBar</code> chrome pairs with WCAG AA contrast and VoiceOver rotors; Conformer audio loads lazily on P-cores in <b>3 ms</b> (<code>1 ms</code> unload); and synchronous <code>GPUGate</code> + <code>BGContinuedProcessingTask</code> guards drain Metal work cleanly before suspension (and park active Shortcut handoffs safely).</td>
 </tr>
 <tr>
 <td valign="top"><img src="docs/readme/icons/proof.svg" width="40" height="40" alt=""></td>
-<td><b>Benchmarked and verified on real silicon.</b> All <b>594 automated tests</b> (476 unit, 90 real-model hardware scenarios and probes, 28 real-tap UI and accessibility tests) and every speed/memory number run on real Apple silicon across a 25-second M6 <code>SIM_GPU=Apple_A19_Pro</code> CLI workbench, a 200-turn memory soak (<code>+4.95 MB</code>), jetsam ballast envelopes on a 12 GB phone, and physical iPhone 17 Pro gates. Our XCFramework ships no simulator slice; for fast UI, iOS-feature, and in-app output-quality iteration, the unshipped <code>AgelloSim</code> target proxies real Metal 4 + ANE inference from host <code>agello serve</code> into the iOS Simulator while executing all 21 Swift tools natively. → <a href="docs/TESTING.md">Testing</a> · <a href="docs/HARNESS.md">Autonomous harness</a></td>
+<td><b>Benchmarked and verified on real silicon.</b> All <b>622 automated tests</b> (493 unit, 90 real-model hardware scenarios and probes, 39 real-tap UI and accessibility tests) and every speed/memory number run on real Apple silicon across a 25-second M6 <code>SIM_GPU=Apple_A19_Pro</code> CLI workbench, a 200-turn memory soak (<code>+4.95 MB</code>), jetsam ballast envelopes on a 12 GB phone, and physical iPhone 17 Pro gates. Our XCFramework ships no simulator slice; for fast UI, iOS-feature, and in-app output-quality iteration, the unshipped <code>AgelloSim</code> target proxies real Metal 4 + ANE inference from host <code>agello serve</code> into the iOS Simulator while executing all 21 Swift tools natively. → <a href="docs/TESTING.md">Testing</a> · <a href="docs/HARNESS.md">Autonomous harness</a></td>
 </tr>
 </table>
 

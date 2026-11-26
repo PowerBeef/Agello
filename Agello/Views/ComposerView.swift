@@ -55,7 +55,6 @@ struct ChatComposerView: View {
   var onOpenVoice: () -> Void
   var makeThread: () -> ChatThread
 
-  @Namespace private var composerGlass
   @State private var draft = ""
   @State private var pendingImage: Data?
   @State private var pendingImageID = UUID()
@@ -450,40 +449,33 @@ struct ChatComposerView: View {
 
   // MARK: - Composer chrome
 
-  /// The composer: the message on top with attach, Think, Search, and mic below on one Liquid
-  /// Glass capsule, paired with a detached Liquid Glass Send / Voice / Stop button in a shared
-  /// `GlassEffectContainer` so the two morph cleanly without glass-on-glass nesting.
+  /// The composer: the message on top with attach, Think, Search, mic, and Send / Voice / Stop
+  /// integrated symmetrically inside one centered Liquid Glass card (using `LitCircleButtonStyle`
+  /// on the primary action so there is zero glass-on-glass nesting).
   private var inputBar: some View {
-    GlassEffectContainer(spacing: Theme.Spacing.sm) {
-      HStack(alignment: .bottom, spacing: Theme.Spacing.sm) {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-          ComposerField(text: $draft, focus: $inputFocused)
-            .padding(.horizontal, Theme.Spacing.sm)
-            .padding(.top, Theme.Spacing.sm)
-            .accessibilityIdentifier("chat.input")
-          HStack(spacing: Theme.Spacing.sm) {
-            attachMenu
-            // Titled pills when they fit, icons otherwise; priority over the spacer so a title
-            // never truncates to "T…".
-            ViewThatFits(in: .horizontal) {
-              modeToggles(iconOnly: false)
-              modeToggles(iconOnly: true)
-            }
-            .layoutPriority(1)
-            Spacer(minLength: 0)
-            micButton
-          }
+    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+      ComposerField(text: $draft, focus: $inputFocused)
+        .padding(.horizontal, Theme.Spacing.sm)
+        .padding(.top, Theme.Spacing.sm)
+        .accessibilityIdentifier("chat.input")
+      HStack(spacing: Theme.Spacing.sm) {
+        attachMenu
+        // Titled pills when they fit, icons otherwise; priority over the spacer so a title
+        // never truncates to "T…".
+        ViewThatFits(in: .horizontal) {
+          modeToggles(iconOnly: false)
+          modeToggles(iconOnly: true)
         }
-        .padding(Theme.Spacing.snug)
-        .chromeSurface(
-          in: RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous), tint: mode.tint)
-        .glassEffectID("composer.panel", in: composerGlass)
-        .appAnimation(Theme.Motion.modeCrossfade, value: mode, kind: .dissolve)
-
+        .layoutPriority(1)
+        Spacer(minLength: 0)
+        micButton
         actionButton
-          .padding(.bottom, Theme.Spacing.snug)
       }
     }
+    .padding(Theme.Spacing.snug)
+    .chromeSurface(
+      in: RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous), tint: mode.tint)
+    .appAnimation(Theme.Motion.modeCrossfade, value: mode, kind: .dissolve)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("chat.composer")
     .padding(.horizontal, Theme.Spacing.snug)
@@ -823,7 +815,7 @@ struct ChatComposerView: View {
     return .send
   }
 
-  /// Send, voice mode, or stop: a detached Liquid Glass circle whose glyph and tint morph cleanly.
+  /// Send, voice mode, or stop: integrated inside the composer bar, morphing glyph and lit tint cleanly.
   private var actionButton: some View {
     let action = primaryAction
     let tint =
@@ -847,7 +839,7 @@ struct ChatComposerView: View {
       Image(systemName: action.symbol)
         .contentTransition(.symbolEffect(.replace))
     }
-    .buttonStyle(ComposerPrimaryButtonStyle(tint: tint, namespace: composerGlass))
+    .buttonStyle(LitCircleButtonStyle(tint: tint))
     .disabled(action == .send && !canSend)
     .appAnimation(Theme.Motion.stateChange, value: action, kind: .dissolve)
     .appAnimation(Theme.Motion.modeCrossfade, value: mode, kind: .dissolve)
@@ -937,44 +929,6 @@ private enum PastedContent: Transferable, Sendable {
       .image(data)
     }
     ProxyRepresentation(importing: Self.text)
-  }
-}
-
-/// Detached circular Liquid Glass style for the primary Send / Voice / Stop control.
-private struct ComposerPrimaryButtonStyle: ButtonStyle {
-  @Environment(\.isEnabled) private var isEnabled
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-  let tint: Color
-  let namespace: Namespace.ID
-
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .font(.system(.body, weight: .semibold))
-      .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-      .foregroundStyle(isEnabled ? Theme.Text.primary : Theme.Text.tertiary)
-      .frame(width: Theme.Size.target, height: Theme.Size.target)
-      .background {
-        if reduceTransparency {
-          Circle().fill(tint.mix(with: .black, by: isEnabled ? 0.42 : 0.70, in: .perceptual))
-        } else {
-          Circle().fill(
-            LinearGradient(
-              colors: isEnabled
-                ? [tint.opacity(0.32), tint.opacity(0.16)]
-                : [tint.opacity(0.08), tint.opacity(0.04)],
-              startPoint: .top, endPoint: .bottom))
-        }
-      }
-      .chromeSurface(in: Circle(), tint: isEnabled ? tint : nil, interactive: isEnabled)
-      .glassEffectID("composer.primary", in: namespace)
-      .shadow(
-        color: reduceTransparency || !isEnabled ? .clear : Theme.Elevation.glow(tint),
-        radius: Theme.Elevation.glowRadius, y: 2
-      )
-      .contentShape(Circle())
-      .scaleEffect(!reduceMotion && configuration.isPressed ? 0.94 : 1)
-      .appAnimation(Theme.Motion.press, value: configuration.isPressed)
   }
 }
 
