@@ -611,6 +611,7 @@ struct MessageBubbleView: View {
     .padding(.vertical, Theme.Spacing.tight)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Thinking")
+    .accessibilityAddTraits([.isStaticText, .updatesFrequently])
   }
 
   private func thinkingDotsRow(activePhase: Int?) -> some View {

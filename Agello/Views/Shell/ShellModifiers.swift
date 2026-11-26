@@ -28,20 +28,19 @@ private struct ShellDialogs: ViewModifier {
 
   func body(content: Content) -> some View {
     content
-      .alert("Rename chat", isPresented: isRenaming) {
+      .alert("Rename chat", isPresented: isRenaming, presenting: shell.renaming) { thread in
         TextField("Title", text: $shell.renameText)
           .submitLabel(.done)
           .onSubmit {
-            shell.commitRename()
-            shell.renaming = nil
+            shell.commitRename(thread)
           }
           .accessibilityIdentifier("rename.field")
         Button("Save") {
-          shell.commitRename()
-          shell.renaming = nil
+          shell.commitRename(thread)
         }
         Button("Cancel", role: .cancel) {
           shell.renaming = nil
+          shell.renameText = ""
         }
       }
       .confirmationDialog(
@@ -61,10 +60,9 @@ private struct ShellDialogs: ViewModifier {
     Binding(
       get: { shell.renaming != nil },
       set: {
-        if !$0 {
-          shell.renaming = nil
-          shell.renameText = ""
-        }
+        // SwiftUI sets isPresented = false before invoking the alert's Save / onSubmit action,
+        // so preserve renameText until commitRename(_:) or Cancel consumes it.
+        if !$0 { shell.renaming = nil }
       })
   }
 

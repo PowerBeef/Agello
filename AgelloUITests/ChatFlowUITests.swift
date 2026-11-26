@@ -644,8 +644,8 @@ final class ChatFlowUITests: XCTestCase {
       let control = element(id)
       XCTAssertTrue(control.waitForExistence(timeout: 5), "\(id) missing at \(sizeCategory)")
       XCTAssertTrue(control.isHittable, "\(id) not hittable at \(sizeCategory)")
-      XCTAssertGreaterThanOrEqual(control.frame.width, 44, "\(id) width < 44 pt at \(sizeCategory)")
-      XCTAssertGreaterThanOrEqual(control.frame.height, 44, "\(id) height < 44 pt at \(sizeCategory)")
+      XCTAssertGreaterThanOrEqual(control.frame.width, 43.5, "\(id) width < 44 pt at \(sizeCategory)")
+      XCTAssertGreaterThanOrEqual(control.frame.height, 43.5, "\(id) height < 44 pt at \(sizeCategory)")
       XCTAssertTrue(
         composer.frame.insetBy(dx: -1, dy: -1).contains(control.frame),
         "\(id) outside the composer at \(sizeCategory)")

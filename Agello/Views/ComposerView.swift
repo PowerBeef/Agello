@@ -602,11 +602,13 @@ struct ChatComposerView: View {
     } label: {
       Image(systemName: "plus")
         .font(.system(.body, weight: .semibold))
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         .foregroundStyle(attachDisabled ? Theme.Text.tertiary : Theme.Text.primary)
         .frame(width: Theme.Size.target, height: Theme.Size.target)
         .background { QuietBackground(shape: Circle()) }
         .contentShape(Circle())
     }
+    .frame(minWidth: Theme.Size.target, minHeight: Theme.Size.target)
     .disabled(attachDisabled)
     .accessibilityLabel("Add photos and files")
     .accessibilityIdentifier("composer.attach")

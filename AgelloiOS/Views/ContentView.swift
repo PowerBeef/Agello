@@ -120,6 +120,7 @@ struct ContentView: View {
   private var chat: some View {
     NavigationStack {
       ChatView(thread: currentThread)
+        .navigationTitle(currentThread?.title ?? "")
         .toolbar {
           ToolbarItem(placement: .topBarLeading) {
             Button {

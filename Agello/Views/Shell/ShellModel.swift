@@ -70,13 +70,15 @@ final class ShellModel {
     renaming = thread
   }
 
-  func commitRename() {
+  func commitRename(_ target: ChatThread? = nil) {
     let title = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let thread = renaming, !title.isEmpty else { return }
+    guard let thread = target ?? renaming, !title.isEmpty else { return }
     thread.title = String(title.prefix(80))
     thread.updatedAt = Date()
     try? context.save()
     SpotlightIndex.index([thread])
+    renaming = nil
+    renameText = ""
   }
 
   func delete(_ thread: ChatThread) {
