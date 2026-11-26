@@ -41,6 +41,8 @@ struct AmbientBackdrop: View {
           .blendMode(.plusLighter)
         }
       }
+      .clipped()
+      .drawingGroup(opaque: true)
     }
     .ignoresSafeArea()
     .allowsHitTesting(false)
@@ -53,6 +55,9 @@ extension View {
   func ambientBackdrop(_ tint: Color = Theme.Mode.chat.tint, intensity: AmbientBackdrop.Intensity = .warm)
     -> some View
   {
-    background { AmbientBackdrop(tint: tint, intensity: intensity) }
+    background {
+      AmbientBackdrop(tint: tint, intensity: intensity)
+        .ignoresSafeArea(.keyboard)
+    }
   }
 }

@@ -15,6 +15,11 @@ struct DrawerView: View {
   /// IDs of chats related in meaning to the search, resolved against live `@Query threads` so
   /// deleted models are never retained across renders.
   @State private var relatedIDs: [UUID] = []
+  /// Value-only cached drawer sections keyed by `(appliedQuery, threadFingerprint, relatedIDs)`
+  /// so keystrokes, focus changes, and selection changes skip `ThreadGrouping.groups` and turn
+  /// faulting without ever retaining deleted SwiftData `@Model` references.
+  @State private var cachedGroupsKey: GroupsCacheKey?
+  @State private var cachedGroups: [ThreadGrouping.Group<CachedRow>] = []
   @State private var showAllProjects = false
   @FocusState private var searchFocused: Bool
 
@@ -29,22 +34,68 @@ struct DrawerView: View {
   var onMove: (ChatThread, UUID?) -> Void
   var onSearchFocusChanged: ((Bool) -> Void)?
 
-  private struct Row: Identifiable {
-    var thread: ChatThread
+  fileprivate struct CachedRow: Identifiable, Equatable {
+    var id: UUID
     var snippet: String?
-    var id: UUID { thread.id }
   }
 
-  /// Saved chats (empty ones are never shown), filtered by the search.
-  /// Project chats live in their project, but search finds them too.
-  private var rows: [Row] {
-    threads.compactMap { thread in
-      guard !thread.isDeleted, thread.modelContext != nil, !thread.turns.isEmpty else { return nil }
-      if appliedQuery.isEmpty { return thread.projectID == nil ? Row(thread: thread) : nil }
-      let messages = thread.orderedTurns.map(\.text)
-      return ThreadGrouping.match(query: appliedQuery, title: thread.title, messages: messages)
-        .map { Row(thread: thread, snippet: $0.snippet) }
+  private struct ThreadStamp: Equatable {
+    var id: UUID
+    var title: String
+    var updatedAt: Date
+    var isPinned: Bool
+    var projectID: UUID?
+    var activeLeafID: UUID?
+  }
+
+  private struct GroupsCacheKey: Equatable {
+    var query: String
+    var stamps: [ThreadStamp]
+    var relatedIDs: [UUID]
+  }
+
+  private struct MatchedRow {
+    var thread: ChatThread
+    var snippet: String?
+  }
+
+  private func isLiveNonEmpty(_ thread: ChatThread) -> Bool {
+    guard !thread.isDeleted, thread.modelContext != nil else { return false }
+    return thread.activeLeafID != nil || !thread.turns.isEmpty
+  }
+
+  private func buildGroups(
+    query: String,
+    liveThreads: [ChatThread],
+    liveThreadsByID: [UUID: ChatThread],
+    relatedIDs: [UUID]
+  ) -> [ThreadGrouping.Group<CachedRow>] {
+    let matched: [MatchedRow] = liveThreads.compactMap { thread in
+      if query.isEmpty { return thread.projectID == nil ? MatchedRow(thread: thread) : nil }
+      // Check title match before faulting `thread.orderedTurns`.
+      return ThreadGrouping.match(query: query, title: thread.title) {
+        thread.orderedTurns.map(\.text)
+      }
+      .map { MatchedRow(thread: thread, snippet: $0.snippet) }
     }
+    var groups = ThreadGrouping.groups(
+      matched, date: { $0.thread.updatedAt }, pinned: { $0.thread.isPinned }
+    ).map { group in
+      ThreadGrouping.Group(
+        title: group.title,
+        items: group.items.map { CachedRow(id: $0.thread.id, snippet: $0.snippet) })
+    }
+    if !query.isEmpty, !relatedIDs.isEmpty {
+      let matchedIDs = Set(matched.map(\.thread.id))
+      let relatedRows = relatedIDs.compactMap { id -> CachedRow? in
+        guard !matchedIDs.contains(id), liveThreadsByID[id] != nil else { return nil }
+        return CachedRow(id: id)
+      }
+      if !relatedRows.isEmpty {
+        groups.append(.init(title: String(localized: "Related chats"), items: relatedRows))
+      }
+    }
+    return groups
   }
 
   /// Projects matching the active search query so projects beyond the collapsed preview remain
@@ -64,19 +115,24 @@ struct DrawerView: View {
   }
 
   var body: some View {
-    let rows = rows
-    let rowIDs = Set(rows.map(\.id))
+    let liveThreads = threads.filter(isLiveNonEmpty)
     let liveThreadsByID = Dictionary(
-      uniqueKeysWithValues: threads.compactMap { thread -> (UUID, ChatThread)? in
-        guard !thread.isDeleted, thread.modelContext != nil, !thread.turns.isEmpty else { return nil }
-        return (thread.id, thread)
-      })
-    let relatedRows: [Row] = appliedQuery.isEmpty
-      ? []
-      : relatedIDs.compactMap { id in
-        guard !rowIDs.contains(id), let thread = liveThreadsByID[id] else { return nil }
-        return Row(thread: thread)
-      }
+      liveThreads.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    let stamps = liveThreads.map {
+      ThreadStamp(
+        id: $0.id, title: $0.title, updatedAt: $0.updatedAt,
+        isPinned: $0.isPinned, projectID: $0.projectID, activeLeafID: $0.activeLeafID)
+    }
+    let currentKey = GroupsCacheKey(query: appliedQuery, stamps: stamps, relatedIDs: relatedIDs)
+    let groups =
+      cachedGroupsKey == currentKey
+      ? cachedGroups
+      : buildGroups(
+        query: appliedQuery, liveThreads: liveThreads,
+        liveThreadsByID: liveThreadsByID, relatedIDs: relatedIDs)
+    let hasChatRows = groups.contains { group in
+      group.items.contains { liveThreadsByID[$0.id] != nil }
+    }
     let matchedProjects = matchingProjects
     VStack(spacing: 0) {
       header
@@ -87,7 +143,7 @@ struct DrawerView: View {
           } else if !matchedProjects.isEmpty {
             matchedProjectsSection(matchedProjects)
           }
-          if rows.isEmpty, relatedRows.isEmpty, matchedProjects.isEmpty {
+          if !hasChatRows, matchedProjects.isEmpty {
             Group {
               if appliedQuery.isEmpty {
                 EmptyStateView(
@@ -100,8 +156,8 @@ struct DrawerView: View {
               }
             }
             .padding(.top, Theme.Spacing.sm)
-          } else if !rows.isEmpty || !relatedRows.isEmpty {
-            chatGroups(rows, related: relatedRows)
+          } else if hasChatRows {
+            chatGroups(groups, threadsByID: liveThreadsByID)
           }
         }
         .padding(.horizontal, Theme.Spacing.md)
@@ -110,13 +166,19 @@ struct DrawerView: View {
       .scrollDismissesKeyboard(.immediately)
       footer
     }
+    .onChange(of: currentKey, initial: true) { _, key in
+      guard cachedGroupsKey != key else { return }
+      cachedGroups = buildGroups(
+        query: key.query, liveThreads: liveThreads,
+        liveThreadsByID: liveThreadsByID, relatedIDs: key.relatedIDs)
+      cachedGroupsKey = key
+    }
     .onChange(of: searchFocused) { _, focused in
       onSearchFocusChanged?(focused)
     }
     .onAppear {
       // Ready for search by meaning by the time the user types.
-      appState.knowledge.indexChats(
-        threads.filter { !$0.isDeleted && $0.modelContext != nil && !$0.turns.isEmpty })
+      appState.knowledge.indexChats(threads.filter(isLiveNonEmpty))
     }
     .task(id: query) {
       // Results for the previous query must not linger while typing.
@@ -133,16 +195,18 @@ struct DrawerView: View {
       guard text.count >= 3 else { return }
       try? await Task.sleep(for: .milliseconds(150))
       guard !Task.isCancelled else { return }
-      let liveChats = threads.filter { !$0.isDeleted && $0.modelContext != nil && !$0.turns.isEmpty }
+      let liveChats = threads.filter(isLiveNonEmpty)
       let hits = await appState.knowledge.relatedChats(text, in: liveChats, limit: 6)
       guard !Task.isCancelled else { return }
       relatedIDs = hits.map(\.thread.id)
     }
   }
+}
 
+private extension DrawerView {
   // MARK: - Header
 
-  private var header: some View {
+  var header: some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
       HStack(spacing: Theme.Spacing.sm) {
         Image(systemName: "sparkles")
@@ -204,9 +268,9 @@ struct DrawerView: View {
 
   // MARK: - Projects
 
-  private static let collapsedProjectLimit = 6
+  static let collapsedProjectLimit = 6
 
-  private var projectsSection: some View {
+  var projectsSection: some View {
     let visibleProjects = showAllProjects ? projects : Array(projects.prefix(Self.collapsedProjectLimit))
     return VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
       HStack {
@@ -258,7 +322,7 @@ struct DrawerView: View {
     }
   }
 
-  private func matchedProjectsSection(_ matched: [Project]) -> some View {
+  func matchedProjectsSection(_ matched: [Project]) -> some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
       Text("Projects")
         .eyebrowStyle()
@@ -270,7 +334,7 @@ struct DrawerView: View {
     }
   }
 
-  private func projectRow(_ project: Project) -> some View {
+  func projectRow(_ project: Project) -> some View {
     Button {
       searchFocused = false
       onOpenProject(project)
@@ -291,31 +355,33 @@ struct DrawerView: View {
 
   // MARK: - Chats
 
-  private func chatGroups(_ rows: [Row], related: [Row] = []) -> some View {
-    var groups = ThreadGrouping.groups(
-      rows, date: { $0.thread.updatedAt }, pinned: { $0.thread.isPinned })
-    if !related.isEmpty {
-      groups.append(.init(title: String(localized: "Related chats"), items: related))
-    }
-    return LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+  func chatGroups(
+    _ groups: [ThreadGrouping.Group<CachedRow>], threadsByID: [UUID: ChatThread]
+  ) -> some View {
+    LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
       ForEach(groups) { group in
-        Text(group.title)
-          .eyebrowStyle()
-          // Tests and VoiceOver read the title as written ("Pinned").
-          .accessibilityLabel(group.title)
-          .accessibilityAddTraits(.isHeader)
-          .padding(.horizontal, Theme.Spacing.sm)
-          .padding(.top, Theme.Spacing.md)
-          .padding(.bottom, Theme.Spacing.xs)
-        ForEach(group.items) { row in
-          rowView(row)
+        let resolved: [(thread: ChatThread, snippet: String?)] = group.items.compactMap { row in
+          guard let thread = threadsByID[row.id] else { return nil }
+          return (thread, row.snippet)
+        }
+        if !resolved.isEmpty {
+          Text(group.title)
+            .eyebrowStyle()
+            // Tests and VoiceOver read the title as written ("Pinned").
+            .accessibilityLabel(group.title)
+            .accessibilityAddTraits(.isHeader)
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.top, Theme.Spacing.md)
+            .padding(.bottom, Theme.Spacing.xs)
+          ForEach(resolved, id: \.thread.id) { entry in
+            rowView(thread: entry.thread, snippet: entry.snippet)
+          }
         }
       }
     }
   }
 
-  private func rowView(_ row: Row) -> some View {
-    let thread = row.thread
+  func rowView(thread: ChatThread, snippet: String?) -> some View {
     let selected = thread.id == appState.selectedThreadID
     return Button {
       searchFocused = false
@@ -339,7 +405,7 @@ struct DrawerView: View {
               .accessibilityLabel("Pinned")
           }
         }
-        if let snippet = row.snippet {
+        if let snippet {
           Text(snippet)
             .font(.caption)
             .foregroundStyle(Theme.Text.tertiary)
@@ -384,7 +450,7 @@ struct DrawerView: View {
 
   // MARK: - Footer
 
-  private var footer: some View {
+  var footer: some View {
     VStack(spacing: 0) {
       Rectangle().fill(Theme.Surface.hairline).frame(height: Theme.Stroke.hairline)
       Button {

@@ -8,12 +8,28 @@ struct ProjectView: View {
   @Environment(AppState.self) private var appState
   @Environment(\.modelContext) private var context
   @Environment(\.dismiss) private var dismiss
-  @Query(sort: \ChatThread.updatedAt, order: .reverse) private var threads: [ChatThread]
+  @Query private var threads: [ChatThread]
 
   let project: Project
   var onOpenChat: (ChatThread) -> Void
   var onNewChat: () -> Void
   var onDelete: () -> Void
+
+  init(
+    project: Project,
+    onOpenChat: @escaping (ChatThread) -> Void,
+    onNewChat: @escaping () -> Void,
+    onDelete: @escaping () -> Void
+  ) {
+    self.project = project
+    self.onOpenChat = onOpenChat
+    self.onNewChat = onNewChat
+    self.onDelete = onDelete
+    let projectID = project.id
+    _threads = Query(
+      filter: #Predicate<ChatThread> { $0.projectID == projectID },
+      sort: [SortDescriptor(\ChatThread.updatedAt, order: .reverse)])
+  }
 
   fileprivate enum ImporterMode {
     case files
@@ -34,10 +50,13 @@ struct ProjectView: View {
   @State private var activeTasks: [UUID: Task<Void, Never>] = [:]
 
   private var chats: [ChatThread] {
-    threads.filter { $0.projectID == project.id && !$0.turns.isEmpty }
+    threads.filter {
+      !$0.isDeleted && $0.modelContext != nil && ($0.activeLeafID != nil || !$0.turns.isEmpty)
+    }
   }
 
   var body: some View {
+    let projectChats = chats
     NavigationStack {
       Form {
         Section {
@@ -88,7 +107,7 @@ struct ProjectView: View {
         .themedRow()
 
         filesSection
-        chatsSection
+        chatsSection(projectChats)
 
         Section {
           Button("Delete project", role: .destructive) { confirmDelete = true }
@@ -118,7 +137,7 @@ struct ProjectView: View {
       .confirmationDialog(
         "Delete \"\(name)\"?", isPresented: $confirmDelete, titleVisibility: .visible
       ) {
-        Button(deleteTitle, role: .destructive) {
+        Button(deleteTitle(chatCount: projectChats.count), role: .destructive) {
           cancelActiveTasks()
           FolderBookmarks.remove(for: project.id)
           onDelete()
@@ -299,10 +318,10 @@ private extension ProjectView {
   }
 
   @ViewBuilder
-  var chatsSection: some View {
-    if !chats.isEmpty {
+  func chatsSection(_ projectChats: [ChatThread]) -> some View {
+    if !projectChats.isEmpty {
       Section {
-        ForEach(chats) { thread in
+        ForEach(projectChats) { thread in
           Button {
             save()
             onOpenChat(thread)
@@ -332,10 +351,10 @@ private extension ProjectView {
     }
   }
 
-  var deleteTitle: String {
-    chats.isEmpty
+  func deleteTitle(chatCount: Int) -> String {
+    chatCount == 0
       ? String(localized: "Delete project")
-      : String(localized: "Delete project and \(chats.count) chats")
+      : String(localized: "Delete project and \(chatCount) chats")
   }
 
   func reloadFiles() {

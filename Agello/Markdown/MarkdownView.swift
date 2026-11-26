@@ -8,17 +8,16 @@ struct MarkdownView: View {
   private var openFrom = Int.max
 
   /// While `streaming`, each update parses only what it added: the finished blocks extend those
-  /// of the update before (``MarkdownCache/finishedBlocks(of:)``), and the unfinished rest is
+  /// of the update before (``MarkdownCache/streamingDocument(for:)``), and the unfinished rest is
   /// parsed on its own (``MarkdownStream``).
   init(_ text: String, streaming: Bool = false) {
     guard streaming else {
       document = MarkdownCache.document(for: text)
       return
     }
-    let (prefix, tail) = MarkdownStream.stableSplit(text)
-    let finished = MarkdownCache.finishedBlocks(of: String(prefix))
-    document = MarkdownDocument(blocks: finished + MarkdownDocument(parsing: String(tail)).blocks)
-    openFrom = finished.count
+    let result = MarkdownCache.streamingDocument(for: text)
+    document = result.document
+    openFrom = result.openFrom
   }
 
   var body: some View {
@@ -42,31 +41,87 @@ enum MarkdownCache {
     return cache
   }()
 
+  /// The streaming reply's finished part and its latest full snapshot (one reply streams at a time).
+  private static var streamed: (text: String, blocks: [MarkdownDocument.Block]) = ("", [])
+  private static var streamedFull: (text: String, document: MarkdownDocument)?
+
   static func document(for text: String) -> MarkdownDocument {
     let key = text as NSString
     if let hit = cache.object(forKey: key) { return hit.document }
+    if let full = streamedFull, full.text == text {
+      cache.setObject(Box(full.document), forKey: key)
+      clearStreamed()
+      return full.document
+    }
+    if MarkdownStream.canReuseStablePrefix(streamed.text, for: text) {
+      let start = text.utf8.index(text.startIndex, offsetBy: streamed.text.utf8.count)
+      let tail = String(text[start...])
+      let tailBlocks = tail.isEmpty ? [] : ReplyTrace.timed("markdown parse") { MarkdownDocument(parsing: tail).blocks }
+      let document = MarkdownDocument(blocks: streamed.blocks + tailBlocks)
+      cache.setObject(Box(document), forKey: key)
+      clearStreamed()
+      return document
+    }
     let document = ReplyTrace.timed("markdown parse") { MarkdownDocument(parsing: text) }
     cache.setObject(Box(document), forKey: key)
     return document
   }
 
-  /// The streaming reply's finished part and its blocks (one reply streams at a time).
-  private static var streamed: (text: String, blocks: [MarkdownDocument.Block]) = ("", [])
+  /// Incrementally parses a streaming reply: only scans and parses text appended since the last
+  /// committed stable cut, and records the latest snapshot so `streaming: true -> false` promotes
+  /// straight into `cache` without re-parsing.
+  static func streamingDocument(for text: String) -> (document: MarkdownDocument, openFrom: Int) {
+    if let full = streamedFull, full.text == text {
+      return (full.document, streamed.blocks.count)
+    }
+    let finished: [MarkdownDocument.Block]
+    let tail: Substring
+    if MarkdownStream.canReuseStablePrefix(streamed.text, for: text) {
+      let start = text.utf8.index(text.startIndex, offsetBy: streamed.text.utf8.count)
+      let remainder = String(text[start...])
+      let split = MarkdownStream.stableSplit(remainder)
+      if !split.prefix.isEmpty {
+        let added = String(split.prefix)
+        let addedBlocks = ReplyTrace.timed("markdown parse") { MarkdownDocument(parsing: added).blocks }
+        streamed = (streamed.text + added, streamed.blocks + addedBlocks)
+      }
+      finished = streamed.blocks
+      tail = split.tail
+    } else {
+      CodeHighlightCache.clearStreamed()
+      let split = MarkdownStream.stableSplit(text)
+      finished = finishedBlocks(of: String(split.prefix))
+      tail = split.tail
+    }
+    let tailBlocks = tail.isEmpty ? [] : ReplyTrace.timed("markdown parse") { MarkdownDocument(parsing: String(tail)).blocks }
+    let document = MarkdownDocument(blocks: finished + tailBlocks)
+    streamedFull = (text, document)
+    return (document, finished.count)
+  }
 
   /// Blocks of a streaming reply's finished part (``MarkdownStream/stableSplit(_:)``). It only
   /// grows, at safe cuts, so the part added since the last update parses on its own.
   static func finishedBlocks(of prefix: String) -> [MarkdownDocument.Block] {
-    if prefix.isEmpty { return [] }
+    if prefix.isEmpty {
+      streamed = ("", [])
+      return []
+    }
     if prefix == streamed.text { return streamed.blocks }
     let blocks: [MarkdownDocument.Block]
     if !streamed.text.isEmpty, prefix.hasPrefix(streamed.text) {
-      let added = String(prefix.dropFirst(streamed.text.count))
+      let start = prefix.utf8.index(prefix.startIndex, offsetBy: streamed.text.utf8.count)
+      let added = String(prefix[start...])
       blocks = streamed.blocks + ReplyTrace.timed("markdown parse") { MarkdownDocument(parsing: added).blocks }
     } else {
       blocks = ReplyTrace.timed("markdown parse") { MarkdownDocument(parsing: prefix).blocks }
     }
     streamed = (prefix, blocks)
     return blocks
+  }
+
+  private static func clearStreamed() {
+    streamed = ("", [])
+    streamedFull = nil
   }
 }
 

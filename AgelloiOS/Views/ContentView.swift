@@ -7,91 +7,53 @@ import SwiftUI
 struct ContentView: View {
   @Environment(AppState.self) private var appState
   @Environment(ShellModel.self) private var shell
+  @Environment(\.modelContext) private var context
   @Environment(\.scenePhase) private var scenePhase
-  @Environment(\.layoutDirection) private var layoutDirection
-  @Query(sort: \ChatThread.updatedAt, order: .reverse) private var threads: [ChatThread]
-
-  private struct DrawerDragState: Equatable {
-    var offset: CGFloat = 0
-    var active = false
-  }
 
   @State private var drawerOpen = false
   /// Keeps the drawer, backdrop, and scrim mounted through the close animation, then unmounts
   /// on completion (removing `drawer.close` cleanly).
   @State private var drawerVisible = false
-  /// Live finger offset while dragging the drawer (resets automatically if iOS cancels the drag).
-  @GestureState private var dragState = DrawerDragState()
   @State private var drawerSearchFocused = false
+  /// Non-observed bridge so `setDrawer`'s close completion can check active drags without
+  /// re-evaluating `ContentView.body` on drag frames.
+  @State private var dragActivity = DrawerDragActivity()
+  /// Cached active thread resolved via `fetchLimit = 1` instead of a root `@Query` scan.
+  @State private var cachedThread: ChatThread?
   @AppStorage("onboardingDone") private var onboardingDone = false
 
   private var currentThread: ChatThread? {
     guard let id = appState.selectedThreadID else { return nil }
-    return threads.first { $0.id == id }
+    if let cached = cachedThread, !cached.isDeleted, cached.modelContext != nil, cached.id == id {
+      return cached
+    }
+    return fetchThread(id: id)
+  }
+
+  private func fetchThread(id: UUID) -> ChatThread? {
+    var descriptor = FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == id })
+    descriptor.fetchLimit = 1
+    return try? context.fetch(descriptor).first
   }
 
   var body: some View {
     @Bindable var shell = shell
-    let isRTL = layoutDirection == .rightToLeft
-    GeometryReader { geometry in
-      let containerWidth = max(0, geometry.size.width)
-      let width = min(containerWidth * 0.84, 360)
-      let offset = width > 0 ? min(max((drawerOpen ? width : 0) + dragState.offset, 0), width) : 0
-      let progress: CGFloat = width > 0 ? offset / width : 0
-      let visualOffset = isRTL ? -offset : offset
-      let showDrawer = drawerVisible || drawerOpen || progress > 0
-      ZStack(alignment: .leading) {
-        if showDrawer {
-          // Its own layer, not the drawer's background: the drawer's accessibilityHidden(false)
-          // while open would expose the glow to VoiceOver.
-          AmbientBackdrop(tint: Theme.Brand.glacier, intensity: .whisper)
-            .frame(width: width)
-          drawer
-            .frame(width: width)
-            .accessibilityHidden(!drawerOpen)
-            // A named container. VoiceOver closes it with "Close menu", over the chat (an escape
-            // action here made an unnamed element the size of the drawer).
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Chats")
-        }
-        // The chat lays out in the safe area; its card and dimming extend
-        // edge to edge so it slides aside as one panel.
-        chat
-          // The chat slides aside as one rounded card, backdrop included.
-          .mask {
-            RoundedRectangle(cornerRadius: showDrawer ? 44 * progress : 0, style: .continuous)
-              .ignoresSafeArea()
-          }
-          .background {
-            RoundedRectangle(cornerRadius: showDrawer ? 44 * progress : 0, style: .continuous)
-              .fill(Theme.Surface.canvas)
-              .shadow(color: Theme.Elevation.floating.opacity(progress), radius: 18, y: 14)
-              .ignoresSafeArea()
-          }
-          .offset(x: visualOffset)
-          .accessibilityHidden(drawerOpen)
-        // Over the chat, but not inside it: the chat is hidden from VoiceOver while the drawer is
-        // open, and this was the only way back to it.
-        if showDrawer {
-          RoundedRectangle(cornerRadius: 44 * progress, style: .continuous)
-            .fill(Color.black.opacity(0.18 * progress))
-            .ignoresSafeArea()
-            .contentShape(.rect)
-            .allowsHitTesting(drawerOpen)
-            .onTapGesture { setDrawer(open: false) }
-            .offset(x: visualOffset)
-            .accessibilityLabel("Close menu")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHidden(!drawerOpen)
-            .accessibilityIdentifier("drawer.close")
-        }
-      }
-      .simultaneousGesture(drawerDrag(width: width, containerWidth: containerWidth, isRTL: isRTL))
-    }
-    .onChange(of: dragState.active) { _, active in
-      if active { resignFirstResponder() }
-    }
+    DrawerSlideHost(
+      drawerOpen: drawerOpen,
+      drawerVisible: drawerVisible,
+      drawerSearchFocused: drawerSearchFocused,
+      dragActivity: dragActivity,
+      onSetDrawer: setDrawer,
+      onResignFirstResponder: resignFirstResponder,
+      drawerContent: drawer,
+      chatContent: chat
+    )
     .routesExternalRequests(perform: perform)
+    .onAppear {
+      if let id = appState.selectedThreadID, cachedThread?.id != id {
+        cachedThread = fetchThread(id: id)
+      }
+    }
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { shell.answerSharedItems() }
     }
@@ -115,7 +77,10 @@ struct ContentView: View {
           downloaded: appState.store.activeSpecDownloaded)
       }
     }
-    .onChange(of: appState.selectedThreadID) { appState.pruneEmptyThreads() }
+    .onChange(of: appState.selectedThreadID) { _, id in
+      cachedThread = id.flatMap(fetchThread(id:))
+      appState.pruneEmptyThreads()
+    }
     // Presented screens get AppState explicitly: running on a Mac, the
     // onboarding cover didn't inherit it and the app crashed at launch.
     .sheet(isPresented: $shell.showSettings, onDismiss: { shell.handleModalDismissed() }) {
@@ -257,14 +222,14 @@ struct ContentView: View {
     }
     if Platform.reduceMotion {
       drawerOpen = open
-      if !open && !dragState.active {
+      if !open && !dragActivity.isActive {
         drawerVisible = false
       }
     } else {
       withAnimation(Theme.Motion.panel) {
         drawerOpen = open
       } completion: {
-        if !drawerOpen && !dragState.active {
+        if !drawerOpen && !dragActivity.isActive {
           drawerVisible = false
         }
       }
@@ -272,6 +237,97 @@ struct ContentView: View {
     if changed {
       // VoiceOver moves to what's now on screen.
       UIAccessibility.post(notification: .screenChanged, argument: nil)
+    }
+  }
+}
+
+@MainActor
+private final class DrawerDragActivity {
+  var isActive = false
+}
+
+/// Isolates 60–120 Hz `@GestureState` drag updates from `ContentView`, `DrawerView`, and `ChatView`
+/// so dragging never reconstructs `DrawerView` closures or re-diffs the chat stream.
+private struct DrawerSlideHost<DrawerContent: View, ChatContent: View>: View {
+  private struct DragState: Equatable {
+    var offset: CGFloat = 0
+    var active = false
+  }
+
+  @Environment(\.layoutDirection) private var layoutDirection
+  @GestureState private var dragState = DragState()
+
+  let drawerOpen: Bool
+  let drawerVisible: Bool
+  let drawerSearchFocused: Bool
+  let dragActivity: DrawerDragActivity
+  let onSetDrawer: (Bool) -> Void
+  let onResignFirstResponder: () -> Void
+  let drawerContent: DrawerContent
+  let chatContent: ChatContent
+
+  var body: some View {
+    let isRTL = layoutDirection == .rightToLeft
+    GeometryReader { geometry in
+      let containerWidth = max(0, geometry.size.width)
+      let width = min(containerWidth * 0.84, 360)
+      let offset = width > 0 ? min(max((drawerOpen ? width : 0) + dragState.offset, 0), width) : 0
+      let progress: CGFloat = width > 0 ? offset / width : 0
+      let visualOffset = isRTL ? -offset : offset
+      let showDrawer = drawerVisible || drawerOpen || progress > 0
+      let cornerRadius = showDrawer ? 44 * progress : 0
+      ZStack(alignment: .leading) {
+        if showDrawer {
+          // Its own layer, not the drawer's background: the drawer's accessibilityHidden(false)
+          // while open would expose the glow to VoiceOver.
+          AmbientBackdrop(tint: Theme.Brand.glacier, intensity: .whisper)
+            .frame(width: width)
+          drawerContent
+            .frame(width: width)
+            .accessibilityHidden(!drawerOpen)
+            // A named container. VoiceOver closes it with "Close menu", over the chat (an escape
+            // action here made an unnamed element the size of the drawer).
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Chats")
+        }
+        // The chat lays out in the safe area; its card clip and floating shadow activate only
+        // while the drawer is visible (zero offscreen mask or 18 pt shadow during normal streaming).
+        chatContent
+          .clipShape(
+            DrawerCardClipShape(
+              cornerRadius: cornerRadius, insets: geometry.safeAreaInsets, isRTL: isRTL)
+          )
+          .background {
+            if showDrawer {
+              RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Theme.Surface.canvas)
+                .shadow(color: Theme.Elevation.floating.opacity(progress), radius: 18, y: 14)
+                .ignoresSafeArea()
+            }
+          }
+          .offset(x: visualOffset)
+          .accessibilityHidden(drawerOpen)
+        // Over the chat, but not inside it: the chat is hidden from VoiceOver while the drawer is
+        // open, and this was the only way back to it.
+        if showDrawer {
+          RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            .fill(Color.black.opacity(0.18 * progress))
+            .ignoresSafeArea()
+            .contentShape(.rect)
+            .allowsHitTesting(drawerOpen)
+            .onTapGesture { onSetDrawer(false) }
+            .offset(x: visualOffset)
+            .accessibilityLabel("Close menu")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHidden(!drawerOpen)
+            .accessibilityIdentifier("drawer.close")
+        }
+      }
+      .simultaneousGesture(drawerDrag(width: width, containerWidth: containerWidth, isRTL: isRTL))
+    }
+    .onChange(of: dragState.active) { _, active in
+      dragActivity.isActive = active
+      if active { onResignFirstResponder() }
     }
   }
 
@@ -322,8 +378,35 @@ struct ContentView: View {
         let correctDirection = drawerOpen ? signedWidth < 0 : signedWidth > 0
         guard dragState.active || (horizontal && correctDirection) else { return }
         let projected = isRTL ? -value.predictedEndTranslation.width : value.predictedEndTranslation.width
-        setDrawer(open: drawerOpen ? projected > -width / 3 : projected > width / 3)
+        onSetDrawer(drawerOpen ? projected > -width / 3 : projected > width / 3)
       }
   }
+}
 
+/// Edge-to-edge continuous rounded clip for the chat panel while the drawer is open; collapses to
+/// an unclipped bounding rect when closed so normal streaming pays zero offscreen mask passes
+/// while keeping `ChatView`'s structural identity intact.
+private struct DrawerCardClipShape: Shape {
+  var cornerRadius: CGFloat
+  var insets: EdgeInsets
+  var isRTL: Bool
+
+  var animatableData: CGFloat {
+    get { cornerRadius }
+    set { cornerRadius = newValue }
+  }
+
+  func path(in rect: CGRect) -> Path {
+    guard cornerRadius > 0.5 else {
+      return Path(rect.insetBy(dx: -1_000, dy: -1_000))
+    }
+    let leftInset = isRTL ? insets.trailing : insets.leading
+    let rightInset = isRTL ? insets.leading : insets.trailing
+    let full = CGRect(
+      x: rect.minX - leftInset,
+      y: rect.minY - insets.top,
+      width: rect.width + leftInset + rightInset,
+      height: rect.height + insets.top + insets.bottom)
+    return Path(roundedRect: full, cornerRadius: cornerRadius, style: .continuous)
+  }
 }

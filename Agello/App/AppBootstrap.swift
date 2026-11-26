@@ -16,6 +16,18 @@ struct AppBootstrap {
     static let hostsTests = false
   #endif
 
+  /// True only for normal launches on a supported device (never while hosting unit/device tests
+  /// or on an unsupported device below the 12 GB floor).
+  static var shouldBootstrap: Bool {
+    DeviceProfile.isSupportedDevice && !hostsTests
+  }
+
+  /// Creates the full app stack only when supported and not hosting tests, avoiding SwiftData,
+  /// `NWPathMonitor`, background download reattachment, and `MetricsReporter` startup otherwise.
+  static func makeIfSupported() -> AppBootstrap? {
+    shouldBootstrap ? AppBootstrap() : nil
+  }
+
   let container: ModelContainer
   let appState: AppState
   let shell: ShellModel
@@ -35,7 +47,7 @@ struct AppBootstrap {
     #endif
 
     // Crash, hang and performance reports from the system, kept on the device (Settings → Help).
-    if !Self.hostsTests { MetricsReporter.shared.start() }
+    if Self.shouldBootstrap { MetricsReporter.shared.start() }
 
     let opened = ChatStoreLoader.open()
     container = opened.container

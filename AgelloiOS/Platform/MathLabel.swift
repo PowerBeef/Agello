@@ -8,10 +8,22 @@ struct MathLabel: UIViewRepresentable {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   @MainActor
+  private static let validationCache: NSCache<NSString, NSNumber> = {
+    let cache = NSCache<NSString, NSNumber>()
+    cache.countLimit = 256
+    return cache
+  }()
+
+  @MainActor
   static func canRender(_ latex: String) -> Bool {
-    let label = MTMathUILabel()
-    label.latex = latex
-    return label.error == nil
+    let key = latex as NSString
+    if let hit = validationCache.object(forKey: key) {
+      return hit.boolValue
+    }
+    var error: NSError?
+    let valid = MTMathListBuilder.build(fromString: latex, error: &error) != nil && error == nil
+    validationCache.setObject(NSNumber(value: valid), forKey: key)
+    return valid
   }
 
   private static func fontSize(for traitCollection: UITraitCollection) -> CGFloat {

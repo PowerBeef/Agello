@@ -82,20 +82,64 @@ struct ActionCardStack: View {
 // MARK: - Places Card (Apple Maps)
 
 private struct PlacesCardView: View {
+  private enum ActiveSheet: Identifiable {
+    case fullMap
+    case details(MKMapItem)
+    case lookAround(scene: MKLookAroundScene, title: String)
+
+    var id: String {
+      switch self {
+      case .fullMap: return "fullMap"
+      case .details(let item):
+        return "details:\(item.identifier?.rawValue ?? item.name ?? "place")"
+      case .lookAround(_, let title):
+        return "lookAround:\(title)"
+      }
+    }
+  }
+
+  private struct SnapshotTaskKey: Equatable {
+    let placesKey: String
+    let widthBucket: Int
+    let scale: CGFloat
+    let isBusy: Bool
+  }
+
+  private static let mapPreviewHeight: CGFloat = 124
+
   let card: PlacesCard
   var isCompact = false
   @Environment(\.displayScale) private var displayScale
+  @Environment(AppState.self) private var appState: AppState?
   @State private var selectedIndex = 0
   @State private var snapshot: UIImage?
-  @State private var detailMapItem: MKMapItem?
-  @State private var lookAroundScene: MKLookAroundScene?
-  @State private var showsLookAround = false
-  @State private var showsFullMap = false
+  @State private var renderedSnapshotKey: String?
+  @State private var previewWidthBucket = 336
+  @State private var activeSheet: ActiveSheet?
   @State private var showsAllPlaces = false
+  @State private var loadingLookAroundID: String?
+  @State private var unavailableLookAroundIDs: Set<String> = []
+  @State private var lookAroundNotice: String?
+  @State private var lookAroundTask: Task<Void, Never>?
+  @State private var detailsTask: Task<Void, Never>?
+
+  private var isEngineBusy: Bool { appState?.isBusy ?? false }
 
   private var selectedPlace: PlacesCard.PlaceItem? {
     guard !card.places.isEmpty else { return nil }
     return card.places[min(selectedIndex, card.places.count - 1)]
+  }
+
+  private var placesKey: String {
+    card.places.map(\.id).joined(separator: ",")
+  }
+
+  private var snapshotTaskKey: SnapshotTaskKey {
+    SnapshotTaskKey(
+      placesKey: placesKey,
+      widthBucket: previewWidthBucket,
+      scale: displayScale,
+      isBusy: isEngineBusy)
   }
 
   var body: some View {
@@ -103,6 +147,12 @@ private struct PlacesCardView: View {
       header
       if !isCompact, let primary = selectedPlace {
         snapshotView(primary: primary)
+      }
+      if let lookAroundNotice, !lookAroundNotice.isEmpty {
+        Label(lookAroundNotice, systemImage: "binoculars")
+          .font(.caption)
+          .foregroundStyle(Theme.Text.tertiary)
+          .accessibilityIdentifier("actionCard.places.lookAroundNotice")
       }
       if let primary = selectedPlace {
         primaryActions(for: primary)
@@ -115,21 +165,54 @@ private struct PlacesCardView: View {
     .surfaceCard(radius: Theme.Radius.card)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("actionCard.places")
-    .task(id: card.places.map(\.id).joined(separator: ",")) {
-      guard !isCompact else { return }
-      snapshot = await NativeActions.renderMapSnapshot(
-        places: card.places, size: CGSize(width: 340, height: 132), scale: displayScale)
+    .task(id: snapshotTaskKey) {
+      guard !isCompact, previewWidthBucket >= 120 else { return }
+      let renderSize = CGSize(width: CGFloat(previewWidthBucket), height: Self.mapPreviewHeight)
+      let targetKey = "\(placesKey)|\(previewWidthBucket)@\(Int(max(1, displayScale).rounded()))"
+      if renderedSnapshotKey == targetKey, snapshot != nil { return }
+      if let cached = NativeActions.cachedMapSnapshot(
+        places: card.places, size: renderSize, scale: displayScale)
+      {
+        snapshot = cached
+        renderedSnapshotKey = targetKey
+        return
+      }
+      // Defer Metal map snapshot rendering while E4B is generating so scrolling historical cards
+      // never contends with decode on the GPU.
+      guard !isEngineBusy else { return }
+      if let rendered = await NativeActions.renderMapSnapshot(
+        places: card.places, size: renderSize, scale: displayScale),
+        !Task.isCancelled
+      {
+        snapshot = rendered
+        renderedSnapshotKey = targetKey
+      }
     }
-    .task(id: selectedPlace?.id) {
-      lookAroundScene = nil
-      guard !isCompact, let place = selectedPlace else { return }
-      lookAroundScene = await NativeActions.checkLookAround(
-        latitude: place.latitude, longitude: place.longitude)
+    .onChange(of: selectedIndex) { _, _ in
+      lookAroundTask?.cancel()
+      lookAroundTask = nil
+      detailsTask?.cancel()
+      detailsTask = nil
+      loadingLookAroundID = nil
+      lookAroundNotice = nil
     }
-    .mapItemDetailSheet(item: $detailMapItem, displaysMap: true)
-    .lookAroundViewer(isPresented: $showsLookAround, initialScene: lookAroundScene)
-    .sheet(isPresented: $showsFullMap) {
-      InteractivePlacesMapSheet(card: card)
+    .onDisappear {
+      lookAroundTask?.cancel()
+      lookAroundTask = nil
+      detailsTask?.cancel()
+      detailsTask = nil
+      loadingLookAroundID = nil
+    }
+    .sheet(item: $activeSheet) { sheet in
+      switch sheet {
+      case .fullMap:
+        InteractivePlacesMapSheet(card: card)
+      case .details(let item):
+        MapItemDetailSheet(mapItem: item, displaysMap: true)
+          .ignoresSafeArea()
+      case .lookAround(let scene, let title):
+        LookAroundSheet(scene: scene, title: title)
+      }
     }
   }
 
@@ -171,10 +254,18 @@ private struct PlacesCardView: View {
   private func snapshotView(primary: PlacesCard.PlaceItem) -> some View {
     Button {
       Haptics.selection()
-      showsFullMap = true
+      activeSheet = .fullMap
     } label: {
       Color.clear
-        .frame(height: 124)
+        .frame(height: Self.mapPreviewHeight)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+          proxy.size.width
+        } action: { _, width in
+          let bucket = Int((width / 16).rounded() * 16)
+          if bucket >= 120, bucket != previewWidthBucket {
+            previewWidthBucket = bucket
+          }
+        }
         .overlay {
           if let snapshot {
             Image(uiImage: snapshot)
@@ -222,14 +313,18 @@ private struct PlacesCardView: View {
       ActionCardSecondaryPill(
         title: String(localized: "Details"), symbol: "info.circle", id: "actionCard.places.details"
       ) {
-        Task { detailMapItem = await NativeActions.resolveMapItem(for: place) }
+        openPlaceDetails(for: place)
       }
-      if lookAroundScene != nil {
+      if !isCompact, !unavailableLookAroundIDs.contains(place.id) {
         ActionCardSecondaryPill(
-          title: String(localized: "Look Around"), symbol: "binoculars.fill",
-          id: "actionCard.places.lookAround"
+          title: loadingLookAroundID == place.id
+            ? String(localized: "Loading…")
+            : String(localized: "Look Around"),
+          symbol: "binoculars.fill",
+          id: "actionCard.places.lookAround",
+          isDisabled: loadingLookAroundID == place.id
         ) {
-          showsLookAround = true
+          openLookAround(for: place)
         }
       }
       if let phone = place.phone, let url = NativeActionURLs.phone(phone) {
@@ -245,6 +340,37 @@ private struct PlacesCardView: View {
         ) {
           NativeActions.openURL(site)
         }
+      }
+    }
+  }
+
+  private func openPlaceDetails(for place: PlacesCard.PlaceItem) {
+    detailsTask?.cancel()
+    detailsTask = Task {
+      let item = await NativeActions.resolveMapItem(for: place)
+      guard !Task.isCancelled else { return }
+      activeSheet = .details(item)
+    }
+  }
+
+  private func openLookAround(for place: PlacesCard.PlaceItem) {
+    guard loadingLookAroundID != place.id else { return }
+    lookAroundTask?.cancel()
+    lookAroundNotice = nil
+    loadingLookAroundID = place.id
+    lookAroundTask = Task {
+      defer {
+        if loadingLookAroundID == place.id { loadingLookAroundID = nil }
+      }
+      let scene = await NativeActions.checkLookAround(
+        latitude: place.latitude, longitude: place.longitude)
+      guard !Task.isCancelled else { return }
+      if let scene {
+        activeSheet = .lookAround(scene: scene, title: place.name)
+      } else {
+        unavailableLookAroundIDs.insert(place.id)
+        lookAroundNotice = String(localized: "Look Around isn't available at this location.")
+        Haptics.error()
       }
     }
   }
@@ -663,7 +789,6 @@ private struct CalendarEventCardView: View {
           break
         }
       }
-      .ignoresSafeArea()
       .interactiveDismissDisabled()
     }
   }

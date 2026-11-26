@@ -1,7 +1,7 @@
 import UIKit
 
 extension ImagePreparer {
-  /// A camera photo (already decoded by the picker) scaled the same way.
+  /// A camera photo (already decoded by the picker) scaled the same way. Safe to call off `@MainActor`.
   static func prepare(_ image: UIImage, maxDimension: Int = maxDimension) -> Data? {
     let pixels = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
     let longest = max(pixels.width, pixels.height)
@@ -10,6 +10,7 @@ extension ImagePreparer {
     let target = CGSize(width: (pixels.width * scale).rounded(), height: (pixels.height * scale).rounded())
     let format = UIGraphicsImageRendererFormat()
     format.scale = 1
+    format.opaque = true
     let resized = UIGraphicsImageRenderer(size: target, format: format).image { _ in
       image.draw(in: CGRect(origin: .zero, size: target))
     }

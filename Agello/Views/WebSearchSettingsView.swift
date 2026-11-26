@@ -3,6 +3,9 @@ import SwiftUI
 /// Web search: on/off, automatic mode, provider.
 struct WebSearchSettingsView: View {
   @Environment(AppState.self) private var appState
+  @Environment(\.scenePhase) private var scenePhase
+  @State private var searxngURLDraft = ""
+  @State private var loadedDraft = false
 
   var body: some View {
     @Bindable var appState = appState
@@ -28,9 +31,11 @@ struct WebSearchSettingsView: View {
         }
         .accessibilityIdentifier("web.provider")
         if appState.webSettings.provider == .searxng {
-          TextField("https://searx.example.org", text: $appState.webSettings.searxngURL)
+          TextField("https://searx.example.org", text: $searxngURLDraft)
             .accessibilityLabel("SearXNG server URL")
             .urlField()
+            .submitLabel(.done)
+            .onSubmit(commitSearxngURL)
         }
       } header: {
         Text("Provider")
@@ -40,8 +45,29 @@ struct WebSearchSettingsView: View {
       .themedRow()
       .disabled(!appState.webSettings.allowed)
     }
+    .scrollDismissesKeyboard(.interactively)
     .themedList(Theme.Brand.teal)
     .navigationTitle("Web search")
+    .onAppear {
+      guard !loadedDraft else { return }
+      searxngURLDraft = appState.webSettings.searxngURL
+      loadedDraft = true
+    }
+    .onChange(of: appState.webSettings.searxngURL) { _, updated in
+      if loadedDraft, updated != searxngURLDraft { searxngURLDraft = updated }
+    }
+    .onChange(of: appState.webSettings.provider) { _, _ in
+      commitSearxngURL()
+    }
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .background { commitSearxngURL() }
+    }
+    .onDisappear(perform: commitSearxngURL)
+  }
+
+  private func commitSearxngURL() {
+    guard loadedDraft, searxngURLDraft != appState.webSettings.searxngURL else { return }
+    appState.webSettings.searxngURL = searxngURLDraft
   }
 
   private var providerFooter: String {
@@ -49,7 +75,8 @@ struct WebSearchSettingsView: View {
     case .wikipedia:
       return String(localized: "Searches Wikipedia.")
     case .searxng:
-      return WebSearchSettings.searxngProblem(appState.webSettings.searxngURL)
+      let address = loadedDraft ? searxngURLDraft : appState.webSettings.searxngURL
+      return WebSearchSettings.searxngProblem(address)
         ?? String(localized: "Your SearXNG instance must allow the JSON format. Wikipedia is the fallback.")
     }
   }

@@ -1,26 +1,36 @@
 import QuartzCore
 
 /// Late frames while a reply is traced (``ReplyTrace``): a display link on the main run loop
-/// notes every gap between frames. A gap of 50 ms or more is a hitch the user can see, whatever
-/// held the main thread (a write to the chat, a markdown parse, layout).
+/// compares each frame gap against ProMotion's active refresh interval (`targetTimestamp - timestamp`),
+/// catching multi-frame drops at 120 Hz without false positives when ProMotion idles at 10–20 Hz.
 @MainActor
 enum FrameMonitor {
   private final class Target: NSObject {
-    var last: CFTimeInterval = 0
+    var lastTimestamp: CFTimeInterval = 0
+    var lastExpectedDuration: CFTimeInterval = 0
     var frames = 0
     var hitches = 0
     var hitchSeconds = 0.0
     var longest = 0.0
 
     @objc func tick(_ link: CADisplayLink) {
-      defer { last = link.timestamp }
-      guard last > 0 else { return }
-      let gap = link.timestamp - last
+      let currentExpected = link.targetTimestamp - link.timestamp
+      defer {
+        lastTimestamp = link.timestamp
+        lastExpectedDuration = currentExpected
+      }
+      guard lastTimestamp > 0 else { return }
+      let gap = link.timestamp - lastTimestamp
       frames += 1
       longest = max(longest, gap)
-      if gap >= 0.05 {
+      // Use the larger of the previous and current expected frame durations so intentional
+      // ProMotion ramp-downs (e.g. 120 Hz -> 60 Hz -> 10 Hz) never count as hitches.
+      let rawExpected = max(lastExpectedDuration, currentExpected)
+      let expected = (rawExpected > 0 && rawExpected.isFinite) ? rawExpected : (1.0 / 60.0)
+      let overrun = gap - expected
+      if overrun >= max(expected * 0.5, 0.005) {
         hitches += 1
-        hitchSeconds += gap
+        hitchSeconds += overrun
       }
     }
   }

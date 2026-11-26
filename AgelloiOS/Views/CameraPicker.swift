@@ -34,11 +34,17 @@ struct CameraPicker: UIViewControllerRepresentable {
       _ picker: UIImagePickerController,
       didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]
     ) {
-      // Scaled before encoding: a full-size JPEG of the photo was encoded, then decoded again.
-      if let image = info[.originalImage] as? UIImage, let data = ImagePreparer.prepare(image) {
-        parent.onCapture(data)
-      }
+      let image = info[.originalImage] as? UIImage
+      let onCapture = parent.onCapture
       parent.dismiss()
+      guard let image else { return }
+      // Scale and JPEG-encode off MainActor so the camera sheet dismisses without hitching.
+      Task { @MainActor in
+        let data = await Task.detached(priority: .userInitiated) {
+          ImagePreparer.prepare(image)
+        }.value
+        if let data { onCapture(data) }
+      }
     }
 
     func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {

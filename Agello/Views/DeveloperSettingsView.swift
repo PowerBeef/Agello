@@ -8,8 +8,9 @@ import SwiftUI
 struct DeveloperSettingsView: View {
   @Environment(AppState.self) private var appState
   @AppStorage("showPerformanceDetails") private var showStats = false
-  @State private var memorySnapshot = MemoryProbe.capture()
-  @State private var telemetrySummary = MetricsReporter.summarize()
+  @State private var memorySnapshot: MemoryProbe.Snapshot?
+  @State private var telemetrySummary: MetricsReporter.TelemetrySummary?
+  @State private var telemetryRefreshToken = 0
   @State private var benchmarkError: String?
 
   var body: some View {
@@ -22,12 +23,17 @@ struct DeveloperSettingsView: View {
     .themedList()
     .navigationTitle("Developer")
     .inlineTitleDisplay()
-    .onAppear(perform: refreshTelemetry)
+    .task(id: telemetryRefreshToken) {
+      let snapshot = MemoryProbe.capture()
+      memorySnapshot = snapshot
+      let summary = await MetricsReporter.summarizeAsync()
+      guard !Task.isCancelled else { return }
+      telemetrySummary = summary
+    }
   }
 
   private func refreshTelemetry() {
-    memorySnapshot = MemoryProbe.capture()
-    telemetrySummary = MetricsReporter.summarize()
+    telemetryRefreshToken &+= 1
   }
 
   private var performanceSection: some View {
@@ -137,41 +143,50 @@ struct DeveloperSettingsView: View {
     Section {
       LabeledContent(
         "Footprint / Peak",
-        value: String(
-          format: "%.2f / %.2f GB",
-          Double(memorySnapshot.footprintBytes) / 1e9,
-          Double(memorySnapshot.peakFootprintBytes) / 1e9)
+        value: memorySnapshot.map {
+          String(
+            format: "%.2f / %.2f GB",
+            Double($0.footprintBytes) / 1e9,
+            Double($0.peakFootprintBytes) / 1e9)
+        } ?? "—"
       )
       .monospacedDigit()
       .themedRow()
       LabeledContent(
         "GPU / ANE ledgers",
-        value: String(
-          format: "%.2f / %.2f GB",
-          Double(memorySnapshot.graphicsBytes) / 1e9,
-          Double(memorySnapshot.neuralBytes) / 1e9)
+        value: memorySnapshot.map {
+          String(
+            format: "%.2f / %.2f GB",
+            Double($0.graphicsBytes) / 1e9,
+            Double($0.neuralBytes) / 1e9)
+        } ?? "—"
       )
       .monospacedDigit()
       .themedRow()
-      LabeledContent("Thermal", value: MemoryProbe.thermalStateLabel(memorySnapshot.thermalState))
-        .themedRow()
+      LabeledContent(
+        "Thermal",
+        value: memorySnapshot.map { MemoryProbe.thermalStateLabel($0.thermalState) } ?? "—"
+      )
+      .themedRow()
       LabeledContent(
         "MetricKit",
-        value: "\(telemetrySummary.reportCount) reports · \(telemetrySummary.memoryExceptionCount) mem exc · \(telemetrySummary.crashCount) crashes"
+        value: telemetrySummary.map {
+          "\($0.reportCount) reports · \($0.memoryExceptionCount) mem exc · \($0.crashCount) crashes"
+        } ?? String(localized: "Loading…")
       )
       .monospacedDigit()
       .themedRow()
-      if let peakMB = telemetrySummary.peakMemoryMB {
+      if let peakMB = telemetrySummary?.peakMemoryMB {
         LabeledContent("MetricKit peak", value: String(format: "%.0f MB", peakMB))
           .monospacedDigit()
           .themedRow()
       }
-      if telemetrySummary.gpuTimeSeconds > 0 || telemetrySummary.cpuTimeSeconds > 0 {
+      if let summary = telemetrySummary, summary.gpuTimeSeconds > 0 || summary.cpuTimeSeconds > 0 {
         LabeledContent(
           "MetricKit compute",
           value: String(
             format: "GPU %.1fs · CPU %.1fs",
-            telemetrySummary.gpuTimeSeconds, telemetrySummary.cpuTimeSeconds)
+            summary.gpuTimeSeconds, summary.cpuTimeSeconds)
         )
         .monospacedDigit()
         .themedRow()

@@ -17,25 +17,17 @@ struct ChatView: View {
   /// of this view. The cover follows it (`item:`), so it never opens without its session.
   @State private var voiceSession: VoiceSession?
   @State private var reader = SpeechReader()
-  /// The list keeps the latest text in view (the user hasn't scrolled up).
-  @State private var followsLatest = true
   /// The developer screen's "Show performance details": time to first token, speed, backend.
   @AppStorage("showPerformanceDetails") private var showStats = false
 
-  /// What the next message does; tints the ambient backdrop.
-  private var mode: Theme.Mode {
-    composerBridge.searchWeb ? .search : appState.options.enableThinking ? .think : .chat
-  }
-
   var body: some View {
-    // Computed once per render (not per use: this re-renders while streaming, never on keystrokes).
-    let turns = thread?.orderedTurns ?? []
-    let versions = versionGroups()
     VStack(spacing: 0) {
-      engineBanner
-      pendingConfirmationBanner
-      noticeBanner
-      messagesList(turns, versions: versions)
+      ChatBannersView(threadID: thread?.id, showLibrary: $showLibrary)
+      ChatMessagesList(
+        thread: thread,
+        composerBridge: composerBridge,
+        reader: reader,
+        showStats: showStats)
         .frame(maxHeight: .infinity)
       // Composer rows keep their full height; the messages area above shrinks instead (e.g. above
       // the keyboard), so nothing is pushed under it.
@@ -49,18 +41,7 @@ struct ChatView: View {
       .layoutPriority(1)
     }
     .background {
-      AmbientBackdrop(tint: mode.tint)
-        .animation(Theme.Motion.modeCrossfade, value: mode)
-    }
-    .appAnimation(Theme.Motion.easeOut, value: appState.generationError)
-    .appAnimation(Theme.Motion.easeOut, value: appState.notice)
-    .appAnimation(Theme.Motion.easeOut, value: appState.pendingToolConfirmation?.id)
-    // The banner appears without moving VoiceOver's focus: say it.
-    .onChange(of: appState.generationError) { _, message in
-      if let message { Haptics.announce(message) }
-    }
-    .onChange(of: appState.notice) { _, message in
-      if let message { Haptics.announce(message) }
+      ChatBackdropView(bridge: composerBridge)
     }
     .navigationTitle(thread?.title ?? "")
     .inlineTitleDisplay()
@@ -97,7 +78,6 @@ struct ChatView: View {
       }
     }
     .onChange(of: thread?.id) { old, _ in
-      followsLatest = true
       guard old != nil else { return }
       reader.stop()
     }
@@ -106,7 +86,65 @@ struct ChatView: View {
     }
   }
 
-  // MARK: - Banners
+  private func openVoiceMode(startWithCamera: Bool) {
+    reader.stop()
+    composerBridge.send(.cancelDictation)
+    voiceSession?.end()
+    voiceSession = VoiceSession(
+      appState: appState, thread: thread, startWithCamera: startWithCamera, makeThread: newThread)
+  }
+
+  /// A new chat, in the project it was started from (if any).
+  private func newThread() -> ChatThread {
+    let thread = appState.newThread(in: context)
+    if let projectID = appState.newChatProjectID {
+      thread.projectID = projectID
+      try? context.save()
+    }
+    return thread
+  }
+}
+
+/// Isolated ambient backdrop observing only mode toggles so switching Think/Search never
+/// invalidates the chat message list.
+private struct ChatBackdropView: View {
+  @Environment(AppState.self) private var appState
+  let bridge: ComposerBridge
+
+  private var mode: Theme.Mode {
+    bridge.searchWeb ? .search : appState.options.enableThinking ? .think : .chat
+  }
+
+  var body: some View {
+    AmbientBackdrop(tint: mode.tint)
+      .appAnimation(Theme.Motion.modeCrossfade, value: mode)
+  }
+}
+
+/// Isolated banner stack observing engine/notice/error/confirmation state without invalidating
+/// the message list below it.
+private struct ChatBannersView: View {
+  @Environment(AppState.self) private var appState
+  let threadID: UUID?
+  @Binding var showLibrary: Bool
+
+  var body: some View {
+    VStack(spacing: 0) {
+      engineBanner
+      pendingConfirmationBanner
+      noticeBanner
+    }
+    .appAnimation(Theme.Motion.easeOut, value: appState.generationError)
+    .appAnimation(Theme.Motion.easeOut, value: appState.notice)
+    .appAnimation(Theme.Motion.easeOut, value: appState.pendingToolConfirmation?.id)
+    // The banner appears without moving VoiceOver's focus: say it.
+    .onChange(of: appState.generationError) { _, message in
+      if let message { Haptics.announce(message) }
+    }
+    .onChange(of: appState.notice) { _, message in
+      if let message { Haptics.announce(message) }
+    }
+  }
 
   @ViewBuilder
   private var engineBanner: some View {
@@ -145,7 +183,7 @@ struct ChatView: View {
   private var pendingConfirmationBanner: some View {
     if let confirmation = appState.pendingToolConfirmation,
       let ownerID = appState.generatingThreadID ?? appState.pendingToolConfirmationThreadID,
-      thread?.id != ownerID
+      threadID != ownerID
     {
       InlineBanner(
         symbol: "hand.raised.circle",
@@ -187,24 +225,51 @@ struct ChatView: View {
       .bannerInsets()
     }
   }
+}
 
-  // MARK: - Messages
+/// Dedicated scroll container isolating `followsLatest` and O(1) turn lookups so streaming,
+/// banners, reading aloud, and mode toggles never re-evaluate historical `MessageBubbleView` rows.
+private struct ChatMessagesList: View {
+  @Environment(AppState.self) private var appState
+  let thread: ChatThread?
+  let composerBridge: ComposerBridge
+  let reader: SpeechReader
+  let showStats: Bool
 
-  private func messagesList(_ turns: [ChatTurn], versions: [VersionKey: [ChatTurn]]) -> some View {
+  /// The list keeps the latest text in view (the user hasn't scrolled up).
+  @State private var followsLatest = true
+
+  private struct VersionKey: Hashable {
+    var parentID: UUID?
+    var role: String
+    init(_ turn: ChatTurn) {
+      parentID = turn.parentID
+      role = turn.roleRaw
+    }
+  }
+
+  var body: some View {
+    let allTurns = thread?.turns ?? []
+    let turnsByID = Dictionary(allTurns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    let turns = orderedTurns(in: thread, allTurns: allTurns, byID: turnsByID)
+    let versions = versionGroups(in: thread, allTurns: allTurns)
     Group {
       if turns.isEmpty {
-        emptyState
+        ChatEmptyStateView(isNewChat: thread == nil, composerBridge: composerBridge)
       } else {
         ScrollViewReader { proxy in
           ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
               ForEach(turns) { turn in
                 MessageBubbleView(
-                  turn: turn, isStreaming: isLiveBubble(turn, in: turns),
-                  toolStatus: appState.toolStatus,
+                  turn: turn,
+                  thread: thread,
+                  isStreaming: isLiveBubble(turn, in: turns),
                   versions: versions[VersionKey(turn)] ?? [],
+                  canRegenerate: canRegenerate(turn, turnsByID: turnsByID),
                   showsStats: showStats,
-                  actions: actions(for: turn))
+                  reader: reader,
+                  composerBridge: composerBridge)
                   .id(turn.id)
               }
               if let confirmation = appState.pendingToolConfirmation,
@@ -264,32 +329,58 @@ struct ChatView: View {
         }
       }
     }
+    .onChange(of: thread?.id) { _, _ in
+      followsLatest = true
+    }
   }
 
-  /// A new chat: the greeting and a few ways to start.
-  private var emptyState: some View {
-    VStack(spacing: Theme.Spacing.xxl) {
-      Spacer()
-      VStack(spacing: Theme.Spacing.sm) {
-        if let project = newChatProject {
-          Label(project.name, systemImage: "folder")
-            .eyebrowStyle(Theme.Brand.glacier)
-            .accessibilityIdentifier("chat.project")
-        }
-        Text(greeting)
-          .font(.greeting)
-          .foregroundStyle(Theme.Text.primary)
-          .multilineTextAlignment(.center)
-          .accessibilityIdentifier("chat.empty")
-      }
-      suggestions
-      Spacer()
+  private func orderedTurns(
+    in thread: ChatThread?, allTurns: [ChatTurn], byID: [UUID: ChatTurn]
+  ) -> [ChatTurn] {
+    guard let thread else { return [] }
+    guard let activeLeafID = thread.activeLeafID else {
+      return allTurns.sorted { $0.createdAt < $1.createdAt }
     }
-    .frame(maxWidth: .infinity)
-    .padding(.horizontal, Theme.Spacing.xl)
-    .contentShape(.rect)
-    .onTapGesture { composerBridge.send(.dismissKeyboard) }
+    var path: [ChatTurn] = []
+    var cursor = byID[activeLeafID]
+    var seen = Set<UUID>()
+    while let turn = cursor, seen.insert(turn.id).inserted {
+      path.append(turn)
+      cursor = turn.parentID.flatMap { byID[$0] }
+    }
+    return path.reversed()
   }
+
+  /// Turns that are versions of each other (same parent and role), only where there is more than one.
+  private func versionGroups(in thread: ChatThread?, allTurns: [ChatTurn]) -> [VersionKey: [ChatTurn]] {
+    // Unlinked (legacy, never migrated) threads have no parents to group by.
+    guard let thread, thread.activeLeafID != nil else { return [:] }
+    return Dictionary(grouping: allTurns, by: VersionKey.init)
+      .filter { $0.value.count > 1 }
+      .mapValues { $0.sorted { $0.createdAt < $1.createdAt } }
+  }
+
+  private func canRegenerate(_ turn: ChatTurn, turnsByID: [UUID: ChatTurn]) -> Bool {
+    guard !turn.isUser, let parentID = turn.parentID,
+      let prompt = turnsByID[parentID], prompt.isUser
+    else { return false }
+    return !prompt.hasAudio || !prompt.text.isEmpty
+  }
+
+  private func isLiveBubble(_ turn: ChatTurn, in turns: [ChatTurn]) -> Bool {
+    appState.generatingThreadID == thread?.id && turn.id == turns.last?.id && !turn.isUser
+  }
+}
+
+/// A new chat: the greeting, optional project eyebrow (resolved via `.task`, never synchronously
+/// inside `body`), and a few ways to start.
+private struct ChatEmptyStateView: View {
+  @Environment(AppState.self) private var appState
+  @Environment(\.modelContext) private var context
+  let isNewChat: Bool
+  let composerBridge: ComposerBridge
+
+  @State private var projectName: String?
 
   private enum Suggestion: CaseIterable {
     case explain, summarize, write, plan
@@ -320,6 +411,39 @@ struct ChatView: View {
       case .write: String(localized: "Help me write ")
       case .plan: String(localized: "Plan a three-day trip to ")
       }
+    }
+  }
+
+  var body: some View {
+    VStack(spacing: Theme.Spacing.xxl) {
+      Spacer()
+      VStack(spacing: Theme.Spacing.sm) {
+        if let projectName {
+          Label(projectName, systemImage: "folder")
+            .eyebrowStyle(Theme.Brand.glacier)
+            .accessibilityIdentifier("chat.project")
+        }
+        Text(greeting)
+          .font(.greeting)
+          .foregroundStyle(Theme.Text.primary)
+          .multilineTextAlignment(.center)
+          .accessibilityIdentifier("chat.empty")
+      }
+      suggestions
+      Spacer()
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.horizontal, Theme.Spacing.xl)
+    .contentShape(.rect)
+    .onTapGesture { composerBridge.send(.dismissKeyboard) }
+    .task(id: isNewChat ? appState.newChatProjectID : nil) {
+      guard isNewChat, let id = appState.newChatProjectID else {
+        projectName = nil
+        return
+      }
+      var descriptor = FetchDescriptor<Project>(predicate: #Predicate { $0.id == id })
+      descriptor.fetchLimit = 1
+      projectName = (try? context.fetch(descriptor).first)?.name
     }
   }
 
@@ -364,78 +488,12 @@ struct ChatView: View {
     }
   }
 
-  /// The project a new chat will join, for the empty state.
-  private var newChatProject: Project? {
-    guard thread == nil, let id = appState.newChatProjectID else { return nil }
-    return try? context.fetch(FetchDescriptor<Project>(predicate: #Predicate { $0.id == id })).first
-  }
-
   private var greeting: String {
     let name = appState.personalization.enabled
       ? appState.personalization.name.trimmingCharacters(in: .whitespacesAndNewlines) : ""
     return name.isEmpty
       ? String(localized: "What can I help with?")
       : String(localized: "What can I help with, \(name)?")
-  }
-
-  // MARK: - Message actions
-
-  struct VersionKey: Hashable {
-    var parentID: UUID?
-    var role: String
-    init(_ turn: ChatTurn) {
-      parentID = turn.parentID
-      role = turn.roleRaw
-    }
-  }
-
-  /// Turns that are versions of each other (same parent and role), only where there is more than one.
-  private func versionGroups() -> [VersionKey: [ChatTurn]] {
-    // Unlinked (legacy, never migrated) threads have no parents to group by.
-    guard let thread, thread.activeLeafID != nil else { return [:] }
-    return Dictionary(grouping: thread.turns, by: VersionKey.init)
-      .filter { $0.value.count > 1 }
-      .mapValues { $0.sorted { $0.createdAt < $1.createdAt } }
-  }
-
-  private func actions(for turn: ChatTurn) -> MessageActions {
-    guard let thread else { return MessageActions() }
-    return MessageActions(
-      isBusy: appState.isBusy,
-      isSpeaking: reader.speakingID == turn.id,
-      canRegenerate: !turn.isUser && appState.canRegenerate(turn, in: thread),
-      regenerate: {
-        reader.stop()
-        Haptics.send()
-        Task { await appState.regenerate(turn, in: thread) }
-      },
-      edit: { composerBridge.send(.edit(turn)) },
-      speak: { reader.toggle(turn.text, id: turn.id) },
-      selectVersion: { version in
-        withAppAnimation(Theme.Motion.easeOut) { appState.selectVersion(version, in: thread) }
-      })
-  }
-
-  private func isLiveBubble(_ turn: ChatTurn, in turns: [ChatTurn]) -> Bool {
-    appState.generatingThreadID == thread?.id && turn.id == turns.last?.id && !turn.isUser
-  }
-
-  private func openVoiceMode(startWithCamera: Bool) {
-    reader.stop()
-    composerBridge.send(.cancelDictation)
-    voiceSession?.end()
-    voiceSession = VoiceSession(
-      appState: appState, thread: thread, startWithCamera: startWithCamera, makeThread: newThread)
-  }
-
-  /// A new chat, in the project it was started from (if any).
-  private func newThread() -> ChatThread {
-    let thread = appState.newThread(in: context)
-    if let projectID = appState.newChatProjectID {
-      thread.projectID = projectID
-      try? context.save()
-    }
-    return thread
   }
 }
 

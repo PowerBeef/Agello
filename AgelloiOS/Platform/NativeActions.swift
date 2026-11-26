@@ -17,8 +17,28 @@ enum NativeActions {
   private static let snapshotCache: NSCache<NSString, UIImage> = {
     let cache = NSCache<NSString, UIImage>()
     cache.countLimit = 24
+    cache.totalCostLimit = 16 * 1024 * 1024
     return cache
   }()
+
+  @MainActor
+  private final class InFlightSnapshot {
+    let task: Task<UIImage?, Never>
+    var waiters = 0
+
+    init(task: Task<UIImage?, Never>) {
+      self.task = task
+    }
+  }
+
+  private enum LookAroundCacheEntry {
+    case available(MKLookAroundScene)
+    case unavailable
+  }
+
+  private static var inFlightSnapshots: [String: InFlightSnapshot] = [:]
+  private static var lookAroundCache: [String: LookAroundCacheEntry] = [:]
+  private static let maxLookAroundCacheEntries = 48
 
   // MARK: - Apple Maps
 
@@ -111,58 +131,166 @@ enum NativeActions {
     return item
   }
 
-  /// Renders and caches a static dark-styled mini-map snapshot with custom pin markers on `.utility`
-  /// QoS. Call only after streaming completes so its brief Metal render pass never contends with E4B.
+  private static func mapSnapshotCacheKey(
+    places: [PlacesCard.PlaceItem], size: CGSize, scale: CGFloat
+  ) -> String {
+    let effectiveScale = max(1, scale)
+    return places.prefix(5)
+      .map { String(format: "%.4f,%.4f", $0.latitude, $0.longitude) }
+      .joined(separator: ";")
+      + "|\(Int(size.width.rounded()))x\(Int(size.height.rounded()))@\(Int(effectiveScale.rounded()))x"
+  }
+
+  /// Synchronous RAM cache lookup so cached map previews display immediately without starting
+  /// Metal work while E4B is busy.
+  static func cachedMapSnapshot(
+    places: [PlacesCard.PlaceItem], size: CGSize, scale: CGFloat
+  ) -> UIImage? {
+    guard !places.isEmpty, size.width > 10, size.height > 10 else { return nil }
+    let key = mapSnapshotCacheKey(places: places, size: size, scale: scale) as NSString
+    return snapshotCache.object(forKey: key)
+  }
+
+  /// Renders and caches a static dark-styled Retina mini-map snapshot with custom pin markers on
+  /// `.utility` QoS. Deduplicates concurrent identical requests and propagates task cancellation
+  /// directly to `MKMapSnapshotter.cancel()`. Call only when E4B is idle so its Metal pass never
+  /// contends with decode.
   static func renderMapSnapshot(
     places: [PlacesCard.PlaceItem], size: CGSize, scale: CGFloat
   ) async -> UIImage? {
     guard !places.isEmpty, size.width > 10, size.height > 10 else { return nil }
-    let keyString = places.prefix(5)
-      .map { String(format: "%.4f,%.4f", $0.latitude, $0.longitude) }
-      .joined(separator: ";") + "|\(Int(size.width))x\(Int(size.height))"
+    let effectiveScale = max(1, scale)
+    let keyString = mapSnapshotCacheKey(places: places, size: size, scale: effectiveScale)
     let cacheKey = keyString as NSString
     if let cached = snapshotCache.object(forKey: cacheKey) { return cached }
+    guard !Task.isCancelled else { return nil }
 
-    let points: [(Double, Double)] = places.prefix(5).map { ($0.latitude, $0.longitude) }
-    let width = size.width
-    let height = size.height
-    let rendered: UIImage? = await Task.detached(priority: .utility) {
-      let coords = points.map { CLLocationCoordinate2D(latitude: $0.0, longitude: $0.1) }
-      let renderSize = CGSize(width: width, height: height)
-      let options = MKMapSnapshotter.Options()
-      options.size = renderSize
-      options.scale = scale
-      options.traitCollection = UITraitCollection(userInterfaceStyle: .dark)
-      options.region = Self.boundingRegion(for: coords)
-      guard let snapshot = try? await MKMapSnapshotter(options: options).start() else { return nil }
+    let entry: InFlightSnapshot
+    if let existing = inFlightSnapshots[keyString] {
+      entry = existing
+    } else {
+      let points: [(Double, Double)] = places.prefix(5).map { ($0.latitude, $0.longitude) }
+      let renderSize = CGSize(width: size.width, height: size.height)
+      let traitsBox = TraitCollectionBox(
+        UITraitCollection { traits in
+          traits.displayScale = effectiveScale
+          traits.userInterfaceStyle = .dark
+        })
+      let task = Task.detached(priority: .utility) { () -> UIImage? in
+        await Self.renderSnapshotImage(
+          points: points, size: renderSize, scale: effectiveScale, traits: traitsBox)
+      }
+      let created = InFlightSnapshot(task: task)
+      inFlightSnapshots[keyString] = created
+      entry = created
+    }
 
-      let renderer = UIGraphicsImageRenderer(size: renderSize)
-      return renderer.image { ctx in
-        snapshot.image.draw(at: .zero)
-        let cg = ctx.cgContext
-        for (idx, coord) in coords.enumerated().reversed() {
-          let point = snapshot.point(for: coord)
-          let isPrimary = idx == 0
-          let radius: CGFloat = isPrimary ? 9 : 6
-          let rect = CGRect(
-            x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
-          cg.setFillColor(
-            (isPrimary
-              ? UIColor(red: 0.549, green: 0.780, blue: 0.749, alpha: 1) : UIColor.white).cgColor)
-          cg.fillEllipse(in: rect)
-          cg.setStrokeColor(UIColor(red: 0.05, green: 0.06, blue: 0.08, alpha: 0.95).cgColor)
-          cg.setLineWidth(2)
-          cg.strokeEllipse(in: rect)
+    entry.waiters += 1
+    let released = OneShotFlag()
+    let releaseWaiter: @MainActor () -> Void = {
+      guard released.claim() else { return }
+      entry.waiters -= 1
+      if entry.waiters <= 0 {
+        entry.task.cancel()
+        if inFlightSnapshots[keyString] === entry {
+          inFlightSnapshots.removeValue(forKey: keyString)
         }
       }
-    }.value
-    if let rendered { snapshotCache.setObject(rendered, forKey: cacheKey) }
-    return rendered
+    }
+
+    let rendered: UIImage? = await withTaskCancellationHandler {
+      await entry.task.value
+    } onCancel: {
+      Task { @MainActor in releaseWaiter() }
+    }
+
+    releaseWaiter()
+    if let rendered {
+      let cost = Self.imageByteCost(rendered)
+      snapshotCache.setObject(rendered, forKey: cacheKey, cost: cost)
+    }
+    return Task.isCancelled ? nil : rendered
   }
 
+  private nonisolated static func renderSnapshotImage(
+    points: [(Double, Double)], size: CGSize, scale: CGFloat, traits: TraitCollectionBox
+  ) async -> UIImage? {
+    guard !Task.isCancelled else { return nil }
+    let coords = points.map { CLLocationCoordinate2D(latitude: $0.0, longitude: $0.1) }
+      .filter(CLLocationCoordinate2DIsValid)
+    guard !coords.isEmpty else { return nil }
+
+    let options = MKMapSnapshotter.Options()
+    options.size = size
+    options.traitCollection = traits.value
+    options.region = boundingRegion(for: coords)
+    let box = SnapshotterBox(MKMapSnapshotter(options: options))
+    let snapshot: MKMapSnapshotter.Snapshot? = await withTaskCancellationHandler {
+      guard !Task.isCancelled else { return nil }
+      return try? await box.snapshotter.start()
+    } onCancel: {
+      box.snapshotter.cancel()
+    }
+    guard let snapshot, !Task.isCancelled else { return nil }
+
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = scale
+    format.opaque = true
+    let renderer = UIGraphicsImageRenderer(size: size, format: format)
+    return renderer.image { ctx in
+      snapshot.image.draw(at: .zero)
+      let cg = ctx.cgContext
+      for (idx, coord) in coords.enumerated().reversed() {
+        let point = snapshot.point(for: coord)
+        let isPrimary = idx == 0
+        let radius: CGFloat = isPrimary ? 9 : 6
+        let rect = CGRect(
+          x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
+        cg.setFillColor(
+          (isPrimary
+            ? UIColor(red: 0.549, green: 0.780, blue: 0.749, alpha: 1) : UIColor.white).cgColor)
+        cg.fillEllipse(in: rect)
+        cg.setStrokeColor(UIColor(red: 0.05, green: 0.06, blue: 0.08, alpha: 0.95).cgColor)
+        cg.setLineWidth(2)
+        cg.strokeEllipse(in: rect)
+      }
+    }
+  }
+
+  private static func imageByteCost(_ image: UIImage) -> Int {
+    if let cg = image.cgImage {
+      return max(1, cg.bytesPerRow * cg.height)
+    }
+    let pxW = Int((image.size.width * image.scale).rounded())
+    let pxH = Int((image.size.height * image.scale).rounded())
+    return max(1, pxW * pxH * 4)
+  }
+
+  /// On-demand, cached, cancellable Look Around scene lookup.
   static func checkLookAround(latitude: Double, longitude: Double) async -> MKLookAroundScene? {
     let coord = CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
-    return try? await MKLookAroundSceneRequest(coordinate: coord).scene
+    guard CLLocationCoordinate2DIsValid(coord) else { return nil }
+    let key = String(format: "%.4f,%.4f", latitude, longitude)
+    if let cached = lookAroundCache[key] {
+      switch cached {
+      case .available(let scene): return scene
+      case .unavailable: return nil
+      }
+    }
+    guard !Task.isCancelled else { return nil }
+    let box = LookAroundRequestBox(MKLookAroundSceneRequest(coordinate: coord))
+    let scene: MKLookAroundScene? = await withTaskCancellationHandler {
+      guard !Task.isCancelled else { return nil }
+      return try? await box.request.scene
+    } onCancel: {
+      box.request.cancel()
+    }
+    guard !Task.isCancelled else { return nil }
+    if lookAroundCache.count >= maxLookAroundCacheEntries {
+      lookAroundCache.removeAll(keepingCapacity: true)
+    }
+    lookAroundCache[key] = scene.map(LookAroundCacheEntry.available) ?? .unavailable
+    return scene
   }
 
   /// Recalculates travel time, distance, and turn-by-turn steps via MapKit when the user switches
@@ -228,22 +356,47 @@ enum NativeActions {
   private nonisolated static func boundingRegion(
     for coords: [CLLocationCoordinate2D]
   ) -> MKCoordinateRegion {
-    guard let first = coords.first else { return MKCoordinateRegion() }
-    if coords.count == 1 {
-      return MKCoordinateRegion(center: first, latitudinalMeters: 900, longitudinalMeters: 900)
+    let valid = coords.filter(CLLocationCoordinate2DIsValid)
+    guard let first = valid.first else { return MKCoordinateRegion() }
+    if valid.count == 1 {
+      let clamped = CLLocationCoordinate2D(
+        latitude: min(85, max(-85, first.latitude)),
+        longitude: normalizeLongitude(first.longitude))
+      return MKCoordinateRegion(center: clamped, latitudinalMeters: 900, longitudinalMeters: 900)
     }
-    let lats = coords.map(\.latitude)
-    let lons = coords.map(\.longitude)
+    let lats = valid.map(\.latitude)
     let minLat = lats.min() ?? first.latitude
     let maxLat = lats.max() ?? first.latitude
-    let minLon = lons.min() ?? first.longitude
-    let maxLon = lons.max() ?? first.longitude
-    let center = CLLocationCoordinate2D(
-      latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2)
-    let latDelta = max(0.008, (maxLat - minLat) * 1.65)
-    let lonDelta = max(0.008, (maxLon - minLon) * 1.65)
+    let centerLat = min(85, max(-85, (minLat + maxLat) / 2))
+    let maxSafeLatDelta = max(0.008, min(160, (89 - abs(centerLat)) * 2))
+    let latDelta = min(maxSafeLatDelta, max(0.008, (maxLat - minLat) * 1.65))
+
+    // Find the largest gap around the 360° longitude circle so coordinates straddling the
+    // antimeridian (+/-180°) frame tightly across the Pacific instead of spanning the globe.
+    let sortedLons = valid.map { normalizeLongitude($0.longitude) }.sorted()
+    var largestGap = (sortedLons[0] + 360) - (sortedLons.last ?? sortedLons[0])
+    var arcStart = sortedLons[0]
+    for index in 0..<(sortedLons.count - 1) {
+      let gap = sortedLons[index + 1] - sortedLons[index]
+      if gap > largestGap {
+        largestGap = gap
+        arcStart = sortedLons[index + 1]
+      }
+    }
+    let rawLonSpan = max(0, 360 - largestGap)
+    let centerLon = normalizeLongitude(arcStart + rawLonSpan / 2)
+    let lonDelta = min(350, max(0.008, rawLonSpan * 1.65))
+
     return MKCoordinateRegion(
-      center: center, span: MKCoordinateSpan(latitudeDelta: latDelta, longitudeDelta: lonDelta))
+      center: CLLocationCoordinate2D(latitude: centerLat, longitude: centerLon),
+      span: MKCoordinateSpan(latitudeDelta: latDelta, longitudeDelta: lonDelta))
+  }
+
+  private nonisolated static func normalizeLongitude(_ lon: Double) -> Double {
+    var normalized = lon.truncatingRemainder(dividingBy: 360)
+    if normalized > 180 { normalized -= 360 }
+    if normalized < -180 { normalized += 360 }
+    return normalized
   }
 
   private static func launchDirectionsMode(_ mode: String) -> String {
@@ -269,6 +422,44 @@ enum NativeActions {
   static var canSendMail: Bool { MFMailComposeViewController.canSendMail() }
 }
 
+private final class TraitCollectionBox: @unchecked Sendable {
+  let value: UITraitCollection
+  init(_ value: UITraitCollection) { self.value = value }
+}
+
+private final class SnapshotterBox: @unchecked Sendable {
+  let snapshotter: MKMapSnapshotter
+  init(_ snapshotter: MKMapSnapshotter) { self.snapshotter = snapshotter }
+}
+
+private final class LookAroundRequestBox: @unchecked Sendable {
+  let request: MKLookAroundSceneRequest
+  init(_ request: MKLookAroundSceneRequest) { self.request = request }
+}
+
+private final class OneShotFlag: @unchecked Sendable {
+  private let lock = NSLock()
+  private var claimed = false
+
+  func claim() -> Bool {
+    lock.withLock {
+      guard !claimed else { return false }
+      claimed = true
+      return true
+    }
+  }
+}
+
+private final class ResolvedCalendarEvent: @unchecked Sendable {
+  let store: EKEventStore
+  let event: EKEvent
+
+  init(store: EKEventStore, event: EKEvent) {
+    self.store = store
+    self.event = event
+  }
+}
+
 // MARK: - Out-of-process Native iOS Sheets (EventKitUI, ContactsUI, MessageUI, SwiftUI Map)
 
 enum CalendarEventEditOutcome: Equatable {
@@ -277,31 +468,81 @@ enum CalendarEventEditOutcome: Equatable {
   case cancelled
 }
 
-struct CalendarEventEditSheet: UIViewControllerRepresentable {
+struct CalendarEventEditSheet: View {
   let card: CalendarEventCard
   var onComplete: ((CalendarEventEditOutcome) -> Void)? = nil
   @Environment(\.dismiss) private var dismiss
+  @State private var resolved: ResolvedCalendarEvent?
+
+  var body: some View {
+    Group {
+      if let resolved {
+        CalendarEventEditRepresentable(
+          card: card,
+          store: resolved.store,
+          event: resolved.event,
+          dismiss: dismiss,
+          onComplete: onComplete
+        )
+        .ignoresSafeArea()
+      } else {
+        NavigationStack {
+          ProgressView()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.Surface.canvas.ignoresSafeArea())
+            .navigationTitle(card.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+              ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                  onComplete?(.cancelled)
+                  dismiss()
+                }
+              }
+            }
+        }
+      }
+    }
+    .task(id: card.eventIdentifier ?? card.title) {
+      let cardSnapshot = card
+      let loaded = await Task.detached(priority: .userInitiated) { () -> ResolvedCalendarEvent in
+        let store = EKEventStore()
+        let event: EKEvent
+        if let id = cardSnapshot.eventIdentifier, let existing = store.event(withIdentifier: id) {
+          event = existing
+        } else {
+          let created = EKEvent(eventStore: store)
+          created.calendar = store.defaultCalendarForNewEvents
+          created.title = cardSnapshot.title
+          created.startDate = cardSnapshot.startDate
+          created.endDate = cardSnapshot.endDate
+          created.isAllDay = cardSnapshot.isAllDay
+          created.location = cardSnapshot.location
+          event = created
+        }
+        return ResolvedCalendarEvent(store: store, event: event)
+      }.value
+      guard !Task.isCancelled else { return }
+      resolved = loaded
+    }
+  }
+}
+
+private struct CalendarEventEditRepresentable: UIViewControllerRepresentable {
+  let card: CalendarEventCard
+  let store: EKEventStore
+  let event: EKEvent
+  let dismiss: DismissAction
+  var onComplete: ((CalendarEventEditOutcome) -> Void)? = nil
 
   func makeCoordinator() -> Coordinator {
-    Coordinator(card: card, dismiss: dismiss, onComplete: onComplete)
+    Coordinator(store: store, card: card, dismiss: dismiss, onComplete: onComplete)
   }
 
   func makeUIViewController(context: Context) -> EKEventEditViewController {
-    let store = context.coordinator.store
     let controller = EKEventEditViewController()
     controller.eventStore = store
-    if let id = card.eventIdentifier, let existing = store.event(withIdentifier: id) {
-      controller.event = existing
-    } else {
-      let event = EKEvent(eventStore: store)
-      event.calendar = store.defaultCalendarForNewEvents
-      event.title = card.title
-      event.startDate = card.startDate
-      event.endDate = card.endDate
-      event.isAllDay = card.isAllDay
-      event.location = card.location
-      controller.event = event
-    }
+    controller.event = event
     controller.editViewDelegate = context.coordinator
     return controller
   }
@@ -313,15 +554,16 @@ struct CalendarEventEditSheet: UIViewControllerRepresentable {
 
   @MainActor
   final class Coordinator: NSObject, @preconcurrency EKEventEditViewDelegate {
-    let store = EKEventStore()
+    let store: EKEventStore
     var card: CalendarEventCard
     let dismiss: DismissAction
     var onComplete: ((CalendarEventEditOutcome) -> Void)?
 
     init(
-      card: CalendarEventCard, dismiss: DismissAction,
+      store: EKEventStore, card: CalendarEventCard, dismiss: DismissAction,
       onComplete: ((CalendarEventEditOutcome) -> Void)?
     ) {
+      self.store = store
       self.card = card
       self.dismiss = dismiss
       self.onComplete = onComplete
@@ -538,6 +780,56 @@ struct MailComposeSheet: UIViewControllerRepresentable {
       _ controller: MFMailComposeViewController, didFinishWith result: MFMailComposeResult, error: Error?
     ) {
       dismiss()
+    }
+  }
+}
+
+struct MapItemDetailSheet: UIViewControllerRepresentable {
+  let mapItem: MKMapItem
+  var displaysMap = true
+  @Environment(\.dismiss) private var dismiss
+
+  func makeCoordinator() -> Coordinator { Coordinator(dismiss: dismiss) }
+
+  func makeUIViewController(context: Context) -> MKMapItemDetailViewController {
+    let controller = MKMapItemDetailViewController(mapItem: mapItem, displaysMap: displaysMap)
+    controller.delegate = context.coordinator
+    return controller
+  }
+
+  func updateUIViewController(_ uiViewController: MKMapItemDetailViewController, context: Context) {
+    if uiViewController.mapItem != mapItem {
+      uiViewController.mapItem = mapItem
+    }
+  }
+
+  @MainActor
+  final class Coordinator: NSObject, MKMapItemDetailViewControllerDelegate {
+    let dismiss: DismissAction
+    init(dismiss: DismissAction) { self.dismiss = dismiss }
+
+    func mapItemDetailViewControllerDidFinish(_ detailViewController: MKMapItemDetailViewController) {
+      dismiss()
+    }
+  }
+}
+
+struct LookAroundSheet: View {
+  let scene: MKLookAroundScene
+  let title: String
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    NavigationStack {
+      LookAroundPreview(initialScene: scene, allowsNavigation: true)
+        .ignoresSafeArea(edges: .bottom)
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+          ToolbarItem(placement: .cancellationAction) {
+            Button("Done") { dismiss() }
+          }
+        }
     }
   }
 }

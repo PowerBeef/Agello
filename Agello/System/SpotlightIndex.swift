@@ -8,18 +8,18 @@ import UniformTypeIdentifiers
 /// off in Settings (the index is then cleared).
 @MainActor
 enum SpotlightIndex {
-  static let domain = "com.patricedery.agello.chats"
-  static let projectDomain = "com.patricedery.agello.projects"
-  static let documentDomain = "com.patricedery.agello.documents"
-  static let allDomains = [domain, projectDomain, documentDomain]
-  static let enabledKey = "spotlightEnabled"
+  nonisolated static let domain = "com.patricedery.agello.chats"
+  nonisolated static let projectDomain = "com.patricedery.agello.projects"
+  nonisolated static let documentDomain = "com.patricedery.agello.documents"
+  nonisolated static let allDomains = [domain, projectDomain, documentDomain]
+  nonisolated static let enabledKey = "spotlightEnabled"
 
   static var isEnabled: Bool {
     UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true
   }
 
   /// Most recent items indexed per kind at launch.
-  static let limit = 300
+  nonisolated static let limit = 300
 
   /// What Spotlight shows for a chat. Pure (unit-tested).
   struct Entry: Equatable, Sendable {
@@ -47,7 +47,7 @@ enum SpotlightIndex {
     var createdAt: Date
   }
 
-  static func entry(for thread: ChatThread) -> Entry? {
+  nonisolated static func entry(for thread: ChatThread) -> Entry? {
     let turns = thread.orderedTurns.filter {
       !$0.text.isEmpty && !$0.text.hasPrefix(ChatTurn.errorPrefix)
     }
@@ -63,14 +63,14 @@ enum SpotlightIndex {
       updatedAt: thread.updatedAt)
   }
 
-  static func projectEntry(for project: Project) -> ProjectEntry {
+  nonisolated static func projectEntry(for project: Project) -> ProjectEntry {
     ProjectEntry(
       id: project.id, name: project.name,
       instructions: project.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
       updatedAt: project.updatedAt)
   }
 
-  static func documentEntry(for document: ChatDocument) -> DocumentEntry {
+  nonisolated static func documentEntry(for document: ChatDocument) -> DocumentEntry {
     let source = document.summary ?? document.text
     let compact = source
       .replacingOccurrences(of: "\n", with: " ")
@@ -81,7 +81,7 @@ enum SpotlightIndex {
       createdAt: document.createdAt)
   }
 
-  static func item(for entry: Entry) -> CSSearchableItem {
+  nonisolated static func item(for entry: Entry) -> CSSearchableItem {
     let attributes = CSSearchableItemAttributeSet(contentType: .text)
     attributes.title = entry.title
     attributes.contentDescription = entry.snippet
@@ -90,7 +90,7 @@ enum SpotlightIndex {
       uniqueIdentifier: entry.id.uuidString, domainIdentifier: domain, attributeSet: attributes)
   }
 
-  static func item(for entry: ProjectEntry) -> CSSearchableItem {
+  nonisolated static func item(for entry: ProjectEntry) -> CSSearchableItem {
     let attributes = CSSearchableItemAttributeSet(contentType: .folder)
     attributes.title = entry.name
     attributes.contentDescription = entry.instructions.isEmpty ? nil : String(entry.instructions.prefix(300))
@@ -100,7 +100,7 @@ enum SpotlightIndex {
       attributeSet: attributes)
   }
 
-  static func item(for entry: DocumentEntry) -> CSSearchableItem {
+  nonisolated static func item(for entry: DocumentEntry) -> CSSearchableItem {
     let attributes = CSSearchableItemAttributeSet(contentType: .content)
     attributes.title = entry.name
     attributes.contentDescription = entry.snippet
@@ -187,8 +187,67 @@ enum SpotlightIndex {
     defaults.set(now, forKey: refreshedAtKey)
   }
 
+  /// Non-blocking Spotlight refresh/clear using a background `ModelContext` so toggling Settings
+  /// never hitches the `UISwitch` animation across up to 900 SwiftData records.
+  static func refreshAsync(
+    in context: ModelContext, full: Bool = false, defaults: UserDefaults = .standard
+  ) async {
+    await Task.yield()
+    guard !Task.isCancelled else { return }
+
+    guard isEnabled else {
+      defaults.removeObject(forKey: refreshedAtKey)
+      await Task.detached(priority: .utility) {
+        try? await CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: Self.allDomains)
+      }.value
+      guard !Task.isCancelled else { return }
+      EntityIndexing.deleteAll()
+      return
+    }
+
+    if context.hasChanges { try? context.save() }
+    let container = context.container
+    let since = full ? nil : defaults.object(forKey: refreshedAtKey) as? Date
+    let now = Date()
+
+    let payload = await Task.detached(priority: .utility) { () -> (
+      chats: [Entry], projects: [ProjectEntry], documents: [DocumentEntry]
+    )? in
+      guard !Task.isCancelled else { return nil }
+      let backgroundContext = ModelContext(container)
+      let chats = Self.threadsToIndex(in: backgroundContext, changedSince: since)
+        .compactMap(Self.entry(for:))
+      guard !Task.isCancelled else { return nil }
+      let projects = Self.projectsToIndex(in: backgroundContext, changedSince: since)
+        .map(Self.projectEntry(for:))
+      guard !Task.isCancelled else { return nil }
+      let documents = Self.documentsToIndex(in: backgroundContext, changedSince: since)
+        .map(Self.documentEntry(for:))
+      guard !Task.isCancelled else { return nil }
+
+      let items =
+        chats.map(Self.item(for:))
+        + projects.map(Self.item(for:))
+        + documents.map(Self.item(for:))
+      if !items.isEmpty {
+        do {
+          try await CSSearchableIndex.default().indexSearchableItems(items)
+        } catch {
+          Log.lifecycle.error("spotlight: \(error.localizedDescription, privacy: .public)")
+        }
+      }
+      return (chats, projects, documents)
+    }.value
+
+    guard !Task.isCancelled, isEnabled, let payload else { return }
+    if !payload.chats.isEmpty { EntityIndexing.indexChats(payload.chats) }
+    if !payload.projects.isEmpty { EntityIndexing.indexProjects(payload.projects) }
+    if !payload.documents.isEmpty { EntityIndexing.indexDocuments(payload.documents) }
+    defaults.set(now, forKey: refreshedAtKey)
+  }
+
   /// The most recent chats, or those changed since `date`.
-  static func threadsToIndex(in context: ModelContext, changedSince date: Date?) -> [ChatThread] {
+  nonisolated static func threadsToIndex(in context: ModelContext, changedSince date: Date?) -> [ChatThread] {
     var descriptor = FetchDescriptor<ChatThread>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
     if let date { descriptor.predicate = #Predicate { $0.updatedAt > date } }
     descriptor.fetchLimit = limit
@@ -196,7 +255,7 @@ enum SpotlightIndex {
   }
 
   /// The most recent projects, or those changed since `date`.
-  static func projectsToIndex(in context: ModelContext, changedSince date: Date?) -> [Project] {
+  nonisolated static func projectsToIndex(in context: ModelContext, changedSince date: Date?) -> [Project] {
     var descriptor = FetchDescriptor<Project>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
     if let date { descriptor.predicate = #Predicate { $0.updatedAt > date } }
     descriptor.fetchLimit = limit
@@ -204,7 +263,7 @@ enum SpotlightIndex {
   }
 
   /// The most recent attached documents, or those added since `date`.
-  static func documentsToIndex(in context: ModelContext, changedSince date: Date?) -> [ChatDocument] {
+  nonisolated static func documentsToIndex(in context: ModelContext, changedSince date: Date?) -> [ChatDocument] {
     var descriptor = FetchDescriptor<ChatDocument>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
     if let date { descriptor.predicate = #Predicate { $0.createdAt > date } }
     descriptor.fetchLimit = limit
@@ -212,12 +271,12 @@ enum SpotlightIndex {
   }
 
   /// The chat a legacy Spotlight result points at.
-  static func chatID(from activity: NSUserActivity) -> UUID? {
+  nonisolated static func chatID(from activity: NSUserActivity) -> UUID? {
     (activity.userInfo?[CSSearchableItemActivityIdentifier] as? String).flatMap(UUID.init(uuidString:))
   }
 
   /// Resolves a Spotlight user activity into an ``AppRouter/Action`` (chat, project, or document).
-  static func action(from activity: NSUserActivity) -> AppRouter.Action? {
+  nonisolated static func action(from activity: NSUserActivity) -> AppRouter.Action? {
     guard let raw = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else {
       return nil
     }

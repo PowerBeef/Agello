@@ -28,7 +28,7 @@ final class SpeechReader: NSObject, AVSpeechSynthesizerDelegate {
       stop()
       return
     }
-    let spoken = MarkdownDocument(parsing: text).plainText
+    let spoken = MarkdownCache.document(for: text).plainText
     guard !spoken.isEmpty else {
       stop()
       return
@@ -36,7 +36,8 @@ final class SpeechReader: NSObject, AVSpeechSynthesizerDelegate {
     // Allocate the replacement utterance before releasing `activeUtterance` so their
     // `ObjectIdentifier`s cannot collide when switching directly from Message A to Message B.
     let utterance = AVSpeechUtterance(string: spoken)
-    utterance.voice = VoiceText.voice(for: NLLanguageRecognizer.dominantLanguage(for: spoken)?.rawValue)
+    let sample = String(spoken.prefix(512))
+    utterance.voice = VoiceText.voice(for: NLLanguageRecognizer.dominantLanguage(for: sample)?.rawValue)
     let wasSpeaking = speakingID != nil || synthesizer.isSpeaking
     activeUtterance = utterance
     activeUtteranceID = ObjectIdentifier(utterance)

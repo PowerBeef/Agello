@@ -4,17 +4,20 @@ import CoreImage
 /// The back camera for voice mode: a live preview, and the latest frame as
 /// a JPEG when the user finishes speaking ("what am I looking at?").
 final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
-  let session = AVCaptureSession()
   private let queue = DispatchQueue(label: "agello.camera")
   private let lock = NSLock()
+  private let contextLock = NSLock()
+  private var captureSession: AVCaptureSession?
   private var latest: CVPixelBuffer?
   private var activeDevice: AVCaptureDevice?
-  private let context = CIContext()
+  private var ciContext: CIContext?
   /// Keeps frames level with the horizon whichever way the phone is held (they were always
   /// rotated for portrait, so a landscape snapshot came out sideways).
   private var rotation: AVCaptureDevice.RotationCoordinator?
   private var rotationObservation: NSKeyValueObservation?
 
+  /// Lazily allocated only once the user enables the camera (zero overhead on audio-only launches).
+  var session: AVCaptureSession? { lock.withLock { captureSession } }
   var captureDevice: AVCaptureDevice? { lock.withLock { activeDevice } }
 
   deinit {
@@ -28,27 +31,34 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
     guard await AVCaptureDevice.requestAccess(for: .video), !Task.isCancelled else { return false }
     return await withCheckedContinuation { continuation in
       queue.async { [self] in
-        if session.inputs.isEmpty {
-          session.beginConfiguration()
-          session.sessionPreset = .hd1280x720
+        let activeSession = lock.withLock {
+          if let existing = captureSession { return existing }
+          let created = AVCaptureSession()
+          captureSession = created
+          return created
+        }
+        if activeSession.inputs.isEmpty {
+          activeSession.beginConfiguration()
+          activeSession.sessionPreset = .hd1280x720
           guard let device = CameraSource.device(),
-            let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input)
+            let input = try? AVCaptureDeviceInput(device: device),
+            activeSession.canAddInput(input)
           else {
-            session.commitConfiguration()
+            activeSession.commitConfiguration()
             continuation.resume(returning: false)
             return
           }
           lock.withLock { activeDevice = device }
-          session.addInput(input)
+          activeSession.addInput(input)
           let output = AVCaptureVideoDataOutput()
           output.alwaysDiscardsLateVideoFrames = true
           output.setSampleBufferDelegate(self, queue: queue)
-          if session.canAddOutput(output) { session.addOutput(output) }
+          if activeSession.canAddOutput(output) { activeSession.addOutput(output) }
           output.connection(with: .video)?.videoRotationAngle = CameraSource.initialRotationAngle
-          session.commitConfiguration()
+          activeSession.commitConfiguration()
           followRotation(of: device, connection: output.connection(with: .video))
         }
-        session.startRunning()
+        activeSession.startRunning()
         continuation.resume(returning: true)
       }
     }
@@ -70,19 +80,34 @@ final class CameraFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, 
   }
 
   func stop() {
+    guard lock.withLock({ captureSession != nil || latest != nil }) else { return }
     queue.async { [self] in
-      session.stopRunning()
+      let activeSession = lock.withLock { captureSession }
+      activeSession?.stopRunning()
       lock.withLock { latest = nil }
     }
   }
 
-  /// The most recent frame as JPEG (sized for the model by ImagePreparer).
+  private func resolveContext() -> CIContext {
+    contextLock.withLock {
+      if let ciContext { return ciContext }
+      let created = CIContext()
+      ciContext = created
+      return created
+    }
+  }
+
+  /// The most recent frame as JPEG (skips redundant decode/re-encode when already within model limits).
   func snapshot() -> Data? {
     guard let pixels = lock.withLock({ latest }) else { return nil }
     let image = CIImage(cvPixelBuffer: pixels)
+    let context = resolveContext()
     guard let cgImage = context.createCGImage(image, from: image.extent),
       let jpeg = ImageDownsampler.jpeg(cgImage, quality: 0.85)
     else { return nil }
+    if max(cgImage.width, cgImage.height) <= ImagePreparer.maxDimension {
+      return jpeg
+    }
     return ImagePreparer.prepare(jpeg) ?? jpeg
   }
 

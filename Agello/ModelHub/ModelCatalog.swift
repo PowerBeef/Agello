@@ -25,10 +25,14 @@ struct ModelSpec: Identifiable, Sendable, Equatable {
     URL(string: "https://huggingface.co/\(repo)/resolve/\(revision)/\(fileName)")!
   }
 
+  private static let byteCountStyle = ByteCountFormatStyle(style: .file)
+
+  static func formatByteCount(_ bytes: Int64) -> String {
+    byteCountStyle.format(bytes)
+  }
+
   var sizeDisplay: String {
-    let formatter = ByteCountFormatter()
-    formatter.countStyle = .file
-    return formatter.string(fromByteCount: sizeBytes)
+    Self.formatByteCount(sizeBytes)
   }
 }
 

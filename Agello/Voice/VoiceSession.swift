@@ -59,6 +59,15 @@ final class VoiceSession: Identifiable {
   @ObservationIgnored private let makeThread: () -> ChatThread
   @ObservationIgnored private var thread: ChatThread?
   @ObservationIgnored private let startWithCamera: Bool
+  /// Cached turns for the active voice reply so 10 Hz flushes never re-scan `thread.orderedTurns`.
+  @ObservationIgnored private var turnBaseLeafID: UUID?
+  @ObservationIgnored private var activeUserTurn: ChatTurn?
+  @ObservationIgnored private var activeReplyTurn: ChatTurn?
+  /// EMA-smoothed mic level and timestamp to throttle `@Observable` `level` writes to ~25 Hz.
+  @ObservationIgnored private var smoothedLevel: Double = 0
+  @ObservationIgnored private var lastLevelPublish: ContinuousClock.Instant?
+
+  private static let levelPublishInterval: Duration = .milliseconds(40)
 
   /// UI tests can't answer the system microphone prompt on device.
   #if DEBUG || BENCH
@@ -203,7 +212,10 @@ final class VoiceSession: Identifiable {
     audio.stop()
     camera.stop()
     cameraOn = false
-    level = 0
+    activeUserTurn = nil
+    activeReplyTurn = nil
+    turnBaseLeafID = nil
+    resetLevel()
   }
 
   func toggleCamera() async {
@@ -234,7 +246,7 @@ final class VoiceSession: Identifiable {
       audio.cancelUtterance()
       vad.reset()
       speechMonitor.resetUtterance()
-      level = 0
+      resetLevel()
       state = .listening
     }
   }
@@ -245,22 +257,34 @@ final class VoiceSession: Identifiable {
     guard state == .speaking || state == .thinking else { return }
     stopReply()
     speechMonitor.resetUtterance()
-    level = 0
+    resetLevel()
     state = .listening
   }
 
   // MARK: Turn-taking
 
+  private func resetLevel() {
+    smoothedLevel = 0
+    lastLevelPublish = nil
+    if level != 0 { level = 0 }
+  }
+
   private func heardLevel(_ level: Float, duration: TimeInterval) {
     guard !ended else { return }
     let assistantBusy = state == .speaking || state == .thinking
-    // React only while actively hearing speech; reset to 0 in all other states so the orb never
-    // freezes at a stale mic scale during thinking or speaking.
+    // React only while actively hearing speech (EMA-smoothed & throttled to ~25 Hz); reset to 0
+    // in all other states so the orb never freezes at a stale mic scale during thinking/speaking.
     if state == .hearing {
-      let shown = Double(max(0, min(1, (level + 60) / 50)))
-      if abs(shown - self.level) >= 0.02 { self.level = shown }
-    } else if self.level != 0 {
-      self.level = 0
+      let raw = Double(max(0, min(1, (level + 60) / 50)))
+      smoothedLevel = smoothedLevel * 0.65 + raw * 0.35
+      let now = ContinuousClock.now
+      let due = lastLevelPublish.map { now - $0 >= Self.levelPublishInterval } ?? true
+      if due, abs(smoothedLevel - self.level) >= 0.02 {
+        self.level = smoothedLevel
+        lastLevelPublish = now
+      }
+    } else {
+      resetLevel()
     }
     // Pause VAD barge-in while a mutating-tool confirmation card awaits physical tap approval.
     guard !muted, state != .starting, pendingToolConfirmation == nil else { return }
@@ -301,18 +325,29 @@ final class VoiceSession: Identifiable {
 
   private func finishUtterance() {
     speechMonitor.resetUtterance()
-    level = 0
-    guard let url = audio.endUtterance() else {
-      state = .listening
-      return
-    }
+    resetLevel()
     state = .thinking
     if !vad.neuralActive { heard = "" }
-    let image = cameraOn ? camera.snapshot() : nil
     turnNumber += 1
     let number = turnNumber
     let previous = turnTask
+    let audioCapture = audio
+    let cameraCapture = camera
+    let shouldCaptureImage = cameraOn
+    // Flush WAV buffers and snapshot the camera frame off MainActor so the orb and UI stay smooth.
+    let captureTask = Task.detached(priority: .userInitiated) { () -> (URL?, Data?) in
+      let url = audioCapture.endUtterance()
+      let image = (url != nil && shouldCaptureImage) ? cameraCapture.snapshot() : nil
+      return (url, image)
+    }
     turnTask = Task { [weak self] in
+      let (capturedURL, image) = await captureTask.value
+      guard let url = capturedURL else {
+        if let self, !self.ended, self.turnNumber == number, self.state == .thinking {
+          self.state = .listening
+        }
+        return
+      }
       // A barge-in stopped the last reply: it finishes stopping first, or this turn would find
       // the engine busy and be dropped (2026-11-16).
       await previous?.value
@@ -330,21 +365,36 @@ final class VoiceSession: Identifiable {
       self.silenced = false
       let thread = self.thread ?? self.makeThread()
       self.thread = thread
+      self.turnBaseLeafID = thread.activeLeafID
+      self.activeUserTurn = nil
+      self.activeReplyTurn = nil
       let accepted = await self.appState.sendVoiceTurn(
         audioFileURL: url, imageData: image, in: thread)
       try? FileManager.default.removeItem(at: url)
       // A newer utterance or closed session owns the orb and transcript now.
       guard !self.ended, self.turnNumber == number else { return }
-      self.heard = thread.orderedTurns.last(where: \.isUser)?.text ?? self.heard
+      self.resolveActiveVoiceTurns()
+      if let userText = self.activeUserTurn?.text, !userText.isEmpty, self.heard != userText {
+        self.heard = userText
+      }
       if !accepted || self.answer.isEmpty, self.state == .thinking { self.state = .listening }
     }
+  }
+
+  private func resolveActiveVoiceTurns() {
+    guard let thread, thread.activeLeafID != turnBaseLeafID else { return }
+    guard activeUserTurn == nil || activeReplyTurn == nil else { return }
+    let turns = thread.orderedTurns
+    if activeReplyTurn == nil { activeReplyTurn = turns.last { !$0.isUser } }
+    if activeUserTurn == nil { activeUserTurn = turns.last(where: \.isUser) }
   }
 
   private func replyUpdated(_ text: String, final: Bool) {
     guard !ended, !silenced else { return }
     answer = text
-    if let userTurn = thread?.orderedTurns.last(where: \.isUser), !userTurn.text.isEmpty {
-      heard = userTurn.text
+    resolveActiveVoiceTurns()
+    if let userText = activeUserTurn?.text, !userText.isEmpty, heard != userText {
+      heard = userText
     }
     if replyLanguage == nil, text.count > 20 {
       replyLanguage = NLLanguageRecognizer.dominantLanguage(for: text)?.rawValue
@@ -354,14 +404,14 @@ final class VoiceSession: Identifiable {
       audio.speak(sentence, language: replyLanguage ?? NLLanguageRecognizer.dominantLanguage(for: sentence)?.rawValue)
     }
     if !ready.isEmpty, state == .thinking {
-      level = 0
+      resetLevel()
       state = .speaking
     }
     if final {
       replyFinished = true
-      latestActionCards = thread?.orderedTurns.last(where: { !$0.isUser })?.parts.actionCards ?? []
+      latestActionCards = activeReplyTurn?.parts.actionCards ?? []
       if !audio.isSpeaking, state != .hearing {
-        level = 0
+        resetLevel()
         state = .listening
       }
     }
@@ -383,13 +433,13 @@ final class VoiceSession: Identifiable {
     vad = NeuralTurnDetector()
     vad.setNeuralActive(neuralActive)
     speechMonitor.resetUtterance()
-    level = 0
+    resetLevel()
     state = available ? .listening : .starting
   }
 
   private func speechFinished() {
     guard !ended else { return }
-    level = 0
+    resetLevel()
     if replyFinished, state == .speaking { state = .listening }
   }
 

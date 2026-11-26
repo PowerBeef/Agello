@@ -7,7 +7,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     _ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
     completionHandler: @escaping () -> Void
   ) {
-    guard identifier == BackgroundDownloads.identifier else { return completionHandler() }
+    guard AppBootstrap.shouldBootstrap, identifier == BackgroundDownloads.identifier else {
+      return completionHandler()
+    }
     BackgroundDownloads.completionHandler = completionHandler
     // Reconnect to the session so its pending events are delivered.
     _ = BackgroundDownloads.session
@@ -17,16 +19,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 @main
 struct AgelloApp: App {
   @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-  @State private var appState: AppState
-  @State private var shell: ShellModel
+  @State private var appState: AppState?
+  @State private var shell: ShellModel?
   @Environment(\.scenePhase) private var scenePhase
-  let container: ModelContainer
+  private let container: ModelContainer?
 
   init() {
-    let bootstrap = AppBootstrap()
-    container = bootstrap.container
-    _appState = State(initialValue: bootstrap.appState)
-    _shell = State(initialValue: bootstrap.shell)
+    let bootstrap = AppBootstrap.makeIfSupported()
+    container = bootstrap?.container
+    _appState = State(initialValue: bootstrap?.appState)
+    _shell = State(initialValue: bootstrap?.shell)
   }
 
   var body: some Scene {
@@ -37,25 +39,25 @@ struct AgelloApp: App {
         // Below the hardware floor (12 GB): nothing loads, nothing downloads.
         UnsupportedDeviceView()
           .preferredColorScheme(.dark)
-      } else {
+      } else if let appState, let shell, let container {
         ContentView()
           .environment(appState)
           .environment(shell)
+          .modelContainer(container)
           // One tuned dark theme (see Theme).
           .preferredColorScheme(.dark)
           .tint(Theme.Brand.glacier)
-      }
-    }
-    .modelContainer(container)
-    .onChange(of: scenePhase) { _, phase in
-      Log.lifecycle.info(
-        "scenePhase=\(String(describing: phase), privacy: .public) generating=\(appState.isGenerating)"
-      )
-      ReplyTrace.mark("scene \(String(describing: phase))")
-      switch phase {
-      case .background: appState.enterBackground()
-      case .active: appState.enterForeground()
-      default: break
+          .onChange(of: scenePhase) { _, phase in
+            Log.lifecycle.info(
+              "scenePhase=\(String(describing: phase), privacy: .public) generating=\(appState.isGenerating)"
+            )
+            ReplyTrace.mark("scene \(String(describing: phase))")
+            switch phase {
+            case .background: appState.enterBackground()
+            case .active: appState.enterForeground()
+            default: break
+            }
+          }
       }
     }
   }

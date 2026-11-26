@@ -890,19 +890,23 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     defer { Self.signposter.endInterval("Reply", replyInterval) }
     // Tool calls run inside LiteRT-LM and never appear in streamed chunks;
     // report the tools that actually ran (status line, chips, parts).
-    let toolCursor = ToolActivity.cursor
+    var toolCursor = ToolActivity.cursor
     var reportedTools = 0
     func newToolActivity() -> [ToolActivityRecord] {
+      let current = ToolActivity.cursor
+      guard current > toolCursor else { return [] }
       let records = ToolActivity.records(since: toolCursor)
-      defer { reportedTools = records.count }
-      return Array(records.dropFirst(reportedTools))
+      toolCursor += records.count
+      reportedTools += records.count
+      return records
     }
-    let cardCursor = ToolCardRecorder.cursor
-    var reportedCards = 0
+    var cardCursor = ToolCardRecorder.cursor
     func newActionCards() -> [ActionCardRecord] {
+      let current = ToolCardRecorder.cursor
+      guard current > cardCursor else { return [] }
       let cards = ToolCardRecorder.records(since: cardCursor)
-      defer { reportedCards = cards.count }
-      return Array(cards.dropFirst(reportedCards))
+      cardCursor = max(current, cardCursor + cards.count)
+      return cards
     }
 
     do {
@@ -946,12 +950,15 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         }
         let activity = newToolActivity()
         let cards = newActionCards()
+        let toolNames =
+          chunk.toolCalls.isEmpty && activity.isEmpty
+          ? [] : chunk.toolCalls.map(\.name) + activity.map(\.name)
         continuation.yield(
           .chunk(
             ChatChunk(
               textDelta: chunk.toString,
               thoughtDelta: thought,
-              toolNames: chunk.toolCalls.map(\.name) + activity.map(\.name),
+              toolNames: toolNames,
               toolActivity: activity,
               actionCards: cards
             )))
@@ -1058,4 +1065,3 @@ actor LiteRTChatEngine: ChatEngineProtocol {
     }
   }
 }
-

@@ -78,18 +78,33 @@ struct LitTintBackground<S: InsettableShape>: View {
   var body: some View {
     shape
       .fill(fillStyle)
-      .overlay { shape.stroke(Color.white.opacity(0.16), lineWidth: 0.8) }
-      .overlay { shape.inset(by: 0.65).stroke(Color.white.opacity(0.06), lineWidth: 0.55) }
-      .overlay {
-        shape.stroke(Color.white.opacity(0.22), lineWidth: 0.6)
-          .mask(LinearGradient(colors: [.white, .clear], startPoint: .top, endPoint: .center))
-      }
       .shadow(
         color: reduceTransparency || !isEnabled
           ? .clear : (strength == .primary ? Theme.Elevation.ctaGlow(tint) : Theme.Elevation.glow(tint)),
         radius: strength == .primary ? Theme.Elevation.ctaGlowRadius : Theme.Elevation.glowRadius,
         y: strength == .primary ? 4 : 1
       )
+      .overlay {
+        shape
+          .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.8)
+          .allowsHitTesting(false)
+      }
+      .overlay {
+        shape
+          .inset(by: 0.65)
+          .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.55)
+          .allowsHitTesting(false)
+      }
+      .overlay {
+        shape
+          .strokeBorder(
+            LinearGradient(
+              colors: [Color.white.opacity(0.22), .clear],
+              startPoint: .top, endPoint: .center),
+            lineWidth: 0.6
+          )
+          .allowsHitTesting(false)
+      }
   }
 
   private var fillStyle: AnyShapeStyle {

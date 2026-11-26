@@ -94,6 +94,13 @@ final class MetricsReporter: NSObject, MXMetricManagerSubscriber, @unchecked Sen
     return summarize(payloads: payloads)
   }
 
+  /// Summarize all saved MetricKit JSON files off the main actor.
+  static func summarizeAsync(in folder: URL? = nil) async -> TelemetrySummary {
+    await Task.detached(priority: .utility) {
+      Self.summarize(in: folder)
+    }.value
+  }
+
   /// Pure summarizer over raw MetricKit JSON payloads (classic and iOS 27 formats).
   static func summarize(payloads: [(name: String, data: Data)]) -> TelemetrySummary {
     var summary = TelemetrySummary()

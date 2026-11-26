@@ -3,15 +3,16 @@ import SwiftUI
 
 /// Settings: the model's status on top, then what people change
 /// (personalization, memory, web search, Spotlight, models, tools), help and
-/// about. The engine's choices aren't settings: the app makes them. Everything
-/// applies live (via `onChange`). Five taps on the version line open
-/// ``DeveloperSettingsView``.
+/// about. The engine's choices aren't settings: the app makes them. Engine
+/// changes coalesce and apply once when Settings closes. Five taps on the
+/// version line open ``DeveloperSettingsView``.
 struct SettingsView: View {
   @Environment(AppState.self) private var appState
   @Environment(\.dismiss) private var dismiss
   @Environment(\.dynamicTypeSize) private var typeSize
   @AppStorage(SpotlightIndex.enabledKey) private var spotlightEnabled = true
   @State private var showDeveloper = false
+  @State private var spotlightTask: Task<Void, Never>?
 
   private var bindable: Bindable<AppState> { Bindable(appState) }
 
@@ -33,10 +34,10 @@ struct SettingsView: View {
             .accessibilityIdentifier("settings.done")
         }
       }
-      .appliesEngineSettings(appState)
       // On the Form, not on a row: a destination inside a lazy container isn't always found.
       .navigationDestination(isPresented: $showDeveloper) { DeveloperSettingsView() }
     }
+    .appliesEngineSettings(appState)
   }
 
   // MARK: - Status
@@ -148,7 +149,14 @@ struct SettingsView: View {
       }
       .themedRow()
       .onChange(of: spotlightEnabled) {
-        if let context = appState.modelContext { SpotlightIndex.refresh(in: context, full: true) }
+        spotlightTask?.cancel()
+        guard let context = appState.modelContext else { return }
+        spotlightTask = Task(priority: .utility) {
+          // Wait for the UISwitch animation to finish before indexing/clearing up to 900 records.
+          try? await Task.sleep(for: .milliseconds(300))
+          guard !Task.isCancelled else { return }
+          await SpotlightIndex.refreshAsync(in: context, full: true)
+        }
       }
       .accessibilityIdentifier("settings.spotlight")
       ShortcutsLink()

@@ -54,6 +54,8 @@ struct ChatComposerView: View {
 
   @State private var draft = ""
   @State private var pendingImage: Data?
+  @State private var pendingImageID = UUID()
+  @State private var pendingThumbnail: CGImage?
   @State private var photoItem: PhotosPickerItem?
   @State private var recorder = AudioRecorder()
   @State private var liveDictation = LiveDictation()
@@ -122,7 +124,7 @@ struct ChatComposerView: View {
       guard old != nil else { return }
       editingTurn = nil
       draft = ""
-      pendingImage = nil
+      setPendingImage(nil)
       // Files, the Search toggle and a voice message belong to the chat they were added in.
       composerGeneration += 1
       for task in fileReads.values { task.cancel() }
@@ -153,6 +155,18 @@ struct ChatComposerView: View {
       dictating = false
       liveDictation.cancel()
       recorder.stop()
+    }
+    .task(id: pendingImageID) {
+      guard let data = pendingImage else {
+        pendingThumbnail = nil
+        return
+      }
+      // 256 pixels cover the 44-point square at 3x, whatever the photo's shape.
+      let decoded = await Task.detached(priority: .userInitiated) {
+        ImageDownsampler.cgImage(from: data, maxPixels: 256)
+      }.value
+      guard !Task.isCancelled else { return }
+      pendingThumbnail = decoded
     }
     .onAppear {
       // Debug and Bench builds only (2026-11-17).
@@ -219,10 +233,16 @@ struct ChatComposerView: View {
 
   // MARK: - Editing & preparing bars
 
+  private func setPendingImage(_ data: Data?) {
+    pendingImage = data
+    pendingThumbnail = nil
+    pendingImageID = UUID()
+  }
+
   private func startEditing(_ turn: ChatTurn) {
     editingTurn = turn
     draft = turn.text
-    pendingImage = nil
+    setPendingImage(nil)
     recorder.discard()
     inputFocused = true
   }
@@ -307,51 +327,38 @@ struct ChatComposerView: View {
     }
     if pendingImage != nil || recorder.finishedURL != nil || recorder.isRecording || liveDictation.isListening {
       HStack(spacing: Theme.Spacing.sm) {
-        // 256 pixels cover the 44-point square at 3x, whatever the photo's shape.
-        if let data = pendingImage, let thumbnail = ImageDownsampler.cgImage(from: data, maxPixels: 256) {
+        if pendingImage != nil {
           Button {
-            pendingImage = nil
+            setPendingImage(nil)
           } label: {
-            Image(decorative: thumbnail, scale: 1)
-              .resizable()
-              .scaledToFill()
-              .frame(width: Theme.Size.target, height: Theme.Size.target)
-              .clipShape(.rect(cornerRadius: Theme.Radius.row, style: .continuous))
-              .overlay {
-                RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
-                  .stroke(Theme.Surface.stroke, lineWidth: Theme.Stroke.hairline)
+            Group {
+              if let thumbnail = pendingThumbnail {
+                Image(decorative: thumbnail, scale: 1)
+                  .resizable()
+                  .scaledToFill()
+              } else {
+                Rectangle().fill(Theme.Surface.stage)
               }
+            }
+            .frame(width: Theme.Size.target, height: Theme.Size.target)
+            .clipShape(.rect(cornerRadius: Theme.Radius.row, style: .continuous))
+            .overlay {
+              RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+                .stroke(Theme.Surface.stroke, lineWidth: Theme.Stroke.hairline)
+            }
           }
           .buttonStyle(.plain)
           .accessibilityLabel("Photo")
           .accessibilityHint("Removes the photo")
         }
         if liveDictation.isListening {
-          Label(
-            String(format: String(localized: "Listening… %.0fs"), liveDictation.elapsed),
-            systemImage: "waveform"
-          )
-          .font(.system(.caption, weight: .medium))
-          .monospacedDigit()
-          .foregroundStyle(Theme.Text.primary)
-          .padding(.horizontal, Theme.Spacing.md)
-          .frame(minHeight: Theme.Size.pill)
-          .background { LitTintBackground(shape: Capsule(), tint: Theme.Status.critical, strength: .pill) }
-          .accessibilityIdentifier("composer.recording")
+          ComposerElapsedBadge(mode: .dictation)
+            .id("live-dictation")
         } else if recorder.isRecording {
-          Label(
-            dictating
-              ? String(format: String(localized: "Listening… %.0fs"), recorder.elapsed)
-              : String(format: "%.0fs / %.0fs", recorder.elapsed, AudioRecorder.maxDuration),
-            systemImage: dictating ? "waveform" : "record.circle"
+          ComposerElapsedBadge(
+            mode: dictating ? .dictation : .voiceMessage(maxDuration: AudioRecorder.maxDuration)
           )
-          .font(.system(.caption, weight: .medium))
-          .monospacedDigit()
-          .foregroundStyle(Theme.Text.primary)
-          .padding(.horizontal, Theme.Spacing.md)
-          .frame(minHeight: Theme.Size.pill)
-          .background { LitTintBackground(shape: Capsule(), tint: Theme.Status.critical, strength: .pill) }
-          .accessibilityIdentifier("composer.recording")
+          .id(dictating ? "fallback-dictation" : "voice-recording")
           if !dictating {
             Button("Stop") { recorder.stop() }
               .font(.system(.footnote, weight: .semibold))
@@ -377,7 +384,7 @@ struct ChatComposerView: View {
         Spacer()
         if pendingImage != nil || recorder.finishedURL != nil {
           Button("Clear") {
-            pendingImage = nil
+            setPendingImage(nil)
             recorder.discard()
           }
           .font(.system(.footnote, weight: .semibold))
@@ -442,7 +449,7 @@ struct ChatComposerView: View {
             ImagePreparer.prepare(data) ?? data
           }.value
           guard generation == composerGeneration, !Task.isCancelled else { return }
-          pendingImage = prepared
+          setPendingImage(prepared)
         } catch {
           guard generation == composerGeneration, !Task.isCancelled, !(error is CancellationError) else {
             return
@@ -452,7 +459,7 @@ struct ChatComposerView: View {
       }
     }
     .captureSources(camera: $showCamera, scanner: $showScanner) { data in
-      pendingImage = data
+      setPendingImage(data)
       inputFocused = true
     } onScan: { pages in
       read { try await DocumentIngestor.extract(scannedPages: pages, name: scanName()) }
@@ -768,7 +775,7 @@ struct ChatComposerView: View {
     guard !isReadingFiles, !recorder.isRecording, !recorder.isStarting,
       !liveDictation.isListening, !liveDictation.isStarting, !appState.isTranscribing
     else { return false }
-    return !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    return draft.contains { !$0.isWhitespace && !$0.isNewline }
       || pendingImage != nil || voiceMessageURL != nil || !pendingFiles.isEmpty
   }
 
@@ -796,7 +803,7 @@ struct ChatComposerView: View {
     let files = pendingFiles
     let webSearch = bridge.searchWeb
     draft = ""
-    pendingImage = nil
+    setPendingImage(nil)
     pendingFiles = []
     bridge.searchWeb = false
     inputFocused = false
@@ -823,10 +830,52 @@ struct ChatComposerView: View {
         for document in documents { appState.knowledge.delete(document) }
         guard generation == composerGeneration else { return }
         if draft.isEmpty { draft = text }
-        if pendingImage == nil { pendingImage = image }
+        if pendingImage == nil { setPendingImage(image) }
         if pendingFiles.isEmpty { pendingFiles = files }
         bridge.searchWeb = webSearch
       }
+    }
+  }
+}
+
+/// Isolated 1 Hz elapsed indicator for live dictation and voice message recording so
+/// `ChatComposerView.body` never re-diffs on every 4 Hz recorder timer tick.
+private struct ComposerElapsedBadge: View {
+  enum Mode: Equatable {
+    case dictation
+    case voiceMessage(maxDuration: TimeInterval)
+  }
+
+  let mode: Mode
+  @State private var startedAt = Date.now
+
+  var body: some View {
+    TimelineView(.periodic(from: startedAt, by: 1.0)) { context in
+      let elapsed = max(0, context.date.timeIntervalSince(startedAt))
+      Label(labelText(elapsed: elapsed), systemImage: symbol)
+        .font(.system(.caption, weight: .medium))
+        .monospacedDigit()
+        .foregroundStyle(Theme.Text.primary)
+        .padding(.horizontal, Theme.Spacing.md)
+        .frame(minHeight: Theme.Size.pill)
+        .background { LitTintBackground(shape: Capsule(), tint: Theme.Status.critical, strength: .pill) }
+        .accessibilityIdentifier("composer.recording")
+    }
+  }
+
+  private var symbol: String {
+    switch mode {
+    case .dictation: "waveform"
+    case .voiceMessage: "record.circle"
+    }
+  }
+
+  private func labelText(elapsed: TimeInterval) -> String {
+    switch mode {
+    case .dictation:
+      String(format: String(localized: "Listening… %.0fs"), elapsed)
+    case .voiceMessage(let maxDuration):
+      String(format: "%.0fs / %.0fs", min(elapsed, maxDuration), maxDuration)
     }
   }
 }

@@ -4,7 +4,6 @@ import SwiftUI
 /// reacts to the voices, live captions, the camera, mute, and end.
 struct VoiceModeView: View {
   @Environment(\.dismiss) private var dismiss
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.verticalSizeClass) private var verticalSizeClass
   @Environment(ShellModel.self) private var shell: ShellModel?
   let session: VoiceSession
@@ -22,8 +21,8 @@ struct VoiceModeView: View {
         ScrollViewReader { proxy in
           ScrollView {
             VStack(spacing: isCompact ? Theme.Spacing.md : Theme.Spacing.xl) {
-              if session.cameraOn {
-                CameraPreview(session: session.camera.session, device: session.camera.captureDevice)
+              if session.cameraOn, let captureSession = session.camera.session {
+                CameraPreview(session: captureSession, device: session.camera.captureDevice)
                   .clipShape(.rect(cornerRadius: Theme.Radius.composer, style: .continuous))
                   .overlay {
                     RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous)
@@ -38,7 +37,7 @@ struct VoiceModeView: View {
               } else {
                 Spacer(minLength: 0)
               }
-              orb(isCompact: isCompact)
+              VoiceOrbView(session: session, isCompact: isCompact, tint: tint)
               Text(session.state.label)
                 .font(.system(.headline, weight: .semibold))
                 .foregroundStyle(Theme.Text.secondary)
@@ -111,53 +110,6 @@ struct VoiceModeView: View {
     .preferredColorScheme(.dark)
   }
 
-  private func orb(isCompact: Bool) -> some View {
-    let active = session.state == .hearing
-    let size: CGFloat =
-      if isCompact {
-        session.pendingToolConfirmation != nil ? 64 : (session.cameraOn ? 72 : 112)
-      } else {
-        session.pendingToolConfirmation != nil ? 80 : (session.cameraOn ? 96 : 200)
-      }
-    let scale = 1 + (active ? session.level * 0.35 : 0)
-    let core = ZStack {
-      // Halo: a soft bloom in the voice color.
-      Circle()
-        .fill(tint.opacity(0.35))
-        .blur(radius: size * 0.22)
-        .scaleEffect(1.25)
-      // Core: warm light at the center fading to deep gold.
-      Circle()
-        .fill(
-          RadialGradient(
-            colors: [Theme.Text.primary, tint, tint.mix(with: .black, by: 0.55, in: .perceptual)],
-            center: UnitPoint(x: 0.42, y: 0.38), startRadius: 2, endRadius: size * 0.62))
-      Circle()
-        .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
-    }
-    .frame(width: size, height: size)
-    .scaleEffect(reduceMotion ? 1 : scale)
-    .opacity(session.state == .thinking ? 0.75 : 1)
-    .appAnimation(Theme.Motion.stateChange, value: session.level)
-    .appAnimation(Theme.Motion.slide, value: session.cameraOn)
-    .appAnimation(Theme.Motion.slide, value: session.pendingToolConfirmation != nil)
-    return Group {
-      if reduceMotion {
-        core
-      } else {
-        core.phaseAnimator([1.0, 1.06]) { view, pulse in
-          view.scaleEffect(session.state == .thinking || session.state == .speaking ? pulse : 1)
-        } animation: { _ in .easeInOut(duration: 0.9) }
-      }
-    }
-    .contentShape(Circle())
-    .onTapGesture { session.interrupt() }
-    .accessibilityLabel("Voice conversation")
-    .accessibilityValue(session.state.label)
-    .accessibilityHint("Double-tap to interrupt the answer")
-    .accessibilityAddTraits(.isButton)
-  }
-
   /// The words being said, newest at the bottom: a long answer scrolls rather than stopping at
   /// six lines of its start.
   @ViewBuilder
@@ -226,5 +178,75 @@ struct VoiceModeView: View {
       .accessibilityLabel("End voice mode")
       .accessibilityIdentifier("voice.end")
     }
+  }
+}
+
+/// Isolated orb view so ~25 Hz `session.level` updates never re-diff the rest of ``VoiceModeView``.
+/// Uses a zero-offscreen-pass `RadialGradient` halo instead of an animated Gaussian blur and runs
+/// `phaseAnimator` strictly while `.thinking` or `.speaking` (0 frames while idle `.listening`).
+private struct VoiceOrbView: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let session: VoiceSession
+  let isCompact: Bool
+  let tint: Color
+
+  var body: some View {
+    let active = session.state == .hearing
+    let hasConfirmation = session.pendingToolConfirmation != nil
+    let size: CGFloat =
+      if isCompact {
+        hasConfirmation ? 64 : (session.cameraOn ? 72 : 112)
+      } else {
+        hasConfirmation ? 80 : (session.cameraOn ? 96 : 200)
+      }
+    let scale = 1 + (active ? session.level * 0.35 : 0)
+    let shouldPulse = !reduceMotion && (session.state == .thinking || session.state == .speaking)
+    let core = ZStack {
+      // Halo: zero-offscreen-pass soft radial bloom replacing a 44 pt Gaussian `.blur`.
+      Circle()
+        .fill(
+          RadialGradient(
+            stops: [
+              .init(color: tint.opacity(0.32), location: 0.0),
+              .init(color: tint.opacity(0.22), location: 0.48),
+              .init(color: tint.opacity(0.08), location: 0.72),
+              .init(color: .clear, location: 1.0),
+            ],
+            center: .center, startRadius: 0, endRadius: size * 0.92))
+        .frame(width: size * 1.84, height: size * 1.84)
+        .allowsHitTesting(false)
+      // Core: warm light at the center fading to deep gold.
+      Circle()
+        .fill(
+          RadialGradient(
+            colors: [Theme.Text.primary, tint, tint.mix(with: .black, by: 0.55, in: .perceptual)],
+            center: UnitPoint(x: 0.42, y: 0.38), startRadius: 2, endRadius: size * 0.62))
+        .frame(width: size, height: size)
+      Circle()
+        .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
+        .frame(width: size, height: size)
+    }
+    .frame(width: size, height: size)
+    .scaleEffect(reduceMotion ? 1 : scale)
+    .opacity(session.state == .thinking ? 0.75 : 1)
+    .appAnimation(Theme.Motion.stateChange, value: session.level)
+    .appAnimation(Theme.Motion.slide, value: session.cameraOn)
+    .appAnimation(Theme.Motion.slide, value: hasConfirmation)
+
+    Group {
+      if shouldPulse {
+        core.phaseAnimator([1.0, 1.06]) { view, pulse in
+          view.scaleEffect(pulse)
+        } animation: { _ in .easeInOut(duration: 0.9) }
+      } else {
+        core
+      }
+    }
+    .contentShape(Circle())
+    .onTapGesture { session.interrupt() }
+    .accessibilityLabel("Voice conversation")
+    .accessibilityValue(session.state.label)
+    .accessibilityHint("Double-tap to interrupt the answer")
+    .accessibilityAddTraits(.isButton)
   }
 }

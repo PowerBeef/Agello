@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import Synchronization
 
 /// The current schema's models (see `Schema/` and ``ChatMigrationPlan``).
 typealias ChatThread = SchemaV3.ChatThread
@@ -144,18 +145,96 @@ extension SchemaV3.ChatTurn {
   var stats: GenerationStats? {
     get {
       guard let statsData else { return nil }
-      return try? JSONDecoder().decode(GenerationStats.self, from: statsData)
+      if let cached = TurnJSONCache.stats.value(for: id, data: statsData) { return cached }
+      guard let decoded = TurnJSONCache.decode(GenerationStats.self, from: statsData) else { return nil }
+      TurnJSONCache.stats.store(decoded, for: id, data: statsData)
+      return decoded
     }
-    set { statsData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+    set {
+      let encoded = newValue.flatMap { TurnJSONCache.encode($0) }
+      statsData = encoded
+      if let newValue, let encoded {
+        TurnJSONCache.stats.store(newValue, for: id, data: encoded)
+      } else {
+        TurnJSONCache.stats.remove(for: id)
+      }
+    }
   }
 
   var parts: MessageParts {
     get {
-      guard let partsData, let decoded = try? JSONDecoder().decode(MessageParts.self, from: partsData)
-      else { return MessageParts() }
+      guard let partsData else { return MessageParts() }
+      if let cached = TurnJSONCache.parts.value(for: id, data: partsData) { return cached }
+      guard let decoded = TurnJSONCache.decode(MessageParts.self, from: partsData) else { return MessageParts() }
+      TurnJSONCache.parts.store(decoded, for: id, data: partsData)
       return decoded
     }
-    set { partsData = newValue.isEmpty ? nil : try? JSONEncoder().encode(newValue) }
+    set {
+      if newValue.isEmpty {
+        partsData = nil
+        TurnJSONCache.parts.remove(for: id)
+      } else if let encoded = TurnJSONCache.encode(newValue) {
+        partsData = encoded
+        TurnJSONCache.parts.store(newValue, for: id, data: encoded)
+      } else {
+        partsData = nil
+        TurnJSONCache.parts.remove(for: id)
+      }
+    }
+  }
+}
+
+private final class TurnPayloadCache<Value: Sendable>: @unchecked Sendable {
+  private final class Entry: NSObject {
+    let data: Data
+    let value: Value
+    init(data: Data, value: Value) {
+      self.data = data
+      self.value = value
+    }
+  }
+
+  private let cache: NSCache<NSUUID, Entry>
+
+  init(countLimit: Int, totalCostLimit: Int) {
+    let cache = NSCache<NSUUID, Entry>()
+    cache.countLimit = countLimit
+    cache.totalCostLimit = totalCostLimit
+    self.cache = cache
+  }
+
+  func value(for id: UUID, data: Data) -> Value? {
+    guard let hit = cache.object(forKey: id as NSUUID), hit.data == data else { return nil }
+    return hit.value
+  }
+
+  func store(_ value: Value, for id: UUID, data: Data) {
+    cache.setObject(Entry(data: data, value: value), forKey: id as NSUUID, cost: data.count)
+  }
+
+  func remove(for id: UUID) {
+    cache.removeObject(forKey: id as NSUUID)
+  }
+}
+
+/// Bounded in-memory cache and shared coders for `ChatTurn.parts` / `ChatTurn.stats` JSON blobs,
+/// keyed by `(turn.id, data)` so repeated SwiftUI renders avoid per-frame `JSONDecoder` churn.
+private enum TurnJSONCache {
+  private struct CoderBox: @unchecked Sendable {
+    let decoder = JSONDecoder()
+    let encoder = JSONEncoder()
+  }
+
+  private static let coders = Mutex(CoderBox())
+  static let parts = TurnPayloadCache<MessageParts>(countLimit: 512, totalCostLimit: 4 * 1024 * 1024)
+  static let stats = TurnPayloadCache<GenerationStats>(countLimit: 512, totalCostLimit: 512 * 1024)
+
+  static func decode<T: Decodable & Sendable>(_ type: T.Type, from data: Data) -> T? {
+    coders.withLock { try? $0.decoder.decode(type, from: data) }
+  }
+
+  static func encode<T: Encodable & Sendable>(_ value: T) -> Data? {
+    coders.withLock { try? $0.encoder.encode(value) }
   }
 }
 

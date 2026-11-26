@@ -190,9 +190,16 @@ extension AppState {
     // Preserve pre-send cards (e.g. Search ON Apple Maps) across mid-stream flushes.
     let initialActionCards = reply.parts.actionCards
     var lastFlush = ContinuousClock.now
+    var lastThermalCheck = lastFlush
+    var flushInterval = ThermalPolicy.current.streamFlushInterval
+    var hasFlushedText = false
+    var hasFlushedThought = false
+    var partsDirty = false
+    var lastVoiceAnswer: String?
     func flush(final: Bool = false) {
       let flushStarted = ContinuousClock.now
       defer { ReplyTrace.measure("chat write", since: flushStarted) }
+      var textChanged = false
       var voiceAnswerToNotify: String?
       if let voiceTurn {
         // "⟦what the user said⟧ answer": the transcript becomes the user's
@@ -206,26 +213,45 @@ extension AppState {
             thread.title = Self.title(prompt: heard, hasImage: false)
           }
         }
-        reply.text = split.answer
-        voiceAnswerToNotify = split.answer
-      } else {
+        if reply.text != split.answer {
+          reply.text = split.answer
+          textChanged = true
+        }
+        if final || lastVoiceAnswer != split.answer {
+          lastVoiceAnswer = split.answer
+          voiceAnswerToNotify = split.answer
+        }
+      } else if reply.text != accumulator.text {
         reply.text = accumulator.text
+        textChanged = true
       }
-      reply.thought = accumulator.thought
+      if !accumulator.text.isEmpty { hasFlushedText = true }
+      if reply.thought != accumulator.thought { reply.thought = accumulator.thought }
+      if !accumulator.thought.isEmpty { hasFlushedThought = true }
       if reply.toolNames != accumulator.toolNames { reply.toolNames = accumulator.toolNames }
-      let mergedCards = ActionCards.merge(initialActionCards, accumulator.actionCards)
-      let currentParts = reply.parts
-      if currentParts.toolActivity != accumulator.toolActivity || currentParts.actionCards != mergedCards {
-        var parts = currentParts
-        parts.toolActivity = accumulator.toolActivity
-        parts.actionCards = mergedCards
-        reply.parts = parts
+      if partsDirty {
+        partsDirty = false
+        let mergedCards = ActionCards.merge(initialActionCards, accumulator.actionCards)
+        let currentParts = reply.parts
+        if currentParts.toolActivity != accumulator.toolActivity || currentParts.actionCards != mergedCards {
+          var parts = currentParts
+          parts.toolActivity = accumulator.toolActivity
+          parts.actionCards = mergedCards
+          reply.parts = parts
+        }
       }
       if let voiceAnswerToNotify {
         onVoiceReply?(voiceAnswerToNotify, final)
       }
-      lastFlush = .now
-      BackgroundWork.shared.replyProgress(characters: reply.text.count)
+      let now = ContinuousClock.now
+      lastFlush = now
+      if now - lastThermalCheck >= .seconds(1) {
+        lastThermalCheck = now
+        flushInterval = ThermalPolicy.current.streamFlushInterval
+      }
+      if textChanged || final {
+        BackgroundWork.shared.replyProgress(characters: reply.text.count)
+      }
     }
     toolStatus = nil
     defer { toolStatus = nil }
@@ -236,9 +262,14 @@ extension AppState {
         switch event {
         case .chunk(let chunk):
           accumulator.append(chunk)
+          if !chunk.toolActivity.isEmpty || !chunk.actionCards.isEmpty {
+            partsDirty = true
+          }
+          var flushNow = false
           if let latest = chunk.toolActivity.last, toolStatus != latest.summary {
             toolStatus = latest.summary
             toolSteps += 1
+            flushNow = true
             if !BackgroundWork.shared.isPendingOrActive, options.enableThinking {
               beginBackgroundWork(
                 title: String(localized: "Researching"),
@@ -248,7 +279,15 @@ extension AppState {
             BackgroundWork.shared.stepProgress(
               completed: toolSteps, total: max(toolSteps + 1, 4), subtitle: latest.summary)
           }
-          if ContinuousClock.now - lastFlush >= ThermalPolicy.current.streamFlushInterval {
+          if !chunk.toolNames.isEmpty {
+            flushNow = true
+          }
+          if (!hasFlushedText && !accumulator.text.isEmpty)
+            || (!hasFlushedThought && !accumulator.thought.isEmpty)
+          {
+            flushNow = true
+          }
+          if flushNow || ContinuousClock.now - lastFlush >= flushInterval {
             flush()
             stopIfMemoryIsExhausted()
           }

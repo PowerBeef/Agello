@@ -219,6 +219,8 @@ enum WebContext {
   /// form slipped past every check until 2026-11-16).
   static let citationMarker = #"\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\]"#
 
+  private static let linkMarkerRegex = try? NSRegularExpression(pattern: citationMarker + #"(?!\()"#)
+
   /// "[1]" markers turned into markdown links to their sources (outside code). A marker for a
   /// source without an address (a file) stays as it is; one that matches no source is dropped
   /// with the space before it: the model copies a page's own footnote numbers ("[42]" with eight
@@ -238,7 +240,7 @@ enum WebContext {
         output += line
         continue
       }
-      if inFence {
+      if inFence || !line.contains("[") {
         output += line
         continue
       }
@@ -252,10 +254,12 @@ enum WebContext {
   }
 
   private static func linkMarkers(_ text: String, urls: [Int: String], known: Set<Int>) -> String {
-    guard let regex = try? NSRegularExpression(pattern: citationMarker + #"(?!\()"#) else { return text }
+    guard text.contains("["), let regex = linkMarkerRegex else { return text }
+    let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+    guard !matches.isEmpty else { return text }
     var output = ""
     var last = text.startIndex
-    for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+    for match in matches {
       guard let range = Range(match.range, in: text), let numbersRange = Range(match.range(at: 1), in: text)
       else { continue }
       let numbers = text[numbersRange].split(separator: ",").compactMap {
@@ -283,7 +287,7 @@ enum WebContext {
       }
       last = range.upperBound
     }
-    return output + text[last...]
+    return last == text.startIndex ? text : output + text[last...]
   }
 }
 

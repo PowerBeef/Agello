@@ -6,11 +6,11 @@ import Foundation
 enum MarkdownStream {
   /// Where `text` can be cut so that parsing the two parts gives the blocks of parsing it whole:
   /// after the last blank line outside code fences and display math whose next line can't
-  /// continue the block before it (a list item, quote, table row, indented line or setext
-  /// underline could). The prefix is empty when there's no such place.
+  /// continue the block before it (a list item or indented line could). The prefix is empty when
+  /// there's no such place.
   static func stableSplit(_ text: String) -> (prefix: Substring, tail: Substring) {
     var inFence = false
-    var fenceMarker = ""
+    var fenceMarker: Substring = ""
     var inMath = false
     var cut = text.startIndex
     var pendingCut: String.Index?
@@ -19,7 +19,7 @@ enum MarkdownStream {
     while index < text.endIndex {
       let lineEnd = text[index...].firstIndex(of: "\n") ?? text.endIndex
       let line = text[index..<lineEnd]
-      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      let trimmed = line.drop { $0 == " " || $0 == "\t" || $0 == "\r" }
       let blank = trimmed.isEmpty
       if let candidate = pendingCut, !blank {
         // The first non-blank line after a blank one decides whether the cut is safe.
@@ -32,7 +32,7 @@ enum MarkdownStream {
         if trimmed.contains("$$") || trimmed.contains("\\]") { inMath = false }
       } else if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
         inFence = true
-        fenceMarker = String(trimmed.prefix(3))
+        fenceMarker = trimmed.prefix(3)
       } else if trimmed.hasPrefix("$$") || trimmed.hasPrefix("\\[") {
         // A single line holding both delimiters opens and closes it.
         let rest = trimmed.dropFirst(2)
@@ -47,12 +47,30 @@ enum MarkdownStream {
     return (text[..<cut], text[cut...])
   }
 
-  /// Whether `line` can belong to the block before a blank line.
+  /// Whether a previously committed stable `prefix` is still a valid cut inside `text`.
+  static func canReuseStablePrefix(_ prefix: String, for text: String) -> Bool {
+    guard !prefix.isEmpty, text.hasPrefix(prefix) else { return false }
+    let start = text.utf8.index(text.startIndex, offsetBy: prefix.utf8.count)
+    var index = start
+    while index < text.endIndex {
+      let lineEnd = text[index...].firstIndex(of: "\n") ?? text.endIndex
+      let line = text[index..<lineEnd]
+      let trimmed = line.drop { $0 == " " || $0 == "\t" || $0 == "\r" }
+      if !trimmed.isEmpty {
+        return !continuesBlock(line)
+      }
+      guard lineEnd < text.endIndex else { break }
+      index = text.index(after: lineEnd)
+    }
+    return true
+  }
+
+  /// Whether `line` can belong to the block before a blank line (loose lists and indented blocks).
   static func continuesBlock(_ line: Substring) -> Bool {
     if line.hasPrefix("\t") || line.hasPrefix("    ") { return true }
     let trimmed = line.drop { $0 == " " }
     guard let first = trimmed.first else { return false }
-    if "-*+>|=".contains(first) { return true }
+    if "-*+".contains(first) { return true }
     if first.isNumber {
       let digits = trimmed.prefix { $0.isNumber }
       let after = trimmed.dropFirst(digits.count).first

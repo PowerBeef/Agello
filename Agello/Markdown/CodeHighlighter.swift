@@ -47,8 +47,13 @@ enum CodeHighlighter {
   }
 
   static func highlight(_ code: String, language: String?) -> AttributedString {
+    var inBlockComment = false
+    return highlight(code, language: language, inBlockComment: &inBlockComment)
+  }
+
+  static func highlight(_ code: String, language: String?, inBlockComment: inout Bool) -> AttributedString {
     var result = AttributedString()
-    for token in tokens(code, language: language) {
+    for token in tokens(code, language: language, inBlockComment: &inBlockComment) {
       var run = AttributedString(token.text)
       if let color = color(for: token.kind) { run.foregroundColor = color }
       result += run
@@ -67,6 +72,11 @@ enum CodeHighlighter {
   }
 
   static func tokens(_ code: String, language: String?) -> [Token] {
+    var inBlockComment = false
+    return tokens(code, language: language, inBlockComment: &inBlockComment)
+  }
+
+  static func tokens(_ code: String, language: String?, inBlockComment: inout Bool) -> [Token] {
     let family = Family(language)
     let keywords = family.keywords
     let characters = Array(code)
@@ -94,6 +104,17 @@ enum CodeHighlighter {
       return true
     }
 
+    func consumeBlockComment(from start: Int) {
+      var end = start
+      while end < characters.count, !starts(blockClose, at: end) { end += 1 }
+      inBlockComment = end >= characters.count
+      emit(.comment, upTo: min(characters.count, end + 2))
+    }
+
+    if inBlockComment, family.blockComments, !characters.isEmpty {
+      consumeBlockComment(from: 0)
+    }
+
     while index < characters.count {
       let character = characters[index]
       // Comments
@@ -103,9 +124,7 @@ enum CodeHighlighter {
         continue
       }
       if family.blockComments, character == "/", starts(blockOpen, at: index) {
-        var end = index + 2
-        while end < characters.count, !starts(blockClose, at: end) { end += 1 }
-        emit(.comment, upTo: min(characters.count, end + 2))
+        consumeBlockComment(from: index + 2)
         continue
       }
       // Strings
@@ -255,18 +274,96 @@ enum CodeHighlightCache {
     return cache
   }()
 
+  private struct StreamState {
+    var language: String?
+    /// Completed prefix through the newline ending the last finished 80-line piece.
+    var committedPrefix = ""
+    var committedPieces: [AttributedString] = []
+    var endsInBlockComment = false
+    /// Most recent open block snapshot so closing (`keep: false -> true`) promotes in O(1).
+    var lastCode = ""
+    var lastPieces: [AttributedString] = []
+  }
+
+  private static var streamed = StreamState()
+
+  static func clearStreamed() {
+    streamed = StreamState()
+  }
+
   /// The block highlighted and cut into drawable pieces (``CodeHighlighter/pieces(_:maxLines:)``).
-  /// A block still streaming isn't kept (`keep` false): every update changes it, and each update
-  /// stored a near-copy of the growing block, up to 100 of them (an external review, 2026-11-16).
+  /// While a block streams (`keep` false), completed 80-line pieces are incrementally cached and
+  /// only the trailing open piece is re-tokenized on each flush. When it closes (`keep` true),
+  /// the streamed pieces promote straight into `cache`.
   static func highlighted(_ code: String, language: String?, keep: Bool = true) -> [AttributedString] {
     let key = "\(language ?? "")\u{1}\(code)" as NSString
-    if let hit = cache.object(forKey: key) { return hit.value }
-    let highlighted =
-      code.count > CodeHighlighter.maxHighlightedCharacters
-      ? AttributedString(code) : CodeHighlighter.highlight(code, language: language)
-    let value = CodeHighlighter.pieces(highlighted)
-    guard keep else { return value }
-    cache.setObject(Box(value), forKey: key, cost: key.length)
-    return value
+    if keep, let hit = cache.object(forKey: key) { return hit.value }
+    if code.count > CodeHighlighter.maxHighlightedCharacters {
+      let plain = CodeHighlighter.pieces(AttributedString(code))
+      if keep {
+        cache.setObject(Box(plain), forKey: key, cost: key.length)
+        if streamed.language == language, code.hasPrefix(streamed.committedPrefix) {
+          streamed = StreamState()
+        }
+      }
+      return plain
+    }
+    if keep {
+      let value: [AttributedString]
+      if streamed.language == language, streamed.lastCode == code {
+        value = streamed.lastPieces
+        streamed = StreamState()
+      } else if streamed.language == language, !streamed.committedPrefix.isEmpty,
+        code.hasPrefix(streamed.committedPrefix)
+      {
+        value = incrementalPieces(code, language: language)
+        streamed = StreamState()
+      } else {
+        value = CodeHighlighter.pieces(CodeHighlighter.highlight(code, language: language))
+        if streamed.language == language, !streamed.lastCode.isEmpty, code.hasPrefix(streamed.lastCode) {
+          streamed = StreamState()
+        }
+      }
+      cache.setObject(Box(value), forKey: key, cost: key.length)
+      return value
+    }
+    if streamed.language == language, streamed.lastCode == code {
+      return streamed.lastPieces
+    }
+    if streamed.language != language || !code.hasPrefix(streamed.committedPrefix) {
+      streamed = StreamState(language: language)
+    }
+    return incrementalPieces(code, language: language)
+  }
+
+  private static func incrementalPieces(_ code: String, language: String?) -> [AttributedString] {
+    var pieceStart = code.utf8.index(code.startIndex, offsetBy: streamed.committedPrefix.utf8.count)
+    var index = pieceStart
+    var lines = 0
+    while index < code.endIndex {
+      let next = code.index(after: index)
+      if code[index].isNewline {
+        lines += 1
+        if lines == CodeHighlighter.linesPerPiece {
+          let pieceText = String(code[pieceStart..<index])
+          let highlighted = CodeHighlighter.highlight(
+            pieceText, language: language, inBlockComment: &streamed.endsInBlockComment)
+          streamed.committedPieces.append(highlighted)
+          streamed.committedPrefix += code[pieceStart..<next]
+          pieceStart = next
+          lines = 0
+        }
+      }
+      index = next
+    }
+    var pieces = streamed.committedPieces
+    if pieceStart < code.endIndex || pieces.isEmpty {
+      var tailComment = streamed.endsInBlockComment
+      pieces.append(
+        CodeHighlighter.highlight(String(code[pieceStart...]), language: language, inBlockComment: &tailComment))
+    }
+    streamed.lastCode = code
+    streamed.lastPieces = pieces
+    return pieces
   }
 }

@@ -61,8 +61,16 @@ final class ModelStore: NSObject {
   @ObservationIgnored private var activeTokens: [ModelID: UUID] = [:]
   /// Models whose user tapped Resume before an in-flight Pause delivered its resume data.
   @ObservationIgnored private var pendingResume: [ModelID: Bool] = [:]
+  private struct ProgressGate: Sendable {
+    var token: UUID?
+    var progress: Double
+    var publishedAt: ContinuousClock.Instant
+  }
+
   /// Cancelled download tokens checked synchronously by background verification workers.
   @ObservationIgnored private let cancelledTokens = Mutex<Set<UUID>>([])
+  /// Throttles `didWriteData` progress hops before they touch `@MainActor` or `@Observable`.
+  @ObservationIgnored private let progressGates = Mutex<[ModelID: ProgressGate]>([:])
   @ObservationIgnored private let defaults: UserDefaults
   @ObservationIgnored private let modelsDirOverride: URL?
   @ObservationIgnored private let usesBackgroundSession: Bool
@@ -72,6 +80,9 @@ final class ModelStore: NSObject {
 
   /// Files larger than this ask before downloading over a cellular or metered network.
   nonisolated static let cellularConsentBytes: Int64 = 200_000_000
+  /// Minimum elapsed time or progress delta between published download progress ticks.
+  nonisolated static let progressMinInterval: Duration = .milliseconds(100)
+  nonisolated static let progressMinDelta: Double = 0.005
 
   override convenience init() {
     self.init(modelsDirectoryOverride: nil, defaults: .standard, usesBackgroundSession: true)
@@ -128,6 +139,37 @@ final class ModelStore: NSObject {
     cancelledTokens.withLock { _ = $0.insert(token) }
   }
 
+  /// Throttle high-frequency `URLSession` write callbacks to `>= 100 ms` or `>= 0.5%` delta while
+  /// always preserving the first update and the exact final `1.0` update.
+  nonisolated func shouldPublishProgress(
+    for id: ModelID, token: UUID?, progress: Double, now: ContinuousClock.Instant = .now
+  ) -> Bool {
+    let clamped = min(1, max(0, progress))
+    return progressGates.withLock { gates in
+      guard let previous = gates[id], previous.token == token else {
+        gates[id] = ProgressGate(token: token, progress: clamped, publishedAt: now)
+        return true
+      }
+      if clamped >= 1 {
+        guard previous.progress < 1 else { return false }
+        gates[id] = ProgressGate(token: token, progress: 1, publishedAt: now)
+        return true
+      }
+      let elapsed = previous.publishedAt.duration(to: now)
+      let delta = abs(clamped - previous.progress)
+      guard elapsed >= Self.progressMinInterval || delta >= Self.progressMinDelta else {
+        return false
+      }
+      guard clamped != previous.progress else { return false }
+      gates[id] = ProgressGate(token: token, progress: clamped, publishedAt: now)
+      return true
+    }
+  }
+
+  nonisolated func clearProgressGate(for id: ModelID) {
+    progressGates.withLock { _ = $0.removeValue(forKey: id) }
+  }
+
   nonisolated static func taskDescription(for id: ModelID, token: UUID) -> String {
     "\(id.rawValue)|\(token.uuidString)"
   }
@@ -161,6 +203,7 @@ final class ModelStore: NSObject {
         self.downloadingSpec = ModelCatalog.spec(for: parsed.id)
         self.activeTask = task
         self.activeTokens[parsed.id] = parsed.token ?? UUID()
+        self.clearProgressGate(for: parsed.id)
         self.states[parsed.id] = .downloading(progress: progress)
         if task.state == .suspended { task.resume() }
       }
@@ -314,6 +357,7 @@ final class ModelStore: NSObject {
   private func hold(_ spec: ModelSpec, progress: Double) {
     heldForWiFi = spec.id
     downloadingSpec = spec
+    clearProgressGate(for: spec.id)
     states[spec.id] = .downloading(progress: progress)
     waitingForWiFi.insert(spec.id)
   }
@@ -345,8 +389,7 @@ final class ModelStore: NSObject {
     }
     if resumeData[spec.id] == nil, !Self.hasRoom(for: spec, availableBytes: availableStorageBytes())
     {
-      let needed = ByteCountFormatter.string(
-        fromByteCount: Self.requiredBytes(for: spec), countStyle: .file)
+      let needed = ModelSpec.formatByteCount(Self.requiredBytes(for: spec))
       states[spec.id] = .failed(message: "Not enough storage. \(needed) free space is needed.")
       return
     }
@@ -369,6 +412,7 @@ final class ModelStore: NSObject {
     }
     let token = UUID()
     activeTokens[spec.id] = token
+    clearProgressGate(for: spec.id)
     let initialProgress = saved.map { Self.progress(ofResumeData: $0, size: spec.sizeBytes) } ?? 0
     states[spec.id] = .downloading(progress: initialProgress)
     if !overCellular, onExpensiveNetwork { waitingForWiFi.insert(spec.id) }
@@ -451,6 +495,7 @@ final class ModelStore: NSObject {
     // resume data arrives asynchronously and is gated on `token`.
     activeTask = nil
     downloadingSpec = nil
+    clearProgressGate(for: spec.id)
     waitingForWiFi.remove(spec.id)
     pausingIDs.insert(spec.id)
     states[spec.id] = .paused(progress: progress)
@@ -498,6 +543,7 @@ final class ModelStore: NSObject {
     if let token = activeTokens.removeValue(forKey: spec.id) {
       markTokenCancelled(token)
     }
+    clearProgressGate(for: spec.id)
     setRequestAllowsCellular(nil, for: spec.id)
     if wasActive {
       activeTask?.cancel()
@@ -872,6 +918,7 @@ extension ModelStore {
     // Only touch state if this task is still active for `spec.id` (or untracked after a relaunch).
     guard activeTokens[spec.id] == nil || activeTokens[spec.id] == token else { return }
     if activeTokens[spec.id] == token { activeTokens.removeValue(forKey: spec.id) }
+    clearProgressGate(for: spec.id)
     keepResumeData(nil, for: spec.id)
     waitingForWiFi.remove(spec.id)
     if downloadingSpec?.id == spec.id {
@@ -962,9 +1009,13 @@ extension ModelStore {
     totalBytesExpectedToWrite: Int64
   ) {
     guard totalBytesExpectedToWrite > 0,
-      let parsed = Self.parseTaskDescription(downloadTask.taskDescription)
+      let parsed = Self.parseTaskDescription(downloadTask.taskDescription),
+      !isTokenCancelled(parsed.token)
     else { return }
-    let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+    let progress = min(1, max(0, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)))
+    guard shouldPublishProgress(for: parsed.id, token: parsed.token, progress: progress) else {
+      return
+    }
     Task { @MainActor [weak self] in
       // Ignore late callbacks from a paused/cancelled/verifying task.
       guard let self, self.downloadingSpec?.id == parsed.id,
@@ -972,8 +1023,12 @@ extension ModelStore {
         !self.isTokenCancelled(parsed.token),
         parsed.token == nil || self.activeTokens[parsed.id] == parsed.token
       else { return }
-      self.waitingForWiFi.remove(parsed.id)
-      self.states[parsed.id] = .downloading(progress: progress)
+      if self.waitingForWiFi.contains(parsed.id) {
+        self.waitingForWiFi.remove(parsed.id)
+      }
+      if self.states[parsed.id] != .downloading(progress: progress) {
+        self.states[parsed.id] = .downloading(progress: progress)
+      }
     }
   }
 
@@ -992,6 +1047,7 @@ extension ModelStore {
       else { return }
       // No resume data: a later Retry starts over (stale resume data would fail again).
       self.activeTokens.removeValue(forKey: spec.id)
+      self.clearProgressGate(for: spec.id)
       self.verifyingIDs.remove(spec.id)
       self.pausingIDs.remove(spec.id)
       self.keepResumeData(resume, for: spec.id)

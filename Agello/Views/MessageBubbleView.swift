@@ -1,34 +1,25 @@
 import SwiftData
 import SwiftUI
-
-/// What a message can do. Closures are supplied by the chat screen.
-struct MessageActions {
-  /// A reply is being generated in this chat: branch-changing actions wait.
-  var isBusy = false
-  var isSpeaking = false
-  var canRegenerate = false
-  var regenerate: () -> Void = {}
-  var edit: () -> Void = {}
-  var speak: () -> Void = {}
-  var selectVersion: (ChatTurn) -> Void = { _ in }
-}
+import UIKit
 
 /// One chat message. The user's turns sit on a raised warm surface; the
 /// model's are full-width text with quiet accessories (reasoning, sources,
 /// tools, actions). Color stays in the content layer: no glass here.
 struct MessageBubbleView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.modelContext) private var modelContext
-  let turn: ChatTurn
-  var isStreaming: Bool = false
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
-  /// What a tool is doing right now (live reply only).
-  var toolStatus: String? = nil
+  @Environment(\.modelContext) private var modelContext
+  @Environment(AppState.self) private var appState
+  let turn: ChatTurn
+  let thread: ChatThread?
+  var isStreaming: Bool = false
   /// All versions of this turn (edits / regenerations), oldest first.
   var versions: [ChatTurn] = []
+  var canRegenerate = false
   /// Time to first token, speed and backend under the reply.
   var showsStats = false
-  var actions = MessageActions()
+  let reader: SpeechReader
+  let composerBridge: ComposerBridge
   @State private var copied = false
   @State private var showsThought = false
   @State private var showsSources = false
@@ -50,17 +41,8 @@ struct MessageBubbleView: View {
         ForEach(turn.parts.files) { file in
           FileChip(record: file)
         }
-        // 1,024 pixels fill the bubble's width at 3x.
-        if let data = turn.imageData, let image = ImageDownsampler.cgImage(from: data, maxPixels: 1_024) {
-          Image(image, scale: 1, label: Text("Attached photo"))
-            .resizable()
-            .scaledToFit()
-            .frame(maxHeight: 220)
-            .clipShape(.rect(cornerRadius: Theme.Radius.group, style: .continuous))
-            .overlay {
-              RoundedRectangle(cornerRadius: Theme.Radius.group, style: .continuous)
-                .stroke(Theme.Surface.stroke, lineWidth: Theme.Stroke.hairline)
-            }
+        if let data = turn.imageData {
+          TurnPhotoView(turnID: turn.id, data: data)
         }
         if turn.hasAudio {
           Label("Voice message", systemImage: "waveform")
@@ -76,15 +58,16 @@ struct MessageBubbleView: View {
             .accessibilityIdentifier("message.user")
             .contextMenu {
               Button("Copy", systemImage: "doc.on.doc") { copy(turn.text) }
-              Button("Edit", systemImage: "pencil", action: actions.edit)
-                .disabled(actions.isBusy)
+              UserEditMenuButton(turn: turn, composerBridge: composerBridge)
             }
             // The long-press menu as actions VoiceOver and Switch Control can reach.
             .accessibilityAction(named: "Copy") { copy(turn.text) }
-            .accessibilityAction(named: "Edit") { if !actions.isBusy { actions.edit() } }
+            .accessibilityAction(named: "Edit") {
+              if !appState.isBusy { composerBridge.send(.edit(turn)) }
+            }
         }
         if versions.count > 1 {
-          versionSwitcher
+          VersionSwitcherView(turn: turn, thread: thread, versions: versions)
         }
       }
     }
@@ -93,17 +76,10 @@ struct MessageBubbleView: View {
   // MARK: - Model
 
   private var modelBlock: some View {
-    VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-      if isStreaming, let toolStatus {
-        HStack(spacing: Theme.Spacing.tight) {
-          ProgressView().controlSize(.mini)
-          Text(toolStatus)
-            .font(.footnote)
-            .foregroundStyle(Theme.Text.secondary)
-            .lineLimit(1)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("message.toolStatus")
+    let parts = turn.parts
+    return VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+      if isStreaming {
+        LiveToolStatusRow()
       }
       if !turn.thought.isEmpty {
         thoughtCard
@@ -112,7 +88,7 @@ struct MessageBubbleView: View {
       if !turn.text.isEmpty {
         VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
           MarkdownView(
-            WebContext.linkCitations(turn.text, sources: turn.parts.sources), streaming: isStreaming)
+            WebContext.linkCitations(turn.text, sources: parts.sources), streaming: isStreaming)
             .textSelection(.enabled)
           if isStreaming {
             streamingCursor
@@ -120,9 +96,12 @@ struct MessageBubbleView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
-        // While a reply streams, the spoken form (five passes over the whole text each update)
-        // only when VoiceOver reads it.
-        .accessibilityLabel(Text(isStreaming && !voiceOverEnabled ? turn.text : Self.spokenText(turn.text)))
+        // While a reply streams, the spoken form runs only when VoiceOver reads it;
+        // completed replies hit the bounded spoken-text cache.
+        .accessibilityLabel(
+          Text(
+            isStreaming && !voiceOverEnabled
+              ? turn.text : Self.cachedSpokenText(for: turn.id, markdown: turn.text)))
         .accessibilityIdentifier("message.model")
         .onAppear { ReplyTrace.onScreen(turn.id) }
       } else if isStreaming {
@@ -132,7 +111,6 @@ struct MessageBubbleView: View {
         toolChips
       }
       if !isStreaming {
-        let parts = turn.parts
         let hasWeatherCard = parts.actionCards.contains {
           if case .weather = $0.payload { return true }
           return false
@@ -162,7 +140,7 @@ struct MessageBubbleView: View {
               .accessibilityValue(memory.summary)
               .accessibilityIdentifier("message.memory")
           }
-          if !turn.text.isEmpty || versions.count > 1 || actions.canRegenerate {
+          if !turn.text.isEmpty || versions.count > 1 || canRegenerate {
             actionRow
           }
         }
@@ -178,15 +156,52 @@ struct MessageBubbleView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
+  private static let headingRegex = try? NSRegularExpression(pattern: #"(?m)^#{1,6}\s+"#)
+  private static let citationRegex = try? NSRegularExpression(pattern: WebContext.citationMarker)
+
+  private final class SpokenTextEntry {
+    let source: String
+    let spoken: String
+    init(source: String, spoken: String) {
+      self.source = source
+      self.spoken = spoken
+    }
+  }
+
+  private static let spokenTextCache: NSCache<NSString, SpokenTextEntry> = {
+    let cache = NSCache<NSString, SpokenTextEntry>()
+    cache.countLimit = 200
+    cache.totalCostLimit = 2 * 1024 * 1024
+    return cache
+  }()
+
+  private static func cachedSpokenText(for turnID: UUID, markdown: String) -> String {
+    let key = "\(turnID.uuidString)|\(markdown.count)" as NSString
+    if let hit = spokenTextCache.object(forKey: key), hit.source == markdown {
+      return hit.spoken
+    }
+    let spoken = spokenText(markdown)
+    spokenTextCache.setObject(
+      SpokenTextEntry(source: markdown, spoken: spoken), forKey: key, cost: spoken.utf8.count)
+    return spoken
+  }
+
   /// VoiceOver reads the reply, not its markdown syntax: emphasis and code marks, heading marks
   /// at the start of a line, citation numbers. A "#" inside text (C#, issue #42) stays.
   static func spokenText(_ markdown: String) -> String {
     var text = markdown
-    for token in ["**", "__", "`"] {
-      text = text.replacingOccurrences(of: token, with: "")
+    if text.contains("**") { text = text.replacingOccurrences(of: "**", with: "") }
+    if text.contains("__") { text = text.replacingOccurrences(of: "__", with: "") }
+    if text.contains("`") { text = text.replacingOccurrences(of: "`", with: "") }
+    if text.contains("#"), let regex = headingRegex {
+      let range = NSRange(text.startIndex..., in: text)
+      text = regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
     }
-    text = text.replacingOccurrences(of: #"(?m)^#{1,6}\s+"#, with: "", options: .regularExpression)
-    return text.replacingOccurrences(of: WebContext.citationMarker, with: "", options: .regularExpression)
+    if text.contains("["), let regex = citationRegex {
+      let range = NSRange(text.startIndex..., in: text)
+      text = regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+    }
+    return text
   }
 
   // MARK: - Reasoning
@@ -403,7 +418,7 @@ struct MessageBubbleView: View {
   private var actionRow: some View {
     HStack(spacing: 0) {
       if versions.count > 1 {
-        versionSwitcher
+        VersionSwitcherView(turn: turn, thread: thread, versions: versions)
       }
       if !isError, !turn.text.isEmpty {
         actionButton(
@@ -411,17 +426,10 @@ struct MessageBubbleView: View {
         ) {
           copy(turn.text)
         }
-        actionButton(
-          actions.isSpeaking ? "stop.circle" : "speaker.wave.2",
-          actions.isSpeaking ? "Stop reading" : "Read aloud", id: "message.speak",
-          action: actions.speak)
+        SpeakActionButton(turnID: turn.id, text: turn.text, reader: reader)
       }
-      if actions.canRegenerate {
-        actionButton(
-          "arrow.clockwise", isError ? "Retry" : "Regenerate", id: "message.regenerate",
-          action: actions.regenerate
-        )
-        .disabled(actions.isBusy)
+      if canRegenerate, let thread {
+        RegenerateActionButton(turn: turn, thread: thread, isError: isError, reader: reader)
       }
       if !isError, !turn.text.isEmpty {
         ShareLink(item: turn.text) {
@@ -449,43 +457,6 @@ struct MessageBubbleView: View {
     }
     .accessibilityLabel(label)
     .accessibilityIdentifier(id)
-  }
-
-  private var versionSwitcher: some View {
-    let index = versions.firstIndex { $0.id == turn.id } ?? 0
-    return HStack(spacing: 0) {
-      Button {
-        guard index > 0, versions.indices.contains(index - 1) else { return }
-        Haptics.selection()
-        actions.selectVersion(versions[index - 1])
-      } label: {
-        Image(systemName: "chevron.left")
-          .frame(width: Theme.Size.glyph, height: Theme.Size.target)
-      }
-      .disabled(index == 0 || actions.isBusy)
-      .accessibilityLabel("Previous version")
-      .accessibilityIdentifier("message.version.previous")
-      Text("\(index + 1)/\(versions.count)")
-        .font(.caption)
-        .monospacedDigit()
-        .contentTransition(.numericText())
-        .accessibilityLabel("Version \(index + 1) of \(versions.count)")
-        .accessibilityIdentifier("message.version")
-      Button {
-        guard versions.indices.contains(index + 1) else { return }
-        Haptics.selection()
-        actions.selectVersion(versions[index + 1])
-      } label: {
-        Image(systemName: "chevron.right")
-          .frame(width: Theme.Size.glyph, height: Theme.Size.target)
-      }
-      .disabled(index + 1 >= versions.count || actions.isBusy)
-      .accessibilityLabel("Next version")
-      .accessibilityIdentifier("message.version.next")
-    }
-    .font(.system(.footnote, weight: .medium))
-    .foregroundStyle(Theme.Text.tertiary)
-    .buttonStyle(.borderless)
   }
 
   private func persistCardUpdate(_ updatedCard: ActionCardRecord) {
@@ -553,23 +524,256 @@ struct MessageBubbleView: View {
   }
 }
 
+/// Isolated live tool status row mounted solely inside the streaming reply bubble so historical
+/// rows never subscribe to `appState.toolStatus`.
+private struct LiveToolStatusRow: View {
+  @Environment(AppState.self) private var appState
+
+  var body: some View {
+    if let toolStatus = appState.toolStatus {
+      HStack(spacing: Theme.Spacing.tight) {
+        ProgressView().controlSize(.mini)
+        Text(toolStatus)
+          .font(.footnote)
+          .foregroundStyle(Theme.Text.secondary)
+          .lineLimit(1)
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityIdentifier("message.toolStatus")
+    }
+  }
+}
+
+/// Isolated Speak / Stop reading button observing `reader.speakingID` without re-evaluating its
+/// parent `MessageBubbleView` or `MarkdownView`.
+private struct SpeakActionButton: View {
+  let turnID: UUID
+  let text: String
+  let reader: SpeechReader
+
+  var body: some View {
+    let isSpeaking = reader.speakingID == turnID
+    Button {
+      reader.toggle(text, id: turnID)
+    } label: {
+      Image(systemName: isSpeaking ? "stop.circle" : "speaker.wave.2")
+        .contentTransition(.symbolEffect(.replace))
+        .frame(width: Theme.Size.target, height: Theme.Size.target)
+    }
+    .accessibilityLabel(isSpeaking ? "Stop reading" : "Read aloud")
+    .accessibilityIdentifier("message.speak")
+  }
+}
+
+private struct RegenerateActionButton: View {
+  @Environment(AppState.self) private var appState
+  let turn: ChatTurn
+  let thread: ChatThread
+  let isError: Bool
+  let reader: SpeechReader
+
+  var body: some View {
+    Button {
+      reader.stop()
+      Haptics.send()
+      Task { await appState.regenerate(turn, in: thread) }
+    } label: {
+      Image(systemName: "arrow.clockwise")
+        .contentTransition(.symbolEffect(.replace))
+        .frame(width: Theme.Size.target, height: Theme.Size.target)
+    }
+    .disabled(appState.isBusy)
+    .accessibilityLabel(isError ? "Retry" : "Regenerate")
+    .accessibilityIdentifier("message.regenerate")
+  }
+}
+
+private struct UserEditMenuButton: View {
+  @Environment(AppState.self) private var appState
+  let turn: ChatTurn
+  let composerBridge: ComposerBridge
+
+  var body: some View {
+    Button("Edit", systemImage: "pencil") {
+      composerBridge.send(.edit(turn))
+    }
+    .disabled(appState.isBusy)
+  }
+}
+
+private struct VersionSwitcherView: View {
+  @Environment(AppState.self) private var appState
+  let turn: ChatTurn
+  let thread: ChatThread?
+  let versions: [ChatTurn]
+
+  var body: some View {
+    let index = versions.firstIndex { $0.id == turn.id } ?? 0
+    let isBusy = appState.isBusy
+    HStack(spacing: 0) {
+      Button {
+        guard let thread, index > 0, versions.indices.contains(index - 1) else { return }
+        Haptics.selection()
+        withAppAnimation(Theme.Motion.easeOut) {
+          appState.selectVersion(versions[index - 1], in: thread)
+        }
+      } label: {
+        Image(systemName: "chevron.left")
+          .frame(width: Theme.Size.glyph, height: Theme.Size.target)
+      }
+      .disabled(index == 0 || isBusy)
+      .accessibilityLabel("Previous version")
+      .accessibilityIdentifier("message.version.previous")
+      Text("\(index + 1)/\(versions.count)")
+        .font(.caption)
+        .monospacedDigit()
+        .contentTransition(.numericText())
+        .accessibilityLabel("Version \(index + 1) of \(versions.count)")
+        .accessibilityIdentifier("message.version")
+      Button {
+        guard let thread, versions.indices.contains(index + 1) else { return }
+        Haptics.selection()
+        withAppAnimation(Theme.Motion.easeOut) {
+          appState.selectVersion(versions[index + 1], in: thread)
+        }
+      } label: {
+        Image(systemName: "chevron.right")
+          .frame(width: Theme.Size.glyph, height: Theme.Size.target)
+      }
+      .disabled(index + 1 >= versions.count || isBusy)
+      .accessibilityLabel("Next version")
+      .accessibilityIdentifier("message.version.next")
+    }
+    .font(.system(.footnote, weight: .medium))
+    .foregroundStyle(Theme.Text.tertiary)
+    .buttonStyle(.borderless)
+  }
+}
+
+@MainActor
+private enum TurnPhotoCache {
+  private static let cache: NSCache<NSUUID, CGImage> = {
+    let cache = NSCache<NSUUID, CGImage>()
+    cache.countLimit = 40
+    cache.totalCostLimit = 24 * 1024 * 1024
+    return cache
+  }()
+
+  static func image(for id: UUID) -> CGImage? {
+    cache.object(forKey: id as NSUUID)
+  }
+
+  static func store(_ image: CGImage, for id: UUID) {
+    let cost = max(1, image.bytesPerRow * image.height)
+    cache.setObject(image, forKey: id as NSUUID, cost: cost)
+  }
+}
+
+/// Decodes attached chat photos off MainActor and caches them in a cost-bounded `NSCache`
+/// so scrolling and streaming never run synchronous ImageIO decoding in `body`.
+private struct TurnPhotoView: View {
+  let turnID: UUID
+  let data: Data
+  @State private var image: CGImage?
+  @State private var loadedTurnID: UUID?
+
+  init(turnID: UUID, data: Data) {
+    self.turnID = turnID
+    self.data = data
+    let hit = TurnPhotoCache.image(for: turnID)
+    _image = State(initialValue: hit)
+    _loadedTurnID = State(initialValue: hit == nil ? nil : turnID)
+  }
+
+  var body: some View {
+    Group {
+      if let image {
+        Image(image, scale: 1, label: Text("Attached photo"))
+          .resizable()
+          .scaledToFit()
+          .frame(maxHeight: 220)
+          .clipShape(.rect(cornerRadius: Theme.Radius.group, style: .continuous))
+          .overlay {
+            RoundedRectangle(cornerRadius: Theme.Radius.group, style: .continuous)
+              .stroke(Theme.Surface.stroke, lineWidth: Theme.Stroke.hairline)
+          }
+      } else {
+        RoundedRectangle(cornerRadius: Theme.Radius.group, style: .continuous)
+          .fill(Theme.Surface.stage)
+          .frame(width: 180, height: 140)
+          .overlay {
+            RoundedRectangle(cornerRadius: Theme.Radius.group, style: .continuous)
+              .stroke(Theme.Surface.stroke, lineWidth: Theme.Stroke.hairline)
+          }
+          .accessibilityLabel("Attached photo")
+      }
+    }
+    .task(id: turnID) {
+      if loadedTurnID == turnID, image != nil { return }
+      if let hit = TurnPhotoCache.image(for: turnID) {
+        image = hit
+        loadedTurnID = turnID
+        return
+      }
+      image = nil
+      loadedTurnID = nil
+      let payload = data
+      // 1,024 pixels fill the bubble's width at 3x.
+      let decoded = await Task.detached(priority: .userInitiated) {
+        ImageDownsampler.cgImage(from: payload, maxPixels: 1_024)
+      }.value
+      guard !Task.isCancelled, let decoded else { return }
+      TurnPhotoCache.store(decoded, for: turnID)
+      image = decoded
+      loadedTurnID = turnID
+    }
+  }
+}
+
 /// Leading-aligned wrapping flow layout for tool pills and action card buttons. Clamps every
 /// child to the proposed width so it can never widen an enclosing vertical `ScrollView`.
 struct WrapFlowLayout: Layout {
   var horizontalSpacing: CGFloat = 6
   var verticalSpacing: CGFloat = 6
 
+  struct Cache {
+    var proposedWidth: CGFloat?
+    var sizes: [CGSize] = []
+  }
+
+  func makeCache(subviews: Subviews) -> Cache {
+    Cache()
+  }
+
+  func updateCache(_ cache: inout Cache, subviews: Subviews) {
+    cache.proposedWidth = nil
+    cache.sizes.removeAll(keepingCapacity: true)
+  }
+
+  private func measuredSizes(
+    for subviews: Subviews, maxWidth: CGFloat, cache: inout Cache
+  ) -> [CGSize] {
+    let keyWidth: CGFloat? = maxWidth.isFinite ? maxWidth : nil
+    if cache.sizes.count == subviews.count, cache.proposedWidth == keyWidth {
+      return cache.sizes
+    }
+    let childProposal = ProposedViewSize(width: keyWidth, height: nil)
+    let sizes = subviews.map { $0.sizeThatFits(childProposal) }
+    cache.proposedWidth = keyWidth
+    cache.sizes = sizes
+    return sizes
+  }
+
   func sizeThatFits(
-    proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+    proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache
   ) -> CGSize {
     let maxWidth = proposal.width ?? .infinity
-    let childProposal = ProposedViewSize(width: maxWidth.isFinite ? maxWidth : nil, height: nil)
+    let sizes = measuredSizes(for: subviews, maxWidth: maxWidth, cache: &cache)
     var x: CGFloat = 0
     var y: CGFloat = 0
     var rowHeight: CGFloat = 0
     var usedWidth: CGFloat = 0
-    for subview in subviews {
-      let size = subview.sizeThatFits(childProposal)
+    for size in sizes {
       let width = maxWidth.isFinite ? min(size.width, maxWidth) : size.width
       if x > 0, x + width > maxWidth {
         x = 0
@@ -584,15 +788,14 @@ struct WrapFlowLayout: Layout {
   }
 
   func placeSubviews(
-    in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+    in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache
   ) {
     let maxWidth = bounds.width
-    let childProposal = ProposedViewSize(width: maxWidth, height: nil)
+    let sizes = measuredSizes(for: subviews, maxWidth: maxWidth, cache: &cache)
     var x = bounds.minX
     var y = bounds.minY
     var rowHeight: CGFloat = 0
-    for subview in subviews {
-      let size = subview.sizeThatFits(childProposal)
+    for (subview, size) in zip(subviews, sizes) {
       let width = min(size.width, maxWidth)
       if x > bounds.minX, x + width > bounds.maxX + 0.5 {
         x = bounds.minX
@@ -629,30 +832,83 @@ private extension View {
   }
 }
 
+@MainActor
+private enum WeatherAttributionCache {
+  private static var cachedMark: WeatherLookup.Mark?
+  private static var cachedImage: UIImage?
+  private static var cachedImageURL: URL?
+  private static var inFlight: Task<(WeatherLookup.Mark?, UIImage?), Never>?
+
+  static var current: (mark: WeatherLookup.Mark?, image: UIImage?) {
+    (cachedMark, cachedImage)
+  }
+
+  static func load() async -> (mark: WeatherLookup.Mark?, image: UIImage?) {
+    if let mark = cachedMark, let image = cachedImage, cachedImageURL == mark.image {
+      return (mark, image)
+    }
+    if let existing = inFlight {
+      return await existing.value
+    }
+    let task = Task<(WeatherLookup.Mark?, UIImage?), Never> { @MainActor in
+      defer { inFlight = nil }
+      let mark: WeatherLookup.Mark?
+      if let existingMark = cachedMark {
+        mark = existingMark
+      } else if let fetched = await WeatherLookup.mark() {
+        cachedMark = fetched
+        mark = fetched
+      } else {
+        mark = nil
+      }
+      guard let mark else { return (nil, nil) }
+      if cachedImageURL == mark.image, let existingImage = cachedImage {
+        return (mark, existingImage)
+      }
+      let imageURL = mark.image
+      let fetchedImage: UIImage? = await Task.detached(priority: .utility) {
+        guard let (data, response) = try? await URLSession.shared.data(from: imageURL) else {
+          return nil
+        }
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+          return nil
+        }
+        return UIImage(data: data)
+      }.value
+      if let fetchedImage {
+        cachedImage = fetchedImage
+        cachedImageURL = imageURL
+      }
+      return (mark, fetchedImage ?? cachedImage)
+    }
+    inFlight = task
+    return await task.value
+  }
+}
+
 /// Apple Weather's mark, linked to its legal page, under a reply that used its data: shown, not
 /// tucked in the collapsed sources, as WeatherKit's terms and App Review require.
 struct WeatherAttributionMark: View {
   @State private var mark: WeatherLookup.Mark?
-  @State private var loaded = false
+  @State private var image: UIImage?
   @ScaledMetric(relativeTo: .caption2) private var height = Theme.Size.attributionMark
+
+  init() {
+    let cached = WeatherAttributionCache.current
+    _mark = State(initialValue: cached.mark)
+    _image = State(initialValue: cached.image)
+  }
 
   var body: some View {
     let legalURL = mark?.legal ?? WeatherLookup.fallbackLegalURL
     let serviceName = mark?.name ?? String(localized: "Apple Weather")
     Link(destination: legalURL) {
       Group {
-        if let imageURL = mark?.image {
-          AsyncImage(url: imageURL) { phase in
-            switch phase {
-            case .success(let image):
-              image.resizable().scaledToFit()
-                .frame(height: height)
-            case .empty, .failure:
-              fallbackLabel(serviceName)
-            @unknown default:
-              fallbackLabel(serviceName)
-            }
-          }
+        if let image {
+          Image(uiImage: image)
+            .resizable()
+            .scaledToFit()
+            .frame(height: height)
         } else {
           fallbackLabel(serviceName)
         }
@@ -662,9 +918,10 @@ struct WeatherAttributionMark: View {
     .accessibilityLabel("\(serviceName), legal attribution")
     .accessibilityIdentifier("message.weatherAttribution")
     .task {
-      guard !loaded else { return }
-      loaded = true
-      mark = await WeatherLookup.mark()
+      guard image == nil else { return }
+      let resolved = await WeatherAttributionCache.load()
+      if let resolvedMark = resolved.mark { mark = resolvedMark }
+      if let resolvedImage = resolved.image { image = resolvedImage }
     }
   }
 
