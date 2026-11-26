@@ -69,11 +69,15 @@ struct AutomationGalleryView: View {
           .accessibilityIdentifier("automations.allowlist.notice")
       }
       if shortcuts.isEmpty {
-        Text("No Shortcuts registered yet. Add one below or pick a starter template so Agello can offer to run it after your confirmation.")
-          .font(.subheadline)
-          .foregroundStyle(Theme.Text.secondary)
-          .padding(.vertical, Theme.Spacing.xs)
-          .themedRow()
+        EmptyStateView(
+          symbol: "bolt.shield",
+          title: "No Shortcuts allowed yet",
+          message: "Add a Shortcut above or pick a starter template so Agello can offer to run it after your confirmation.",
+          tint: Theme.Brand.glacier
+        )
+        .listRowBackground(Color.clear)
+        .listRowInsets(
+          EdgeInsets(top: Theme.Spacing.xs, leading: 0, bottom: Theme.Spacing.xs, trailing: 0))
       } else {
         ForEach(shortcuts) { item in
           HStack(spacing: Theme.Spacing.md) {
@@ -101,16 +105,19 @@ struct AutomationGalleryView: View {
                   var updated = item
                   updated.enabled = enabled
                   AutomationRegistry.shared.upsert(updated)
+                  Haptics.selection()
                   reload()
                 })
             )
             .labelsHidden()
+            .tint(Theme.Brand.glacier)
             .accessibilityLabel("Enable \(item.name)")
           }
           .themedRow()
           .accessibilityIdentifier("automations.shortcut.\(item.id)")
         }
         .onDelete { offsets in
+          Haptics.warning()
           for index in offsets {
             AutomationRegistry.shared.removeShortcut(id: shortcuts[index].id)
           }
@@ -146,11 +153,11 @@ struct AutomationGalleryView: View {
             Button(isRegistered ? "Added" : "Register") {
               AutomationRegistry.shared.upsert(template.asRegisteredShortcut())
               reload()
-              Haptics.selection()
+              Haptics.success()
             }
-            .font(.caption.weight(.semibold))
-            .buttonStyle(.bordered)
-            .tint(isRegistered ? Theme.Status.healthy : Theme.Brand.glacier)
+            .buttonStyle(
+              QuietCapsuleButtonStyle(tint: isRegistered ? Theme.Status.healthy : Theme.Brand.glacier)
+            )
             .disabled(isRegistered)
             .accessibilityIdentifier("automations.starter.\(template.id)")
           }
@@ -173,11 +180,12 @@ struct AutomationGalleryView: View {
     Section {
       ForEach(recipes) { recipe in
         Button {
+          Haptics.selection()
           AppRouter.shared.handle(.runRecipe(recipe.id))
         } label: {
           HStack(spacing: Theme.Spacing.md) {
             TintTile(symbol: recipe.symbol, tint: Theme.Brand.lavender)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
               Text(recipe.name)
                 .font(.system(.subheadline, weight: .semibold))
                 .foregroundStyle(Theme.Text.primary)
@@ -190,6 +198,7 @@ struct AutomationGalleryView: View {
             Image(systemName: "play.circle.fill")
               .font(.title3)
               .foregroundStyle(Theme.Brand.lavender)
+              .accessibilityHidden(true)
           }
         }
         .themedRow()
@@ -206,9 +215,12 @@ struct AutomationGalleryView: View {
   private var shortcutsAppSection: some View {
     Section {
       ShortcutsLink()
-        .shortcutsLinkStyle(.dark)
+        .shortcutsLinkStyle(.darkOutline)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .themedRow()
+        .listRowBackground(Color.clear)
+        .listRowInsets(
+          EdgeInsets(top: Theme.Spacing.xs, leading: 0, bottom: Theme.Spacing.xs, trailing: 0))
+        .accessibilityIdentifier("automations.shortcutsLink")
     } header: {
       Text("Apple Shortcuts").eyebrowStyle()
     }
@@ -235,6 +247,7 @@ struct AutomationGalleryView: View {
           Text("Shortcut Details").eyebrowStyle()
         } footer: {
           Text("The name must match the Shortcut in Apple's Shortcuts app exactly.")
+            .foregroundStyle(Theme.Text.tertiary)
         }
         .themedRow()
 

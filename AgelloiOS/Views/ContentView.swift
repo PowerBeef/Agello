@@ -246,16 +246,28 @@ private final class DrawerDragActivity {
   var isActive = false
 }
 
+private enum DrawerMetrics {
+  static let dragMinimumDistance: CGFloat = 12
+  static let fallbackCornerRadius: CGFloat = 44
+  static let parallaxDistance: CGFloat = 24
+  static let maxRubberBandOvershoot: CGFloat = 28
+}
+
 /// Isolates 60–120 Hz `@GestureState` drag updates from `ContentView`, `DrawerView`, and `ChatView`
 /// so dragging never reconstructs `DrawerView` closures or re-diffs the chat stream.
 private struct DrawerSlideHost<DrawerContent: View, ChatContent: View>: View {
   private struct DragState: Equatable {
     var offset: CGFloat = 0
     var active = false
+    var reduceMotion = false
   }
 
   @Environment(\.layoutDirection) private var layoutDirection
-  @GestureState private var dragState = DragState()
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @GestureState(reset: { state, transaction in
+    transaction.animation = state.reduceMotion ? nil : Theme.Motion.panel
+  }) private var dragState = DragState()
+  @State private var displayCornerRadius: CGFloat = 0
 
   let drawerOpen: Bool
   let drawerVisible: Bool
@@ -268,14 +280,20 @@ private struct DrawerSlideHost<DrawerContent: View, ChatContent: View>: View {
 
   var body: some View {
     let isRTL = layoutDirection == .rightToLeft
+    let openCornerRadius =
+      displayCornerRadius > 0 ? displayCornerRadius : DrawerMetrics.fallbackCornerRadius
     GeometryReader { geometry in
       let containerWidth = max(0, geometry.size.width)
       let width = min(containerWidth * 0.84, 360)
-      let offset = width > 0 ? min(max((drawerOpen ? width : 0) + dragState.offset, 0), width) : 0
-      let progress: CGFloat = width > 0 ? offset / width : 0
+      let offset = resolvedOffset(width: width)
+      let progress: CGFloat = width > 0 ? min(1, max(0, offset / width)) : 0
       let visualOffset = isRTL ? -offset : offset
       let showDrawer = drawerVisible || drawerOpen || progress > 0
-      let cornerRadius = showDrawer ? 44 * progress : 0
+      let cornerRadius = showDrawer ? openCornerRadius * progress : 0
+      let drawerParallax: CGFloat =
+        reduceMotion
+        ? 0
+        : (isRTL ? DrawerMetrics.parallaxDistance : -DrawerMetrics.parallaxDistance) * (1 - progress)
       ZStack(alignment: .leading) {
         if showDrawer {
           // Its own layer, not the drawer's background: the drawer's accessibilityHidden(false)
@@ -284,6 +302,7 @@ private struct DrawerSlideHost<DrawerContent: View, ChatContent: View>: View {
             .frame(width: width)
           drawerContent
             .frame(width: width)
+            .offset(x: drawerParallax)
             .accessibilityHidden(!drawerOpen)
             // A named container. VoiceOver closes it with "Close menu", over the chat (an escape
             // action here made an unnamed element the size of the drawer).
@@ -325,10 +344,33 @@ private struct DrawerSlideHost<DrawerContent: View, ChatContent: View>: View {
       }
       .simultaneousGesture(drawerDrag(width: width, containerWidth: containerWidth, isRTL: isRTL))
     }
+    .background {
+      Color.clear
+        .ignoresSafeArea()
+        .onGeometryChange(for: CGFloat.self) { proxy in
+          proxy.concentricCornerRadii?.topLeading ?? 0
+        } action: { _, radius in
+          if radius > 0, abs(radius - displayCornerRadius) > 0.5 {
+            displayCornerRadius = radius
+          }
+        }
+    }
     .onChange(of: dragState.active) { _, active in
       dragActivity.isActive = active
       if active { onResignFirstResponder() }
     }
+  }
+
+  /// Clamps the leading edge at 0 and applies gentle asymptotic rubber-band resistance past
+  /// `drawerWidth` so fast edge swipes feel cushioned instead of hitting a hard wall.
+  private func resolvedOffset(width: CGFloat) -> CGFloat {
+    guard width > 0 else { return 0 }
+    let raw = (drawerOpen ? width : 0) + dragState.offset
+    if raw <= 0 { return 0 }
+    if raw <= width { return raw }
+    let overshoot = raw - width
+    let band = DrawerMetrics.maxRubberBandOvershoot
+    return width + (overshoot * 0.25) / (1 + overshoot / (band * 4))
   }
 
   private func dragStartAllowed(
@@ -350,10 +392,12 @@ private struct DrawerSlideHost<DrawerContent: View, ChatContent: View>: View {
   }
 
   /// Opens from the leading edge (mirrored for RTL so code blocks and tables still scroll
-  /// sideways), closes from anywhere outside the Drawer Search field.
+  /// sideways), closes from anywhere outside the Drawer Search field. Subtracts `minimumDistance`
+  /// to avoid a frame-1 jump and drives updates via `.interactiveSpring` so swipe velocity merges
+  /// naturally into the settle spring.
   private func drawerDrag(width: CGFloat, containerWidth: CGFloat, isRTL: Bool) -> some Gesture {
-    DragGesture(minimumDistance: 12)
-      .updating($dragState) { value, state, _ in
+    DragGesture(minimumDistance: DrawerMetrics.dragMinimumDistance)
+      .updating($dragState) { value, state, transaction in
         let signedWidth = isRTL ? -value.translation.width : value.translation.width
         if !state.active {
           let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.5
@@ -365,7 +409,16 @@ private struct DrawerSlideHost<DrawerContent: View, ChatContent: View>: View {
           else { return }
           state.active = true
         }
-        state.offset = drawerOpen ? min(0, signedWidth) : max(0, signedWidth)
+        state.reduceMotion = reduceMotion
+        transaction.animation = reduceMotion ? nil : .interactiveSpring
+        if drawerOpen {
+          state.offset =
+            signedWidth < 0
+            ? min(0, signedWidth + DrawerMetrics.dragMinimumDistance)
+            : signedWidth
+        } else {
+          state.offset = max(0, signedWidth - DrawerMetrics.dragMinimumDistance)
+        }
       }
       .onEnded { value in
         guard width > 0,

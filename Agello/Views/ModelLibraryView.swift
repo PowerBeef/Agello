@@ -20,6 +20,23 @@ struct ModelLibraryView: View {
             Button("Dismiss") { self.deleteError = nil }
           }
         }
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+          Text("On-device models")
+            .eyebrowStyle()
+            .accessibilityAddTraits(.isHeader)
+            .padding(.horizontal, Theme.Spacing.xs)
+          if totalInstalledFootprintBytes > 0 {
+            Text(
+              "Estimated footprint on disk: \(ModelSpec.formatByteCount(totalInstalledFootprintBytes)) (includes compiled GPU/ANE cache)"
+            )
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(Theme.Text.tertiary)
+            .padding(.horizontal, Theme.Spacing.xs)
+            .accessibilityIdentifier("models.totalFootprint")
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         ForEach(ModelCatalog.all) { spec in
           ModelCardView(
             spec: spec,
@@ -27,7 +44,7 @@ struct ModelLibraryView: View {
             deleteError: $deleteError)
         }
         Text(
-          "Models download once from Hugging Face and stay on this \(Platform.deviceName). Downloads continue if you leave the app."
+          "Models download once from Hugging Face and stay on this \(Platform.deviceName). Downloads continue if you leave the app. First load also compiles a local GPU/ANE cache beside the model."
         )
         .font(.footnote)
         .foregroundStyle(Theme.Text.tertiary)
@@ -40,7 +57,14 @@ struct ModelLibraryView: View {
     }
     .ambientBackdrop(Theme.Brand.glacier, intensity: .whisper)
     .navigationTitle("Models")
+    .inlineTitleDisplay()
     .onAppear { appState.store.refreshStates() }
+  }
+
+  private var totalInstalledFootprintBytes: Int64 {
+    ModelCatalog.all
+      .filter { appState.store.states[$0.id] == .ready }
+      .reduce(0) { $0 + $1.sizeBytes + $1.engineCacheBytes }
   }
 }
 
@@ -78,6 +102,10 @@ extension ModelStore {
 }
 
 private struct ModelCardView: View {
+  private enum ControlPhase: Equatable {
+    case notDownloaded, downloading, verifying, paused, ready, failed
+  }
+
   @Environment(AppState.self) private var appState
   let spec: ModelSpec
   @Binding var deletingModelID: ModelID?
@@ -97,6 +125,23 @@ private struct ModelCardView: View {
     appState.store.isPausing(spec.id)
   }
 
+  private var controlPhase: ControlPhase {
+    switch state {
+    case .notDownloaded: .notDownloaded
+    case .downloading(let progress): (isVerifying || progress >= 1) ? .verifying : .downloading
+    case .paused: .paused
+    case .ready: .ready
+    case .failed: .failed
+    }
+  }
+
+  private var footprintDisplay: String {
+    guard spec.engineCacheBytes > 0 else { return spec.sizeDisplay }
+    let total = ModelSpec.formatByteCount(spec.sizeBytes + spec.engineCacheBytes)
+    let cache = ModelSpec.formatByteCount(spec.engineCacheBytes)
+    return String(localized: "\(spec.sizeDisplay) download · ~\(total) on disk (incl. \(cache) cache)")
+  }
+
   /// The chat model sparkles; the search model finds passages.
   private var symbol: String { spec.id == ModelCatalog.embeddingGemma.id ? "text.magnifyingglass" : "sparkles" }
   private var tint: Color { spec.id == ModelCatalog.embeddingGemma.id ? Theme.Brand.teal : Theme.Brand.glacier }
@@ -112,18 +157,23 @@ private struct ModelCardView: View {
           Text(spec.tagline)
             .font(.footnote)
             .foregroundStyle(Theme.Text.secondary)
-          Text(spec.sizeDisplay)
+          Text(footprintDisplay)
             .font(.caption)
             .monospacedDigit()
             .foregroundStyle(Theme.Text.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
         }
         Spacer(minLength: 0)
       }
       controls
+        .appAnimation(Theme.Motion.stateChange, value: controlPhase, kind: .dissolve)
     }
     .padding(Theme.Spacing.lg)
     .surfaceCard(radius: Theme.Radius.group)
     .cellularDownloadConfirmation($cellularSpec)
+    .onChange(of: controlPhase) { old, new in
+      if new == .ready && old != .ready { Haptics.success() }
+    }
     .confirmationDialog(
       "Delete \(spec.displayName)?",
       isPresented: $confirmDelete,
@@ -131,6 +181,7 @@ private struct ModelCardView: View {
     ) {
       Button("Delete (\(spec.sizeDisplay))", role: .destructive) {
         guard deletingModelID == nil else { return }
+        Haptics.warning()
         deleteError = nil
         deletingModelID = spec.id
         Task {
@@ -152,6 +203,7 @@ private struct ModelCardView: View {
     switch state {
     case .notDownloaded:
       Button {
+        Haptics.selection()
         appState.store.download(spec) { cellularSpec = $0 }
       } label: {
         Label("Download", systemImage: "arrow.down")
@@ -159,8 +211,9 @@ private struct ModelCardView: View {
       .buttonStyle(LitButtonStyle(tint: tint))
       .accessibilityIdentifier("models.download.\(spec.id.rawValue)")
     case .downloading(let progress):
+      let verifying = isVerifying || progress >= 1
       VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-        if isVerifying {
+        if verifying {
           ProgressView()
             .accessibilityLabel("\(spec.displayName) verifying")
             .tint(tint)
@@ -170,18 +223,24 @@ private struct ModelCardView: View {
             .tint(tint)
         }
         HStack {
-          Text(downloadingStatusText(progress: progress))
+          Text(downloadingStatusText(progress: progress, verifying: verifying))
             .font(.caption)
             .monospacedDigit()
             .foregroundStyle(Theme.Text.secondary)
             .contentTransition(.numericText())
           Spacer()
-          Button("Pause") { appState.store.pauseDownload(spec) }
-            .buttonStyle(QuietCapsuleButtonStyle())
-            .disabled(isVerifying || isPausing)
-          Button("Cancel", role: .cancel) { appState.store.cancelDownload(spec) }
-            .buttonStyle(QuietCapsuleButtonStyle(tint: Theme.Text.secondary))
-            .disabled(isVerifying)
+          Button("Pause") {
+            Haptics.selection()
+            appState.store.pauseDownload(spec)
+          }
+          .buttonStyle(QuietCapsuleButtonStyle())
+          .disabled(verifying || isPausing)
+          Button("Cancel", role: .cancel) {
+            Haptics.selection()
+            appState.store.cancelDownload(spec)
+          }
+          .buttonStyle(QuietCapsuleButtonStyle(tint: Theme.Text.secondary))
+          .disabled(verifying)
         }
       }
     case .paused(let progress):
@@ -192,10 +251,16 @@ private struct ModelCardView: View {
             : String(localized: "Paused at \(Int(progress * 100))%"),
           tone: Theme.Status.guarded)
         Spacer()
-        Button("Resume") { appState.store.download(spec) { cellularSpec = $0 } }
-          .buttonStyle(QuietCapsuleButtonStyle(tint: tint))
-        Button("Cancel", role: .cancel) { appState.store.cancelDownload(spec) }
-          .buttonStyle(QuietCapsuleButtonStyle(tint: Theme.Text.secondary))
+        Button("Resume") {
+          Haptics.selection()
+          appState.store.download(spec) { cellularSpec = $0 }
+        }
+        .buttonStyle(QuietCapsuleButtonStyle(tint: tint))
+        Button("Cancel", role: .cancel) {
+          Haptics.selection()
+          appState.store.cancelDownload(spec)
+        }
+        .buttonStyle(QuietCapsuleButtonStyle(tint: Theme.Text.secondary))
       }
     case .ready:
       HStack {
@@ -203,6 +268,7 @@ private struct ModelCardView: View {
           .accessibilityIdentifier("models.ready.\(spec.id.rawValue)")
         Spacer()
         Button(deletingModelID == spec.id ? "Deleting…" : "Delete", role: .destructive) {
+          Haptics.warning()
           confirmDelete = true
         }
         .buttonStyle(QuietCapsuleButtonStyle(tint: Theme.Status.critical))
@@ -214,14 +280,17 @@ private struct ModelCardView: View {
         Text(message)
           .font(.footnote)
           .foregroundStyle(Theme.Status.critical)
-        Button("Retry") { appState.store.download(spec) { cellularSpec = $0 } }
-          .buttonStyle(QuietCapsuleButtonStyle(tint: tint))
+        Button("Retry") {
+          Haptics.selection()
+          appState.store.download(spec) { cellularSpec = $0 }
+        }
+        .buttonStyle(QuietCapsuleButtonStyle(tint: tint))
       }
     }
   }
 
-  private func downloadingStatusText(progress: Double) -> String {
-    if isVerifying {
+  private func downloadingStatusText(progress: Double, verifying: Bool) -> String {
+    if verifying {
       return String(localized: "Verifying…")
     }
     if appState.store.waitingForWiFi.contains(spec.id) {

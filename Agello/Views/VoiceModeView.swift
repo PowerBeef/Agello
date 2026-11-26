@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 /// Full-screen voice conversation in the voice mode's gold: an orb that
@@ -5,6 +6,7 @@ import SwiftUI
 struct VoiceModeView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.verticalSizeClass) private var verticalSizeClass
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(ShellModel.self) private var shell: ShellModel?
   let session: VoiceSession
 
@@ -14,85 +16,44 @@ struct VoiceModeView: View {
     self.session = session
   }
 
+  private var panelTransition: AnyTransition {
+    reduceMotion
+      ? .opacity
+      : .asymmetric(
+        insertion: .scale(scale: 0.96).combined(with: .opacity),
+        removal: .opacity)
+  }
+
+  private var isFailed: Bool {
+    if case .failed = session.state { return true }
+    return false
+  }
+
+  private var hasSecondaryContent: Bool {
+    (session.cameraOn && session.camera.session != nil)
+      || !session.heard.isEmpty
+      || !session.answer.isEmpty
+      || session.pendingToolConfirmation != nil
+      || !session.latestActionCards.isEmpty
+  }
+
   var body: some View {
     let isCompact = verticalSizeClass == .compact
-    VStack(spacing: Theme.Spacing.md) {
-      GeometryReader { geometry in
-        ScrollViewReader { proxy in
-          ScrollView {
-            VStack(spacing: isCompact ? Theme.Spacing.md : Theme.Spacing.xl) {
-              if session.cameraOn, let captureSession = session.camera.session {
-                CameraPreview(session: captureSession, device: session.camera.captureDevice)
-                  .clipShape(.rect(cornerRadius: Theme.Radius.composer, style: .continuous))
-                  .overlay {
-                    RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous)
-                      .stroke(Theme.Surface.stroke, lineWidth: Theme.Stroke.hairline)
-                  }
-                  .frame(
-                    minHeight: isCompact ? 120 : 160,
-                    maxHeight: isCompact ? 160 : (session.pendingToolConfirmation != nil ? 180 : 320))
-                  .padding(.horizontal, Theme.Spacing.lg)
-                  .accessibilityLabel("Camera preview")
-                  .accessibilityIdentifier("voice.camera")
-              } else {
-                Spacer(minLength: 0)
-              }
-              VoiceOrbView(session: session, isCompact: isCompact, tint: tint)
-              Text(session.state.label)
-                .font(.system(.headline, weight: .semibold))
-                .foregroundStyle(Theme.Text.secondary)
-                .contentTransition(.opacity)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, Theme.Spacing.lg)
-                .accessibilityIdentifier("voice.state")
-              captions(isCompact: isCompact)
-              if let confirmation = session.pendingToolConfirmation {
-                ToolConfirmationCard(
-                  request: confirmation,
-                  onApprove: { session.resolveToolConfirmation(id: confirmation.id, approved: true) },
-                  onApproveSteps: { selected in
-                    session.resolveToolConfirmation(id: confirmation.id, approvedSteps: selected)
-                  },
-                  onDeny: { session.resolveToolConfirmation(id: confirmation.id, approved: false) }
-                )
-                .id(confirmation.id)
-                .layoutPriority(1)
-                .padding(.horizontal, Theme.Spacing.lg)
-              } else if !session.latestActionCards.isEmpty {
-                ActionCardStack(cards: session.latestActionCards, isCompact: true)
-                  .padding(.horizontal, Theme.Spacing.lg)
-                  .accessibilityIdentifier("voice.actionCards")
-              }
-              Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, minHeight: geometry.size.height)
-            .padding(.top, Theme.Spacing.sm)
-            .padding(.bottom, Theme.Spacing.md)
-          }
-          .scrollBounceBehavior(.basedOnSize)
-          .onChange(of: session.pendingToolConfirmation?.id) { _, newID in
-            if let newID, let confirmation = session.pendingToolConfirmation {
-              withAppAnimation(Theme.Motion.easeOut) {
-                proxy.scrollTo(newID, anchor: .bottom)
-              }
-              Haptics.announce(confirmation.summary)
-            }
-          }
-        }
+    Group {
+      if isCompact {
+        compactLayout
+      } else {
+        portraitLayout
       }
-      if let cameraError = session.cameraError {
-        Text(cameraError)
-          .font(.footnote)
-          .foregroundStyle(Theme.Status.guarded)
-          .multilineTextAlignment(.center)
-          .padding(.horizontal, Theme.Spacing.lg)
-      }
-      controls
-        .layoutPriority(1)
     }
     .padding(.vertical, Theme.Spacing.md)
-    .frame(maxWidth: .infinity)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
     .ambientBackdrop(tint, intensity: .loud)
+    .environment(
+      \.onActionCardSheetPresented,
+      ActionCardSheetHandler(id: ObjectIdentifier(session)) {
+        session.setExternalSheetPresented($0)
+      })
     .task { await session.start() }
     .onDisappear {
       session.end()
@@ -110,21 +71,200 @@ struct VoiceModeView: View {
     .preferredColorScheme(.dark)
   }
 
+  // MARK: - Portrait & Compact Landscape Layouts
+
+  private var portraitLayout: some View {
+    VStack(spacing: Theme.Spacing.md) {
+      GeometryReader { geometry in
+        ScrollViewReader { proxy in
+          ScrollView {
+            VStack(spacing: Theme.Spacing.xl) {
+              if session.cameraOn, let captureSession = session.camera.session {
+                cameraPreview(captureSession: captureSession, isCompact: false)
+              } else {
+                Spacer(minLength: 0)
+              }
+              VoiceOrbView(session: session, isCompact: false, tint: tint)
+              stateSection
+              captions(isCompact: false)
+              interactiveAttachment
+              Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+            .padding(.top, Theme.Spacing.sm)
+            .padding(.bottom, Theme.Spacing.md)
+            .appAnimation(Theme.Motion.panel, value: session.cameraOn)
+            .appAnimation(Theme.Motion.panel, value: session.pendingToolConfirmation?.id)
+            .appAnimation(Theme.Motion.panel, value: session.latestActionCards.map(\.id))
+          }
+          .scrollBounceBehavior(.basedOnSize)
+          .onChange(of: session.pendingToolConfirmation?.id) { _, newID in
+            scrollToConfirmation(id: newID, proxy: proxy)
+          }
+        }
+      }
+      cameraErrorNotice
+      controls
+        .layoutPriority(1)
+    }
+    .appAnimation(Theme.Motion.stateChange, value: session.cameraError, kind: .dissolve)
+  }
+
+  private var compactLayout: some View {
+    HStack(spacing: Theme.Spacing.lg) {
+      VStack(spacing: Theme.Spacing.md) {
+        Spacer(minLength: 0)
+        VoiceOrbView(session: session, isCompact: true, tint: tint)
+        stateSection
+        cameraErrorNotice
+        Spacer(minLength: 0)
+        controls
+      }
+      .frame(maxWidth: hasSecondaryContent ? 260 : .infinity, maxHeight: .infinity)
+      .padding(.leading, Theme.Spacing.lg)
+      .padding(.trailing, hasSecondaryContent ? 0 : Theme.Spacing.lg)
+      .appAnimation(Theme.Motion.stateChange, value: session.cameraError, kind: .dissolve)
+
+      if hasSecondaryContent {
+        GeometryReader { geometry in
+          ScrollViewReader { proxy in
+            ScrollView {
+              VStack(spacing: Theme.Spacing.md) {
+                if session.cameraOn, let captureSession = session.camera.session {
+                  cameraPreview(captureSession: captureSession, isCompact: true)
+                }
+                captions(isCompact: true)
+                interactiveAttachment
+              }
+              .frame(maxWidth: .infinity, minHeight: geometry.size.height, alignment: .center)
+              .padding(.vertical, Theme.Spacing.xs)
+              .appAnimation(Theme.Motion.panel, value: session.cameraOn)
+              .appAnimation(Theme.Motion.panel, value: session.pendingToolConfirmation?.id)
+              .appAnimation(Theme.Motion.panel, value: session.latestActionCards.map(\.id))
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .onChange(of: session.pendingToolConfirmation?.id) { _, newID in
+              scrollToConfirmation(id: newID, proxy: proxy)
+            }
+          }
+        }
+        .padding(.trailing, Theme.Spacing.lg)
+        .transition(panelTransition)
+      }
+    }
+    .appAnimation(Theme.Motion.panel, value: hasSecondaryContent)
+  }
+
+  // MARK: - Subviews
+
+  private func cameraPreview(captureSession: AVCaptureSession, isCompact: Bool) -> some View {
+    CameraPreview(session: captureSession, device: session.camera.captureDevice)
+      .clipShape(.rect(cornerRadius: Theme.Radius.composer, style: .continuous))
+      .overlay {
+        RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous)
+          .stroke(Theme.Surface.stroke, lineWidth: Theme.Stroke.hairline)
+      }
+      .frame(
+        minHeight: isCompact ? 112 : 160,
+        maxHeight: isCompact ? 156 : (session.pendingToolConfirmation != nil ? 180 : 320))
+      .padding(.horizontal, isCompact ? 0 : Theme.Spacing.lg)
+      .transition(panelTransition)
+      .accessibilityLabel("Camera preview")
+      .accessibilityIdentifier("voice.camera")
+  }
+
+  private var stateSection: some View {
+    VStack(spacing: Theme.Spacing.sm) {
+      Text(session.state.label)
+        .font(.system(.headline, weight: .semibold))
+        .foregroundStyle(isFailed ? Theme.Status.critical : Theme.Text.secondary)
+        .contentTransition(.opacity)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .appAnimation(Theme.Motion.stateChange, value: session.state, kind: .dissolve)
+        .accessibilityIdentifier("voice.state")
+      if isFailed {
+        Button("Retry") {
+          Haptics.selection()
+          Task { await session.retry() }
+        }
+        .buttonStyle(QuietCapsuleButtonStyle(tint: tint))
+        .transition(panelTransition)
+        .accessibilityIdentifier("voice.retry")
+      }
+    }
+    .appAnimation(Theme.Motion.stateChange, value: isFailed, kind: .dissolve)
+  }
+
+  @ViewBuilder
+  private var interactiveAttachment: some View {
+    if let confirmation = session.pendingToolConfirmation {
+      ToolConfirmationCard(
+        request: confirmation,
+        isCompact: true,
+        onApprove: { session.resolveToolConfirmation(id: confirmation.id, approved: true) },
+        onApproveSteps: { selected in
+          session.resolveToolConfirmation(id: confirmation.id, approvedSteps: selected)
+        },
+        onDeny: { session.resolveToolConfirmation(id: confirmation.id, approved: false) }
+      )
+      .id(confirmation.id)
+      .layoutPriority(1)
+      .padding(.horizontal, verticalSizeClass == .compact ? 0 : Theme.Spacing.lg)
+      .transition(panelTransition)
+    } else if !session.latestActionCards.isEmpty {
+      ActionCardStack(cards: session.latestActionCards, isCompact: true)
+        .padding(.horizontal, verticalSizeClass == .compact ? 0 : Theme.Spacing.lg)
+        .transition(panelTransition)
+        .accessibilityIdentifier("voice.actionCards")
+    }
+  }
+
+  @ViewBuilder
+  private var cameraErrorNotice: some View {
+    if let cameraError = session.cameraError {
+      HStack(spacing: Theme.Spacing.sm) {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .foregroundStyle(Theme.Status.guarded)
+          .accessibilityHidden(true)
+        Text(cameraError)
+          .font(.footnote)
+          .foregroundStyle(Theme.Status.guarded)
+          .multilineTextAlignment(.leading)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      .padding(.horizontal, Theme.Spacing.md)
+      .padding(.vertical, Theme.Spacing.sm)
+      .surfaceCard(radius: Theme.Radius.row)
+      .padding(.horizontal, Theme.Spacing.lg)
+      .transition(panelTransition)
+      .accessibilityIdentifier("voice.cameraError")
+    }
+  }
+
+  private func scrollToConfirmation(id: UUID?, proxy: ScrollViewProxy) {
+    guard let id, let confirmation = session.pendingToolConfirmation else { return }
+    withAppAnimation(Theme.Motion.easeOut) {
+      proxy.scrollTo(id, anchor: .bottom)
+    }
+    Haptics.announce(confirmation.summary)
+  }
+
   /// The words being said, newest at the bottom: a long answer scrolls rather than stopping at
   /// six lines of its start.
   @ViewBuilder
   private func captions(isCompact: Bool) -> some View {
     if !session.heard.isEmpty || !session.answer.isEmpty {
       ScrollView {
-        captionText
+        captionText(isCompact: isCompact)
       }
       .defaultScrollAnchor(.bottom)
       .scrollBounceBehavior(.basedOnSize)
-      .frame(maxHeight: session.pendingToolConfirmation != nil ? 100 : (isCompact ? 120 : 240))
+      .frame(maxHeight: session.pendingToolConfirmation != nil ? 100 : (isCompact ? 132 : 240))
     }
   }
 
-  private var captionText: some View {
+  private func captionText(isCompact: Bool) -> some View {
     VStack(spacing: Theme.Spacing.snug) {
       if !session.heard.isEmpty {
         Text(session.heard)
@@ -141,42 +281,63 @@ struct VoiceModeView: View {
     }
     .multilineTextAlignment(.center)
     .frame(maxWidth: .infinity)
-    .padding(.horizontal, Theme.Spacing.xxl)
-    .appAnimation(Theme.Motion.easeOut, value: session.answer)
+    .padding(.horizontal, isCompact ? Theme.Spacing.sm : Theme.Spacing.xxl)
   }
 
   private var controls: some View {
-    HStack(spacing: Theme.Spacing.xxl) {
-      Button {
-        Task { await session.toggleCamera() }
-      } label: {
-        Image(systemName: session.cameraOn ? "camera.fill" : "camera")
-          .font(.title3)
+    GlassEffectContainer(spacing: Theme.Spacing.lg) {
+      HStack(spacing: Theme.Spacing.lg) {
+        Button {
+          Haptics.selection()
+          Task { await session.toggleCamera() }
+        } label: {
+          Image(systemName: session.cameraOn ? "camera.fill" : "camera")
+            .font(.title3.weight(.medium))
+            .foregroundStyle(session.cameraOn ? tint : Theme.Text.primary)
+            .contentTransition(.symbolEffect(.replace))
+            .frame(width: 56, height: 56)
+            .chromeSurface(in: Circle(), tint: session.cameraOn ? tint : nil, interactive: true)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .opacity(!CameraFeed.isAvailable || session.isCameraToggling ? 0.45 : 1)
+        .disabled(!CameraFeed.isAvailable || session.isCameraToggling)
+        .accessibilityLabel("Camera")
+        .accessibilityValue(session.cameraOn ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
+        .accessibilityIdentifier("voice.toggleCamera")
+
+        Button {
+          Haptics.selection()
+          session.toggleMute()
+        } label: {
+          Image(systemName: session.muted ? "mic.slash.fill" : "mic.fill")
+            .font(.title3.weight(.medium))
+            .foregroundStyle(session.muted ? tint : Theme.Text.primary)
+            .contentTransition(.symbolEffect(.replace))
+            .frame(width: 56, height: 56)
+            .chromeSurface(in: Circle(), tint: session.muted ? tint : nil, interactive: true)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(session.muted ? "Unmute" : "Mute")
+        .accessibilityIdentifier("voice.mute")
+
+        Button {
+          Haptics.selection()
+          dismiss()
+        } label: {
+          Image(systemName: "xmark")
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(Theme.Text.primary)
+            .frame(width: 56, height: 56)
+            .chromeSurface(in: Circle(), tint: Theme.Status.critical, interactive: true)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("End voice mode")
+        .accessibilityIdentifier("voice.end")
       }
-      .buttonStyle(QuietCircleButtonStyle(size: 56))
-      .disabled(!CameraFeed.isAvailable)
-      .accessibilityLabel("Camera")
-      .accessibilityValue(session.cameraOn ? "On" : "Off")
-      .accessibilityAddTraits(.isToggle)
-      .accessibilityIdentifier("voice.toggleCamera")
-      Button {
-        session.toggleMute()
-      } label: {
-        Image(systemName: session.muted ? "mic.slash.fill" : "mic.fill")
-          .font(.title3)
-          .contentTransition(.symbolEffect(.replace))
-      }
-      .buttonStyle(QuietCircleButtonStyle(size: 56, tint: session.muted ? tint : Theme.Text.primary))
-      .accessibilityLabel(session.muted ? "Unmute" : "Mute")
-      .accessibilityIdentifier("voice.mute")
-      Button {
-        dismiss()
-      } label: {
-        Image(systemName: "xmark")
-      }
-      .buttonStyle(LitCircleButtonStyle(tint: Theme.Status.critical, size: 56))
-      .accessibilityLabel("End voice mode")
-      .accessibilityIdentifier("voice.end")
     }
   }
 }
@@ -230,8 +391,9 @@ private struct VoiceOrbView: View {
     .scaleEffect(reduceMotion ? 1 : scale)
     .opacity(session.state == .thinking ? 0.75 : 1)
     .appAnimation(Theme.Motion.stateChange, value: session.level)
-    .appAnimation(Theme.Motion.slide, value: session.cameraOn)
-    .appAnimation(Theme.Motion.slide, value: hasConfirmation)
+    .appAnimation(Theme.Motion.stateChange, value: session.state, kind: .dissolve)
+    .appAnimation(Theme.Motion.panel, value: session.cameraOn)
+    .appAnimation(Theme.Motion.panel, value: hasConfirmation)
 
     Group {
       if shouldPulse {

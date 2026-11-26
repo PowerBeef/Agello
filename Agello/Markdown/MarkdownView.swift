@@ -224,6 +224,7 @@ struct CodeBlockView: View {
   /// Still streaming: highlighted without being cached.
   var isOpen = false
   @State private var copied = false
+  @State private var copyResetTask: Task<Void, Never>?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -235,16 +236,23 @@ struct CodeBlockView: View {
         Button {
           Platform.copy(code)
           Haptics.complete()
-          copied = true
-          Task {
+          copyResetTask?.cancel()
+          withAppAnimation(Theme.Motion.stateChange, kind: .dissolve) {
+            copied = true
+          }
+          copyResetTask = Task {
             try? await Task.sleep(for: .seconds(1.5))
-            copied = false
+            guard !Task.isCancelled else { return }
+            withAppAnimation(Theme.Motion.stateChange, kind: .dissolve) {
+              copied = false
+            }
           }
         } label: {
           Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
             .font(.system(.caption, weight: .medium))
             .foregroundStyle(Theme.Text.secondary)
             .contentTransition(.symbolEffect(.replace))
+            .appAnimation(Theme.Motion.stateChange, value: copied, kind: .dissolve)
             .frame(minHeight: Theme.Size.glyph)
         }
         .buttonStyle(.borderless)
@@ -268,6 +276,10 @@ struct CodeBlockView: View {
       }
     }
     .surfaceCard(radius: Theme.Radius.card, fill: Theme.Surface.card)
+    .onDisappear {
+      copyResetTask?.cancel()
+      copyResetTask = nil
+    }
     // A container keeps the Copy button's own identifier.
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("message.code")
@@ -292,21 +304,34 @@ private struct TableBlockView: View {
   let header: [AttributedString]
   let rows: [[AttributedString]]
   let alignments: [MarkdownDocument.Alignment]
+  @ScaledMetric(relativeTo: .callout) private var maxCellWidth: CGFloat = 240
+
+  private var cappedCellWidth: CGFloat {
+    min(maxCellWidth, 320)
+  }
 
   var body: some View {
     ScrollView(.horizontal, showsIndicators: false) {
       Grid(alignment: .leading, horizontalSpacing: Theme.Spacing.lg, verticalSpacing: Theme.Spacing.sm) {
         GridRow {
           ForEach(Array(header.enumerated()), id: \.offset) { column, cell in
-            Text(cell).bold().gridColumnAlignment(alignment(column))
+            Text(cell)
+              .bold()
+              .multilineTextAlignment(textAlignment(column))
+              .frame(maxWidth: cappedCellWidth, alignment: frameAlignment(column))
+              .fixedSize(horizontal: false, vertical: true)
+              .gridColumnAlignment(alignment(column))
           }
         }
         Rectangle().fill(Theme.Surface.stroke).frame(height: Theme.Stroke.hairline)
           .gridCellUnsizedAxes(.horizontal)
         ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
           GridRow {
-            ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+            ForEach(Array(row.enumerated()), id: \.offset) { column, cell in
               Text(cell)
+                .multilineTextAlignment(textAlignment(column))
+                .frame(maxWidth: cappedCellWidth, alignment: frameAlignment(column))
+                .fixedSize(horizontal: false, vertical: true)
             }
           }
         }
@@ -320,6 +345,24 @@ private struct TableBlockView: View {
   }
 
   private func alignment(_ column: Int) -> HorizontalAlignment {
+    guard column < alignments.count else { return .leading }
+    switch alignments[column] {
+    case .leading: return .leading
+    case .center: return .center
+    case .trailing: return .trailing
+    }
+  }
+
+  private func frameAlignment(_ column: Int) -> Alignment {
+    guard column < alignments.count else { return .leading }
+    switch alignments[column] {
+    case .leading: return .leading
+    case .center: return .center
+    case .trailing: return .trailing
+    }
+  }
+
+  private func textAlignment(_ column: Int) -> TextAlignment {
     guard column < alignments.count else { return .leading }
     switch alignments[column] {
     case .leading: return .leading

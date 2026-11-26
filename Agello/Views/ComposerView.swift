@@ -1,6 +1,7 @@
 import Observation
 import PhotosUI
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// One-way command & mode channel between ``ChatView`` and ``ChatComposerView``.
 ///
@@ -46,12 +47,14 @@ final class ComposerBridge {
 /// ``ChatView``'s message list.
 struct ChatComposerView: View {
   @Environment(AppState.self) private var appState
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let thread: ChatThread?
   let bridge: ComposerBridge
   var onStopReading: () -> Void
   var onOpenVoice: () -> Void
   var makeThread: () -> ChatThread
 
+  @Namespace private var composerGlass
   @State private var draft = ""
   @State private var pendingImage: Data?
   @State private var pendingImageID = UUID()
@@ -83,6 +86,33 @@ struct ChatComposerView: View {
 
   private var isReadingFiles: Bool { !fileReads.isEmpty }
 
+  private struct AuxiliaryBarState: Equatable {
+    var isPreparing: Bool
+    var isEditing: Bool
+    var pendingFileCount: Int
+    var isReadingFiles: Bool
+    var hasImage: Bool
+    var isRecording: Bool
+    var isListening: Bool
+    var hasVoiceClip: Bool
+  }
+
+  private var auxiliaryBarState: AuxiliaryBarState {
+    AuxiliaryBarState(
+      isPreparing: appState.preparingStatus != nil && appState.preparingThreadID == thread?.id,
+      isEditing: editingTurn != nil,
+      pendingFileCount: pendingFiles.count,
+      isReadingFiles: isReadingFiles,
+      hasImage: pendingImage != nil,
+      isRecording: recorder.isRecording,
+      isListening: liveDictation.isListening,
+      hasVoiceClip: voiceMessageURL != nil)
+  }
+
+  private var barTransition: AnyTransition {
+    reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity)
+  }
+
   /// What the next message does; tints the composer chrome, pills and send button.
   private var mode: Theme.Mode {
     bridge.searchWeb ? .search : appState.options.enableThinking ? .think : .chat
@@ -90,9 +120,12 @@ struct ChatComposerView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      preparingBar
-      editingBar
-      pendingBar
+      VStack(spacing: 0) {
+        preparingBar
+        editingBar
+        pendingBar
+      }
+      .appAnimation(Theme.Motion.panel, value: auxiliaryBarState)
       inputBar
     }
     .alert(
@@ -273,6 +306,7 @@ struct ChatComposerView: View {
           .accessibilityIdentifier("chat.editing.cancel")
       }
       .padding(.horizontal, Theme.Spacing.xl)
+      .transition(barTransition)
     }
   }
 
@@ -291,6 +325,7 @@ struct ChatComposerView: View {
       }
       .padding(.horizontal, Theme.Spacing.xl)
       .padding(.vertical, Theme.Spacing.xs)
+      .transition(barTransition)
     }
   }
 
@@ -307,6 +342,7 @@ struct ChatComposerView: View {
               name: file.name, kind: file.kind, pageCount: file.isPaged ? file.pages.count : 0,
               cut: file.truncated
             ) {
+              Haptics.selection()
               pendingFiles.removeAll { $0.id == pending.id }
             }
           }
@@ -324,11 +360,13 @@ struct ChatComposerView: View {
         .padding(.horizontal, Theme.Spacing.md)
       }
       .padding(.vertical, Theme.Spacing.xs)
+      .transition(barTransition)
     }
     if pendingImage != nil || recorder.finishedURL != nil || recorder.isRecording || liveDictation.isListening {
       HStack(spacing: Theme.Spacing.sm) {
         if pendingImage != nil {
           Button {
+            Haptics.selection()
             setPendingImage(nil)
           } label: {
             Group {
@@ -360,15 +398,19 @@ struct ChatComposerView: View {
           )
           .id(dictating ? "fallback-dictation" : "voice-recording")
           if !dictating {
-            Button("Stop") { recorder.stop() }
-              .font(.system(.footnote, weight: .semibold))
-              .foregroundStyle(Theme.Status.critical)
-              .buttonStyle(.plain)
-              .frame(minHeight: Theme.Size.target)
-              .accessibilityIdentifier("composer.stopVoice")
+            Button("Stop") {
+              Haptics.selection()
+              recorder.stop()
+            }
+            .font(.system(.footnote, weight: .semibold))
+            .foregroundStyle(Theme.Status.critical)
+            .buttonStyle(.plain)
+            .frame(minHeight: Theme.Size.target)
+            .accessibilityIdentifier("composer.stopVoice")
           }
         } else if recorder.finishedURL != nil, !dictating, !appState.isTranscribing {
           Button {
+            Haptics.selection()
             recorder.discard()
           } label: {
             Label("Voice ready (\(Int(recorder.elapsed))s)", systemImage: "waveform")
@@ -384,6 +426,7 @@ struct ChatComposerView: View {
         Spacer()
         if pendingImage != nil || recorder.finishedURL != nil {
           Button("Clear") {
+            Haptics.selection()
             setPendingImage(nil)
             recorder.discard()
           }
@@ -395,38 +438,46 @@ struct ChatComposerView: View {
       }
       .padding(.horizontal, Theme.Spacing.lg)
       .padding(.vertical, Theme.Spacing.xs)
+      .transition(barTransition)
     }
   }
 
   // MARK: - Composer chrome
 
-  /// The composer: the message on top; attach, Think, Search, the microphone and the send / voice
-  /// / stop button below, on one chrome panel lit by the active mode. The next message can be
-  /// typed while a reply streams.
+  /// The composer: the message on top with attach, Think, Search, and mic below on one Liquid
+  /// Glass capsule, paired with a detached Liquid Glass Send / Voice / Stop button in a shared
+  /// `GlassEffectContainer` so the two morph cleanly without glass-on-glass nesting.
   private var inputBar: some View {
-    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-      ComposerField(text: $draft, focus: $inputFocused)
-        .padding(.horizontal, Theme.Spacing.sm)
-        .padding(.top, Theme.Spacing.sm)
-        .accessibilityIdentifier("chat.input")
-      HStack(spacing: Theme.Spacing.sm) {
-        attachMenu
-        // Titled pills when they fit, icons otherwise; priority over the spacer so a title never
-        // truncates to "T…".
-        ViewThatFits(in: .horizontal) {
-          modeToggles(iconOnly: false)
-          modeToggles(iconOnly: true)
+    GlassEffectContainer(spacing: Theme.Spacing.sm) {
+      HStack(alignment: .bottom, spacing: Theme.Spacing.sm) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+          ComposerField(text: $draft, focus: $inputFocused)
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.top, Theme.Spacing.sm)
+            .accessibilityIdentifier("chat.input")
+          HStack(spacing: Theme.Spacing.sm) {
+            attachMenu
+            // Titled pills when they fit, icons otherwise; priority over the spacer so a title
+            // never truncates to "T…".
+            ViewThatFits(in: .horizontal) {
+              modeToggles(iconOnly: false)
+              modeToggles(iconOnly: true)
+            }
+            .layoutPriority(1)
+            Spacer(minLength: 0)
+            micButton
+          }
         }
-        .layoutPriority(1)
-        Spacer(minLength: 0)
-        micButton
+        .padding(Theme.Spacing.snug)
+        .chromeSurface(
+          in: RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous), tint: mode.tint)
+        .glassEffectID("composer.panel", in: composerGlass)
+        .appAnimation(Theme.Motion.modeCrossfade, value: mode, kind: .dissolve)
+
         actionButton
+          .padding(.bottom, Theme.Spacing.snug)
       }
     }
-    .padding(Theme.Spacing.snug)
-    .chromeSurface(
-      in: RoundedRectangle(cornerRadius: Theme.Radius.composer, style: .continuous), tint: mode.tint)
-    .animation(Theme.Motion.modeCrossfade, value: mode)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("chat.composer")
     .padding(.horizontal, Theme.Spacing.snug)
@@ -542,11 +593,8 @@ struct ChatComposerView: View {
       Button("Files", systemImage: "folder") { showFiles = true }
       Button("Scan document", systemImage: "doc.viewfinder") { showScanner = true }
         .disabled(!CaptureSources.scannerAvailable)
-      PasteButton(payloadType: String.self) { strings in
-        let pasted = strings.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !pasted.isEmpty else { return }
-        draft = draft.isEmpty ? pasted : "\(draft)\n\(pasted)"
-        inputFocused = true
+      PasteButton(payloadType: PastedContent.self) { items in
+        handlePaste(items)
       }
       Button("Voice message", systemImage: "waveform") {
         onStopReading()
@@ -611,26 +659,20 @@ struct ChatComposerView: View {
 
   /// Dictation: live ANE streaming words into the composer (zero E4B lock), falling back to
   /// Gemma audio recording when no matching Apple Speech asset is installed.
-  @ViewBuilder
   private var micButton: some View {
     let listening = liveDictation.isListening || (recorder.isRecording && dictating)
-    let button = Button(action: toggleDictation) {
+    return Button(action: toggleDictation) {
       Group {
         if appState.isTranscribing {
           ProgressView()
         } else {
           Image(systemName: listening ? "checkmark" : "mic")
             .contentTransition(.symbolEffect(.replace))
+            .appAnimation(Theme.Motion.stateChange, value: listening, kind: .dissolve)
         }
       }
     }
-    Group {
-      if listening {
-        button.buttonStyle(LitCircleButtonStyle(tint: Theme.Status.critical))
-      } else {
-        button.buttonStyle(QuietCircleButtonStyle())
-      }
-    }
+    .buttonStyle(MicToggleButtonStyle(isListening: listening))
     .disabled(
       appState.isTranscribing || liveDictation.isStarting || recorder.isStarting
         || (recorder.isRecording && !dictating)
@@ -640,8 +682,41 @@ struct ChatComposerView: View {
     .accessibilityIdentifier("composer.mic")
   }
 
+  private func handlePaste(_ items: [PastedContent]) {
+    var firstImageData: Data?
+    var texts: [String] = []
+    for item in items {
+      switch item {
+      case .image(let data):
+        if firstImageData == nil { firstImageData = data }
+      case .text(let string):
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { texts.append(trimmed) }
+      }
+    }
+    if let data = firstImageData {
+      photoLoadTask?.cancel()
+      let generation = composerGeneration
+      photoLoadTask = Task {
+        let prepared = await Task.detached(priority: .userInitiated) {
+          ImagePreparer.prepare(data) ?? data
+        }.value
+        guard generation == composerGeneration, !Task.isCancelled else { return }
+        setPendingImage(prepared)
+        Haptics.selection()
+      }
+    }
+    let pasted = texts.joined(separator: "\n")
+    if !pasted.isEmpty {
+      draft = draft.isEmpty ? pasted : "\(draft)\n\(pasted)"
+      inputFocused = true
+      if firstImageData == nil { Haptics.selection() }
+    }
+  }
+
   private func toggleDictation() {
     if liveDictation.isListening {
+      Haptics.selection()
       let generation = composerGeneration
       Task {
         await liveDictation.stop()
@@ -650,10 +725,12 @@ struct ChatComposerView: View {
       return
     }
     if recorder.isRecording && dictating {
+      Haptics.selection()
       recorder.stop()  // transcribed in onChange(of: isRecording)
       return
     }
     guard !liveDictation.isStarting, !recorder.isStarting else { return }
+    Haptics.selection()
     onStopReading()
     let generation = composerGeneration
     let baseDraft = draft
@@ -740,7 +817,7 @@ struct ChatComposerView: View {
     return .send
   }
 
-  /// Send, voice mode, or stop: one lit button whose glyph morphs.
+  /// Send, voice mode, or stop: a detached Liquid Glass circle whose glyph and tint morph cleanly.
   private var actionButton: some View {
     let action = primaryAction
     let tint =
@@ -751,17 +828,23 @@ struct ChatComposerView: View {
       }
     return Button {
       switch action {
-      case .stop: appState.stop()
-      case .voice: onOpenVoice()
-      case .send: send()
+      case .stop:
+        Haptics.selection()
+        appState.stop()
+      case .voice:
+        Haptics.selection()
+        onOpenVoice()
+      case .send:
+        send()
       }
     } label: {
       Image(systemName: action.symbol)
         .contentTransition(.symbolEffect(.replace))
     }
-    .buttonStyle(LitCircleButtonStyle(tint: tint))
+    .buttonStyle(ComposerPrimaryButtonStyle(tint: tint, namespace: composerGlass))
     .disabled(action == .send && !canSend)
-    .animation(Theme.Motion.easeOut, value: action)
+    .appAnimation(Theme.Motion.stateChange, value: action, kind: .dissolve)
+    .appAnimation(Theme.Motion.modeCrossfade, value: mode, kind: .dissolve)
     .accessibilityLabel(action.label)
     .accessibilityIdentifier(action.identifier)
   }
@@ -838,6 +921,83 @@ struct ChatComposerView: View {
   }
 }
 
+/// Clipboard payload accepted by the composer's `PasteButton` (images or plain text).
+private enum PastedContent: Transferable, Sendable {
+  case image(Data)
+  case text(String)
+
+  static var transferRepresentation: some TransferRepresentation {
+    DataRepresentation(importedContentType: .image) { data in
+      .image(data)
+    }
+    ProxyRepresentation(importing: Self.text)
+  }
+}
+
+/// Detached circular Liquid Glass style for the primary Send / Voice / Stop control.
+private struct ComposerPrimaryButtonStyle: ButtonStyle {
+  @Environment(\.isEnabled) private var isEnabled
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  let tint: Color
+  let namespace: Namespace.ID
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(.system(.body, weight: .semibold))
+      .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+      .foregroundStyle(isEnabled ? Theme.Text.primary : Theme.Text.tertiary)
+      .frame(width: Theme.Size.target, height: Theme.Size.target)
+      .background {
+        if reduceTransparency {
+          Circle().fill(tint.mix(with: .black, by: isEnabled ? 0.42 : 0.70, in: .perceptual))
+        } else {
+          Circle().fill(
+            LinearGradient(
+              colors: isEnabled
+                ? [tint.opacity(0.32), tint.opacity(0.16)]
+                : [tint.opacity(0.08), tint.opacity(0.04)],
+              startPoint: .top, endPoint: .bottom))
+        }
+      }
+      .chromeSurface(in: Circle(), tint: isEnabled ? tint : nil, interactive: isEnabled)
+      .glassEffectID("composer.primary", in: namespace)
+      .shadow(
+        color: reduceTransparency || !isEnabled ? .clear : Theme.Elevation.glow(tint),
+        radius: Theme.Elevation.glowRadius, y: 2
+      )
+      .contentShape(Circle())
+      .scaleEffect(!reduceMotion && configuration.isPressed ? 0.94 : 1)
+      .appAnimation(Theme.Motion.press, value: configuration.isPressed)
+  }
+}
+
+/// Single parameterized mic button style so `mic ↔ checkmark` keeps identity for symbol replace.
+private struct MicToggleButtonStyle: ButtonStyle {
+  @Environment(\.isEnabled) private var isEnabled
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let isListening: Bool
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(.system(.body, weight: isListening ? .semibold : .medium))
+      .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+      .foregroundStyle(isEnabled ? Theme.Text.primary : Theme.Text.tertiary)
+      .frame(width: Theme.Size.target, height: Theme.Size.target)
+      .background {
+        if isListening {
+          LitTintBackground(shape: Circle(), tint: Theme.Status.critical, isEnabled: isEnabled)
+        } else {
+          QuietBackground(shape: Circle(), isPressed: configuration.isPressed)
+        }
+      }
+      .contentShape(Circle())
+      .scaleEffect(!reduceMotion && isListening && configuration.isPressed ? 0.94 : 1)
+      .appAnimation(Theme.Motion.press, value: configuration.isPressed)
+      .appAnimation(Theme.Motion.stateChange, value: isListening, kind: .dissolve)
+  }
+}
+
 /// Isolated 1 Hz elapsed indicator for live dictation and voice message recording so
 /// `ChatComposerView.body` never re-diffs on every 4 Hz recorder timer tick.
 private struct ComposerElapsedBadge: View {
@@ -846,27 +1006,36 @@ private struct ComposerElapsedBadge: View {
     case voiceMessage(maxDuration: TimeInterval)
   }
 
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let mode: Mode
   @State private var startedAt = Date.now
 
   var body: some View {
     TimelineView(.periodic(from: startedAt, by: 1.0)) { context in
       let elapsed = max(0, context.date.timeIntervalSince(startedAt))
-      Label(labelText(elapsed: elapsed), systemImage: symbol)
-        .font(.system(.caption, weight: .medium))
-        .monospacedDigit()
-        .foregroundStyle(Theme.Text.primary)
-        .padding(.horizontal, Theme.Spacing.md)
-        .frame(minHeight: Theme.Size.pill)
-        .background { LitTintBackground(shape: Capsule(), tint: Theme.Status.critical, strength: .pill) }
-        .accessibilityIdentifier("composer.recording")
-    }
-  }
-
-  private var symbol: String {
-    switch mode {
-    case .dictation: "waveform"
-    case .voiceMessage: "record.circle"
+      let wholeSeconds = Int(elapsed)
+      HStack(spacing: Theme.Spacing.tight) {
+        if mode == .dictation {
+          Image(systemName: "waveform")
+            .symbolEffect(.variableColor.iterative, isActive: !reduceMotion)
+            .accessibilityHidden(true)
+        } else {
+          Image(systemName: "record.circle")
+            .symbolEffect(.pulse, isActive: !reduceMotion)
+            .accessibilityHidden(true)
+        }
+        Text(labelText(elapsed: elapsed))
+          .contentTransition(.numericText())
+          .appAnimation(Theme.Motion.stateChange, value: wholeSeconds, kind: .dissolve)
+      }
+      .font(.system(.caption, weight: .medium))
+      .monospacedDigit()
+      .foregroundStyle(Theme.Text.primary)
+      .padding(.horizontal, Theme.Spacing.md)
+      .frame(minHeight: Theme.Size.pill)
+      .background { LitTintBackground(shape: Capsule(), tint: Theme.Status.critical, strength: .pill) }
+      .accessibilityElement(children: .combine)
+      .accessibilityIdentifier("composer.recording")
     }
   }
 

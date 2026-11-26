@@ -387,8 +387,24 @@ final class ShareModel {
   }
 }
 
+/// Agello's dark palette mirrored locally so the Share Extension stays decoupled from app-only types.
+private enum SharePalette {
+  static let canvas = Color(red: 0.086, green: 0.094, blue: 0.137)
+  static let canvasBottom = Color(red: 0.038, green: 0.044, blue: 0.056)
+  static let group = Color.white.opacity(0.05)
+  static let hairline = Color(red: 0.97, green: 0.92, blue: 0.82, opacity: 0.08)
+  static let glacier = Color(red: 0.541, green: 0.690, blue: 0.784)
+  static let healthy = Color(red: 0.55, green: 0.70, blue: 0.55)
+  static let critical = Color(red: 0.85, green: 0.50, blue: 0.50)
+  static let text = Color(red: 0.95, green: 0.94, blue: 0.92)
+  static let secondary = Color(red: 0.78, green: 0.76, blue: 0.72)
+  static let tertiary = Color(red: 0.62, green: 0.60, blue: 0.55)
+  static let placeholder = Color(red: 0.60, green: 0.63, blue: 0.68)
+}
+
 struct ShareView: View {
   @Bindable var model: ShareModel
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @FocusState private var focused: Bool
 
   var body: some View {
@@ -396,36 +412,96 @@ struct ShareView: View {
       Form {
         switch model.phase {
         case .loading:
-          ProgressView()
+          HStack(spacing: 12) {
+            ProgressView()
+              .tint(SharePalette.glacier)
+              .accessibilityLabel("Loading shared item")
+            Text("Loading…")
+              .foregroundStyle(SharePalette.secondary)
+          }
+          .listRowBackground(SharePalette.group)
+          .listRowSeparatorTint(SharePalette.hairline)
         case .saving:
           HStack(spacing: 12) {
             ProgressView()
+              .tint(SharePalette.glacier)
             Text("Saving for Agello…")
-              .foregroundStyle(.secondary)
+              .foregroundStyle(SharePalette.secondary)
           }
+          .listRowBackground(SharePalette.group)
+          .listRowSeparatorTint(SharePalette.hairline)
         case .failed(let message):
-          Text(message).foregroundStyle(.secondary)
+          HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .foregroundStyle(SharePalette.critical)
+              .accessibilityHidden(true)
+            Text(message)
+              .foregroundStyle(SharePalette.critical)
+          }
+          .listRowBackground(SharePalette.group)
+          .listRowSeparatorTint(SharePalette.hairline)
         case .ready:
           Section {
-            Label(model.preview, systemImage: model.symbol)
-              .lineLimit(3)
+            Label {
+              Text(model.preview)
+                .foregroundStyle(SharePalette.text)
+                .lineLimit(3)
+            } icon: {
+              Image(systemName: model.symbol)
+                .foregroundStyle(SharePalette.glacier)
+            }
           }
+          .listRowBackground(SharePalette.group)
+          .listRowSeparatorTint(SharePalette.hairline)
           Section {
-            TextField("Ask about this… (optional)", text: $model.question, axis: .vertical)
-              .lineLimit(1...5)
-              .focused($focused)
+            TextField(
+              "Ask about this… (optional)", text: $model.question,
+              prompt: Text("Ask about this… (optional)").foregroundStyle(SharePalette.placeholder),
+              axis: .vertical
+            )
+            .foregroundStyle(SharePalette.text)
+            .lineLimit(1...5)
+            .focused($focused)
           } footer: {
             Text("Agello answers on this iPhone when you open it.")
+              .foregroundStyle(SharePalette.tertiary)
           }
+          .listRowBackground(SharePalette.group)
+          .listRowSeparatorTint(SharePalette.hairline)
         case .saved:
           Section {
-            Label("Saved for Agello", systemImage: "checkmark.circle.fill")
-              .foregroundStyle(.green)
+            HStack(spacing: 10) {
+              Image(systemName: "checkmark.circle.fill")
+                .font(.title3)
+                .foregroundStyle(SharePalette.healthy)
+                .transition(.symbolEffect(.drawOn))
+                .accessibilityHidden(true)
+              Text("Saved for Agello")
+                .foregroundStyle(SharePalette.text)
+            }
           } footer: {
             Text("Open Agello to see the answer.")
+              .foregroundStyle(SharePalette.tertiary)
           }
+          .listRowBackground(SharePalette.group)
+          .listRowSeparatorTint(SharePalette.hairline)
         }
       }
+      .scrollContentBackground(.hidden)
+      .background {
+        ZStack {
+          LinearGradient(
+            colors: [SharePalette.canvas, SharePalette.canvasBottom],
+            startPoint: .top, endPoint: .bottom)
+          RadialGradient(
+            colors: [SharePalette.glacier.opacity(0.20), .clear],
+            center: .top, startRadius: 0, endRadius: 260)
+        }
+        .ignoresSafeArea()
+      }
+      .animation(
+        reduceMotion ? .easeInOut(duration: 0.18) : .smooth(duration: 0.22),
+        value: model.phase)
       .navigationTitle("Ask Agello")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -438,8 +514,11 @@ struct ShareView: View {
           if model.phase == .saved {
             Button("Done") { model.close() }
           } else {
-            Button("Ask") { model.ask() }
-              .disabled(model.phase != .ready)
+            Button("Ask") {
+              focused = false
+              model.ask()
+            }
+            .disabled(model.phase != .ready)
           }
         }
       }
@@ -447,5 +526,7 @@ struct ShareView: View {
         focused = phase == .ready
       }
     }
+    .tint(SharePalette.glacier)
+    .preferredColorScheme(.dark)
   }
 }

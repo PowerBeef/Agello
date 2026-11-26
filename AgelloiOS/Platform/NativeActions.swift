@@ -622,7 +622,7 @@ struct ContactDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
               ToolbarItem(placement: .cancellationAction) {
-                Button("Done") { dismiss() }
+                Button(role: .close) { dismiss() }
               }
             }
         }
@@ -676,7 +676,7 @@ private struct ContactDetailViewControllerRepresentable: UIViewControllerReprese
     controller.allowsEditing = false
     let close = dismiss
     controller.navigationItem.rightBarButtonItem = UIBarButtonItem(
-      systemItem: .done,
+      systemItem: .close,
       primaryAction: UIAction { _ in close() })
     return UINavigationController(rootViewController: controller)
   }
@@ -827,7 +827,7 @@ struct LookAroundSheet: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
           ToolbarItem(placement: .cancellationAction) {
-            Button("Done") { dismiss() }
+            Button(role: .close) { dismiss() }
           }
         }
     }
@@ -836,33 +836,63 @@ struct LookAroundSheet: View {
 
 struct InteractivePlacesMapSheet: View {
   let card: PlacesCard
+  var initialSelectedIndex: Int = 0
   @Environment(\.dismiss) private var dismiss
+  @State private var selectedPlaceID: String?
+  @State private var cameraPosition: MapCameraPosition
+
+  init(card: PlacesCard, initialSelectedIndex: Int = 0) {
+    self.card = card
+    self.initialSelectedIndex = initialSelectedIndex
+    let clampedIndex = card.places.indices.contains(initialSelectedIndex) ? initialSelectedIndex : 0
+    let initialPlace = card.places.indices.contains(clampedIndex) ? card.places[clampedIndex] : nil
+    _selectedPlaceID = State(initialValue: initialPlace?.id)
+    if let place = initialPlace {
+      let coordinate = CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
+      let region = MKCoordinateRegion(
+        center: coordinate, latitudinalMeters: 1_200, longitudinalMeters: 1_200)
+      _cameraPosition = State(initialValue: .region(region))
+    } else {
+      _cameraPosition = State(initialValue: .automatic)
+    }
+  }
+
+  private var selectedPlace: PlacesCard.PlaceItem? {
+    if let selectedPlaceID, let match = card.places.first(where: { $0.id == selectedPlaceID }) {
+      return match
+    }
+    if card.places.indices.contains(initialSelectedIndex) {
+      return card.places[initialSelectedIndex]
+    }
+    return card.places.first
+  }
 
   var body: some View {
     NavigationStack {
-      Map {
+      Map(position: $cameraPosition, selection: $selectedPlaceID) {
         ForEach(card.places) { place in
           Marker(
             place.name,
             coordinate: CLLocationCoordinate2D(latitude: place.latitude, longitude: place.longitude)
           )
-          .tint(Theme.Brand.teal)
+          .tint(place.id == selectedPlace?.id ? Theme.Brand.gold : Theme.Brand.teal)
+          .tag(place.id)
         }
       }
       .mapControls {
         MapUserLocationButton()
         MapCompass()
       }
-      .navigationTitle(card.places.first?.name ?? card.query)
+      .navigationTitle(selectedPlace?.name ?? card.query)
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Done") { dismiss() }
+          Button(role: .close) { dismiss() }
         }
-        if let primary = card.places.first {
+        if let target = selectedPlace {
           ToolbarItem(placement: .primaryAction) {
             Button("Open in Maps", systemImage: "map") {
-              NativeActions.openInMaps(place: primary)
+              NativeActions.openInMaps(place: target)
             }
           }
         }

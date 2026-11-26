@@ -53,7 +53,7 @@ enum WidgetPalette {
   static let canvas = Color(red: 0.086, green: 0.094, blue: 0.137)
   static let canvasBottom = Color(red: 0.038, green: 0.044, blue: 0.056)
   static let glacier = Color(red: 0.541, green: 0.690, blue: 0.784)
-  static let teal = Color(red: 0.459, green: 0.761, blue: 0.733)
+  static let teal = Color(red: 0.549, green: 0.780, blue: 0.749)
   static let gold = Color(red: 0.929, green: 0.800, blue: 0.541)
   static let text = Color(red: 0.95, green: 0.94, blue: 0.92)
   static let secondary = Color(red: 0.78, green: 0.76, blue: 0.72)
@@ -77,6 +77,9 @@ enum WidgetLinks {
 
 struct QuickActionsView: View {
   @Environment(\.widgetFamily) private var family
+  @Environment(\.widgetRenderingMode) private var renderingMode
+
+  private var isFullColor: Bool { renderingMode == .fullColor }
 
   var body: some View {
     switch family {
@@ -85,14 +88,18 @@ struct QuickActionsView: View {
         AccessoryWidgetBackground()
         Image(systemName: "waveform")
           .font(.title3)
+          .widgetAccentable()
       }
       .widgetURL(WidgetLinks.voice)
       .accessibilityLabel("Talk to Agello")
     case .accessoryRectangular:
       VStack(alignment: .leading, spacing: 2) {
-        Label("Agello", systemImage: "sparkles").font(.headline)
+        Label("Agello", systemImage: "sparkles")
+          .font(.headline)
+          .widgetAccentable()
         Text("Ask anything").font(.caption)
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
       .widgetURL(WidgetLinks.newChat)
     case .systemMedium:
       HStack(spacing: 10) {
@@ -104,14 +111,15 @@ struct QuickActionsView: View {
       VStack(alignment: .leading, spacing: 8) {
         Image(systemName: "sparkles")
           .font(.title2.weight(.semibold))
-          .foregroundStyle(WidgetPalette.glacier)
+          .foregroundStyle(isFullColor ? WidgetPalette.glacier : .primary)
+          .widgetAccentable()
         Spacer()
         Text("Ask Agello")
           .font(.headline)
-          .foregroundStyle(WidgetPalette.text)
+          .foregroundStyle(isFullColor ? WidgetPalette.text : .primary)
         Text("Private, on-device")
           .font(.caption)
-          .foregroundStyle(WidgetPalette.secondary)
+          .foregroundStyle(isFullColor ? WidgetPalette.secondary : .secondary)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .widgetURL(WidgetLinks.newChat)
@@ -119,23 +127,35 @@ struct QuickActionsView: View {
   }
 
   private func action(_ title: LocalizedStringKey, symbol: String, tint: Color, url: URL) -> some View {
-    Link(destination: url) {
+    let shape = ConcentricRectangle(corners: .concentric(minimum: .fixed(16)))
+    return Link(destination: url) {
       VStack(spacing: 8) {
         Image(systemName: symbol)
           .font(.title2.weight(.semibold))
-          .foregroundStyle(tint)
+          .foregroundStyle(isFullColor ? tint : .primary)
+          .widgetAccentable()
         Text(title)
           .font(.subheadline.weight(.medium))
-          .foregroundStyle(WidgetPalette.text)
+          .foregroundStyle(isFullColor ? WidgetPalette.text : .primary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.8)
+          .padding(.horizontal, 4)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .background {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
-          .fill(LinearGradient(colors: [tint.opacity(0.26), tint.opacity(0.12)], startPoint: .top, endPoint: .bottom))
+        if isFullColor {
+          shape.fill(
+            LinearGradient(
+              colors: [tint.opacity(0.26), tint.opacity(0.12)],
+              startPoint: .top, endPoint: .bottom))
+        } else {
+          shape.fill(Color.primary.opacity(0.10))
+        }
       }
       .overlay {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
-          .stroke(Color.white.opacity(0.14), lineWidth: 0.8)
+        shape.stroke(
+          isFullColor ? Color.white.opacity(0.14) : Color.primary.opacity(0.22),
+          lineWidth: 0.8)
       }
     }
   }

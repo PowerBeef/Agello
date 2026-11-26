@@ -7,7 +7,10 @@ import SwiftUI
 /// (with per-step checkboxes, risk badges, and zero-TOCTOU execution), plus an amber provenance
 /// warning banner whenever external/untrusted content entered the active turn.
 struct ToolConfirmationCard: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.verticalSizeClass) private var verticalSizeClass
   let request: ToolConfirmationRequest
+  let isCompact: Bool
   let onApprove: () -> Void
   let onApproveSteps: ((Set<Int>) -> Void)?
   let onDeny: () -> Void
@@ -16,15 +19,21 @@ struct ToolConfirmationCard: View {
 
   init(
     request: ToolConfirmationRequest,
+    isCompact: Bool = false,
     onApprove: @escaping () -> Void,
     onApproveSteps: ((Set<Int>) -> Void)? = nil,
     onDeny: @escaping () -> Void
   ) {
     self.request = request
+    self.isCompact = isCompact
     self.onApprove = onApprove
     self.onApproveSteps = onApproveSteps
     self.onDeny = onDeny
     _selectedSteps = State(initialValue: Set(request.steps.map(\.index)))
+  }
+
+  private var usesCompactLayout: Bool {
+    isCompact || verticalSizeClass == .compact
   }
 
   private var validStepIndices: Set<Int> {
@@ -74,6 +83,9 @@ struct ToolConfirmationCard: View {
   private var approveLabel: String {
     if request.isPlanBatch {
       let count = activeSelectedSteps.count
+      if count == 0 {
+        return String(localized: "Select Actions")
+      }
       return count == 1
         ? String(localized: "Run 1 Action")
         : String(localized: "Run \(count) Actions")
@@ -86,9 +98,38 @@ struct ToolConfirmationCard: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+    VStack(alignment: .leading, spacing: usesCompactLayout ? Theme.Spacing.sm : Theme.Spacing.md) {
       header
 
+      if usesCompactLayout {
+        ScrollView {
+          detailsContent
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxHeight: 200)
+      } else {
+        detailsContent
+      }
+
+      actionButtons
+    }
+    .padding(usesCompactLayout ? Theme.Spacing.md : Theme.Spacing.lg)
+    .surfaceCard(
+      radius: Theme.Radius.card,
+      stroke: effectiveRisk == .destructive ? Theme.Status.critical.opacity(0.35) : Theme.Surface.hairline)
+    .appAnimation(Theme.Motion.stateChange, value: effectiveRisk, kind: .dissolve)
+    .transition(reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity))
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier(request.isPlanBatch ? "tool.plan.card" : "tool.confirm.card")
+    .onChange(of: request.id) { _, _ in
+      selectedSteps = Set(request.steps.map(\.index))
+    }
+  }
+
+  @ViewBuilder
+  private var detailsContent: some View {
+    VStack(alignment: .leading, spacing: usesCompactLayout ? Theme.Spacing.sm : Theme.Spacing.md) {
       if !request.untrustedSources.isEmpty {
         taintBanner
       }
@@ -102,17 +143,6 @@ struct ToolConfirmationCard: View {
       } else if !request.parameters.isEmpty {
         parameterList(request.parameters)
       }
-
-      actionButtons
-    }
-    .padding(Theme.Spacing.lg)
-    .surfaceCard(
-      radius: Theme.Radius.card,
-      stroke: effectiveRisk == .destructive ? Theme.Status.critical.opacity(0.35) : Theme.Surface.hairline)
-    .accessibilityElement(children: .contain)
-    .accessibilityIdentifier(request.isPlanBatch ? "tool.plan.card" : "tool.confirm.card")
-    .onChange(of: request.id) { _, _ in
-      selectedSteps = Set(request.steps.map(\.index))
     }
   }
 
@@ -132,9 +162,7 @@ struct ToolConfirmationCard: View {
           .accessibilityIdentifier("tool.confirm.name")
       }
       Spacer(minLength: Theme.Spacing.xs)
-      StatusBadge(
-        text: badgeText,
-        tone: effectiveRisk == .destructive ? Theme.Status.critical : Theme.Status.guarded)
+      StatusBadge(text: badgeText, tone: accentTint)
     }
   }
 
@@ -165,16 +193,20 @@ struct ToolConfirmationCard: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
           Button {
             Haptics.selection()
-            if isSelected {
-              selectedSteps.remove(step.index)
-            } else {
-              selectedSteps.insert(step.index)
+            withAppAnimation(Theme.Motion.stateChange) {
+              if isSelected {
+                selectedSteps.remove(step.index)
+              } else {
+                selectedSteps.insert(step.index)
+              }
             }
           } label: {
             HStack(alignment: .center, spacing: Theme.Spacing.sm) {
               Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .font(.title3)
                 .foregroundStyle(isSelected ? tint(for: step.risk) : Theme.Text.tertiary)
+                .contentTransition(.symbolEffect(.replace))
+                .appAnimation(Theme.Motion.stateChange, value: isSelected, kind: .dissolve)
                 .frame(width: 28, height: Theme.Size.target)
                 .accessibilityHidden(true)
               VStack(alignment: .leading, spacing: 2) {
@@ -190,7 +222,7 @@ struct ToolConfirmationCard: View {
               if step.risk != .standard {
                 StatusBadge(
                   text: step.risk == .destructive ? String(localized: "Destructive") : String(localized: "External"),
-                  tone: step.risk == .destructive ? Theme.Status.critical : Theme.Status.guarded)
+                  tone: tint(for: step.risk))
               }
             }
             .contentShape(.rect)
@@ -217,6 +249,7 @@ struct ToolConfirmationCard: View {
               }
             }
             .padding(.leading, 36)
+            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
           }
         }
         .padding(Theme.Spacing.sm)
@@ -246,18 +279,15 @@ struct ToolConfirmationCard: View {
   }
 
   private var actionButtons: some View {
-    HStack(spacing: Theme.Spacing.sm) {
+    let isApproveDisabled = request.isPlanBatch && activeSelectedSteps.isEmpty
+    return HStack(spacing: Theme.Spacing.sm) {
       Button {
         Haptics.selection()
         onDeny()
       } label: {
         Text(request.isPlanBatch ? String(localized: "Cancel") : String(localized: "Deny"))
-          .font(.headline)
-          .foregroundStyle(Theme.Text.secondary)
-          .frame(maxWidth: .infinity, minHeight: Theme.Size.target)
-          .surfaceCard(radius: Theme.Radius.row)
       }
-      .buttonStyle(.plain)
+      .buttonStyle(QuietConfirmDenyButtonStyle())
       .accessibilityIdentifier("tool.confirm.deny")
 
       Button {
@@ -269,9 +299,12 @@ struct ToolConfirmationCard: View {
         }
       } label: {
         Text(approveLabel)
+          .contentTransition(.numericText())
+          .opacity(isApproveDisabled ? 0.55 : 1)
       }
       .buttonStyle(LitButtonStyle(tint: accentTint))
-      .disabled(request.isPlanBatch && activeSelectedSteps.isEmpty)
+      .disabled(isApproveDisabled)
+      .appAnimation(Theme.Motion.stateChange, value: activeSelectedSteps.count, kind: .dissolve)
       .accessibilityIdentifier("tool.confirm.approve")
     }
   }
@@ -295,5 +328,24 @@ struct ToolConfirmationCard: View {
     case .destructive: Theme.Status.critical
     case .external: Theme.Brand.glacier
     }
+  }
+}
+
+/// Capsule-matched Deny / Cancel button paired symmetrically with `LitButtonStyle`.
+private struct QuietConfirmDenyButtonStyle: ButtonStyle {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 52
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(.headline)
+      .tracking(-0.17)
+      .foregroundStyle(Theme.Text.secondary)
+      .padding(.horizontal, Theme.Spacing.md)
+      .frame(maxWidth: .infinity, minHeight: height)
+      .background { QuietBackground(shape: Capsule(), isPressed: configuration.isPressed) }
+      .contentShape(Capsule())
+      .scaleEffect(!reduceMotion && configuration.isPressed ? 0.98 : 1)
+      .appAnimation(Theme.Motion.press, value: configuration.isPressed)
   }
 }

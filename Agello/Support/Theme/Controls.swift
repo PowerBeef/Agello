@@ -5,43 +5,77 @@ import SwiftUI
 /// The primary action: a full-width (or hugging) lit-tint capsule with an
 /// off-white label. One per screen.
 struct LitButtonStyle: ButtonStyle {
-  @Environment(\.isEnabled) private var isEnabled
   var tint: Color = Theme.Mode.chat.tint
   var fullWidth = true
-  @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 52
 
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .font(.headline)
-      .tracking(-0.17)
-      .foregroundStyle(isEnabled ? Theme.Text.primary : Theme.Text.secondary)
-      .symbolRenderingMode(.hierarchical)
-      .padding(.horizontal, fullWidth ? 0 : Theme.Spacing.xxl)
-      .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: height)
-      .background { LitTintBackground(shape: Capsule(), tint: tint, isEnabled: isEnabled) }
-      .contentShape(Capsule())
-      .scaleEffect(configuration.isPressed ? 0.98 : 1)
-      .animation(Theme.Motion.press, value: configuration.isPressed)
+    StyleBody(configuration: configuration, tint: tint, fullWidth: fullWidth)
+  }
+
+  private struct StyleBody: View {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 52
+    let configuration: Configuration
+    let tint: Color
+    let fullWidth: Bool
+
+    var body: some View {
+      let pressed = isEnabled && configuration.isPressed
+      configuration.label
+        .font(.headline)
+        .tracking(-0.17)
+        .foregroundStyle(isEnabled ? Theme.Text.primary : Theme.Text.secondary)
+        .symbolRenderingMode(.hierarchical)
+        .padding(.horizontal, fullWidth ? Theme.Spacing.lg : Theme.Spacing.xxl)
+        .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: height)
+        .background {
+          LitTintBackground(shape: Capsule(), tint: tint, isEnabled: isEnabled, isPressed: pressed)
+        }
+        .contentShape(Capsule())
+        .opacity(isEnabled ? 1 : 0.55)
+        .appAnimation(Theme.Motion.press, value: pressed, kind: .dissolve)
+        .appAnimation(Theme.Motion.stateChange, value: isEnabled, kind: .dissolve)
+        .scaleEffect(reduceMotion || !pressed ? 1 : 0.98)
+        .appAnimation(Theme.Motion.press, value: pressed)
+    }
   }
 }
 
 /// The composer's send / voice / stop button: a lit-tint circle with an
 /// off-white glyph (never accent on accent).
 struct LitCircleButtonStyle: ButtonStyle {
-  @Environment(\.isEnabled) private var isEnabled
   var tint: Color
   var size: CGFloat = Theme.Size.target
 
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .font(.system(size > Theme.Size.target ? .title3 : .body, weight: .semibold))
-      .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-      .foregroundStyle(isEnabled ? Theme.Text.primary : Theme.Text.tertiary)
-      .frame(width: size, height: size)
-      .background { LitTintBackground(shape: Circle(), tint: tint, isEnabled: isEnabled) }
-      .contentShape(Circle())
-      .scaleEffect(configuration.isPressed ? 0.94 : 1)
-      .animation(Theme.Motion.press, value: configuration.isPressed)
+    StyleBody(configuration: configuration, tint: tint, size: size)
+  }
+
+  private struct StyleBody: View {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let configuration: Configuration
+    let tint: Color
+    let size: CGFloat
+
+    var body: some View {
+      let pressed = isEnabled && configuration.isPressed
+      configuration.label
+        .font(.system(size > Theme.Size.target ? .title3 : .body, weight: .semibold))
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+        .foregroundStyle(isEnabled ? Theme.Text.primary : Theme.Text.tertiary)
+        .frame(width: size, height: size)
+        .background {
+          LitTintBackground(shape: Circle(), tint: tint, isEnabled: isEnabled, isPressed: pressed)
+        }
+        .contentShape(Circle())
+        .opacity(isEnabled ? 1 : 0.55)
+        .appAnimation(Theme.Motion.press, value: pressed, kind: .dissolve)
+        .appAnimation(Theme.Motion.stateChange, value: isEnabled, kind: .dissolve)
+        .scaleEffect(reduceMotion || !pressed ? 1 : 0.94)
+        .appAnimation(Theme.Motion.press, value: pressed)
+    }
   }
 }
 
@@ -52,15 +86,29 @@ struct QuietCircleButtonStyle: ButtonStyle {
   var tint: Color = Theme.Text.primary
 
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .font(.system(.body, weight: .medium))
-      .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-      .foregroundStyle(tint)
-      .frame(width: size, height: size)
-      .background { QuietBackground(shape: Circle(), isPressed: configuration.isPressed) }
-      .contentShape(Circle())
-      .frame(minWidth: Theme.Size.target, minHeight: Theme.Size.target)
-      .animation(Theme.Motion.press, value: configuration.isPressed)
+    StyleBody(configuration: configuration, size: size, tint: tint)
+  }
+
+  private struct StyleBody: View {
+    @Environment(\.isEnabled) private var isEnabled
+    let configuration: Configuration
+    let size: CGFloat
+    let tint: Color
+
+    var body: some View {
+      let pressed = isEnabled && configuration.isPressed
+      configuration.label
+        .font(.system(.body, weight: .medium))
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+        .foregroundStyle(tint)
+        .frame(width: size, height: size)
+        .background { QuietBackground(shape: Circle(), isPressed: pressed) }
+        .frame(minWidth: Theme.Size.target, minHeight: Theme.Size.target)
+        .contentShape(Circle())
+        .opacity(isEnabled ? 1 : 0.42)
+        .appAnimation(Theme.Motion.press, value: pressed, kind: .dissolve)
+        .appAnimation(Theme.Motion.stateChange, value: isEnabled, kind: .dissolve)
+    }
   }
 }
 
@@ -68,18 +116,31 @@ struct QuietCircleButtonStyle: ButtonStyle {
 /// hairline; the label carries the color.
 struct QuietCapsuleButtonStyle: ButtonStyle {
   var tint: Color = Theme.Text.primary
-  @ScaledMetric(relativeTo: .footnote) private var height: CGFloat = Theme.Size.pill
 
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .font(.system(.footnote, weight: .semibold))
-      .foregroundStyle(tint)
-      .padding(.horizontal, Theme.Spacing.lg)
-      .frame(minHeight: height)
-      .background { QuietBackground(shape: Capsule(), isPressed: configuration.isPressed) }
-      .frame(minHeight: Theme.Size.target)
-      .contentShape(.rect)
-      .animation(Theme.Motion.press, value: configuration.isPressed)
+    StyleBody(configuration: configuration, tint: tint)
+  }
+
+  private struct StyleBody: View {
+    @Environment(\.isEnabled) private var isEnabled
+    @ScaledMetric(relativeTo: .footnote) private var height: CGFloat = Theme.Size.pill
+    let configuration: Configuration
+    let tint: Color
+
+    var body: some View {
+      let pressed = isEnabled && configuration.isPressed
+      configuration.label
+        .font(.system(.footnote, weight: .semibold))
+        .foregroundStyle(tint)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .frame(minHeight: height)
+        .background { QuietBackground(shape: Capsule(), isPressed: pressed) }
+        .frame(minHeight: Theme.Size.target)
+        .contentShape(.rect)
+        .opacity(isEnabled ? 1 : 0.42)
+        .appAnimation(Theme.Motion.press, value: pressed, kind: .dissolve)
+        .appAnimation(Theme.Motion.stateChange, value: isEnabled, kind: .dissolve)
+    }
   }
 }
 
@@ -89,27 +150,47 @@ struct ModePillStyle: ButtonStyle {
   let isOn: Bool
   let tint: Color
   var iconOnly = false
-  @ScaledMetric(relativeTo: .subheadline) private var height: CGFloat = Theme.Size.pill
 
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .labelStyle(PillLabelStyle(iconOnly: iconOnly))
-      .font(.system(.subheadline, weight: .medium))
-      .foregroundStyle(isOn ? Theme.Text.primary : Theme.Text.secondary)
-      .padding(.horizontal, iconOnly ? Theme.Spacing.snug : Theme.Spacing.md)
-      .frame(minWidth: iconOnly ? max(height, Theme.Size.target) : nil, minHeight: height)
-      .background {
-        if isOn {
-          LitTintBackground(shape: Capsule(), tint: tint, strength: .pill)
-        } else {
-          QuietBackground(shape: Capsule(), isPressed: configuration.isPressed)
+    StyleBody(configuration: configuration, isOn: isOn, tint: tint, iconOnly: iconOnly)
+  }
+
+  private struct StyleBody: View {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .subheadline) private var height: CGFloat = Theme.Size.pill
+    let configuration: Configuration
+    let isOn: Bool
+    let tint: Color
+    let iconOnly: Bool
+
+    var body: some View {
+      let pressed = isEnabled && configuration.isPressed
+      configuration.label
+        .labelStyle(PillLabelStyle(iconOnly: iconOnly))
+        .font(.system(.subheadline, weight: .medium))
+        .foregroundStyle(isOn ? Theme.Text.primary : Theme.Text.secondary)
+        .padding(.horizontal, iconOnly ? Theme.Spacing.snug : Theme.Spacing.md)
+        .frame(minWidth: iconOnly ? max(height, Theme.Size.target) : nil, minHeight: height)
+        .background {
+          if isOn {
+            LitTintBackground(
+              shape: Capsule(), tint: tint, isEnabled: isEnabled, isPressed: pressed, strength: .pill)
+          } else {
+            QuietBackground(shape: Capsule(), isPressed: pressed)
+          }
         }
-      }
-      .frame(minHeight: Theme.Size.target)
-      .contentShape(.rect)
-      // On is said by the glyph too (filled), not by color alone.
-      .symbolVariant(isOn ? .fill : .none)
-      .animation(Theme.Motion.stateChange, value: isOn)
+        .frame(minHeight: Theme.Size.target)
+        .contentShape(.rect)
+        // On is said by the glyph too (filled), not by color alone.
+        .symbolVariant(isOn ? .fill : .none)
+        .opacity(isEnabled ? 1 : (isOn ? 0.58 : 0.42))
+        .appAnimation(Theme.Motion.stateChange, value: isOn, kind: .dissolve)
+        .appAnimation(Theme.Motion.press, value: pressed, kind: .dissolve)
+        .appAnimation(Theme.Motion.stateChange, value: isEnabled, kind: .dissolve)
+        .scaleEffect(reduceMotion || !pressed ? 1 : 0.96)
+        .appAnimation(Theme.Motion.press, value: pressed)
+    }
   }
 }
 
@@ -216,13 +297,26 @@ struct StatusBadge: View {
 
 /// A quiet message above the composer (download, loading, errors, notices).
 struct InlineBanner<Actions: View>: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let symbol: String
   let message: String
   var tint: Color = Theme.Brand.glacier
   var showsProgress = false
   /// Accessibility identifier of the message text (UI tests).
   var identifier: String = ""
-  @ViewBuilder var actions: Actions
+  let actions: Actions
+
+  init(
+    symbol: String, message: String, tint: Color = Theme.Brand.glacier, showsProgress: Bool = false,
+    identifier: String = "", @ViewBuilder actions: () -> Actions
+  ) {
+    self.symbol = symbol
+    self.message = message
+    self.tint = tint
+    self.showsProgress = showsProgress
+    self.identifier = identifier
+    self.actions = actions()
+  }
 
   var body: some View {
     HStack(spacing: Theme.Spacing.snug) {
@@ -247,7 +341,7 @@ struct InlineBanner<Actions: View>: View {
     .padding(.horizontal, Theme.Spacing.lg)
     .padding(.vertical, Theme.Spacing.md)
     .chromeSurface(in: RoundedRectangle(cornerRadius: Theme.Radius.group, style: .continuous))
-    .transition(.move(edge: .top).combined(with: .opacity))
+    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
   }
 
   /// What VoiceOver says for the banner's icon: a warning and a notice look alike otherwise.

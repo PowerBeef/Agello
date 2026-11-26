@@ -101,12 +101,13 @@ struct DrawerView: View {
   /// Projects matching the active search query so projects beyond the collapsed preview remain
   /// discoverable via search as well as "Show all".
   private var matchingProjects: [Project] {
-    guard !appliedQuery.isEmpty else { return [] }
+    let trimmed = appliedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return [] }
     let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
     return projects.filter { project in
       guard !project.isDeleted, project.modelContext != nil else { return false }
-      return project.name.range(of: appliedQuery, options: options) != nil
-        || project.instructions.range(of: appliedQuery, options: options) != nil
+      return project.name.range(of: trimmed, options: options) != nil
+        || project.instructions.range(of: trimmed, options: options) != nil
     }
   }
 
@@ -123,47 +124,52 @@ struct DrawerView: View {
         id: $0.id, title: $0.title, updatedAt: $0.updatedAt,
         isPinned: $0.isPinned, projectID: $0.projectID, activeLeafID: $0.activeLeafID)
     }
-    let currentKey = GroupsCacheKey(query: appliedQuery, stamps: stamps, relatedIDs: relatedIDs)
+    let trimmedQuery = appliedQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    let currentKey = GroupsCacheKey(query: trimmedQuery, stamps: stamps, relatedIDs: relatedIDs)
     let groups =
       cachedGroupsKey == currentKey
       ? cachedGroups
       : buildGroups(
-        query: appliedQuery, liveThreads: liveThreads,
+        query: trimmedQuery, liveThreads: liveThreads,
         liveThreadsByID: liveThreadsByID, relatedIDs: relatedIDs)
     let hasChatRows = groups.contains { group in
       group.items.contains { liveThreadsByID[$0.id] != nil }
     }
     let matchedProjects = matchingProjects
-    VStack(spacing: 0) {
-      header
-      ScrollView {
-        VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-          if appliedQuery.isEmpty {
-            projectsSection
-          } else if !matchedProjects.isEmpty {
-            matchedProjectsSection(matchedProjects)
-          }
-          if !hasChatRows, matchedProjects.isEmpty {
-            Group {
-              if appliedQuery.isEmpty {
-                EmptyStateView(
-                  symbol: "bubble.left.and.bubble.right", title: "No chats yet",
-                  message: "Your conversations stay on this \(Platform.deviceName).")
-              } else {
-                EmptyStateView(
-                  symbol: "magnifyingglass", title: "No results",
-                  message: "Nothing matches \u{201C}\(appliedQuery)\u{201D}.")
-              }
-            }
-            .padding(.top, Theme.Spacing.sm)
-          } else if hasChatRows {
-            chatGroups(groups, threadsByID: liveThreadsByID)
-          }
+    ScrollView {
+      VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+        if trimmedQuery.isEmpty {
+          projectsSection
+        } else if !matchedProjects.isEmpty {
+          matchedProjectsSection(matchedProjects)
         }
-        .padding(.horizontal, Theme.Spacing.md)
-        .padding(.bottom, Theme.Spacing.lg)
+        if !hasChatRows, matchedProjects.isEmpty {
+          Group {
+            if trimmedQuery.isEmpty {
+              EmptyStateView(
+                symbol: "bubble.left.and.bubble.right", title: "No chats yet",
+                message: "Your conversations stay on this \(Platform.deviceName).")
+            } else {
+              EmptyStateView(
+                symbol: "magnifyingglass", title: "No results",
+                message: "Nothing matches \u{201C}\(trimmedQuery)\u{201D}.")
+            }
+          }
+          .padding(.top, Theme.Spacing.sm)
+        } else if hasChatRows {
+          chatGroups(groups, threadsByID: liveThreadsByID)
+        }
       }
-      .scrollDismissesKeyboard(.immediately)
+      .padding(.horizontal, Theme.Spacing.md)
+      .padding(.top, Theme.Spacing.xs)
+      .padding(.bottom, Theme.Spacing.lg)
+    }
+    .scrollDismissesKeyboard(.immediately)
+    .scrollEdgeEffectStyle(.soft, for: .vertical)
+    .safeAreaBar(edge: .top, spacing: 0) {
+      header
+    }
+    .safeAreaBar(edge: .bottom, spacing: 0) {
       footer
     }
     .onChange(of: currentKey, initial: true) { _, key in
@@ -299,6 +305,7 @@ private extension DrawerView {
       }
       if projects.count > Self.collapsedProjectLimit {
         Button {
+          Haptics.selection()
           withAppAnimation(Theme.Motion.easeOut) { showAllProjects.toggle() }
         } label: {
           HStack(spacing: Theme.Spacing.xs) {

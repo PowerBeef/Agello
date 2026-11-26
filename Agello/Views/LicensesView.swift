@@ -26,6 +26,9 @@ struct LicensesView: View {
     ScrollView {
       if let paragraphs = loadedParagraphs {
         LazyVStack(alignment: .leading, spacing: Theme.Spacing.md) {
+          Text("Open-source & model notices")
+            .eyebrowStyle()
+            .accessibilityAddTraits(.isHeader)
           ForEach(paragraphs.indices, id: \.self) { index in
             Text(paragraphs[index])
               .font(.footnote.monospaced())

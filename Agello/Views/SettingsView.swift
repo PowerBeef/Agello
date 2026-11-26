@@ -1,4 +1,3 @@
-import AppIntents
 import SwiftUI
 
 /// Settings: the model's status on top, then what people change
@@ -13,6 +12,8 @@ struct SettingsView: View {
   @AppStorage(SpotlightIndex.enabledKey) private var spotlightEnabled = true
   @State private var showDeveloper = false
   @State private var spotlightTask: Task<Void, Never>?
+  @State private var versionTapCount = 0
+  @State private var versionTapWindowStart: ContinuousClock.Instant?
 
   private var bindable: Bindable<AppState> { Bindable(appState) }
 
@@ -27,10 +28,10 @@ struct SettingsView: View {
       }
       .themedList(Theme.Brand.glacier)
       .navigationTitle("Settings")
-      .largeTitleDisplay()
+      .inlineTitleDisplay()
       .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button("Done") { dismiss() }
+        ToolbarItem(placement: .cancellationAction) {
+          Button(role: .close) { dismiss() }
             .accessibilityIdentifier("settings.done")
         }
       }
@@ -147,8 +148,10 @@ struct SettingsView: View {
           title: String(localized: "Show chats in Spotlight"), symbol: "magnifyingglass",
           tint: Theme.Brand.silver)
       }
+      .tint(Theme.Brand.glacier)
       .themedRow()
       .onChange(of: spotlightEnabled) {
+        Haptics.selection()
         spotlightTask?.cancel()
         guard let context = appState.modelContext else { return }
         spotlightTask = Task(priority: .utility) {
@@ -159,11 +162,6 @@ struct SettingsView: View {
         }
       }
       .accessibilityIdentifier("settings.spotlight")
-      ShortcutsLink()
-        .shortcutsLinkStyle(.dark)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .themedRow()
-        .accessibilityIdentifier("settings.shortcuts")
     } header: {
       Text("You").eyebrowStyle()
     }
@@ -202,7 +200,9 @@ struct SettingsView: View {
           title: String(localized: "On-device tools"), symbol: "wrench.and.screwdriver.fill",
           tint: Theme.Brand.gold)
       }
+      .tint(Theme.Mode.voice.tint)
       .themedRow()
+      .onChange(of: appState.enableTools) { _, _ in Haptics.selection() }
       .accessibilityIdentifier("settings.tools")
       NavigationLink {
         PersonalToolsSettingsView()
@@ -291,21 +291,42 @@ struct SettingsView: View {
     } header: {
       Text("About").eyebrowStyle()
     } footer: {
-      Text(appVersion)
+      Text(Self.appVersion)
         .font(.caption2)
-        .frame(maxWidth: .infinity)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, minHeight: Theme.Size.target)
         .foregroundStyle(Theme.Text.tertiary)
-        // Five taps open the developer screen (the stats line, the benchmark, what's loaded).
-        .contentShape(Rectangle())
-        .onTapGesture(count: 5) { showDeveloper = true }
+        // Five taps within 3 s open the developer screen (the stats line, benchmark, what's loaded).
+        .contentShape(.rect)
+        .onTapGesture { handleVersionTap() }
+        .accessibilityAction(named: String(localized: "Developer settings")) {
+          Haptics.success()
+          showDeveloper = true
+        }
         .accessibilityIdentifier("settings.version")
     }
   }
 
-  private var appVersion: String {
+  private func handleVersionTap() {
+    let now = ContinuousClock.now
+    if let start = versionTapWindowStart, now - start <= .seconds(3) {
+      versionTapCount += 1
+    } else {
+      versionTapWindowStart = now
+      versionTapCount = 1
+    }
+    if versionTapCount >= 5 {
+      versionTapCount = 0
+      versionTapWindowStart = nil
+      Haptics.success()
+      showDeveloper = true
+    }
+  }
+
+  private static let appVersion: String = {
     let info = Bundle.main.infoDictionary
     let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
     let build = info?["CFBundleVersion"] as? String ?? "1"
     return "Agello \(version) (\(build)) · Gemma 4 on-device via LiteRT-LM"
-  }
+  }()
 }

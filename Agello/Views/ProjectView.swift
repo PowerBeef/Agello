@@ -43,6 +43,7 @@ struct ProjectView: View {
   @State private var importerMode: ImporterMode = .files
   @State private var linkedFolder: FolderBookmarks.LinkedFolder?
   @State private var readingFiles = 0
+  @State private var syncProgress: (completed: Int, total: Int)?
   @State private var confirmDelete = false
   @State private var files: [ChatDocument] = []
   @State private var inlineError: String?
@@ -103,6 +104,7 @@ struct ProjectView: View {
           Text("Instructions").eyebrowStyle()
         } footer: {
           Text("Every chat in this project follows these.")
+            .foregroundStyle(Theme.Text.tertiary)
         }
         .themedRow()
 
@@ -110,8 +112,12 @@ struct ProjectView: View {
         chatsSection(projectChats)
 
         Section {
-          Button("Delete project", role: .destructive) { confirmDelete = true }
-            .accessibilityIdentifier("project.delete")
+          Button("Delete project", role: .destructive) {
+            Haptics.warning()
+            confirmDelete = true
+          }
+          .disabled(readingFiles > 0)
+          .accessibilityIdentifier("project.delete")
         }
         .themedRow()
       }
@@ -138,6 +144,7 @@ struct ProjectView: View {
         "Delete \"\(name)\"?", isPresented: $confirmDelete, titleVisibility: .visible
       ) {
         Button(deleteTitle(chatCount: projectChats.count), role: .destructive) {
+          Haptics.warning()
           cancelActiveTasks()
           FolderBookmarks.remove(for: project.id)
           onDelete()
@@ -169,7 +176,8 @@ private extension ProjectView {
         fileRow(file)
       }
       .onDelete { offsets in
-        guard !appState.isBusy else { return }
+        guard !appState.isBusy, readingFiles == 0 else { return }
+        Haptics.warning()
         for index in offsets {
           let doc = files[index]
           FolderBookmarks.forgetSyncedFile(doc.name, for: project.id)
@@ -178,11 +186,19 @@ private extension ProjectView {
         linkedFolder = FolderBookmarks.folder(for: project.id)
         reloadFiles()
       }
-      .deleteDisabled(appState.isBusy)
+      .deleteDisabled(appState.isBusy || readingFiles > 0)
       if readingFiles > 0 {
-        HStack {
+        HStack(spacing: Theme.Spacing.sm) {
           ProgressView().controlSize(.small)
-          Text("Reading…").foregroundStyle(Theme.Text.secondary)
+          if let syncProgress {
+            Text("Syncing \(syncProgress.completed) of \(syncProgress.total)…")
+              .foregroundStyle(Theme.Text.secondary)
+              .monospacedDigit()
+              .contentTransition(.numericText())
+              .accessibilityIdentifier("project.syncProgress")
+          } else {
+            Text("Reading…").foregroundStyle(Theme.Text.secondary)
+          }
         }
       }
       if let error = inlineError {
@@ -208,6 +224,7 @@ private extension ProjectView {
       Text("Files").eyebrowStyle()
     } footer: {
       Text("Shared by every chat in this project.")
+        .foregroundStyle(Theme.Text.tertiary)
     }
     .themedRow()
   }
@@ -285,13 +302,17 @@ private extension ProjectView {
           }
         }
         Spacer(minLength: Theme.Spacing.xs)
-        Button("Sync") { syncLinkedFolder() }
-          .font(.caption.weight(.semibold))
-          .buttonStyle(.bordered)
-          .tint(Theme.Brand.teal)
-          .disabled(readingFiles > 0)
-          .accessibilityIdentifier("project.syncFolder")
+        Button("Sync") {
+          Haptics.selection()
+          syncLinkedFolder()
+        }
+        .font(.caption.weight(.semibold))
+        .buttonStyle(.bordered)
+        .tint(Theme.Brand.teal)
+        .disabled(readingFiles > 0)
+        .accessibilityIdentifier("project.syncFolder")
         Button {
+          Haptics.warning()
           FolderBookmarks.remove(for: project.id)
           linkedFolder = nil
           syncStatus = nil
@@ -430,31 +451,94 @@ private extension ProjectView {
     let priorFingerprints = linkedFolder?.syncedFiles ?? [:]
     inlineError = nil
     syncStatus = nil
+    syncProgress = nil
     readingFiles += 1
+    let (progressStream, progressContinuation) = AsyncStream<(Int, Int)>.makeStream()
     let task = Task {
+      let progressObserver = Task {
+        for await step in progressStream {
+          guard !Task.isCancelled else { break }
+          syncProgress = step
+        }
+      }
       defer {
+        progressContinuation.finish()
+        progressObserver.cancel()
+        syncProgress = nil
         readingFiles = max(0, readingFiles - 1)
         activeTasks.removeValue(forKey: taskID)
         if !project.isDeleted { linkedFolder = FolderBookmarks.folder(for: projectID) }
       }
       let extraction = Task.detached(priority: .utility) {
-        try await FolderBookmarks.scanChanges(
-          for: projectID, existingSizes: existingSizes, priorFingerprints: priorFingerprints)
+        defer { progressContinuation.finish() }
+        return try await Self.extractLinkedFolderChanges(
+          projectID: projectID, existingSizes: existingSizes, priorFingerprints: priorFingerprints,
+          onProgress: { completed, total in progressContinuation.yield((completed, total)) })
       }
       do {
         guard
           let outcome = try await withTaskCancellationHandler(
             operation: { try await extraction.value },
-            onCancel: { extraction.cancel() })
+            onCancel: {
+              extraction.cancel()
+              progressContinuation.finish()
+            })
         else { return }
         guard !Task.isCancelled, !project.isDeleted, project.modelContext != nil else { return }
         applySyncOutcome(outcome, projectID: projectID)
       } catch {
         guard !Task.isCancelled, !(error is CancellationError), !project.isDeleted else { return }
         inlineError = error.localizedDescription
+        Haptics.error()
       }
     }
     activeTasks[taskID] = task
+  }
+
+  nonisolated static func extractLinkedFolderChanges(
+    projectID: UUID,
+    existingSizes: [String: Int64],
+    priorFingerprints: [String: FolderBookmarks.FileFingerprint],
+    onProgress: @escaping @Sendable (Int, Int) -> Void
+  ) async throws -> FolderBookmarks.SyncOutcome? {
+    try await FolderBookmarks.withSupportedFiles(
+      for: projectID, markSyncedOnReturn: false
+    ) { urls -> FolderBookmarks.SyncOutcome in
+      var unchanged: [String: FolderBookmarks.FileFingerprint] = [:]
+      var pending: [(url: URL, fingerprint: FolderBookmarks.FileFingerprint)] = []
+      for url in urls {
+        try Task.checkCancellation()
+        let fileName = url.lastPathComponent
+        let fingerprint = FolderBookmarks.fingerprint(for: url)
+        let unchangedKnown =
+          priorFingerprints[fileName] == fingerprint && existingSizes[fileName] != nil
+        let unchangedLegacy =
+          priorFingerprints[fileName] == nil && existingSizes[fileName] == fingerprint.byteCount
+        if unchangedKnown || unchangedLegacy {
+          unchanged[fileName] = fingerprint
+        } else {
+          pending.append((url: url, fingerprint: fingerprint))
+        }
+      }
+      var synced: [FolderBookmarks.SyncedFile] = []
+      var failed: [(name: String, reason: String)] = []
+      let total = pending.count
+      for (index, item) in pending.enumerated() {
+        try Task.checkCancellation()
+        onProgress(index + 1, total)
+        do {
+          let doc = try await DocumentIngestor.extract(from: item.url)
+          synced.append(.init(document: doc, fingerprint: item.fingerprint))
+        } catch is CancellationError {
+          throw CancellationError()
+        } catch {
+          failed.append((name: item.url.lastPathComponent, reason: error.localizedDescription))
+        }
+      }
+      return FolderBookmarks.SyncOutcome(
+        synced: synced, unchangedFingerprints: unchanged, failed: failed,
+        hitLimit: urls.count >= FolderBookmarks.maxFilesPerSync)
+    }
   }
 
   func applySyncOutcome(_ outcome: FolderBookmarks.SyncOutcome, projectID: UUID) {
@@ -472,7 +556,37 @@ private extension ProjectView {
       FolderBookmarks.markSynced(for: projectID, syncedFiles: fingerprints)
     }
     inlineError = outcome.errorSummary
-    syncStatus = outcome.statusSummary
+    syncStatus = detailedSyncSummary(for: outcome)
+    if !outcome.failed.isEmpty {
+      Haptics.error()
+    } else if !outcome.synced.isEmpty {
+      Haptics.success()
+    }
+  }
+
+  func detailedSyncSummary(for outcome: FolderBookmarks.SyncOutcome) -> String? {
+    let syncedCount = outcome.synced.count
+    let skippedCount = outcome.unchangedFingerprints.count
+    var parts: [String] = []
+    if syncedCount > 0 {
+      parts.append(
+        syncedCount == 1
+          ? String(localized: "Synced 1 file")
+          : String(localized: "Synced \(syncedCount) files"))
+    }
+    if skippedCount > 0 {
+      parts.append(
+        skippedCount == 1
+          ? String(localized: "1 skipped")
+          : String(localized: "\(skippedCount) skipped"))
+    }
+    if outcome.hitLimit {
+      parts.append(String(localized: "hit \(FolderBookmarks.maxFilesPerSync)-file cap"))
+    }
+    if parts.isEmpty {
+      return outcome.failed.isEmpty ? String(localized: "Folder is up to date.") : nil
+    }
+    return parts.joined(separator: ", ") + "."
   }
 
   func save() {

@@ -3,6 +3,10 @@ import SwiftUI
 /// First launch: what Agello is, and the one-time model download (which
 /// continues in the background). "Not now" leaves it for the chat banner.
 struct OnboardingView: View {
+  private enum FooterPhase: Equatable {
+    case notDownloaded, downloading, verifying, paused, failed, ready
+  }
+
   @Environment(AppState.self) private var appState
   var onFinish: () -> Void
   @State private var cellularSpec: ModelSpec?
@@ -10,6 +14,17 @@ struct OnboardingView: View {
   private var spec: ModelSpec { appState.store.activeSpec }
   private var state: ModelStore.DownloadState {
     appState.store.states[spec.id] ?? .notDownloaded
+  }
+
+  private var footerPhase: FooterPhase {
+    switch state {
+    case .notDownloaded: .notDownloaded
+    case .downloading(let progress):
+      (appState.store.isVerifying(spec.id) || progress >= 1) ? .verifying : .downloading
+    case .paused: .paused
+    case .failed: .failed
+    case .ready: .ready
+    }
   }
 
   /// Shown until the user finishes or skips it, and only when there's
@@ -29,12 +44,20 @@ struct OnboardingView: View {
         .padding(.top, Theme.Spacing.xxxl + Theme.Spacing.lg)
         .padding(.bottom, Theme.Spacing.xxl)
       }
+      Rectangle()
+        .fill(Theme.Surface.hairline)
+        .frame(height: Theme.Stroke.hairline)
       footer
         .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.top, Theme.Spacing.md)
         .padding(.bottom, Theme.Spacing.md)
+        .appAnimation(Theme.Motion.stateChange, value: footerPhase, kind: .dissolve)
     }
     .ambientBackdrop(Theme.Brand.glacier, intensity: .loud)
     .onAppear { appState.store.refreshStates() }
+    .onChange(of: footerPhase) { old, new in
+      if new == .ready && old != .ready { Haptics.success() }
+    }
     .cellularDownloadConfirmation($cellularSpec)
   }
 
@@ -111,25 +134,45 @@ struct OnboardingView: View {
           appState.store.download(spec) { cellularSpec = $0 }
         }
       case .downloading(let progress):
-        ProgressView(value: progress) {
-          HStack {
-            Text(
-              appState.store.waitingForWiFi.contains(spec.id)
-                ? Platform.waitingForUnmeteredNetwork
-                : String(localized: "Downloading \(spec.displayName)…"))
-            Spacer()
-            Text("\(Int(progress * 100))%")
-              .monospacedDigit()
-              .contentTransition(.numericText())
+        let verifying = appState.store.isVerifying(spec.id) || progress >= 1
+        let pausing = appState.store.isPausing(spec.id)
+        if verifying {
+          HStack(spacing: Theme.Spacing.sm) {
+            ProgressView().controlSize(.small).tint(Theme.Brand.glacier)
+            Text("Verifying…")
+              .font(.subheadline)
+              .foregroundStyle(Theme.Text.secondary)
           }
-          .font(.subheadline)
-          .foregroundStyle(Theme.Text.secondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .accessibilityIdentifier("onboarding.progress")
+        } else {
+          ProgressView(value: progress) {
+            HStack {
+              Text(
+                appState.store.waitingForWiFi.contains(spec.id)
+                  ? Platform.waitingForUnmeteredNetwork
+                  : String(localized: "Downloading \(spec.displayName)…"))
+              Spacer()
+              Text("\(Int(progress * 100))%")
+                .monospacedDigit()
+                .contentTransition(.numericText())
+            }
+            .font(.subheadline)
+            .foregroundStyle(Theme.Text.secondary)
+          }
+          .tint(Theme.Brand.glacier)
+          .accessibilityIdentifier("onboarding.progress")
         }
-        .tint(Theme.Brand.glacier)
-        .accessibilityIdentifier("onboarding.progress")
-        note("You can leave the app: the download continues in the background.")
-        Button("Pause") { appState.store.pauseDownload(spec) }
-          .buttonStyle(QuietCapsuleButtonStyle())
+        note(
+          verifying
+            ? String(localized: "Checking the download before first use.")
+            : String(localized: "You can leave the app: the download continues in the background."))
+        Button("Pause") {
+          Haptics.selection()
+          appState.store.pauseDownload(spec)
+        }
+        .buttonStyle(QuietCapsuleButtonStyle())
+        .disabled(verifying || pausing)
       case .paused(let progress):
         note("Paused at \(Int(progress * 100))%.")
         primary("Resume download", id: "onboarding.download") {
@@ -163,7 +206,10 @@ struct OnboardingView: View {
   }
 
   private func primary(_ title: String, id: String, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
+    Button {
+      Haptics.selection()
+      action()
+    } label: {
       Text(title)
     }
     .buttonStyle(LitButtonStyle(tint: Theme.Brand.glacier))

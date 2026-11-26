@@ -16,19 +16,23 @@ struct PersonalizationView: View {
     Form {
       Section {
         Toggle("Use personalization", isOn: $draft.enabled)
+          .tint(Theme.Brand.glacier)
           .accessibilityIdentifier("personalization.enabled")
       } footer: {
         Text("Shared only with the on-device model, in every new reply.")
+          .foregroundStyle(Theme.Text.tertiary)
       }
       .themedRow()
 
-      Section("Response style") {
+      Section {
         Picker("Style", selection: $draft.style) {
           ForEach(Personalization.Style.allCases, id: \.self) { style in
             Text(style.displayName).tag(style)
           }
         }
         .accessibilityIdentifier("personalization.style")
+      } header: {
+        Text("Response style").eyebrowStyle()
       }
       .themedRow()
       .disabled(!draft.enabled)
@@ -44,10 +48,12 @@ struct PersonalizationView: View {
           }
           .accessibilityIdentifier("personalization.name")
       } header: {
-        Text("What should Agello call you?")
+        Text("What should Agello call you?").eyebrowStyle()
       } footer: {
         if !draft.name.isEmpty {
           Text("\(draft.name.count)/\(Self.nameLimit)")
+            .monospacedDigit()
+            .foregroundStyle(Theme.Text.tertiary)
         }
       }
       .themedRow()
@@ -58,9 +64,11 @@ struct PersonalizationView: View {
           $draft.aboutYou, label: "About you", field: .aboutYou,
           identifier: "personalization.about")
       } header: {
-        Text("Anything else Agello should know about you?")
+        Text("Anything else Agello should know about you?").eyebrowStyle()
       } footer: {
         Text("Interests, values, what you do. \(counter(draft.aboutYou))")
+          .monospacedDigit()
+          .foregroundStyle(Theme.Text.tertiary)
       }
       .themedRow()
       .disabled(!draft.enabled)
@@ -70,9 +78,11 @@ struct PersonalizationView: View {
           $draft.instructions, label: "How Agello should respond", field: .instructions,
           identifier: "personalization.instructions")
       } header: {
-        Text("How should Agello respond?")
+        Text("How should Agello respond?").eyebrowStyle()
       } footer: {
         Text("Language, format, tone. \(counter(draft.instructions))")
+          .monospacedDigit()
+          .foregroundStyle(Theme.Text.tertiary)
       }
       .themedRow()
       .disabled(!draft.enabled)
@@ -80,11 +90,21 @@ struct PersonalizationView: View {
     .scrollDismissesKeyboard(.interactively)
     .themedList(Theme.Brand.glacier)
     .navigationTitle("Personalization")
+    .inlineTitleDisplay()
     .toolbar {
       ToolbarItemGroup(placement: .keyboard) {
         Spacer()
-        Button("Done") { focusedField = nil }
+        Button("Done") {
+          Haptics.selection()
+          focusedField = nil
+        }
       }
+    }
+    .onChange(of: draft.enabled) { _, _ in
+      if loaded { Haptics.selection() }
+    }
+    .onChange(of: draft.style) { _, _ in
+      if loaded { Haptics.selection() }
     }
     .onAppear {
       guard !loaded else { return }

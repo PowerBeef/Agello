@@ -9,7 +9,8 @@ import SwiftUI
 ///   primary action.
 /// - Text is warm off-white, never pure white; hairlines are cream.
 /// - Every shape uses continuous corners; spacing snaps to `Spacing`.
-/// - Motion uses `Motion` and collapses under Reduce Motion.
+/// - Motion uses `Motion`; spatial motion collapses under Reduce Motion while
+///   dissolves soften to a gentle fade.
 enum Theme {
   // MARK: - Modes
 
@@ -50,20 +51,14 @@ enum Theme {
     static let stage = Color(red: 0.110, green: 0.118, blue: 0.149)
     /// Inset content: code blocks, tables.
     static let card = Color(red: 0.051, green: 0.055, blue: 0.071)
-    static let inline = Color(red: 0.067, green: 0.075, blue: 0.102)
-    static let field = Color(red: 0.120, green: 0.126, blue: 0.148)
-    /// Chrome panels (composer, banners) under their glass.
-    static let panel = Color(red: 0.105, green: 0.112, blue: 0.132, opacity: 0.86)
-    /// The drawer.
-    static let drawer = Color(red: 0.075, green: 0.083, blue: 0.102, opacity: 0.97)
     /// Grouped rows (settings, drawer sections).
     static let group = Color.white.opacity(0.035)
-    static let groupPressed = Color.white.opacity(0.07)
     /// Warm cream hairlines.
     static let hairline = Color(red: 0.97, green: 0.92, blue: 0.82, opacity: 0.08)
     static let stroke = Color(red: 0.97, green: 0.92, blue: 0.82, opacity: 0.12)
     static let glassOuterStroke = Color.white.opacity(0.12)
     static let glassInnerStroke = Color.white.opacity(0.04)
+    static let increasedContrastStroke = Color.white.opacity(0.5)
   }
 
   // MARK: - Text
@@ -97,9 +92,6 @@ enum Theme {
   // MARK: - Geometry
 
   enum Radius {
-    static let chip: CGFloat = 8
-    static let tile: CGFloat = 9
-    static let input: CGFloat = 10
     static let row: CGFloat = 12
     static let card: CGFloat = 16
     static let group: CGFloat = 18
@@ -109,7 +101,6 @@ enum Theme {
 
   enum Stroke {
     static let hairline: CGFloat = 0.5
-    static let standard: CGFloat = 1
   }
 
   enum Spacing {
@@ -135,19 +126,18 @@ enum Theme {
     static let glowRadius: CGFloat = 8
     static func ctaGlow(_ tint: Color) -> Color { tint.opacity(0.35) }
     static let ctaGlowRadius: CGFloat = 16
-    static let ctaDrop = Color.black.opacity(0.22)
     static let floating = Color.black.opacity(0.40)
   }
 
   // MARK: - Motion
 
-  /// One ease-out curve everywhere (0.22, 1, 0.36, 1); no bounce.
+  /// Critically-damped springs for controls and panels paired with an ease-out
+  /// curve (0.22, 1, 0.36, 1); no bounce.
   enum Motion {
-    static let press = Animation.easeOut(duration: 0.09)
-    static let stateChange = Animation.easeOut(duration: 0.15)
+    static let press = Animation.snappy(duration: 0.18, extraBounce: 0)
+    static let stateChange = Animation.smooth(duration: 0.22)
     static let easeOut = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.22)
     static let slide = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.32)
-    static let sheet = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.36)
     static let panel = Animation.spring(response: 0.31, dampingFraction: 0.84, blendDuration: 0.12)
     static let modeCrossfade = Animation.easeInOut(duration: 0.18)
   }
@@ -179,9 +169,27 @@ extension View {
       .foregroundStyle(tint)
   }
 
-  /// `animation` unless Reduce Motion is on.
-  func appAnimation<V: Equatable>(_ animation: Animation, value: V) -> some View {
-    modifier(ReduceMotionAnimation(animation: animation, value: value))
+  /// `animation` respecting Reduce Motion: `.spatial` collapses to `nil`,
+  /// while `.dissolve` keeps a gentle opacity/color fade.
+  func appAnimation<V: Equatable>(
+    _ animation: Animation, value: V, kind: AppMotionKind = .spatial
+  ) -> some View {
+    modifier(ReduceMotionAnimation(animation: animation, value: value, kind: kind))
+  }
+}
+
+/// Distinguishes motion that moves or scales geometry (suppressed under Reduce
+/// Motion) from opacity/color crossfades (preserved as a gentle dissolve per HIG).
+enum AppMotionKind: Sendable {
+  case spatial
+  case dissolve
+
+  func resolved(_ animation: Animation, reduceMotion: Bool) -> Animation? {
+    guard reduceMotion else { return animation }
+    switch self {
+    case .spatial: return nil
+    case .dissolve: return Animation.easeInOut(duration: 0.18)
+    }
   }
 }
 
@@ -189,15 +197,21 @@ private struct ReduceMotionAnimation<V: Equatable>: ViewModifier {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let animation: Animation
   let value: V
+  let kind: AppMotionKind
 
   func body(content: Content) -> some View {
-    content.animation(reduceMotion ? nil : animation, value: value)
+    content.animation(kind.resolved(animation, reduceMotion: reduceMotion), value: value)
   }
 }
 
-/// `withAnimation` that respects Reduce Motion.
+/// `withAnimation` that respects Reduce Motion: `.spatial` runs without
+/// animation, while `.dissolve` uses a gentle opacity/color fade.
 @MainActor
-func withAppAnimation<Result>(_ animation: Animation, _ body: () throws -> Result) rethrows -> Result {
-  if Platform.reduceMotion { return try body() }
-  return try withAnimation(animation, body)
+func withAppAnimation<Result>(
+  _ animation: Animation, kind: AppMotionKind = .spatial, _ body: () throws -> Result
+) rethrows -> Result {
+  guard let resolved = kind.resolved(animation, reduceMotion: Platform.reduceMotion) else {
+    return try body()
+  }
+  return try withAnimation(resolved, body)
 }

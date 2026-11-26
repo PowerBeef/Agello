@@ -2,6 +2,52 @@ import MapKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// `Equatable` wrapper for `@Entry var onActionCardSheetPresented` so injecting a handler into
+/// the environment doesn't invalidate dependent views on every render pass.
+struct ActionCardSheetHandler: Equatable {
+  let id: ObjectIdentifier
+  let onChange: @MainActor (Bool) -> Void
+
+  static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
+
+  @MainActor
+  func callAsFunction(_ presented: Bool) {
+    onChange(presented)
+  }
+}
+
+extension EnvironmentValues {
+  /// Optional hook notified when an Action Card presents (`true`) or dismisses (`false`) a modal
+  /// sheet (`VoiceModeView` uses this to pause/resume VAD automatically while a sheet is open).
+  @Entry var onActionCardSheetPresented: ActionCardSheetHandler? = nil
+}
+
+private struct ActionCardSheetTracker: ViewModifier {
+  @Environment(\.onActionCardSheetPresented) private var onActionCardSheetPresented
+  let isPresented: Bool
+  @State private var reported = false
+
+  func body(content: Content) -> some View {
+    content
+      .onChange(of: isPresented, initial: true) { _, presented in
+        guard presented != reported else { return }
+        reported = presented
+        onActionCardSheetPresented?(presented)
+      }
+      .onDisappear {
+        guard reported else { return }
+        reported = false
+        onActionCardSheetPresented?(false)
+      }
+  }
+}
+
+private extension View {
+  func trackActionCardSheet(isPresented: Bool) -> some View {
+    modifier(ActionCardSheetTracker(isPresented: isPresented))
+  }
+}
+
 /// Renders Swift-verified inline Action Cards produced by tools or structured web lookups.
 /// Content-layer surfaces only (no Liquid Glass), mounted strictly after streaming finishes so
 /// live replies never shift scroll height.
@@ -9,6 +55,7 @@ struct ActionCardStack: View {
   let cards: [ActionCardRecord]
   var isCompact = false
   var onUpdateCard: ((ActionCardRecord) -> Void)? = nil
+  @State private var appeared = false
 
   var body: some View {
     let renderable = cards.filter(\.isRenderable)
@@ -17,32 +64,37 @@ struct ActionCardStack: View {
       return false
     }
     if !renderable.isEmpty {
-      if isCompact {
-        ScrollView(.horizontal, showsIndicators: false) {
-          HStack(spacing: Theme.Spacing.sm) {
-            ForEach(renderable) { record in
+      Group {
+        if isCompact {
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Spacing.sm) {
+              ForEach(renderable) { record in
+                cardView(for: record, suppressPlacesSnapshot: hasRoute)
+                  .frame(width: 280)
+              }
+            }
+            .padding(.horizontal, Theme.Spacing.lg)
+          }
+        } else {
+          // Put RouteCard ahead of PlacesCard when both ran in the same directions turn.
+          let ordered = hasRoute
+            ? renderable.sorted { lhs, rhs in
+              let lIsRoute: Bool = if case .route = lhs.payload { true } else { false }
+              let rIsRoute: Bool = if case .route = rhs.payload { true } else { false }
+              return lIsRoute && !rIsRoute
+            }
+            : renderable
+          VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            ForEach(ordered) { record in
               cardView(for: record, suppressPlacesSnapshot: hasRoute)
-                .frame(width: 280)
             }
           }
-          .padding(.horizontal, Theme.Spacing.lg)
+          .frame(maxWidth: .infinity, alignment: .leading)
         }
-      } else {
-        // Put RouteCard ahead of PlacesCard when both ran in the same directions turn.
-        let ordered = hasRoute
-          ? renderable.sorted { lhs, rhs in
-            let lIsRoute: Bool = if case .route = lhs.payload { true } else { false }
-            let rIsRoute: Bool = if case .route = rhs.payload { true } else { false }
-            return lIsRoute && !rIsRoute
-          }
-          : renderable
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-          ForEach(ordered) { record in
-            cardView(for: record, suppressPlacesSnapshot: hasRoute)
-          }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
       }
+      .opacity(appeared ? 1 : 0)
+      .appAnimation(Theme.Motion.stateChange, value: appeared, kind: .dissolve)
+      .onAppear { appeared = true }
     }
   }
 
@@ -203,10 +255,11 @@ private struct PlacesCardView: View {
       detailsTask = nil
       loadingLookAroundID = nil
     }
+    .trackActionCardSheet(isPresented: activeSheet != nil)
     .sheet(item: $activeSheet) { sheet in
       switch sheet {
       case .fullMap:
-        InteractivePlacesMapSheet(card: card)
+        InteractivePlacesMapSheet(card: card, initialSelectedIndex: selectedIndex)
       case .details(let item):
         MapItemDetailSheet(mapItem: item, displaysMap: true)
           .ignoresSafeArea()
@@ -267,22 +320,27 @@ private struct PlacesCardView: View {
           }
         }
         .overlay {
-          if let snapshot {
-            Image(uiImage: snapshot)
-              .resizable()
-              .scaledToFill()
-          } else {
-            ZStack {
-              Theme.Surface.card
-              HStack(spacing: Theme.Spacing.tight) {
-                Image(systemName: "map").foregroundStyle(Theme.Brand.teal)
-                Text(primary.address ?? primary.name)
-                  .font(.caption)
-                  .foregroundStyle(Theme.Text.tertiary)
-                  .lineLimit(1)
+          Group {
+            if let snapshot {
+              Image(uiImage: snapshot)
+                .resizable()
+                .scaledToFill()
+                .transition(.opacity)
+            } else {
+              ZStack {
+                Theme.Surface.card
+                HStack(spacing: Theme.Spacing.tight) {
+                  Image(systemName: "map").foregroundStyle(Theme.Brand.teal)
+                  Text(primary.address ?? primary.name)
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.tertiary)
+                    .lineLimit(1)
+                }
               }
+              .transition(.opacity)
             }
           }
+          .appAnimation(Theme.Motion.easeOut, value: renderedSnapshotKey, kind: .dissolve)
         }
         .clipShape(.rect(cornerRadius: Theme.Radius.row, style: .continuous))
         .overlay {
@@ -772,6 +830,7 @@ private struct CalendarEventCardView: View {
     .onChange(of: card) { _, latest in
       currentCard = latest
     }
+    .trackActionCardSheet(isPresented: showsEditSheet)
     .sheet(isPresented: $showsEditSheet) {
       CalendarEventEditSheet(card: currentCard) { outcome in
         switch outcome {
@@ -797,6 +856,7 @@ private struct CalendarEventCardView: View {
 // MARK: - Reminder Card
 
 private struct ReminderCardView: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let card: ReminderCard
   var onUpdate: ((ReminderCard) -> Void)? = nil
   @State private var isCompleted: Bool
@@ -837,6 +897,8 @@ private struct ReminderCardView: View {
           Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
             .font(.title3)
             .foregroundStyle(isCompleted ? Theme.Status.healthy : Theme.Brand.gold)
+            .contentTransition(.symbolEffect(.replace))
+            .appAnimation(Theme.Motion.stateChange, value: isCompleted, kind: .dissolve)
             .frame(width: Theme.Size.target, height: Theme.Size.target)
         }
         .buttonStyle(.plain)
@@ -887,8 +949,10 @@ private struct ReminderCardView: View {
             snoozeToTomorrowMorning()
           }
         }
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
       }
     }
+    .appAnimation(Theme.Motion.stateChange, value: isCompleted)
     .padding(Theme.Spacing.md)
     .surfaceCard(radius: Theme.Radius.card)
     .accessibilityElement(children: .contain)
@@ -911,9 +975,11 @@ private struct ReminderCardView: View {
         identifier: id, completed: target)
       switch result {
       case .success(let updated):
-        isCompleted = updated.isCompleted
-        if let nextDue = updated.dueDate { dueDate = nextDue }
-        status = updated.isCompleted ? .completed : .updated
+        withAppAnimation(Theme.Motion.stateChange) {
+          isCompleted = updated.isCompleted
+          if let nextDue = updated.dueDate { dueDate = nextDue }
+          status = updated.isCompleted ? .completed : .updated
+        }
         emitUpdate()
         Haptics.complete()
       case .error(let message):
@@ -949,9 +1015,11 @@ private struct ReminderCardView: View {
         identifier: id, mutation: ReminderMutation(dueDate: targetDate))
       switch result {
       case .success(let updated):
-        dueDate = updated.dueDate ?? targetDate
-        isCompleted = updated.isCompleted
-        status = updated.isCompleted ? .completed : .updated
+        withAppAnimation(Theme.Motion.stateChange) {
+          dueDate = updated.dueDate ?? targetDate
+          isCompleted = updated.isCompleted
+          status = updated.isCompleted ? .completed : .updated
+        }
         emitUpdate()
         Haptics.complete()
       case .error(let message):
@@ -1060,6 +1128,7 @@ private struct ContactCardView: View {
     .surfaceCard(radius: Theme.Radius.card)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("actionCard.contact")
+    .trackActionCardSheet(isPresented: showsContactSheet)
     .sheet(isPresented: $showsContactSheet) {
       ContactDetailSheet(card: card)
     }
@@ -1073,6 +1142,7 @@ private struct MessageDraftCardView: View {
   @State private var showsSMSComposer = false
   @State private var showsMailComposer = false
   @State private var copied = false
+  @State private var copyResetTask: Task<Void, Never>?
   @State private var composerNotice: String?
 
   private var canCompose: Bool {
@@ -1152,21 +1222,24 @@ private struct MessageDraftCardView: View {
             tint: Theme.Brand.gold,
             id: "actionCard.draft.copyFallback"
           ) {
-            Platform.copy(card.body)
-            Haptics.complete()
-            copied = true
+            copyDraft()
           }
         }
         ShareLink(item: card.body) {
           ActionCardPillLabel(title: String(localized: "Share"), symbol: "square.and.arrow.up")
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ActionCardPressStyle())
       }
     }
     .padding(Theme.Spacing.md)
     .surfaceCard(radius: Theme.Radius.card)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("actionCard.draft")
+    .trackActionCardSheet(isPresented: showsSMSComposer || showsMailComposer)
+    .onDisappear {
+      copyResetTask?.cancel()
+      copyResetTask = nil
+    }
     .sheet(isPresented: $showsSMSComposer) {
       MessageComposeSheet(recipients: card.recipients, body: card.body)
         .ignoresSafeArea()
@@ -1179,14 +1252,29 @@ private struct MessageDraftCardView: View {
     }
   }
 
+  private func copyDraft() {
+    Platform.copy(card.body)
+    Haptics.complete()
+    copyResetTask?.cancel()
+    withAppAnimation(Theme.Motion.stateChange, kind: .dissolve) {
+      copied = true
+    }
+    copyResetTask = Task {
+      try? await Task.sleep(for: .seconds(1.5))
+      guard !Task.isCancelled else { return }
+      withAppAnimation(Theme.Motion.stateChange, kind: .dissolve) {
+        copied = false
+      }
+    }
+  }
+
   private func openComposerIfAvailable() {
     composerNotice = nil
     if card.channel == .sms {
       if NativeActions.canSendText {
         showsSMSComposer = true
       } else {
-        Platform.copy(card.body)
-        copied = true
+        copyDraft()
         composerNotice = String(localized: "Messages is unavailable on this device. Copied draft.")
         Haptics.error()
       }
@@ -1194,8 +1282,7 @@ private struct MessageDraftCardView: View {
       if NativeActions.canSendMail {
         showsMailComposer = true
       } else {
-        Platform.copy(card.body)
-        copied = true
+        copyDraft()
         composerNotice = String(localized: "Mail is not configured on this device. Copied draft.")
         Haptics.error()
       }
@@ -1205,12 +1292,25 @@ private struct MessageDraftCardView: View {
 
 // MARK: - Shared Card Controls & Portable File Transfers
 
-private struct ActionCardPrimaryPill: View {
+struct ActionCardPressStyle: ButtonStyle {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.isEnabled) private var isEnabled
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .opacity(isEnabled ? (configuration.isPressed ? 0.88 : 1) : 0.55)
+      .scaleEffect(!reduceMotion && configuration.isPressed ? 0.96 : 1)
+      .appAnimation(Theme.Motion.press, value: configuration.isPressed)
+  }
+}
+
+struct ActionCardPrimaryPill: View {
   let title: String
   let symbol: String
   let tint: Color
   var fullWidth = false
   let id: String
+  var isDisabled = false
   let action: () -> Void
 
   var body: some View {
@@ -1221,20 +1321,22 @@ private struct ActionCardPrimaryPill: View {
       Label(title, systemImage: symbol)
         .font(.system(.footnote, weight: .semibold))
         .foregroundStyle(Theme.Text.primary)
+        .contentTransition(.symbolEffect(.replace))
         .lineLimit(1)
         .minimumScaleFactor(0.85)
         .padding(.horizontal, Theme.Spacing.md)
         .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: 36)
-        .background { LitTintBackground(shape: Capsule(), tint: tint, strength: .pill) }
+        .background { LitTintBackground(shape: Capsule(), tint: tint, isEnabled: !isDisabled, strength: .pill) }
         .frame(minHeight: Theme.Size.target)
         .contentShape(.rect)
     }
-    .buttonStyle(.plain)
+    .buttonStyle(ActionCardPressStyle())
+    .disabled(isDisabled)
     .accessibilityIdentifier(id)
   }
 }
 
-private struct ActionCardSecondaryPill: View {
+struct ActionCardSecondaryPill: View {
   let title: String
   let symbol: String
   let id: String
@@ -1248,14 +1350,13 @@ private struct ActionCardSecondaryPill: View {
     } label: {
       ActionCardPillLabel(title: title, symbol: symbol)
     }
-    .buttonStyle(.plain)
+    .buttonStyle(ActionCardPressStyle())
     .disabled(isDisabled)
-    .opacity(isDisabled ? 0.55 : 1)
     .accessibilityIdentifier(id)
   }
 }
 
-private struct ActionCardPillLabel: View {
+struct ActionCardPillLabel: View {
   let title: String
   let symbol: String
 

@@ -1,14 +1,33 @@
 import SwiftUI
 
 /// Opt-in permissions for native on-device personal context tools (Calendar, Reminders,
-/// Contacts, and Apple Maps). All toggles default to Off; creating events or reminders always
-/// requires explicit confirmation in the chat stream before saving.
+/// Contacts, Maps, Weather, Alarms & Timers, and Photos OCR). All toggles default to Off;
+/// mutating actions always require explicit confirmation in the chat stream before executing.
 struct PersonalToolsSettingsView: View {
   @Environment(AppState.self) private var appState
 
   var body: some View {
     @Bindable var appState = appState
     Form {
+      if appState.focusFilter.hidePersonalTools {
+        Section {
+          HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+            Image(systemName: "moon.fill")
+              .foregroundStyle(Theme.Mode.voice.tint)
+              .accessibilityHidden(true)
+            Text(
+              "Your current Focus hides personal tools from the assistant. Your choices below stay saved for when Focus ends."
+            )
+            .font(.footnote)
+            .foregroundStyle(Theme.Text.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+          }
+          .padding(.vertical, Theme.Spacing.xxs)
+          .themedRow()
+          .accessibilityIdentifier("personalTools.focusBanner")
+        }
+      }
+
       Section {
         Toggle(isOn: $appState.personalTools.calendar) {
           RowLabel(
@@ -66,10 +85,13 @@ struct PersonalToolsSettingsView: View {
         )
         .foregroundStyle(Theme.Text.tertiary)
       }
+      .tint(Theme.Mode.voice.tint)
       .themedRow()
       .disabled(!appState.enableTools)
     }
     .themedList(Theme.Brand.gold)
     .navigationTitle("Personal tools")
+    .inlineTitleDisplay()
+    .onChange(of: appState.personalTools) { _, _ in Haptics.selection() }
   }
 }

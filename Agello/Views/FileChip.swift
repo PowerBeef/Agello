@@ -9,6 +9,7 @@ struct FileChip: View {
   /// Only the file's start was read (it's longer than Agello reads).
   var cut = false
   var onRemove: (() -> Void)?
+  @ScaledMetric(relativeTo: .body) private var maxChipWidth: CGFloat = 240
 
   var body: some View {
     HStack(spacing: Theme.Spacing.sm) {
@@ -45,7 +46,7 @@ struct FileChip: View {
         .accessibilityLabel("Remove \(name)")
       }
     }
-    .frame(maxWidth: 240, alignment: .leading)
+    .frame(maxWidth: min(maxChipWidth, 320), alignment: .leading)
     .padding(.leading, Theme.Spacing.sm)
     .padding(.trailing, onRemove == nil ? Theme.Spacing.md : Theme.Spacing.xs)
     .padding(.vertical, Theme.Spacing.sm)

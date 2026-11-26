@@ -7,6 +7,7 @@ import SwiftUI
 /// 2026-11-11, and Advanced, the screen that offered them, is gone.
 struct DeveloperSettingsView: View {
   @Environment(AppState.self) private var appState
+  @Environment(\.dynamicTypeSize) private var typeSize
   @AppStorage("showPerformanceDetails") private var showStats = false
   @State private var memorySnapshot: MemoryProbe.Snapshot?
   @State private var telemetrySummary: MetricsReporter.TelemetrySummary?
@@ -33,13 +34,16 @@ struct DeveloperSettingsView: View {
   }
 
   private func refreshTelemetry() {
+    Haptics.selection()
     telemetryRefreshToken &+= 1
   }
 
   private var performanceSection: some View {
     Section {
       Toggle("Show performance details", isOn: $showStats)
+        .tint(Theme.Brand.glacier)
         .themedRow()
+        .onChange(of: showStats) { _, _ in Haptics.selection() }
         .accessibilityIdentifier("settings.showStats")
     } header: {
       Text("Replies").eyebrowStyle()
@@ -61,12 +65,16 @@ struct DeveloperSettingsView: View {
         .themedRow()
       } else {
         Button {
+          Haptics.selection()
           benchmarkError = nil
           Task {
             appState.generationError = nil
             await appState.runBenchmark()
             if let error = appState.generationError {
               benchmarkError = error
+              Haptics.error()
+            } else if appState.benchmarkReport != nil {
+              Haptics.success()
             }
           }
         } label: {
@@ -76,8 +84,12 @@ struct DeveloperSettingsView: View {
         .disabled(
           !appState.store.isDownloaded(appState.store.activeSpec)
             || appState.isBusy || appState.isTranscribing)
+        .padding(.vertical, Theme.Spacing.md)
         .listRowBackground(Color.clear)
-        .listRowInsets(EdgeInsets())
+        .listRowInsets(
+          EdgeInsets(
+            top: Theme.Spacing.xs, leading: Theme.Spacing.xs,
+            bottom: Theme.Spacing.xs, trailing: Theme.Spacing.xs))
         .accessibilityIdentifier("settings.benchmark")
         if appState.isBusy || appState.isTranscribing {
           Text("Finish the active reply or dictation before running the benchmark.")
@@ -109,14 +121,25 @@ struct DeveloperSettingsView: View {
 
   private func benchmarkStats(_ report: BenchmarkReport) -> some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-      HStack(spacing: Theme.Spacing.xl) {
-        benchmarkStat(
-          value: String(format: "%.0f", report.prefillTokensPerSecond), label: "prefill tok/s")
-        benchmarkStat(
-          value: String(format: "%.0f", report.decodeTokensPerSecond), label: "decode tok/s")
-        benchmarkStat(
-          value: String(format: "%.1fs", report.timeToFirstToken), label: "first token")
-        Spacer()
+      if typeSize.isAccessibilitySize {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+          benchmarkStat(
+            value: String(format: "%.0f", report.prefillTokensPerSecond), label: "prefill tok/s")
+          benchmarkStat(
+            value: String(format: "%.0f", report.decodeTokensPerSecond), label: "decode tok/s")
+          benchmarkStat(
+            value: String(format: "%.1fs", report.timeToFirstToken), label: "first token")
+        }
+      } else {
+        HStack(spacing: Theme.Spacing.xl) {
+          benchmarkStat(
+            value: String(format: "%.0f", report.prefillTokensPerSecond), label: "prefill tok/s")
+          benchmarkStat(
+            value: String(format: "%.0f", report.decodeTokensPerSecond), label: "decode tok/s")
+          benchmarkStat(
+            value: String(format: "%.1fs", report.timeToFirstToken), label: "first token")
+          Spacer()
+        }
       }
       Text(
         "\(ModelCatalog.spec(for: report.modelID).displayName) · \(report.backend) · \(report.date.formatted(date: .abbreviated, time: .omitted))"
@@ -169,13 +192,19 @@ struct DeveloperSettingsView: View {
       )
       .themedRow()
       LabeledContent(
-        "MetricKit",
-        value: telemetrySummary.map {
-          "\($0.reportCount) reports · \($0.memoryExceptionCount) mem exc · \($0.crashCount) crashes"
-        } ?? String(localized: "Loading…")
+        "MetricKit reports",
+        value: telemetrySummary.map { "\($0.reportCount)" } ?? String(localized: "Loading…")
       )
       .monospacedDigit()
       .themedRow()
+      if let summary = telemetrySummary {
+        LabeledContent(
+          "Mem exc / crashes",
+          value: "\(summary.memoryExceptionCount) / \(summary.crashCount)"
+        )
+        .monospacedDigit()
+        .themedRow()
+      }
       if let peakMB = telemetrySummary?.peakMemoryMB {
         LabeledContent("MetricKit peak", value: String(format: "%.0f MB", peakMB))
           .monospacedDigit()

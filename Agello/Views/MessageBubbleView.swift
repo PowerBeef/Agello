@@ -21,14 +21,28 @@ struct MessageBubbleView: View {
   let reader: SpeechReader
   let composerBridge: ComposerBridge
   @State private var copied = false
+  @State private var copyResetTask: Task<Void, Never>?
   @State private var showsThought = false
   @State private var showsSources = false
 
   var body: some View {
-    if turn.isUser {
-      userBubble
-    } else {
-      modelBlock
+    Group {
+      if turn.isUser {
+        userBubble
+      } else {
+        modelBlock
+      }
+    }
+    .onChange(of: turn.id) { _, _ in
+      copyResetTask?.cancel()
+      copyResetTask = nil
+      copied = false
+      showsThought = false
+      showsSources = false
+    }
+    .onDisappear {
+      copyResetTask?.cancel()
+      copyResetTask = nil
     }
   }
 
@@ -111,39 +125,8 @@ struct MessageBubbleView: View {
         toolChips
       }
       if !isStreaming {
-        let hasWeatherCard = parts.actionCards.contains {
-          if case .weather = $0.payload { return true }
-          return false
-        }
-        if !parts.actionCards.isEmpty {
-          ActionCardStack(cards: parts.actionCards) { updated in
-            persistCardUpdate(updated)
-          }
-        }
-        if !turn.text.isEmpty || !parts.actionCards.isEmpty {
-          if !parts.sources.isEmpty {
-            sourcesCard(parts.sources)
-            if !hasWeatherCard, parts.sources.contains(where: { WeatherLookup.isAttribution($0.url) }) {
-              WeatherAttributionMark()
-            }
-          }
-          if parts.incomplete {
-            Label("Incomplete reply", systemImage: "exclamationmark.circle")
-              .font(.footnote)
-              .foregroundStyle(Theme.Text.tertiary)
-              .accessibilityIdentifier("message.incomplete")
-          }
-          if let memory = parts.toolActivity.last(where: { $0.name == "memory" }) {
-            Label("Memory updated", systemImage: "brain.head.profile")
-              .font(.footnote)
-              .foregroundStyle(Theme.Text.tertiary)
-              .accessibilityValue(memory.summary)
-              .accessibilityIdentifier("message.memory")
-          }
-          if !turn.text.isEmpty || versions.count > 1 || canRegenerate {
-            actionRow
-          }
-        }
+        postStreamFooter(parts: parts)
+          .transition(.opacity)
       }
       if showsStats, let stats = turn.stats {
         Text(stats.footerLine)
@@ -153,7 +136,47 @@ struct MessageBubbleView: View {
           .accessibilityIdentifier("message.stats")
       }
     }
+    .appAnimation(Theme.Motion.stateChange, value: isStreaming, kind: .dissolve)
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  @ViewBuilder
+  private func postStreamFooter(parts: MessageParts) -> some View {
+    let hasWeatherCard = parts.actionCards.contains {
+      if case .weather = $0.payload { return true }
+      return false
+    }
+    VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+      if !parts.actionCards.isEmpty {
+        ActionCardStack(cards: parts.actionCards) { updated in
+          persistCardUpdate(updated)
+        }
+      }
+      if !turn.text.isEmpty || !parts.actionCards.isEmpty {
+        if !parts.sources.isEmpty {
+          sourcesCard(parts.sources)
+          if !hasWeatherCard, parts.sources.contains(where: { WeatherLookup.isAttribution($0.url) }) {
+            WeatherAttributionMark()
+          }
+        }
+        if parts.incomplete {
+          Label("Incomplete reply", systemImage: "exclamationmark.circle")
+            .font(.footnote)
+            .foregroundStyle(Theme.Text.tertiary)
+            .accessibilityIdentifier("message.incomplete")
+        }
+        if let memory = parts.toolActivity.last(where: { $0.name == "memory" }) {
+          Label("Memory updated", systemImage: "brain.head.profile")
+            .font(.footnote)
+            .foregroundStyle(Theme.Text.tertiary)
+            .accessibilityValue(memory.summary)
+            .accessibilityIdentifier("message.memory")
+        }
+        if !turn.text.isEmpty || versions.count > 1 || canRegenerate {
+          actionRow
+        }
+      }
+    }
   }
 
   private static let headingRegex = try? NSRegularExpression(pattern: #"(?m)^#{1,6}\s+"#)
@@ -206,22 +229,33 @@ struct MessageBubbleView: View {
 
   // MARK: - Reasoning
 
+  private var isThoughtExpandable: Bool {
+    if showsThought { return true }
+    return turn.thought.count >= 110 || turn.thought.components(separatedBy: .newlines).count > 2
+  }
+
   /// Quiet card above the answer; collapsed to two lines of the thought.
   private var thoughtCard: some View {
     let tint = Theme.Mode.think.tint
+    let isActivelyThinking = isStreaming && turn.text.isEmpty
+    let shouldPulseHeader = isActivelyThinking && !showsThought && !reduceMotion
     return Button {
       withAppAnimation(Theme.Motion.easeOut) { showsThought.toggle() }
       Haptics.selection()
     } label: {
       VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
         HStack(spacing: Theme.Spacing.tight) {
-          Image(systemName: "lightbulb.fill").font(.caption2)
-          Text("Reasoning").eyebrowStyle(tint)
+          thoughtHeaderTitle(
+            tint: tint,
+            isActivelyThinking: isActivelyThinking,
+            shouldPulse: shouldPulseHeader)
           Spacer()
-          Image(systemName: "chevron.down")
-            .font(.caption2.weight(.semibold))
-            .rotationEffect(.degrees(showsThought ? 180 : 0))
-            .accessibilityHidden(true)
+          if isThoughtExpandable {
+            Image(systemName: "chevron.down")
+              .font(.caption2.weight(.semibold))
+              .rotationEffect(.degrees(showsThought ? 180 : 0))
+              .accessibilityHidden(true)
+          }
         }
         .foregroundStyle(tint)
         Text(turn.thought)
@@ -243,6 +277,30 @@ struct MessageBubbleView: View {
     .accessibilityValue(showsThought ? "Expanded" : "Collapsed")
     .accessibilityHint(showsThought ? "Collapses the reasoning" : "Shows all of the reasoning")
     .accessibilityIdentifier("message.reasoning")
+  }
+
+  @ViewBuilder
+  private func thoughtHeaderTitle(
+    tint: Color, isActivelyThinking: Bool, shouldPulse: Bool
+  ) -> some View {
+    let header = HStack(spacing: Theme.Spacing.tight) {
+      Image(systemName: "lightbulb.fill")
+        .font(.caption2)
+        .symbolEffect(.pulse, isActive: shouldPulse)
+      Text(isActivelyThinking ? "Thinking…" : "Reasoning")
+        .eyebrowStyle(tint)
+        .contentTransition(.opacity)
+        .appAnimation(Theme.Motion.stateChange, value: isActivelyThinking, kind: .dissolve)
+    }
+    if shouldPulse {
+      header.phaseAnimator([1.0, 0.48]) { view, opacity in
+        view.opacity(opacity)
+      } animation: { _ in
+        .easeInOut(duration: 0.85)
+      }
+    } else {
+      header
+    }
   }
 
   // MARK: - Sources
@@ -283,7 +341,7 @@ struct MessageBubbleView: View {
           }
         }
         .surfaceCard(radius: Theme.Radius.card)
-        .transition(.opacity.combined(with: .move(edge: .top)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
       }
     }
     .accessibilityElement(children: .contain)
@@ -453,6 +511,7 @@ struct MessageBubbleView: View {
     Button(action: action) {
       Image(systemName: symbol)
         .contentTransition(.symbolEffect(.replace))
+        .appAnimation(Theme.Motion.stateChange, value: symbol, kind: .dissolve)
         .frame(width: Theme.Size.target, height: Theme.Size.target)
     }
     .accessibilityLabel(label)
@@ -475,10 +534,16 @@ struct MessageBubbleView: View {
   private func copy(_ text: String) {
     Platform.copy(text)
     Haptics.complete()
-    copied = true
-    Task {
+    copyResetTask?.cancel()
+    withAppAnimation(Theme.Motion.stateChange, kind: .dissolve) {
+      copied = true
+    }
+    copyResetTask = Task {
       try? await Task.sleep(for: .seconds(1.5))
-      copied = false
+      guard !Task.isCancelled else { return }
+      withAppAnimation(Theme.Motion.stateChange, kind: .dissolve) {
+        copied = false
+      }
     }
   }
 
@@ -501,26 +566,35 @@ struct MessageBubbleView: View {
     }
   }
 
+  @ViewBuilder
   private var thinkingDots: some View {
-    HStack(spacing: Theme.Spacing.tight) {
-      ForEach(0..<3) { index in
-        let dot = Circle()
-          .fill(Theme.Text.tertiary)
-          .frame(width: 7, height: 7)
-        if reduceMotion {
-          dot
-        } else {
-          dot.phaseAnimator([false, true]) { view, active in
-            view.opacity(active ? 0.25 : 1.0)
-          } animation: { _ in
-            .easeInOut(duration: 0.6).delay(Double(index) * 0.2)
-          }
+    Group {
+      if reduceMotion {
+        thinkingDotsRow(activePhase: nil)
+      } else {
+        PhaseAnimator([0, 1, 2]) { phase in
+          thinkingDotsRow(activePhase: phase)
+        } animation: { _ in
+          .easeInOut(duration: 0.38)
         }
       }
     }
     .padding(.vertical, Theme.Spacing.tight)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Thinking")
+  }
+
+  private func thinkingDotsRow(activePhase: Int?) -> some View {
+    HStack(spacing: Theme.Spacing.tight) {
+      ForEach(0..<3, id: \.self) { index in
+        let isActive = activePhase == index
+        Circle()
+          .fill(Theme.Text.tertiary)
+          .frame(width: 7, height: 7)
+          .opacity(activePhase == nil ? 0.7 : (isActive ? 1.0 : 0.3))
+          .scaleEffect(activePhase == nil ? 1.0 : (isActive ? 1.0 : 0.85))
+      }
+    }
   }
 }
 
@@ -554,12 +628,16 @@ private struct SpeakActionButton: View {
   var body: some View {
     let isSpeaking = reader.speakingID == turnID
     Button {
-      reader.toggle(text, id: turnID)
+      withAppAnimation(Theme.Motion.stateChange, kind: .dissolve) {
+        reader.toggle(text, id: turnID)
+      }
     } label: {
       Image(systemName: isSpeaking ? "stop.circle" : "speaker.wave.2")
+        .foregroundStyle(isSpeaking ? Theme.Mode.voice.tint : Theme.Text.tertiary)
         .contentTransition(.symbolEffect(.replace))
         .frame(width: Theme.Size.target, height: Theme.Size.target)
     }
+    .appAnimation(Theme.Motion.stateChange, value: isSpeaking, kind: .dissolve)
     .accessibilityLabel(isSpeaking ? "Stop reading" : "Read aloud")
     .accessibilityIdentifier("message.speak")
   }
@@ -606,6 +684,7 @@ private struct VersionSwitcherView: View {
   let turn: ChatTurn
   let thread: ChatThread?
   let versions: [ChatTurn]
+  @State private var countingDown = false
 
   var body: some View {
     let index = versions.firstIndex { $0.id == turn.id } ?? 0
@@ -613,8 +692,9 @@ private struct VersionSwitcherView: View {
     HStack(spacing: 0) {
       Button {
         guard let thread, index > 0, versions.indices.contains(index - 1) else { return }
+        countingDown = true
         Haptics.selection()
-        withAppAnimation(Theme.Motion.easeOut) {
+        withAppAnimation(Theme.Motion.stateChange, kind: .dissolve) {
           appState.selectVersion(versions[index - 1], in: thread)
         }
       } label: {
@@ -627,13 +707,15 @@ private struct VersionSwitcherView: View {
       Text("\(index + 1)/\(versions.count)")
         .font(.caption)
         .monospacedDigit()
-        .contentTransition(.numericText())
+        .contentTransition(.numericText(countsDown: countingDown))
+        .appAnimation(Theme.Motion.stateChange, value: index, kind: .dissolve)
         .accessibilityLabel("Version \(index + 1) of \(versions.count)")
         .accessibilityIdentifier("message.version")
       Button {
         guard let thread, versions.indices.contains(index + 1) else { return }
+        countingDown = false
         Haptics.selection()
-        withAppAnimation(Theme.Motion.easeOut) {
+        withAppAnimation(Theme.Motion.stateChange, kind: .dissolve) {
           appState.selectVersion(versions[index + 1], in: thread)
         }
       } label: {

@@ -38,18 +38,39 @@ struct WeatherCardView: View {
 
       if !card.alerts.isEmpty {
         ForEach(card.alerts.prefix(2)) { alert in
-          HStack(alignment: .top, spacing: Theme.Spacing.tight) {
+          let detailsURL = NativeActionURLs.website(alert.detailsURL)
+          let row = HStack(alignment: .top, spacing: Theme.Spacing.tight) {
             Image(systemName: "exclamationmark.triangle.fill")
               .foregroundStyle(Theme.Status.guarded)
+              .accessibilityHidden(true)
             Text(alert.summary)
               .font(.caption.weight(.medium))
               .foregroundStyle(Theme.Status.guarded)
+              .multilineTextAlignment(.leading)
               .frame(maxWidth: .infinity, alignment: .leading)
+            if detailsURL != nil {
+              Image(systemName: "arrow.up.right")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Theme.Status.guarded.opacity(0.85))
+                .accessibilityHidden(true)
+            }
           }
           .padding(Theme.Spacing.sm)
           .surfaceCard(
             radius: Theme.Radius.row, fill: Theme.Status.guarded.opacity(0.12),
             stroke: Theme.Status.guarded.opacity(0.35))
+          .contentShape(.rect)
+
+          if let detailsURL {
+            Link(destination: detailsURL) {
+              row
+            }
+            .buttonStyle(ActionCardPressStyle())
+            .accessibilityLabel("\(alert.summary). Open alert details")
+            .accessibilityIdentifier("actionCard.weather.alertLink")
+          } else {
+            row
+          }
         }
       }
 
@@ -120,6 +141,7 @@ struct AlarmCardView: View {
   @State private var fireDate: Date?
   @State private var durationSeconds: Double?
   @State private var isUpdating = false
+  @State private var activeAction: AlarmAction?
   @State private var errorMessage: String?
 
   init(card: AlarmCard, onUpdate: ((AlarmCard) -> Void)? = nil) {
@@ -183,6 +205,7 @@ struct AlarmCardView: View {
               Text(target, style: .timer)
                 .font(.system(.callout, weight: .semibold).monospacedDigit())
                 .foregroundStyle(Theme.Brand.gold)
+                .contentTransition(.numericText(countsDown: true))
             } else if isExpired {
               Text(String(localized: "Timer finished"))
                 .font(.caption.monospacedDigit())
@@ -207,53 +230,54 @@ struct AlarmCardView: View {
           WrapFlowLayout(horizontalSpacing: Theme.Spacing.sm, verticalSpacing: Theme.Spacing.xs) {
             if card.kind == .timer, state == .countdown {
               Button {
+                Haptics.selection()
                 performAction(.pause)
               } label: {
-                Label("Pause", systemImage: "pause.fill")
-                  .font(.system(.footnote, weight: .medium))
-                  .foregroundStyle(Theme.Text.secondary)
-                  .padding(.horizontal, Theme.Spacing.md)
-                  .frame(minHeight: 36)
-                  .background { QuietBackground(shape: Capsule()) }
-                  .frame(minHeight: Theme.Size.target)
+                alarmPillLabel(
+                  title: String(localized: "Pause"),
+                  symbol: "pause.fill",
+                  foreground: Theme.Text.secondary,
+                  isBusy: activeAction == .pause,
+                  isPrimary: false)
               }
-              .buttonStyle(.plain)
+              .buttonStyle(ActionCardPressStyle())
               .disabled(isUpdating)
               .accessibilityIdentifier("actionCard.alarm.pause")
             } else if card.kind == .timer, state == .paused {
               Button {
+                Haptics.selection()
                 performAction(.resume)
               } label: {
-                Label("Resume", systemImage: "play.fill")
-                  .font(.system(.footnote, weight: .semibold))
-                  .foregroundStyle(Theme.Text.primary)
-                  .padding(.horizontal, Theme.Spacing.md)
-                  .frame(minHeight: 36)
-                  .background { LitTintBackground(shape: Capsule(), tint: Theme.Brand.teal, strength: .pill) }
-                  .frame(minHeight: Theme.Size.target)
+                alarmPillLabel(
+                  title: String(localized: "Resume"),
+                  symbol: "play.fill",
+                  foreground: Theme.Text.primary,
+                  isBusy: activeAction == .resume,
+                  isPrimary: true)
               }
-              .buttonStyle(.plain)
+              .buttonStyle(ActionCardPressStyle())
               .disabled(isUpdating)
               .accessibilityIdentifier("actionCard.alarm.resume")
             }
 
             Button {
+              Haptics.selection()
               performAction(.cancel)
             } label: {
-              Label(state == .alerting ? "Stop" : "Cancel", systemImage: "xmark")
-                .font(.system(.footnote, weight: .medium))
-                .foregroundStyle(Theme.Status.critical)
-                .padding(.horizontal, Theme.Spacing.md)
-                .frame(minHeight: 36)
-                .background { QuietBackground(shape: Capsule()) }
-                .frame(minHeight: Theme.Size.target)
+              alarmPillLabel(
+                title: state == .alerting ? String(localized: "Stop") : String(localized: "Cancel"),
+                symbol: "xmark",
+                foreground: Theme.Status.critical,
+                isBusy: activeAction == .cancel,
+                isPrimary: false)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ActionCardPressStyle())
             .disabled(isUpdating)
             .accessibilityIdentifier("actionCard.alarm.cancel")
           }
         }
       }
+      .appAnimation(Theme.Motion.stateChange, value: state)
       .onChange(of: isExpired) { _, expired in
         if expired {
           Task { await syncWithAlarmManager() }
@@ -279,14 +303,48 @@ struct AlarmCardView: View {
     }
   }
 
-  private enum AlarmAction { case pause, resume, cancel }
+  private enum AlarmAction: Equatable { case pause, resume, cancel }
+
+  private func alarmPillLabel(
+    title: String, symbol: String, foreground: Color, isBusy: Bool, isPrimary: Bool
+  ) -> some View {
+    HStack(spacing: Theme.Spacing.tight) {
+      if isBusy {
+        ProgressView()
+          .controlSize(.mini)
+          .tint(foreground)
+      } else {
+        Image(systemName: symbol)
+      }
+      Text(title)
+    }
+    .font(.system(.footnote, weight: isPrimary ? .semibold : .medium))
+    .foregroundStyle(foreground)
+    .lineLimit(1)
+    .minimumScaleFactor(0.85)
+    .padding(.horizontal, Theme.Spacing.md)
+    .frame(minHeight: 36)
+    .background {
+      if isPrimary {
+        LitTintBackground(shape: Capsule(), tint: Theme.Brand.teal, isEnabled: !isUpdating, strength: .pill)
+      } else {
+        QuietBackground(shape: Capsule())
+      }
+    }
+    .frame(minHeight: Theme.Size.target)
+    .contentShape(.rect)
+  }
 
   private func performAction(_ action: AlarmAction) {
     guard !isUpdating else { return }
     errorMessage = nil
     isUpdating = true
+    activeAction = action
     Task {
-      defer { isUpdating = false }
+      defer {
+        isUpdating = false
+        activeAction = nil
+      }
       let backend = PersonalTools.activeBackend
       let result: PersonalToolResult<AlarmSummary>
       switch action {
@@ -296,10 +354,12 @@ struct AlarmCardView: View {
       }
       switch result {
       case .success(let updated):
-        state = updated.state
-        fireDate = updated.fireDate
-        if let updatedDuration = updated.durationSeconds {
-          durationSeconds = updatedDuration
+        withAppAnimation(Theme.Motion.stateChange) {
+          state = updated.state
+          fireDate = updated.fireDate
+          if let updatedDuration = updated.durationSeconds {
+            durationSeconds = updatedDuration
+          }
         }
         emitUpdate()
         Haptics.complete()
@@ -317,9 +377,11 @@ struct AlarmCardView: View {
       let nextFire = live.fireDate ?? (live.state == .paused ? nil : fireDate)
       let nextDuration = live.durationSeconds ?? durationSeconds
       let changed = state != live.state || fireDate != nextFire || durationSeconds != nextDuration
-      state = live.state
-      fireDate = nextFire
-      durationSeconds = nextDuration
+      withAppAnimation(Theme.Motion.stateChange) {
+        state = live.state
+        fireDate = nextFire
+        durationSeconds = nextDuration
+      }
       if changed { emitUpdate() }
       return
     }
@@ -327,8 +389,10 @@ struct AlarmCardView: View {
     // while reconciling cancelled or dismissed entries so stale buttons don't persist.
     let expiredTimer = card.kind == .timer && state == .countdown && (fireDate.map { $0 <= .now } ?? false)
     if !expiredTimer {
-      state = .cancelled
-      fireDate = nil
+      withAppAnimation(Theme.Motion.stateChange) {
+        state = .cancelled
+        fireDate = nil
+      }
       emitUpdate()
     }
   }
@@ -356,6 +420,7 @@ struct AlarmCardView: View {
 
 struct AutomationHandoffCardView: View {
   let card: AutomationHandoffCard
+  @State private var launchNotice: String?
 
   private var statusBadge: (text: String, tone: Color) {
     switch card.state {
@@ -363,6 +428,14 @@ struct AutomationHandoffCardView: View {
     case .completed: (String(localized: "Completed"), Theme.Status.healthy)
     case .failed: (String(localized: "Failed"), Theme.Status.critical)
     case .cancelled: (String(localized: "Cancelled"), Theme.Status.guarded)
+    }
+  }
+
+  private var retryLabel: String {
+    switch card.state {
+    case .readyToRun: String(localized: "Run Shortcut")
+    case .completed: String(localized: "Run Again")
+    case .failed, .cancelled: String(localized: "Retry")
     }
   }
 
@@ -380,6 +453,7 @@ struct AutomationHandoffCardView: View {
               .font(.caption)
               .foregroundStyle(Theme.Text.tertiary)
               .lineLimit(2)
+              .textSelection(.enabled)
           }
         }
         StatusBadge(text: statusBadge.text, tone: statusBadge.tone)
@@ -389,14 +463,66 @@ struct AutomationHandoffCardView: View {
         Text(result)
           .font(.caption)
           .foregroundStyle(Theme.Text.secondary)
+          .textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
           .padding(Theme.Spacing.sm)
           .surfaceCard(radius: Theme.Radius.row)
+      }
+
+      if let launchNotice, !launchNotice.isEmpty {
+        Label(launchNotice, systemImage: "exclamationmark.circle")
+          .font(.caption)
+          .foregroundStyle(Theme.Status.guarded)
+          .accessibilityIdentifier("actionCard.automation.notice")
+      }
+
+      WrapFlowLayout(horizontalSpacing: Theme.Spacing.sm, verticalSpacing: Theme.Spacing.xs) {
+        if card.state == .completed {
+          ActionCardSecondaryPill(
+            title: retryLabel, symbol: "arrow.clockwise", id: "actionCard.automation.retry"
+          ) {
+            openShortcut(host: "run-shortcut", includeInput: true)
+          }
+        } else {
+          ActionCardPrimaryPill(
+            title: retryLabel, symbol: "arrow.clockwise", tint: Theme.Brand.glacier,
+            id: "actionCard.automation.retry"
+          ) {
+            openShortcut(host: "run-shortcut", includeInput: true)
+          }
+        }
+        ActionCardSecondaryPill(
+          title: String(localized: "Open in Shortcuts"), symbol: "arrow.up.forward.app",
+          id: "actionCard.automation.open"
+        ) {
+          openShortcut(host: "open-shortcut", includeInput: false)
+        }
       }
     }
     .padding(Theme.Spacing.md)
     .surfaceCard(radius: Theme.Radius.card)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("actionCard.automation")
+  }
+
+  private func openShortcut(host: String, includeInput: Bool) {
+    launchNotice = nil
+    var components = URLComponents()
+    components.scheme = "shortcuts"
+    components.host = host
+    var items = [URLQueryItem(name: "name", value: card.shortcutName)]
+    if includeInput, let input = card.inputSummary, !input.isEmpty {
+      items.append(URLQueryItem(name: "input", value: "text"))
+      items.append(URLQueryItem(name: "text", value: input))
+    }
+    components.queryItems = items
+    guard let url = components.url else { return }
+    Task {
+      let opened = await NativeActions.openExternalURL(url)
+      if !opened {
+        launchNotice = String(localized: "Couldn't open Apple Shortcuts on this device.")
+        Haptics.error()
+      }
+    }
   }
 }

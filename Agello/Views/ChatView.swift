@@ -21,44 +21,45 @@ struct ChatView: View {
   @AppStorage("showPerformanceDetails") private var showStats = false
 
   var body: some View {
-    VStack(spacing: 0) {
-      ChatBannersView(threadID: thread?.id, showLibrary: $showLibrary)
-      ChatMessagesList(
-        thread: thread,
-        composerBridge: composerBridge,
-        reader: reader,
-        showStats: showStats)
-        .frame(maxHeight: .infinity)
-      // Composer rows keep their full height; the messages area above shrinks instead (e.g. above
-      // the keyboard), so nothing is pushed under it.
-      ChatComposerView(
-        thread: thread,
-        bridge: composerBridge,
-        onStopReading: { reader.stop() },
-        onOpenVoice: { openVoiceMode(startWithCamera: false) },
-        makeThread: newThread
-      )
-      .layoutPriority(1)
-    }
-    .background {
-      ChatBackdropView(bridge: composerBridge)
-    }
-    .navigationTitle(thread?.title ?? "")
-    .inlineTitleDisplay()
-    .sheet(isPresented: $showLibrary) {
-      NavigationStack {
-        ModelLibraryView()
-          .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-              Button("Done") { showLibrary = false }
-            }
-          }
+    ChatMessagesList(
+      thread: thread,
+      composerBridge: composerBridge,
+      reader: reader,
+      showStats: showStats)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .safeAreaBar(edge: .top, spacing: 0) {
+        ChatBannersView(threadID: thread?.id, showLibrary: $showLibrary)
       }
-      .environment(appState)
-    }
-    .fullScreenOrSheet(item: $voiceSession) { session in
-      VoiceModeView(session: session)
-    }
+      .safeAreaBar(edge: .bottom, spacing: 0) {
+        // Composer rows keep their full height; the messages area above dissolves cleanly
+        // beneath the Liquid Glass chrome via safeAreaBar + scrollEdgeEffectStyle.
+        ChatComposerView(
+          thread: thread,
+          bridge: composerBridge,
+          onStopReading: { reader.stop() },
+          onOpenVoice: { openVoiceMode(startWithCamera: false) },
+          makeThread: newThread
+        )
+      }
+      .background {
+        ChatBackdropView(bridge: composerBridge)
+      }
+      .navigationTitle(thread?.title ?? "")
+      .inlineTitleDisplay()
+      .sheet(isPresented: $showLibrary) {
+        NavigationStack {
+          ModelLibraryView()
+            .toolbar {
+              ToolbarItem(placement: .confirmationAction) {
+                Button(role: .close) { showLibrary = false }
+              }
+            }
+        }
+        .environment(appState)
+      }
+      .fullScreenCover(item: $voiceSession) { session in
+        VoiceModeView(session: session)
+      }
     .onChange(of: AppRouter.shared.voiceRequested, initial: true) { _, requested in
       guard requested else { return }
       AppRouter.shared.voiceRequested = false
@@ -117,26 +118,74 @@ private struct ChatBackdropView: View {
 
   var body: some View {
     AmbientBackdrop(tint: mode.tint)
-      .appAnimation(Theme.Motion.modeCrossfade, value: mode)
+      .appAnimation(Theme.Motion.modeCrossfade, value: mode, kind: .dissolve)
   }
 }
 
 /// Isolated banner stack observing engine/notice/error/confirmation state without invalidating
 /// the message list below it.
 private struct ChatBannersView: View {
+  private struct BannerState: Equatable {
+    var engineState: ChatEngineState
+    var needsDownload: Bool
+    var pendingShortcutName: String?
+    var generationError: String?
+    var notice: String?
+    var pendingConfirmationID: UUID?
+  }
+
   @Environment(AppState.self) private var appState
   let threadID: UUID?
   @Binding var showLibrary: Bool
 
-  var body: some View {
-    VStack(spacing: 0) {
-      engineBanner
-      pendingConfirmationBanner
-      noticeBanner
+  static func hasBanners(appState: AppState, threadID: UUID?) -> Bool {
+    let hasEngineBanner: Bool = switch appState.engineState {
+    case .idle:
+      appState.requiresLocalModel && !appState.store.isDownloaded(appState.store.activeSpec)
+    case .loading, .failed:
+      true
+    case .ready, .generating:
+      false
     }
-    .appAnimation(Theme.Motion.easeOut, value: appState.generationError)
-    .appAnimation(Theme.Motion.easeOut, value: appState.notice)
-    .appAnimation(Theme.Motion.easeOut, value: appState.pendingToolConfirmation?.id)
+    if hasEngineBanner { return true }
+    if appState.pendingToolConfirmation != nil,
+      let ownerID = appState.generatingThreadID ?? appState.pendingToolConfirmationThreadID,
+      threadID != ownerID
+    {
+      return true
+    }
+    return appState.pendingShortcutReturnName != nil
+      || appState.generationError != nil
+      || appState.notice != nil
+  }
+
+  private var bannerState: BannerState {
+    let otherThreadConfirmationID: UUID? = {
+      guard let confirmation = appState.pendingToolConfirmation,
+        let ownerID = appState.generatingThreadID ?? appState.pendingToolConfirmationThreadID,
+        threadID != ownerID
+      else { return nil }
+      return confirmation.id
+    }()
+    return BannerState(
+      engineState: appState.engineState,
+      needsDownload: appState.requiresLocalModel
+        && !appState.store.isDownloaded(appState.store.activeSpec),
+      pendingShortcutName: appState.pendingShortcutReturnName,
+      generationError: appState.generationError,
+      notice: appState.notice,
+      pendingConfirmationID: otherThreadConfirmationID)
+  }
+
+  var body: some View {
+    GlassEffectContainer(spacing: Theme.Spacing.sm) {
+      VStack(spacing: 0) {
+        engineBanner
+        pendingConfirmationBanner
+        noticeBanner
+      }
+    }
+    .appAnimation(Theme.Motion.panel, value: bannerState)
     // The banner appears without moving VoiceOver's focus: say it.
     .onChange(of: appState.generationError) { _, message in
       if let message { Haptics.announce(message) }
@@ -227,10 +276,59 @@ private struct ChatBannersView: View {
   }
 }
 
+/// Isolated modifier switching top scroll edge separation between `.hard` (when banners are
+/// pinned) and `.soft` without subscribing `ChatMessagesList` to banner state.
+private struct ChatTopScrollEdgeEffect: ViewModifier {
+  @Environment(AppState.self) private var appState
+  let threadID: UUID?
+
+  func body(content: Content) -> some View {
+    let hasBanners = ChatBannersView.hasBanners(appState: appState, threadID: threadID)
+    content.scrollEdgeEffectStyle(hasBanners ? .hard : .soft, for: .top)
+  }
+}
+
+/// Floating Liquid Glass scroll-to-bottom control observing live stream & mode state in isolation
+/// so mode toggles never re-evaluate `ChatMessagesList`.
+private struct ScrollToBottomButton: View {
+  @Environment(AppState.self) private var appState
+  let threadID: UUID?
+  let composerBridge: ComposerBridge
+  let action: () -> Void
+
+  private var isStreamingBelow: Bool {
+    appState.generatingThreadID == threadID && appState.isGenerating
+  }
+
+  private var mode: Theme.Mode {
+    composerBridge.searchWeb ? .search : appState.options.enableThinking ? .think : .chat
+  }
+
+  var body: some View {
+    Button(action: action) {
+      Image(systemName: "arrow.down")
+        .font(.system(.body, weight: .semibold))
+        .foregroundStyle(isStreamingBelow ? mode.tint : Theme.Text.primary)
+        .frame(width: Theme.Size.target, height: Theme.Size.target)
+        .chromeSurface(
+          in: Circle(),
+          tint: isStreamingBelow ? mode.tint : nil,
+          interactive: true)
+        .contentShape(Circle())
+    }
+    .buttonStyle(.plain)
+    .appAnimation(Theme.Motion.modeCrossfade, value: isStreamingBelow, kind: .dissolve)
+    .appAnimation(Theme.Motion.modeCrossfade, value: mode, kind: .dissolve)
+    .accessibilityLabel("Scroll to bottom")
+    .accessibilityIdentifier("chat.scrollToBottom")
+  }
+}
+
 /// Dedicated scroll container isolating `followsLatest` and O(1) turn lookups so streaming,
 /// banners, reading aloud, and mode toggles never re-evaluate historical `MessageBubbleView` rows.
 private struct ChatMessagesList: View {
   @Environment(AppState.self) private var appState
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let thread: ChatThread?
   let composerBridge: ComposerBridge
   let reader: SpeechReader
@@ -248,11 +346,51 @@ private struct ChatMessagesList: View {
     }
   }
 
+  /// Stable slot identity across sibling version switches so `VersionSwitcherView`'s
+  /// `.contentTransition(.numericText())` animates in place rather than tearing down the row.
+  private struct TurnSlotID: Hashable {
+    var isLinkedTree: Bool
+    var parentID: UUID?
+    var roleRaw: String
+    var fallbackTurnID: UUID?
+
+    init(turn: ChatTurn, isLinkedTree: Bool) {
+      self.isLinkedTree = isLinkedTree
+      if isLinkedTree {
+        parentID = turn.parentID
+        roleRaw = turn.roleRaw
+        fallbackTurnID = nil
+      } else {
+        parentID = nil
+        roleRaw = ""
+        fallbackTurnID = turn.id
+      }
+    }
+  }
+
+  private struct TurnSlot: Identifiable {
+    let id: TurnSlotID
+    let turn: ChatTurn
+  }
+
   var body: some View {
     let allTurns = thread?.turns ?? []
     let turnsByID = Dictionary(allTurns.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     let turns = orderedTurns(in: thread, allTurns: allTurns, byID: turnsByID)
     let versions = versionGroups(in: thread, allTurns: allTurns)
+    let isLinkedTree = thread?.activeLeafID != nil
+    let turnSlots = turns.map {
+      TurnSlot(id: TurnSlotID(turn: $0, isLinkedTree: isLinkedTree), turn: $0)
+    }
+    let activeConfirmation: ToolConfirmationRequest? = {
+      guard let confirmation = appState.pendingToolConfirmation,
+        let ownerID = appState.generatingThreadID ?? appState.pendingToolConfirmationThreadID,
+        thread?.id == ownerID
+      else { return nil }
+      return confirmation
+    }()
+    let showScrollToBottom = !followsLatest && !turns.isEmpty
+
     Group {
       if turns.isEmpty {
         ChatEmptyStateView(isNewChat: thread == nil, composerBridge: composerBridge)
@@ -260,7 +398,8 @@ private struct ChatMessagesList: View {
         ScrollViewReader { proxy in
           ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: Theme.Spacing.xxl) {
-              ForEach(turns) { turn in
+              ForEach(turnSlots) { slot in
+                let turn = slot.turn
                 MessageBubbleView(
                   turn: turn,
                   thread: thread,
@@ -270,12 +409,9 @@ private struct ChatMessagesList: View {
                   showsStats: showStats,
                   reader: reader,
                   composerBridge: composerBridge)
-                  .id(turn.id)
+                  .id(slot.id)
               }
-              if let confirmation = appState.pendingToolConfirmation,
-                let ownerID = appState.generatingThreadID ?? appState.pendingToolConfirmationThreadID,
-                thread?.id == ownerID
-              {
+              if let confirmation = activeConfirmation {
                 ToolConfirmationCard(
                   request: confirmation,
                   onApprove: {
@@ -288,14 +424,21 @@ private struct ChatMessagesList: View {
                     appState.resolvePendingToolConfirmation(id: confirmation.id, approved: false)
                   })
                   .id(confirmation.id)
+                  .transition(
+                    reduceMotion
+                      ? .opacity
+                      : .scale(scale: 0.96).combined(with: .opacity))
               }
             }
+            .appAnimation(Theme.Motion.panel, value: activeConfirmation?.id)
             .padding(.horizontal, Theme.Spacing.xl)
             .padding(.top, Theme.Spacing.lg)
             .padding(.bottom, Theme.Spacing.sm)
           }
           .id(thread?.id)
           .scrollDismissesKeyboard(.interactively)
+          .scrollEdgeEffectStyle(.soft, for: .bottom)
+          .modifier(ChatTopScrollEdgeEffect(threadID: thread?.id))
           // A chat opens on its latest message, and a short one sits at the top. At the bottom,
           // growth (streaming text, a new message, action cards, the keyboard) keeps the latest
           // line in view within the same layout pass. One-shot ScrollViewReader scrolling avoids
@@ -304,15 +447,43 @@ private struct ChatMessagesList: View {
           .defaultScrollAnchor(.top, for: .alignment)
           .defaultScrollAnchor(followsLatest ? .bottom : .top, for: .sizeChanges)
           .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.visibleRect.maxY >= geometry.contentSize.height - Theme.Spacing.xxxl
+            geometry.contentSize.height <= geometry.bounds.height
+              || geometry.visibleRect.maxY
+                >= geometry.contentSize.height + geometry.contentInsets.bottom - Theme.Spacing.xxxl
           } action: { _, atBottom in
             followsLatest = atBottom
           }
+          .overlay(alignment: .bottomTrailing) {
+            if showScrollToBottom {
+              ScrollToBottomButton(threadID: thread?.id, composerBridge: composerBridge) {
+                Haptics.selection()
+                followsLatest = true
+                if let confirmation = activeConfirmation {
+                  withAppAnimation(Theme.Motion.easeOut) {
+                    proxy.scrollTo(confirmation.id, anchor: .bottom)
+                  }
+                } else if let latest = turns.last {
+                  let latestSlot = TurnSlotID(turn: latest, isLinkedTree: isLinkedTree)
+                  withAppAnimation(Theme.Motion.easeOut) {
+                    proxy.scrollTo(latestSlot, anchor: .bottom)
+                  }
+                }
+              }
+              .padding(.trailing, Theme.Spacing.lg)
+              .padding(.bottom, Theme.Spacing.sm)
+              .transition(
+                reduceMotion
+                  ? .opacity
+                  : .scale(scale: 0.85).combined(with: .opacity))
+            }
+          }
+          .appAnimation(Theme.Motion.panel, value: showScrollToBottom)
           .onChange(of: appState.scrollToLatestToken) { _, _ in
-            guard appState.scrollToLatestThreadID == thread?.id, let latest = turns.last?.id else { return }
+            guard appState.scrollToLatestThreadID == thread?.id, let latest = turns.last else { return }
+            let latestSlot = TurnSlotID(turn: latest, isLinkedTree: isLinkedTree)
             followsLatest = true
             withAppAnimation(Theme.Motion.easeOut) {
-              proxy.scrollTo(latest, anchor: .bottom)
+              proxy.scrollTo(latestSlot, anchor: .bottom)
             }
           }
           .onChange(of: appState.pendingToolConfirmation?.id) { _, newID in

@@ -164,7 +164,7 @@ extension AppState {
           queue.active = entry
           pendingToolConfirmation = request
           pendingToolConfirmationThreadID = ownerThreadID
-          Haptics.selection()
+          presentConfirmationHaptic(for: request)
         } else {
           queue.waiting.append(entry)
         }
@@ -256,6 +256,17 @@ extension AppState {
       queue.active = next
       pendingToolConfirmation = next.request
       pendingToolConfirmationThreadID = next.threadID
+      presentConfirmationHaptic(for: next.request)
+    }
+  }
+
+  private func presentConfirmationHaptic(for request: ToolConfirmationRequest) {
+    let hasDestructive =
+      request.risk == .destructive
+      || request.steps.contains(where: { $0.risk == .destructive })
+    if hasDestructive {
+      Haptics.warning()
+    } else {
       Haptics.selection()
     }
   }

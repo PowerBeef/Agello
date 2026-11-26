@@ -33,6 +33,7 @@ final class VoiceSession: Identifiable {
   private(set) var answer = ""
   private(set) var latestActionCards: [ActionCardRecord] = []
   private(set) var cameraOn = false
+  private(set) var isCameraToggling = false
   private(set) var muted = false
   /// Shown when camera permission is denied or camera capture cannot start.
   private(set) var cameraError: String?
@@ -41,7 +42,9 @@ final class VoiceSession: Identifiable {
   @ObservationIgnored private static weak var activeOwner: VoiceSession?
   @ObservationIgnored private var started = false
   @ObservationIgnored private var ended = false
-  @ObservationIgnored private var cameraToggling = false
+  @ObservationIgnored private var externalSheetCount = 0
+  @ObservationIgnored private var externalSheetPaused = false
+  @ObservationIgnored private var cameraErrorTask: Task<Void, Never>?
   @ObservationIgnored private let audio = VoiceAudio()
   @ObservationIgnored private let speechMonitor = VoiceSpeechMonitor()
   @ObservationIgnored private var monitorStartTask: Task<Void, Never>?
@@ -139,7 +142,7 @@ final class VoiceSession: Identifiable {
         }
         cameraOn = startedCamera
         if !startedCamera {
-          cameraError = String(localized: "Camera access is off. Turn it on in Settings.")
+          showCameraError(String(localized: "Camera access is off. Turn it on in Settings."))
         }
       }
       guard !ended, !Task.isCancelled else {
@@ -206,27 +209,79 @@ final class VoiceSession: Identifiable {
     }
     monitorStartTask?.cancel()
     monitorStartTask = nil
+    cameraErrorTask?.cancel()
+    cameraErrorTask = nil
     turnTask?.cancel()
     turnTask = nil
     speechMonitor.stop()
     audio.stop()
     camera.stop()
     cameraOn = false
+    isCameraToggling = false
+    externalSheetCount = 0
+    externalSheetPaused = false
     activeUserTurn = nil
     activeReplyTurn = nil
     turnBaseLeafID = nil
     resetLevel()
   }
 
+  /// Retries starting voice capture after a `.failed` state (e.g. microphone or permission error).
+  func retry() async {
+    guard !ended, case .failed = state else { return }
+    monitorStartTask?.cancel()
+    monitorStartTask = nil
+    speechMonitor.stop()
+    audio.stop()
+    resetLevel()
+    started = false
+    state = .starting
+    await start()
+  }
+
+  /// Pauses VAD while a modal Action Card sheet (Calendar, Contact, Mail, Maps) is presented over
+  /// Voice Mode, and resumes cleanly when the sheet closes.
+  func setExternalSheetPresented(_ presented: Bool) {
+    guard !ended else { return }
+    if presented {
+      externalSheetCount += 1
+    } else {
+      externalSheetCount = max(0, externalSheetCount - 1)
+    }
+    let paused = externalSheetCount > 0
+    guard paused != externalSheetPaused else { return }
+    externalSheetPaused = paused
+    if paused {
+      if state == .hearing {
+        audio.cancelUtterance()
+        vad.reset()
+        speechMonitor.resetUtterance()
+        resetLevel()
+        state = .listening
+      } else {
+        vad.reset()
+        speechMonitor.resetUtterance()
+        resetLevel()
+      }
+    } else {
+      vad.reset()
+      speechMonitor.resetUtterance()
+    }
+  }
+
   func toggleCamera() async {
-    guard !ended, !cameraToggling else { return }
-    cameraError = nil
+    guard !ended, !isCameraToggling else { return }
+    guard CameraFeed.isAvailable else {
+      showCameraError(String(localized: "Camera isn't available on this \(Platform.deviceName)."))
+      return
+    }
+    clearCameraError()
     if cameraOn {
       camera.stop()
       cameraOn = false
     } else {
-      cameraToggling = true
-      defer { cameraToggling = false }
+      isCameraToggling = true
+      defer { isCameraToggling = false }
       let startedCamera = await camera.start()
       guard !ended, !Task.isCancelled else {
         camera.stop()
@@ -234,9 +289,25 @@ final class VoiceSession: Identifiable {
       }
       cameraOn = startedCamera
       if !startedCamera {
-        cameraError = String(localized: "Camera access is off. Turn it on in Settings.")
+        showCameraError(String(localized: "Camera access is off. Turn it on in Settings."))
       }
     }
+  }
+
+  private func showCameraError(_ message: String) {
+    cameraErrorTask?.cancel()
+    cameraError = message
+    cameraErrorTask = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(4))
+      guard let self, !Task.isCancelled, !self.ended else { return }
+      if self.cameraError == message { self.cameraError = nil }
+    }
+  }
+
+  private func clearCameraError() {
+    cameraErrorTask?.cancel()
+    cameraErrorTask = nil
+    cameraError = nil
   }
 
   func toggleMute() {
@@ -286,8 +357,8 @@ final class VoiceSession: Identifiable {
     } else {
       resetLevel()
     }
-    // Pause VAD barge-in while a mutating-tool confirmation card awaits physical tap approval.
-    guard !muted, state != .starting, pendingToolConfirmation == nil else { return }
+    // Pause VAD barge-in while a mutating-tool confirmation card or Action Card sheet is active.
+    guard !muted, !externalSheetPaused, state != .starting, pendingToolConfirmation == nil else { return }
     if case .failed = state { return }
     switch vad.feedLevel(level, duration: duration, assistantSpeaking: assistantBusy) {
     case .speechStarted:
@@ -305,7 +376,9 @@ final class VoiceSession: Identifiable {
   }
 
   private func heardTranscript(_ text: String, isFinal: Bool) {
-    guard !ended, !muted, state != .starting, pendingToolConfirmation == nil else { return }
+    guard !ended, !muted, !externalSheetPaused, state != .starting, pendingToolConfirmation == nil else {
+      return
+    }
     if case .failed = state { return }
     let assistantBusy = state == .speaking || state == .thinking
     if vad.feedTranscript(text, isFinal: isFinal, assistantSpeaking: assistantBusy) == .speechStarted {

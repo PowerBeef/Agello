@@ -1,28 +1,35 @@
 import SwiftUI
 
-/// Chrome surfaces: Liquid Glass over a solid panel with the lit-edge
-/// hairlines (outer 0.8 pt, inner 0.55 pt inset). Glass stays on chrome only
-/// (composer, banners, floating controls). Reduce Transparency drops the
-/// glass and keeps the solid panel.
+/// Chrome surfaces: Liquid Glass with lit-edge hairlines (outer 0.8 pt,
+/// inner 0.55 pt inset). Glass stays on chrome only (composer, banners,
+/// floating controls). Reduce Transparency drops the glass and fills with
+/// a solid stage surface; Increased Contrast strengthens the outer stroke.
 struct ChromeSurface<S: InsettableShape>: ViewModifier {
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.colorSchemeContrast) private var contrast
   let shape: S
   var tint: Color?
   var interactive = false
-  var fill: Color = Theme.Surface.panel
 
   func body(content: Content) -> some View {
     content
-      .background { shape.fill(reduceTransparency ? Theme.Surface.stage : fill) }
-      .overlay {
-        shape.stroke(
-          contrast == .increased ? Color.white.opacity(0.5) : Theme.Surface.glassOuterStroke,
-          lineWidth: 0.8
-        ).allowsHitTesting(false)
+      .background {
+        if reduceTransparency {
+          shape.fill(Theme.Surface.stage)
+        }
       }
       .overlay {
-        shape.inset(by: 0.65).stroke(Theme.Surface.glassInnerStroke, lineWidth: 0.55)
+        shape
+          .strokeBorder(
+            contrast == .increased ? Theme.Surface.increasedContrastStroke : Theme.Surface.glassOuterStroke,
+            lineWidth: 0.8
+          )
+          .allowsHitTesting(false)
+      }
+      .overlay {
+        shape
+          .inset(by: 0.65)
+          .strokeBorder(Theme.Surface.glassInnerStroke, lineWidth: 0.55)
           .allowsHitTesting(false)
       }
       .glassEffect(glass, in: shape)
@@ -30,16 +37,16 @@ struct ChromeSurface<S: InsettableShape>: ViewModifier {
 
   private var glass: Glass {
     guard !reduceTransparency else { return .identity }
-    let tinted = Glass.regular.tint(Theme.glassTint(tint))
-    return interactive ? tinted.interactive() : tinted
+    let base: Glass = tint.map { Glass.regular.tint(Theme.glassTint($0)) } ?? .regular
+    return interactive ? base.interactive() : base
   }
 }
 
 extension View {
   func chromeSurface<S: InsettableShape>(
-    in shape: S, tint: Color? = nil, interactive: Bool = false, fill: Color = Theme.Surface.panel
+    in shape: S, tint: Color? = nil, interactive: Bool = false
   ) -> some View {
-    modifier(ChromeSurface(shape: shape, tint: tint, interactive: interactive, fill: fill))
+    modifier(ChromeSurface(shape: shape, tint: tint, interactive: interactive))
   }
 
   /// Content-layer card: a faint fill and a cream hairline, no glass.
@@ -47,13 +54,35 @@ extension View {
     radius: CGFloat = Theme.Radius.card, fill: Color = Theme.Surface.group,
     stroke: Color = Theme.Surface.hairline
   ) -> some View {
-    background {
-      RoundedRectangle(cornerRadius: radius, style: .continuous).fill(fill)
-    }
-    .overlay {
-      RoundedRectangle(cornerRadius: radius, style: .continuous)
-        .stroke(stroke, lineWidth: Theme.Stroke.hairline)
-    }
+    modifier(SurfaceCard(radius: radius, fill: fill, stroke: stroke))
+  }
+}
+
+private struct SurfaceCard: ViewModifier {
+  @Environment(\.colorSchemeContrast) private var contrast
+  let radius: CGFloat
+  let fill: Color
+  let stroke: Color
+
+  func body(content: Content) -> some View {
+    let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+    content
+      .background { shape.fill(fill) }
+      .overlay {
+        shape
+          .strokeBorder(
+            resolvedStroke,
+            lineWidth: contrast == .increased ? 0.8 : Theme.Stroke.hairline
+          )
+          .allowsHitTesting(false)
+      }
+  }
+
+  private var resolvedStroke: Color {
+    guard contrast == .increased else { return stroke }
+    return stroke == Theme.Surface.hairline
+      ? Theme.Surface.increasedContrastStroke
+      : stroke.mix(with: .white, by: 0.45, in: .perceptual)
   }
 }
 
@@ -62,9 +91,11 @@ extension View {
 /// screen; one per context. Reduce Transparency gets an opaque deep tint.
 struct LitTintBackground<S: InsettableShape>: View {
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.colorSchemeContrast) private var contrast
   let shape: S
   let tint: Color
   var isEnabled = true
+  var isPressed = false
   /// The selector pills use a softer version of the same recipe.
   var strength: Strength = .primary
 
@@ -86,7 +117,10 @@ struct LitTintBackground<S: InsettableShape>: View {
       )
       .overlay {
         shape
-          .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.8)
+          .strokeBorder(
+            contrast == .increased ? Theme.Surface.increasedContrastStroke : Color.white.opacity(0.16),
+            lineWidth: 0.8
+          )
           .allowsHitTesting(false)
       }
       .overlay {
@@ -105,32 +139,60 @@ struct LitTintBackground<S: InsettableShape>: View {
           )
           .allowsHitTesting(false)
       }
+      .allowsHitTesting(false)
   }
 
   private var fillStyle: AnyShapeStyle {
     if reduceTransparency {
-      return AnyShapeStyle(tint.mix(with: .black, by: isEnabled ? 0.42 : 0.70, in: .perceptual))
+      let darken: Double =
+        if !isEnabled {
+          0.70
+        } else if isPressed {
+          0.34
+        } else {
+          0.42
+        }
+      return AnyShapeStyle(tint.mix(with: .black, by: darken, in: .perceptual))
     }
+    let top = isPressed ? min(1, strength.top + 0.08) : strength.top
+    let bottom = isPressed ? min(1, strength.bottom + 0.06) : strength.bottom
     return AnyShapeStyle(
       LinearGradient(
         colors: isEnabled
-          ? [tint.opacity(strength.top), tint.opacity(strength.bottom)]
+          ? [tint.opacity(top), tint.opacity(bottom)]
           : [tint.opacity(0.14), tint.opacity(0.08)],
         startPoint: .top, endPoint: .bottom))
   }
 }
 
 /// Neutral chrome for secondary controls: a faint fill and hairline.
+/// Reduce Transparency uses an opaque stage fill; Increased Contrast boosts the stroke.
 struct QuietBackground<S: InsettableShape>: View {
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.colorSchemeContrast) private var contrast
   let shape: S
   var isPressed = false
 
   var body: some View {
     shape
-      .fill(Color.white.opacity(isPressed ? 0.10 : 0.06))
+      .fill(fillColor)
       .overlay {
-        shape.stroke(Color.white.opacity(contrast == .increased ? 0.5 : 0.10), lineWidth: 0.8)
+        shape
+          .strokeBorder(
+            contrast == .increased ? Theme.Surface.increasedContrastStroke : Color.white.opacity(0.10),
+            lineWidth: 0.8
+          )
+          .allowsHitTesting(false)
       }
+      .allowsHitTesting(false)
+  }
+
+  private var fillColor: Color {
+    if reduceTransparency {
+      return isPressed
+        ? Theme.Surface.stage.mix(with: .white, by: 0.08, in: .perceptual)
+        : Theme.Surface.stage
+    }
+    return Color.white.opacity(isPressed ? 0.10 : 0.06)
   }
 }

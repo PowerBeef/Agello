@@ -4,8 +4,10 @@ import SwiftUI
 /// Display math, typeset by SwiftMath's UIKit label.
 struct MathLabel: UIViewRepresentable {
   let latex: String
-  @Environment(\.colorScheme) private var colorScheme
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+  @MainActor
+  private static let textColor = UIColor(Theme.Text.primary)
 
   @MainActor
   private static let validationCache: NSCache<NSString, NSNumber> = {
@@ -36,7 +38,7 @@ struct MathLabel: UIViewRepresentable {
     label.textAlignment = .left
     label.contentInsets = UIEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
     label.fontSize = Self.fontSize(for: label.traitCollection)
-    label.textColor = UIColor(Theme.Text.primary)
+    label.textColor = Self.textColor
     return label
   }
 
@@ -48,7 +50,9 @@ struct MathLabel: UIViewRepresentable {
     if label.latex != latex {
       label.latex = latex
     }
-    label.textColor = UIColor(Theme.Text.primary)
+    if label.textColor != Self.textColor {
+      label.textColor = Self.textColor
+    }
   }
 
   func sizeThatFits(_ proposal: ProposedViewSize, uiView: MTMathUILabel, context: Context) -> CGSize? {

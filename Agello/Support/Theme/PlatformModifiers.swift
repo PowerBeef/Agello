@@ -19,11 +19,4 @@ extension View {
       .textInputAutocapitalization(.never)
       .autocorrectionDisabled()
   }
-
-  /// Full screen.
-  func fullScreenOrSheet<Item: Identifiable, Content: View>(
-    item: Binding<Item?>, @ViewBuilder content: @escaping (Item) -> Content
-  ) -> some View {
-    fullScreenCover(item: item, content: content)
-  }
 }
