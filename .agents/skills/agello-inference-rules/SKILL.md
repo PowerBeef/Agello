@@ -5,318 +5,68 @@ description: Rules that keep LiteRT-LM from crashing or misbehaving in Agello. R
 
 # Agello inference rules
 
-Each rule below comes from a failure reproduced on device. Breaking one
-usually crashes the app (native heap corruption) or silently corrupts output,
-and the iOS Simulator can't catch native Metal/jetsam bugs (`AgelloSim` runs
-the real iOS UI and tools against host `agello serve` for feature and output-quality
-testing, not on-iPhone Metal memory envelopes). The runtime mechanisms behind them
-are in the fork's reference (`../LiteRT-LM/docs/agello/reference/`; map in
-`docs/LITERT-LM.md`).
+Every rule below prevents a crash (native heap corruption, background GPU kill) or silent output/security regression. `AgelloSim` tests real UI, tools, and prompts via `agello serve`, not on-iPhone Metal/jetsam limits — confirm runtime/memory changes on physical hardware. Runtime internals live in `../LiteRT-LM/docs/agello/reference/` (`docs/LITERT-LM.md`); active binary & Swift patch pins live in [Vendor/README.md](../../../Vendor/README.md).
 
-## Ownership
+## Ownership & conversation lifecycle
 
-- `LiteRTChatEngine` (actor, `Agello/Inference/ChatEngine.swift`) is the only
-  code that touches LiteRT-LM's `Engine` and `Conversation`. Keep it that way.
-- `AppState.serialized { }` runs engine operations (load, settings change,
-  benchmark, delete, helpers) one at a time. The actor is reentrant across its
-  long awaits, so without it two loads interleave and hold two engines. Never
-  call `serialized` from inside a serialized operation: that deadlocks.
-- `helperJSON`, `helperTexts`, and `transcribe` run in throwaway
-  conversations. On exclusive helper switches (`agello-one-20261122`+), the
-  runtime keeps the main conversation beside them by detaching/restoring its
-  sparse global KV caches via Metal 4 `MTL4CommandQueue.copyBufferMappingsFromBuffer:`
-  (zero-blit page-table handoff; only the 1,536-slot local ring buffers blit on
-  v2). `endHelper` switches back right away (the chat's `getTokenCount()` does
-  it), so the detached snapshot lives only while the helper runs.
-- The engine keeps the chat only when `GPUGate.isOpen` and the helper snapshot
-  plus helper KV pages fit above `lowMemoryStopBytes`
-  (`DeviceProfile.keepsConversationAcrossHelpers(usedTokens:exportWindow:)`:
-  for the v2 ring-KV model with `exportWindow >= 65_536`, counts the fixed
-  31.5 MB local rings + 8,192 B/token up to 4,096 helper positions; for 32K
-  files without rings, 28,672 B/token).
-  Otherwise it releases the main conversation *before* the helper and leaves
-  an **empty** one, and the caller must reseed history before the next send.
-  Callers ask `lastHelperKeptConversation` (`AppState.afterHelper`) and
-  unbind the chat only when it's false; a failed helper reports false, and
-  `afterHelper` sets `conversationIsEmpty = false` (never `true`) because a
-  helper that failed or was cancelled with `keep = true` (or before starting)
-  leaves the old chat's KV cache loaded, so even a brand-new empty chat must
-  reseed cleanly.
-- While a helper runs, `cancel()` cancels the helper's conversation, never
-  the kept main one (a cancelled conversation rejects the next message), even
-  before the helper's conversation exists (`helperActive`). A helper that
-  fails or is stopped still leaves a conversation (`endHelperAfterFailure`),
-  so the next send reseeds instead of reloading the engine.
-- Title and memory helpers run on a schedule (`queueHelpers`,
-  `runPendingHelpers`): when the user leaves the chat or after
-  `HelperTasks.idleDelay` (3 s), never right after each reply, never in voice
-  mode, never with a send pending.
-- A send prepares and fits its conversation in one `serialized` step
-  (`PreparedSend`): a helper or dictation can't empty it in between.
+- **Sole native owner:** `LiteRTChatEngine` (`Agello/Inference/ChatEngine.swift`) is the only actor touching LiteRT-LM `Engine` and `Conversation`.
+- **Single-flight `AppState.serialized { }`:** Serialize engine lifecycle ops (load, settings apply, benchmark, delete, helpers) across actor `await`s. Never nest `serialized` (deadlocks).
+- **Throwaway helpers & Metal 4 sparse KV snapshots:** `helperJSON`, `helperTexts`, and `transcribe` run in throwaway conversations. On exclusive helper switches, the runtime detaches/restores sparse global KV caches via `MTL4CommandQueue.copyBufferMappingsFromBuffer:` (zero-blit page-table handoff; only the 1,536-slot local rings blit on v2), restoring immediately in `endHelper`.
+- **Keep-vs-drop & `afterHelper()` KV-bleed guard:** The engine keeps the main conversation beside a helper only when `GPUGate.isOpen` and snapshot + helper KV fit above `lowMemoryStopBytes` (`DeviceProfile.keepsConversationAcrossHelpers`: 31.5 MB rings + 8,192 B/tok up to 4,096 positions on v2 `>= 65_536`; 28,672 B/tok on 32K files). Otherwise it releases the main conversation *before* the helper and leaves an empty one. `AppState.afterHelper()` checks `lastHelperKeptConversation`, unbinds `conversationThreadID = nil` when false, and sets `conversationIsEmpty = false` (never `true`) so failed/cancelled helpers never leak stale KV into a new chat (`testCancelledHelperDoesNotLeakContextIntoNewChat`).
+- **Helper cancel & scheduling:** While `helperActive`, `cancel()` cancels only the helper (never the kept main conversation). Failed/stopped helpers leave a valid conversation (`endHelperAfterFailure`) so the next send reseeds instead of reloading. Title/memory helpers run via `queueHelpers`/`runPendingHelpers` (on leaving chat or after `ThermalPolicy`-adjusted idle delay, never in voice mode or with a send pending).
+- **Atomic `PreparedSend`:** Prepare and fit a send inside one `serialized` step so helpers or dictation cannot clear it in between.
 
-## Context window (KV cache)
+## Context window (KV cache) & tool budgets
 
-- Overflowing the KV cache corrupts the native heap. Before every send:
-  `fitContext` (may trim and reseed, or throw `messageTooLong`), then
-  `runSend` caps output with `ContextBudget.outputCap` and throws
-  `contextFull` when there's no room.
-- Budgets use the positions LiteRT-LM allocates, not the request:
-  `ContextBudget.allocatedPositions` (the app's 64K request gets the full
-  65,536 with the shipped v2 128K model, or 32,000 with older 32K files). The
-  64-token margin is what keeps an MTP / `verify_8` round inside.
-- With tools offered, the room is split (`ToolBudget.plan`): below `16,384`
-  tokens of room, an eighth per tool result with at most 2 calls; at `>= 16,384`
-  tokens (typical 64K chats), a sixteenth per tool result (1,000–4,000 tokens
-  each) with up to 4 calls for multi-step Think + parallel read-only rounds.
-  The first round, where nearly every reply is answered, gets half the room plus
-  Think's reasoning budget on top; later rounds share what's left, at least
-  their floor or reasoning budget plus 256 answer tokens when that fits. Each
-  reply sends its own reasoning budget that leaves the answer room
-  (`ToolBudget.reasoning`), and post-tool rounds clamp reasoning to
-  `ToolBudget.Plan.followUpThinkingBudget` (`followUpThinkingConfig`, capped
-  within `followUpCap`) so a Think turn never spends all follow-up tokens on
-  reasoning with zero visible answer tokens. A streaming guard (only with tools) ends the reply
-  (`replyTruncated`) before output plus tool results exceed the room; without
-  tools the runtime's cap is exact. Don't loosen these limits.
-- Counts are exact (probe 17): `Conversation.renderMessageIntoString`
-  renders a message as it will be prefilled (on a new conversation that
-  includes the preamble, tool schemas and replayed history) and
-  `Engine.countTokens` counts it; the first send adds one token (BOS) the
-  text doesn't show. `tokensAfterPrefill` = cached tokens + that. `seedTokens`
-  is the rendered preface + 1. Byte estimates
-  (`ContextBudget.estimateTextTokens`: 3 bytes a token, or a token per digit
-  or ideograph, whichever is more) stand in only where the tokenizer isn't
-  there (scripted engine, file and web budgets, tool results).
-- `fitContext`: if the message fits after what's cached, nothing happens.
-  Otherwise it measures the message on an empty conversation (too long:
-  `messageTooLong`, and the conversation is left empty, so AppState unbinds
-  the chat after any fit error), trims the history by token budget with exact
-  per-turn counts (`ContextBudget.trimHistory` returns `(kept, evicted)` and
-  `makeConversation` no longer uses a hard 20-turn cap), records evicted turns
-  in `lastEvictedHistory` so `AppState.promptWithEvictedRecall` can recall
-  relevant snippets via `KnowledgeBase.recallEvictedTurns` and re-verify
-  `fitContext`, and checks the rebuilt conversation, trimming by any overshoot.
-- Text from outside the app's prompts can't carry chat markers:
-  `PromptText.neutralized` puts a zero-width joiner inside `<|` and `|>` in the
-  message, system prompt, replayed history, helper prompts and web results
-  (probe 19: `<|turn>` typed as text is control token 105 otherwise).
-- Reasoning never stays in the KV cache: `load` sets
-  `ExperimentalFlags.filterChannelContentFromKvCache = true` explicitly (the
-  runtime's builder defaults to true; an unset flag means that default, not
-  off). Right after the reply the runtime rewinds and refills the answer
-  without its reasoning, which matches a reseed from SwiftData history.
-  Measured on the iPhone (two Think turns): 399 cached tokens with the
-  filter, 536 with it explicitly off; `ThinkingScenarioTests/test02`
-  guards it with `cachedTokenCount()`.
-- Chat's cache isn't a setting (since 2026-11-02; a saved custom window is
-  dropped at launch): a fixed 64K (65,536 requested) on the 12 GB iPhones
-  (the floor, 11 GB or more of physical memory), capped by the model file: a
-  load reads the file's export window (`ContextBudget.exportWindow(reported:)`
-  from ModelInfo; the shipped v2 128K file runs at the full 65,536) and every
-  plan uses it (`InferencePlanner.resolve(..., exportWindow:)`, in `load` and
-  `plan(for:)` alike, or a settings change would reload).
-  `DeviceProfile.defaultMaxTokens`' smaller values only serve the iPhone app run
-  on a Mac with less. Global KV caches are Metal 4 sparse buffers trimmed on
-  reset/rewind and local KV caches are 1,536-slot rings in v2: on iPhone 17 Pro
-  (2026-11-22), full 65,536 context held `3.18–3.45 GB` (`2.99–3.26 GB` free
-  below jetsam). Each load measures the room left (`MemoryProbe.roomBytes`: the
-  app's memory limit less its footprint, nil where no limit is reported) after
-  the old engine is gone, and steps down (`DeviceProfile.contextTokens`): 16K
-  below **4.2 GB** (`DeviceProfile.roomForLargeContextBytes`, validated by the
-  iPhone `memory` suite on 2026-11-22 with 0 warnings across `6.0 / 5.0 / 4.0 /
-  3.5 GB`), 8K below 3.5 GB. Physical memory decides, not the reported limit,
-  which has read 6.44 GB on the iPhone 17 Pro before rising to 8.59 GB. The
-  engine keeps that window for later plans (`loadedContextTokens`), so a
-  settings change doesn't reload to try a larger one. Budgets read the engine's
-  `resolved.maxNumTokens`, never the default. Don't raise it without the memory
-  suite.
-- Think's reasoning budget is 4,096 tokens on every device
-  (`DeviceProfile.defaultThinkingBudget`, the maintainer's choice on
-  2026-11-10; 1,024 cut a coding plan mid-word on the iPhone 17 Pro), and not
-  a setting since 2026-11-11, when the Advanced screen was removed. It's a
-  ceiling, and the reply reserve below counts it. `InferenceOptions.launch`
-  starts every launch from the defaults and keeps only Think: speculative
-  decoding, the sampler, vision, audio, image detail and the system prompt
-  are the app's choices, set in memory by tests and the Mac command line
-  only.
-- When history is trimmed, the reply reserve stays free
-  (`ContextBudget.replyReserve`): the answer share is capped at
-  `maxAnswerReserve = 4,096`, plus the reasoning budget, at most a third of the
-  window (`min(maxNumTokens / 3, min(maxNumTokens / 4, 4_096) + (thinkingBudget ?? 0))`):
-  4,096 tokens at 64K (8,192 with Think), 4,096 at 32K (8,192 with Think),
-  4,096 at 16K (5,461 with Think), 2,048 at 8K (2,730 with Think). That unlocks
-  ~56K–60K usable single-prompt tokens in a 64K chat (~10K–11K at 16K); digits
-  cost a token each. Tests with longer prompts set `maxNumTokensOverride` in
-  memory (see `test15_LongContextDigitFidelity`).
+- **Never overflow KV:** Overflow corrupts native heap. Every send runs `fitContext` (trim + reseed, or throw `messageTooLong`), then `runSend` caps output with `ContextBudget.outputCap` and throws `contextFull` when full.
+- **Allocated positions & MTP margin:** Budget against `ContextBudget.allocatedPositions` (65,536 on v2 128K; 32,000 on 32K files), keeping the 64-token margin so an MTP / `verify_8` round stays in bounds.
+- **3-tier `ToolBudget.plan` (`ToolHost.swift`):** Whenever any tool is offered, split `room`:
+  - `room < 16,384`: up to **2 calls**, `room / 8` tokens/result.
+  - `16,384 <= room < 32,768`: up to **4 calls**, `room / 16` tokens/result.
+  - `room >= 32,768` (64K chats): up to **5 calls**, `room / 20` tokens/result.
+  - Round 1 gets `min(room - maxCalls * resultTokens - maxCalls * laterRound, room / 2 + thinkingBudget)`. Each round uses `ToolBudget.reasoning`, and post-tool rounds clamp reasoning to `ToolBudget.Plan.followUpThinkingBudget` (`followUpThinkingConfig`) so Think always leaves visible answer tokens. Keep the streaming guard active whenever tools are offered.
+- **Exact token counts & evicted-turn recall:** Count via `Conversation.renderMessageIntoString` + `Engine.countTokens` (+1 BOS on first send; `seedTokens` = preface + 1). Use `ContextBudget.estimateTextTokens` (3 B/tok or 1 tok/digit/ideograph) only without a tokenizer (mock engine, file/web/tool budgets). `fitContext` trims history by exact per-turn counts (no hard 20-turn cap), records evicted turns in `lastEvictedHistory` for `KnowledgeBase.recallEvictedTurns` (`promptWithEvictedRecall`), and unbinds the chat on any fit error.
+- **Neutralize chat markers:** Run external text (messages, system prompt, history, helpers, web/tool outputs) through `PromptText.neutralized` (ZWJ inside `<|`/`|>`) so Gemma control tokens cannot be injected.
+- **Strip reasoning from KV:** `load` sets `ExperimentalFlags.filterChannelContentFromKvCache = true`. The runtime keeps `<thought>` live across intermediate tool calls within a turn and rewinds+refills once after the final answer (`ThinkingScenarioTests/test02_ReasoningStaysOutOfCache`).
+- **Fixed 64K window & room step-down:** Context size is fixed at 65,536 on 12 GB iPhones (not a UI setting), capped by `ContextBudget.exportWindow(reported:)` and passed to every `InferencePlanner.resolve`. After dropping any prior engine, `load` checks `MemoryProbe.roomBytes` and steps down (`DeviceProfile.contextTokens`): 16K below `4.2 GB` (`roomForLargeContextBytes`), 8K below `3.5 GB`. Keep `loadedContextTokens` sticky across settings changes; budget from `resolved.maxNumTokens`, never defaults. Don't raise thresholds without passing the iPhone `memory` suite.
+- **Think budget & reply reserve:** `DeviceProfile.defaultThinkingBudget` is fixed at `4,096` (`InferenceOptions.launch` preserves only Think). `ContextBudget.replyReserve` caps answer share at `4,096` + `thinkingBudget`, bounded by `maxNumTokens / 3`, unlocking ~56–60K single-prompt tokens at 64K (~10–11K at 16K; digits = 1 tok each).
 
-## Engine lifecycle
+## Engine lifecycle & caches
 
-- A load can "succeed" with parts of the model unmapped. Every new engine must
-  pass `validate()` (a one-token generation) before use, retried once after
-  750 ms. Loads run on the GPU only: multimodal, then text-only
-  (`InferencePlanner.attempts`). The last attempt gets a second try whatever
-  the error, then the load fails and is reported: there is no CPU backend to
-  fall back to (removed 2026-11-11, `docs/BACKEND.md`), so don't add one. The
-  image encoder (`VisionEncoder` + `VisionAdapter`) runs on the GPU (Apple10
-  Neural Accelerators, P4.2); the audio encoder loads lazily on P-core XNNPACK
-  (`USER_INTERACTIVE` QoS).
-- `InferencePlanner.requiresEngineReload` lists the engine-level settings
-  (KV size, vision, audio, MTP). Changing any of
-  them needs a full `load`. Everything else goes through
-  `updateConversationOptions`, which reseeds the conversation.
-- Engine-level `ExperimentalFlags` must be set before creating the engine.
-- Engine caches go through `EngineCache`: `directory()` for any E4B engine,
-  `embeddingDirectory()` for EmbeddingGemma, `EngineCache.disabled` for
-  one-off engines like the benchmark. Never hand an engine the cache root:
-  `directory()` deletes everything in it that isn't this build's.
-  The runtime keys weights by content (T11): one folder, `kv-all-<id>`, and
-  one copy for every context size (probe 14 guards it; upstream's keying
-  wrote 2.2 GB more per size). LiteRT-LM's cache keys ignore the runtime
-  build, so the folders carry the build's id (`EngineCache.runtimeBuildID`)
-  and another build's folders are deleted at the next load.
-- Settings changed just before sending must apply to that message
-  (`scheduleApplyOptions`, then send).
+- **Validate every load; GPU only:** Every new engine must pass `validate()` (1-token generation, retried once after 750 ms). `InferencePlanner.attempts` tries GPU multimodal then GPU text-only (final attempt retried once). Never add a CPU fallback (`docs/BACKEND.md`). Vision runs on GPU (`VisionEncoder` + `VisionAdapter`); audio (`Conformer`) loads lazily on P-core XNNPACK (`USER_INTERACTIVE` QoS).
+- **Reload vs reseed:** `InferencePlanner.requiresEngineReload` (KV size, vision, audio, MTP) requires `load`; all other changes go through `updateConversationOptions` (reseed). Set engine-level `ExperimentalFlags` before `Engine` init. Apply pending debounced `scheduleApplyOptions` before sending.
+- **Cache isolation (`EngineCache`):** Use `directory()` for E4B (`kv-all-<id>`, content-keyed weights shared across KV sizes, versioned by `runtimeBuildID`), `embeddingDirectory()` for `LiteRTEmbedder` fallback, `EngineCache.disabled` for benchmarks. Never pass the cache root (`directory()` prunes foreign build folders).
+- **Cancellation & branches:** Cancelled conversations reject future sends (`CANCELLED`); cancel ends as `generationCancelled`, keeps partial text, and unbinds so the next send reseeds. Regenerate/edit rebuild strictly from turns before the changed turn.
 
-## Cancellation and branches
+## Precision, constrained decoding & sampling
 
-- A cancelled conversation rejects the next message ("CANCELLED"). A cancel
-  always ends as `generationCancelled`, and the caller reseeds from history
-  before the next send. Stopped replies keep their partial text.
-- Regenerate and edit rebuild the context from the turns before the changed
-  turn, so abandoned branches never leak into the next answer.
+- **Shipped patched v2 model only:** Never point `ModelCatalog.e4b` at stock Google E4B (FP16 rotary rounding duplicates digits past 2,048, #3913) and never re-add an FP32 switch. `ModelCatalog.e4b` pins `gemma-4-E4B-it-agello-v2.litertlm` (1,536-slot rings, 128K Dual-`GATHER` FP16-exact rotary `<0.001 rad`, `verify_8`, `tools/model-surgery/build_v2.sh`). Re-verify `test15_LongContextDigitFidelity`, `test27_NeedleTable`, and `test28_WindowPositions` after model updates.
+- **JSON constraints & MTP:** `LiteRTChatEngine.jsonHelpersSpeculate` defaults ON (`AGELLO_JSON_MTP != "0"`), backed by the runtime's `llguidance` `TokTrie` fix and recursive-descent LL(1) FC parser ([Vendor/README.md](../../../Vendor/README.md), `test16_MultiWordJsonEnumWithMTP`).
+- **Sampling, telemetry & vision:** Ignore the model's `thinking`/`functionCalling` flags (both work). MTP forces greedy decoding; Regenerate disables MTP with an explicit `SamplerConfig(seed:)`. Stats use `RuntimeTelemetry` level 2 — **never** enable `ExperimentalFlags.enableBenchmark` on normal loads (makes GPU waits busy-spin; only `LiteRTLM.benchmark` toggles it). Visual soft tokens cap at `280` (`VisualDetail.offered(limit:)`).
 
-## Precision and decoding
+## Agentic tool safety, confirmation tiers & Shortcuts bridge
 
-- **Only use the patched model file.** Google's Gemma 4 E4B file duplicates
-  digits past position 2,048 with 16-bit GPU activations ("2026" becomes
-  "202026"; LiteRT-LM #3913): it computes rotary angles from a float copy of
-  the position, which FP16 can't hold exactly above 2,048.
-  - `ModelCatalog.e4b` downloads `gemma-4-E4B-it-agello-v2.litertlm` (1,536-slot
-    local KV rings, 128K shared Dual-`GATHER` float16-exact rotary tables with
-    <0.001 rad error across 0..131,071, and `verify_8`), built via
-    `tools/model-surgery/build_v2.sh` and pinned to a Hugging Face commit;
-    `test27_NeedleTable` (90/90) and `test28_WindowPositions` (12/12 exact up to
-    65,534 on iPhone 17 Pro) prove it.
-  - The app runs in 16-bit activations everywhere, with no FP32 switch.
-  - Don't point the catalog at the unpatched file, and don't add precision
-    switching back.
-  - When the upstream model is updated, re-apply `patch_rope.py --split --block 512`
-    then `build_v2.sh` (see `agello-litert-update`), then run
-    `test15_LongContextDigitFidelity`, `test27_NeedleTable`, and
-    `test28_WindowPositions`.
-- **JSON-schema constrained decoding & MTP (P5.1):**
-  - Fork `1382157b` fixed MTP + JSON grammar state sharing (each verify state
-    keeps its own matcher/mask), and `LiteRT-LM@7d80c7ec` fixed
-    `LlgConstraintProvider`'s `TokTrie` byte/special-token encoding (`▁` →
-    `0x20`, `<0xXX>` → raw byte, `0xFF` on control/pipe tokens), unlocking
-    multi-word JSON schema enums (`test16_MultiWordJsonEnumWithMTP`).
-  - `LiteRTChatEngine.jsonHelpersSpeculate` now defaults ON (`AGELLO_JSON_MTP`
-    != `"0"`), backed by the vendored `agello-one-20261122-3` release
-    (`LiteRT-LM@8f9e7142`, build `4712b414941a`), which also replaces the
-    generated ANTLR FC parser with a recursive-descent LL(1) parser supporting
-    both native `<|"|>`/`<escape>`/`ctrl46` delimiters and RFC 8259 JSON
-    double-quoted strings/keys.
-- **Tool safety & mutability (`AgentSecurity.swift`):**
-  - Spotlight every untrusted external text (attached files, web search results,
-    shared text, and external tool outputs) inside `<untrusted_data>` after
-    `PromptText.neutralized` (use `UntrustedContext.wrapFitted` when fitting
-    to a token/character budget so the closing tag is never sliced off), and
-    strip untrusted blocks before memory extraction
-    (`UntrustedContext.stripUntrustedBlocks`).
-  - Mark every `Tool` struct with explicit `static let isReadOnly` (`true` for
-    read-only tools eligible for parallel `withTaskGroup` execution; `false`
-    for side-effectful tools like `create_calendar_event` and
-    `create_reminder`). Every `isReadOnly == false` tool MUST call
-    `ToolConfirmationGate.confirm(...)` before mutating state — fail-closed by
-    default when backgrounded, stopped, or without an active UI presenter,
-    with request-ID matching and inline `ToolConfirmationCard` rendered in
-    both `ChatView` and `VoiceModeView`.
-  - Never throw from `Tool.run()`: return an actionable `["error": "..."]`
-    dictionary so LiteRT-LM lets the model recover instead of aborting the turn.
-    `ToolManager.normalizeResult` also stringifies non-finite `Double`/`Float`
-    values (`NaN`, `±Infinity`) before JSON serialization so malformed numbers
-    never crash a tool round.
+- **Spotlighting & memory quarantine (`AgentSecurity.swift`):** Wrap every untrusted input (files, web results, photo OCR, Shortcut outputs, external tool outputs) in `<untrusted_data source="...">` after `PromptText.neutralized` (use `UntrustedContext.wrapFitted` with `ToolBudget` so `</untrusted_data>` is never clipped). Always run `UntrustedContext.stripUntrustedBlocks` before persistent memory extraction (`HelperTasks.swift`).
+- **Taint & contact provenance:** Reset `TurnSecurityContext` at turn start; `UntrustedContext.wrap`/`wrapFitted` records sources so subsequent confirmations show an amber provenance warning. `prepare_message` checks recipients against `TurnContactRoster`.
+- **Mutability & 3 risk tiers:** Every `Tool` declares `static let isReadOnly`:
+  - `true`: eligible for parallel `withTaskGroup` execution.
+  - `false`: **all 5 mutating tools** (`manage_calendar_event`, `manage_reminder`, `prepare_message`, `manage_alarm`, `run_shortcut`) MUST pass fail-closed `ToolConfirmationGate.confirm(...)` before mutating state (denied when backgrounded, stopped, or without UI presenter; request-ID matched; rendered in `ChatView` and `VoiceModeView`).
+  - **`ToolConfirmationRequest.RiskTier`:** `.standard` (create/update), `.destructive` (red delete/cancel), `.external` (leaves sandbox: `prepare_message`, `run_shortcut`). Run **authoritative EventKit/AlarmKit lookups** by opaque `id` before confirming `update`/`delete`/`complete`/`cancel` so cards show ground-truth titles/times.
+- **Multi-step `PlanConfirmationCard` & 1-to-1 parity (zero TOCTOU):** Multiple mutating calls in one round route through `ToolManager.BatchConfirmHandler` → `BatchConfirmationPlanner` (authoritative lookups up front) → `PlanConfirmationCard` (`.approvedSteps(Set<Int>)`). Approved steps get single-use `ToolConfirmationGate.grantBatchStep(toolName:)` (cleared in `clearBatchGrants()` on round end/stop/cancel). Every unchecked/denied step MUST emit `{"executed": false, "status": "skipped_by_user"}` (both `Conversation.swift` and `RemoteChatEngine.swift`) preserving 1-to-1 `<|tool_call>`/`<|tool_response>` parity.
+- **Outbound Shortcuts (`RunShortcutTool` + `ShortcutCallbackBroker`):** 4-layer barrier: (1) user allowlist in `AutomationRegistry` (top-K `<= 10` prompt slot, 0 overhead when empty), (2) `.external` confirmation, (3) 256-bit CSPRNG hex nonce (`120 s` TTL, single-use, constant-time compare, RFC 3986 encoding on `agello://shortcut-result`), (4) `<untrusted_data source="shortcut:...">` spotlighting.
+- **Errors & Focus Filter:** Never throw from `Tool.run()` — return `["error": "..."]` (`ToolManager.normalizeResult` stringifies non-finite floats). `AgelloFocusFilter` (`hidePersonalTools`) strips opt-in personal tool schemas with 0 tool tokens.
 
-## Language-agnostic tools and prompts
+## Language-agnostic tools & prompts
 
-Gemma 4 E4B covers 140+ languages, with English as its strongest structured and
-tool-calling tier. Keep multilingual behavior seamless without degrading English
-speed, token budget, or output quality:
+- **Natural language in, user's language out:** Never require special syntax or tool names. Prefer structured parameters (`SearchPlacesTool.near`) and canonical API formats (`place`/`weather`/`currency` with local names intact) while keeping encyclopedia queries and replies in the user's language.
+- **`LanguageSupport.swift` (13 languages):** Route all Swift multilingual parsing (`meansCurrentLocation`, `splitPlaceQuery`, `stripWeatherNoise`, `stripPlaceHoursNoise`, `normalizeTransportMode`, `parseLocalizedNumber`, `isDifferenceFollowUp`, `fold` incl. `ß → ss`) through it; never add English-only splitters or strip city names (`"Rio de Janeiro"`, `"La Paz"`).
+- **Zero-cost conditional hints:** Don't bloat `SystemPrompt.base` ([docs/SYSTEM-PROMPT.md](../../../docs/SYSTEM-PROMPT.md)); inject 1-line hints only when relevant context exists (`.csv`/`.tsv`/`.json` files or non-empty `AutomationRegistry`).
 
-- **Natural language in, user's language out.** Never require users to phrase
-  requests in a special syntax or name tools to trigger features.
-- **Keep machine-to-code boundaries structured or canonical.** Prefer explicit
-  structured tool arguments (e.g. `SearchPlacesTool.near`) over parsing
-  natural-language prepositions in Swift. In `WebContext.queryPrompt`, keep
-  encyclopedia queries in the user's language while instructing structured API
-  topics (`place`, `weather`, `currency`) to emit canonical formats with local
-  place names intact.
-- **Defense in depth via `LanguageSupport.swift`.** E4B can still emit localized
-  terms even on English messages containing non-English proper nouns (e.g.
-  `"Place des Arts"` → `"pharmacie près de Place des Arts"`). Route all
-  Swift-side multilingual parsing through `Agello/Inference/LanguageSupport.swift`
-  (`meansCurrentLocation`, `splitPlaceQuery`, `stripWeatherNoise`,
-  `stripPlaceHoursNoise`, `normalizeTransportMode`, `parseLocalizedNumber`,
-  `isDifferenceFollowUp`, `fold` including German `ß → ss`). Never add
-  English-only regexes or splitters, and never strip bare month names or
-  articles inside city names (`"Rio de Janeiro"`, `"La Paz"`).
-- **Zero-cost conditional tool hints.** Don't bloat `SystemPrompt.base` (tuned
-  against 142 checks in `docs/SYSTEM-PROMPT.md`). When non-English turns need
-  stronger tool-selection grounding (e.g. E4B attempting mental math on an
-  inlined CSV in Spanish), emit a crisp 1-line hint *only* when that context is
-  present (`FileContext.prompt` for `.csv`/`.tsv`/`.json` files) and verify
-  both English (`WebScenarioTests`) and natural multilingual prompts
-  (`KnowledgeScenarioTests/test07_MultilingualNaturalToolIntent`).
-- Don't trust the model file's `thinking` or `functionCalling` flags: Gemma 4
-  files report both as unsupported, yet both work.
-- With MTP on, `agello-one-20261115` used to rewrite a reply's last token in
-  the KV cache when the reply stopped inside a round (probe 35, 2026-11-17).
-  Fixed in fork `e62e6ff1` and shipped in `agello-one-20261122`.
-- Sampling (probe 18): with MTP on, every reply is greedy whatever the
-  preset; with MTP off the conversation's sampler applies, but every
-  conversation starts at seed 0, so a rebuilt conversation repeats the same
-  reply. A varied reply needs MTP off and a seed of its own
-  (`SamplerConfig(seed:)`); that's how Regenerate samples. This holds since
-  `agello-next` `f1b88286` (4.1c); before it, the engine's first conversation
-  (the load's validation, greedy) fixed the sampler for every conversation,
-  so presets and Regenerate's seeds never applied (probe 18 on the M6,
-  2026-10-24).
-- Reply stats come from the runtime's telemetry: `RuntimeTelemetry` takes a
-  reply's tokens and decode speed from the totals before and after it (level
-  2, for decode times). Benchmark mode (`ExperimentalFlags.enableBenchmark`,
-  `getBenchmarkInfo`) makes every GPU wait spin (Mac calibration, 2026-10-24:
-  7.5–8.7 ms of CPU per decoded token, against 0.7 ms with it off), so `load`
-  turns it off. Don't turn it on; `LiteRTLM.benchmark` sets it for itself and
-  restores it.
-- Visual tokens per image: E4B's file accepts at most 280
-  (`VisualDetail.offered(limit:)`); a file that can't be inspected gets 280.
+## Memory, thermal policy & background GPU safety
 
-## Memory and background
-
-- Replies stop only when available memory drops below 400 MB
-  (`DeviceProfile.lowMemoryStopBytes`), not at the first memory warning.
-- No GPU work in the background. A reply stops when the app leaves the
-  foreground, except eligible tasks (`BackgroundWorkPlan`: long document or
-  multi-document synthesis, web research, and multi-step Think tool chains)
-  running as a `BGContinuedProcessingTask` with background GPU. If submission
-  fails while already backgrounded, `BackgroundWork.onSubmissionFailure` closes
-  `GPUGate` and drains active GPU work immediately. `GPUGate` (separate from
-  `isBusy`) is closed in the background: helpers, dictation and indexing are
-  cancelled and re-queued, and a load tracks `loadingConversation` so a
-  backgrounded or cancelled load tears down cleanly (`GPUGate.closedError`)
-  and runs again when the app is back.
-- Extensions (widgets, share sheet) can't load the model. They hand off to the
-  app.
-- Memory warnings go through `MemoryPolicy.action(level:)` and
-  `AppState.relieveMemoryPressure(level:)`: a warning stops a reply only below
-  the 400 MB line and releases EmbeddingGemma. E4B stays loaded
-  (`AppStateTests.testMemoryWarningKeepsTheEngineLoaded`).
+- **No background GPU:** Replies stop on backgrounding except eligible `BackgroundWorkPlan` tasks (long doc synthesis, web research, multi-step Think) under `BGContinuedProcessingTask` (`.gpu` + `.inference`), OR an active **Shortcut handoff** where `AppState.enterBackground()` parks the turn while **closing `GPUGate`** (zero background GPU) and `enterForeground()` flushes buffered `ShortcutCallbackBroker` results. On submission failure while backgrounded, `BackgroundWork.onSubmissionFailure` closes `GPUGate` and drains immediately. `load()` tracks `loadingConversation` for clean teardown (`GPUGate.closedError`). Extensions never load models.
+- **Memory warnings & `ThermalPolicy`:** `MemoryPolicy.action(level:)` stops a reply only below `400 MB` (`lowMemoryStopBytes`) and releases EmbeddingGemma; E4B stays loaded (`testMemoryWarningKeepsTheEngineLoaded`). `ThermalPolicy` adapts to `thermalState` + Low Power Mode: stream flushes at `100 / 200 / 250 ms`, helper idle delay `3 s → 15–30 s → paused` at `.critical`, and background ANE deferral/pause.
 
 ## Verify
 
-Verify prompt/tool behavior and UI presentation in `AgelloSim`
-(`scripts/sim-launch.sh`) and fast Mac CLI scenarios (`scripts/cli-test.sh`);
-confirm engine/memory/runtime changes and all benchmarks on the physical iPhone
-(`scripts/device-harness.sh inference`, plus `files`, `web`, or `memory` as
-applicable). Unit tests run the scripted `MockChatEngine` and don't exercise
-LiteRT-LM.
+Verify prompts, tools, confirmations, and UI in `AgelloSim` (`scripts/sim-launch.sh`) and `scripts/cli-test.sh` (`unit`, `inference`, `security`); confirm engine, memory, background-GPU, and thermal behavior on physical iPhone (`scripts/device-harness.sh gate`, `inference`, `files`, `memory`, `security`). Unit tests use `MockChatEngine` and never exercise LiteRT-LM.

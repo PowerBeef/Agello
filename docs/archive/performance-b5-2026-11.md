@@ -1,18 +1,12 @@
-# The performance plan: A19 Pro, A20 Pro and the full window
+> [!IMPORTANT]
+> **Frozen historical snapshot (Milestone B5, 2026-11-13 – 2026-11-17).** This document is archived as the historical B5 measurement and design record (predating Phases 1–6, `agello-one-20261124`, the shipped v2 64K model, Core AI ANE `EmbeddingGemma 2`, GPU Vision, MSL 4.1 FlashAttention, and `MTLBinaryArchive`). Do not treat its status, architectural claims (such as *"The Neural Engine stays out"* or *"Classic Metal only"*), or open task lists as current. For live A19 Pro+ status and verified numbers, see [ROADMAP.md](../ROADMAP.md), [BACKEND.md](../BACKEND.md), and [scripts/generate_readme_art.py](../../scripts/generate_readme_art.py) (see also the resolved 2026-11-21 audit in [runtime-audit-2026-11-21.md](runtime-audit-2026-11-21.md)).
 
-> [!NOTE]
-> **Superseded as active plan (2026-11-21):** The active A19 Pro+ (GPU Neural Accelerators + 16-core ANE + Local Agent) plan is now tracked in [ROADMAP.md](ROADMAP.md), backed by the 2026-11-21 runtime audit in [RUNTIME-AUDIT-2026-11-21.md](RUNTIME-AUDIT-2026-11-21.md) (which also closes GPU-Resident Round Stage 3 and resolves the `AGELLO_MTP_REPLAY` vs. Stage 3 and PLE prefill questions). This document stays as the B5 measurement record.
+# The performance plan: A19 Pro, A20 Pro and the full window (B5 archive)
 
-**Status: approved 2026-11-13 (the maintainer's go). Historical record through 2026-11-17:** the window is a
-fixed 64K with sparse KV caches (adopted 2026-11-14), and the runtime that carries it, with train 1
-and the window read from the model file, ships in release `agello-one-20261115` (fork `6da75396`,
-build `0c749789100a`, vendored in app commit `39daed1`). The published model file still caps chats
-at 32,000 positions. Next: the 64K quality gates on the 128K file, then its upload and the catalog
-change (the maintainer's call); the GPU-resident speculative round (A4); P0, the measurements on
-the iPhone, not run yet; and the items of "Order of work, revised" not marked done.
+**Historical snapshot through 2026-11-17:** approved 2026-11-13; by 2026-11-15 the fixed 64K sparse-KV design and Train 1 runtime shipped in `agello-one-20261115` (fork `6da75396`, build `0c749789100a`, vendored in `39daed1`). All subsequent 64K quality gates, v2 model upload, `verify_8`, MSL 4.1 FlashAttention, ANE embeddings, GPU Vision, and thermal-rest iPhone benchmarking were completed in Phases 1–6 and Audit Waves 1–2.
 
-This is the detailed plan for
-milestone B5 of [BACKEND.md](BACKEND.md) ("The performance work"): faster replies on the iPhone 17
+This was the working plan for
+milestone B5 of [BACKEND.md](../BACKEND.md) ("The performance work"): faster replies on the iPhone 17
 Pro (A19 Pro) and the iPhone 18 Pro and iPhone Duo (A20 Pro), the least memory the app can hold,
 the same output quality, and Gemma 4 E4B's full trained window of 131,072 tokens.
 
@@ -234,7 +228,7 @@ and long contexts bandwidth-bound.
 | D1, measured (2026-11-13, M6) | First step shipped on `agello-one` (`80c07920`): runs of up to 128 rows read the INT4 weights in place, prefill +23 % on `email`. The second step was prototyped (`agello/experiments/int4_mpp.swift`, all four ways exact): on 1,024-row runs int8 × int4 is no faster than int8 × int8 (1.95–2.27 ms per feed-forward product against 1.47–1.80), and staging the decode layout into a 4-bit tile costs 2.6–3.1 ms at every tiling tried, so those runs keep int8 plus conversion; the most a 4-bit design could save there is the conversion pass, about 7 % of a run. On 128-row runs the best kernel depends on the shape (staged 4-bit 0.46 ms against 0.73 for 2,560 → 10,240; the shipped kernel best on 10,240 → 2,560): a per-shape choice, to tune on the iPhone | — | — | — |
 | D2 | Prefill attention: the 512-token window for local layers, INT8 keys and values read directly (`half × uint8`, 46 conversions per run dropped), then one fused attention kernel on cooperative tensors with FP32 softmax statistics (the pattern of WWDC26 session 330) | `conv_apple_mpp.cc:127-139`; `LD/composite/bounded_attention.cc` | 5–10 % at 5K-token prompts, 25–35 % at 30K [E]; removes the context-sized score buffers (E3) | Window and INT8 reads exact; fusion changes the summing order |
 | D2, measured and designed (2026-11-13, M6) | Where prefill goes (level-4 kernel timing, the ring/128K file): at 21K tokens and a 32K window, weight products with their conversions 60 %, attention about 22 % (×V 9.4 %, Q·Kᵀ with its mask 6.8 %, window mask 2.6 %, softmax 2.2 %, mask building and KV conversions the rest); at 44K tokens and a 64K window 60 % and 29 %. The bigger lever is the chunk size: above 32K E3's interim allows only 128-token chunks, and the weight products cost 0.30 ms a token against 0.17 with 1,024-token chunks. A fused attention builds no score tensor, so it lifts that limit (91K tokens: an estimated 63 s → 45–50 s) and removes the 1.25 GB the 1,024-token prefill holds while it runs at 32K. Design: T4's pass (`bounded_attention.cc`), which already finds each attention tail and each local layer's window, replaces Q·Kᵀ → mask → softmax → ×V with one node; the kernel starts from the delegate's `FusedFlashAttentionPrefillOp` (8×8 SIMD-group products, online softmax with FP32 statistics), whose K and V addressing is the caches' layout (K `[heads][D/4][T][4]`, V `[heads][T/4][D][4]`, read off real buffers in E4), reads the INT8 caches directly (exact in FP16; the per-cache scales on the scores and the output), gains a head-size-512 tiling (the 32-row query block of 33 KB exceeds the 32 KB threadgroup limit), the local window, ring slots and the filled bound. Developed first as a standalone Metal experiment against a CPU reference (as D1), then ported; the fusion changes the summing order, so replies are read and the needle tables rerun. Sizing: at 91K tokens a fused kernel beats today's matrix-unit products only if each K/V tile serves many query rows (two KV heads for eight query heads, head size 512), which takes a split-head-size tiling on the matrix units: days of kernel work. The shortcut was measured and dropped: 1,024-token chunks up to a 64K window (E3's threshold raised) read a 44K-token prompt 20 % faster (23.2 → 18.6 s) but peak 3.1 GB higher (4,759 against 1,678 MB) and keep 2 GB after it; the score tensors are what the fused kernel removes | — | — | — |
-| D2, step 1 and what's next (2026-11-13/14, M6) | Done: the 1,024-token prefill's attention runs in slices of query rows, each with a score tensor of at most 256 MB (`agello-one` `cc84dc50`): bit-identical, `inference` 23/23, peak at 32K 3,625 → 2,799 MB (today's file) and 2,719 → 1,928 MB (ring). With the 128-token limit lifted (trial), 44K tokens at 64K read in 18.5 s against 23.2 and 91K at 128K in 49.8 s against 61.9, answers exact, but 1.4–2.4 GB more memory stays after the reply. Not the masks: the masks were rewritten to read the runtime's own [rows, keys] mask or the positions without their four copies (`build/drafts/d2-rowmask.patch`, not kept), the graphs got leaner and memory rose 0.3–0.6 GB. It's the shared pool: the everyday graphs (decode, verify, the 128-token prefill) borrow the large prefill's bigger buffers and wire them whenever they run, so freeing the large prefill's own buffers (1 GB at 128K) leaves 4.9 GB against 2.5. Next: a private pool for the 1,024-token prefill, freed whole after each long prompt, then lift the limit (both done 2026-11-14, `agello-one` `d3730b60`: the window's step 2 in "Order on the Mac", below, with `kLongWindow` at 65,536). An independent review (Claude Fable 5.2) advised against the head-size-512 fused kernel for now (an estimated 3–6 % of prefill at 32K, 10–20 % at 128K, possibly negative: it streams more K/V per row) and pointed to a cheaper exact gain, the ×V product recomputing each probability's exponential once per 128-wide output tile | — | — | — |
+| D2, step 1 and what's next (2026-11-13/14, M6) | Done: the 1,024-token prefill's attention runs in slices of query rows, each with a score tensor of at most 256 MB (`agello-one` `cc84dc50`): bit-identical, `inference` 23/23, peak at 32K 3,625 → 2,799 MB (today's file) and 2,719 → 1,928 MB (ring). With the 128-token limit lifted (trial), 44K tokens at 64K read in 18.5 s against 23.2 and 91K at 128K in 49.8 s against 61.9, answers exact, but 1.4–2.4 GB more memory stays after the reply. Not the masks: the masks were rewritten to read the runtime's own [rows, keys] mask or the positions without their four copies (trial patch, not kept), the graphs got leaner and memory rose 0.3–0.6 GB. It's the shared pool: the everyday graphs (decode, verify, the 128-token prefill) borrow the large prefill's bigger buffers and wire them whenever they run, so freeing the large prefill's own buffers (1 GB at 128K) leaves 4.9 GB against 2.5. Follow-up: a private pool for the 1,024-token prefill, freed whole after each long prompt, then lift the limit (both done 2026-11-14, `agello-one` `d3730b60`: the window's step 2 in "Order on the Mac", below, with `kLongWindow` at 65,536). A design review advised against the head-size-512 fused kernel at that stage (an estimated 3–6 % of prefill at 32K, 10–20 % at 128K, possibly negative: it streams more K/V per row) and pointed to a cheaper exact gain, the ×V product recomputing each probability's exponential once per 128-wide output tile | — | — | — |
 | D2, the regime (2026-11-14, M6) | The review's step 1, measured (`agello-one` `0d7e359c`). Sweep on the 128K file, first token at 21K tokens/32K window and 44K/64K: the ×V product's tile 16×512 −2.8 % / +0.2 %, 32×256 −1.8 % / +0.2 %, replies identical (each output tile recomputes its rows' exponentials, fewer with wider tiles); score slices of 32 MB −1.3 % / +11.9 % and 8 MB +9.1 % / +12 %, and slices of 128 rows changed replies (the builder picks other kernels for runs of 128 rows or fewer), so slices keep at least 256 rows. Ceiling (`agello/experiments/mpp_ceiling.swift`): f16 × f16 matmul2d reaches 17–20 TFLOPS on attention shapes, about what attention already does in the model (~18 at 44K tokens), and f16 × int8 is slower (8–17): attention is arithmetic-bound near the M6's matrix units, so fusion or INT8 reads can't speed it up here; only less work can (windows, exact-zero skipping). The 16×512 ×V tile is the one to confirm on the bench, and every shape again on the A19 Pro | — | — | — |
 | D3 | `ConvAppleMPP` epilogue in registers instead of a 32 KB threadgroup staging array; activation quantization folded into the RMS norm before it; Morton-order threadgroups and tiles tuned on the phone | `conv_apple_mpp.cc:302, 436` | 4–8 % of prefill [E] | Bits may change |
 | D4 | Chunking from measured costs: padding (118 padded tokens cost `email` ~84 ms), the 512 threshold, maybe 256 and 512 signatures | `RT/runtime/executor/litert_compiled_model_executor_utils.cc:507-628` | Up to 4 % of long prompts, ~80 ms on some short ones [E] | Chunking can shift FP16 sums |
@@ -354,10 +348,9 @@ upgrades.
 
 ## The window: a fixed 64K with sparse KV caches (adopted 2026-11-14)
 
-The maintainer's go, 2026-11-14, on the advisor's review (`build/drafts/sparse-kv-review-fable-2026-11-14.md`).
+The maintainer's go, 2026-11-14, on the sparse-KV design review.
 It replaces the growth from 32K to 64K below: chats open at a fixed 64K window whose KV costs
-only its fill. On Apple GPUs a buffer that any kernel uses is wholly resident
-(`build/drafts/metal-residency-2026-11-14.md`), so today a short chat at 64K costs 1.64 GB on the
+only its fill. On Apple GPUs a buffer that any kernel uses is wholly resident, so today a short chat at 64K costs 1.64 GB on the
 Mac against 1.09 at 32K. Metal 4's placement sparse buffers cost only their mapped tiles; the
 eight global KV buffers become sparse, mapped ahead of the fill, and a fixed 64K beats today's 32K
 on a short chat (~0.92 GB on the Mac with step 4 [E]) with no reload, reseed or growth code. The
@@ -447,7 +440,7 @@ prefill pools released, the window read from the file):**
   +17 % sustained** (the bar was +8 %). The GPU-resident round is in: a round with no host step
   between its runs (the drafter's and verify's embeddings gathered on the GPU from the mapped
   file; verify's per-layer tables count toward the footprint as gathers touch them, below).
-- The resident round's design (`build/drafts/gpu-resident-round-design-2026-11-16.md`), stages 0
+- The resident round's design (2026-11-16), stages 0
   and 1 done on the M6 as checks outside the runtime (fork `ffc639ef`, 2026-11-16).
   - Both embedders are dequantized gathers: INT2 tables with a float32 scale per row, zero
     points all 0, low bits first in each byte. The main one is multiplied by √2560; the per-layer
@@ -479,9 +472,7 @@ with ordinary buffers (+0.4–0.55 GB a chat) or gone back to the growth below.
 
 ## The window: 32K growing to 64K (adopted 2026-11-14, replaced the same day)
 
-The maintainer's choice, on an independent plan (Claude Fable 5.2; the full text is in
-`build/drafts/adaptive-window-plan-fable-2026-11-14.md`, the window review before it in
-`window-review-fable-2026-11-14.md`). Chats start at 32K and grow to 64K (65,536 positions) when an
+The maintainer's choice, based on the 2026-11-14 adaptive-window design review. Chats start at 32K and grow to 64K (65,536 positions) when an
 input needs it; the app moves to a fixed 64K if the phone's peak allows (the decision below).
 128K isn't a default. This section changes the order of work below where they differ.
 
@@ -640,9 +631,8 @@ fail.
 
 ## The engine review, adopted (2026-11-14)
 
-The maintainer allowed tearing the engine down where that's the better path; an independent
-ground-up review and its follow-up (Claude Fable 5.2: `build/drafts/engine-rebuild-review-fable-2026-11-14.md`,
-`engine-rebuild-followup-fable-2026-11-14.md`) concluded not to: decode reads memory at about 59
+The maintainer allowed tearing the engine down where that's the better path; a 2026-11-14
+ground-up review and its follow-up concluded not to: decode reads memory at about 59
 of 77 GB/s and prefill sits near the matrix units' ceiling, so a new engine would buy load time
 (7–9 s to 1–2 s [E]), not tokens per second. Rebuild how attention gets its masks; gate the
 speculative round on a replay test; patch the rest. Adopted, Mac first (the phone is available
@@ -713,21 +703,21 @@ only now and then; no Mac step depends on P0):
   (host preparation, samplers and embeddings ~1.3 ms; encoding and wait latency ~1.3 ms): most of
   the ceiling is the GPU not draining between runs, which shapes the resident round's design.
 - Step 5's value, by kernel shape (`a5db0fc4`, `AGELLO_KERNEL_SHAPES=1` keys level-4 times by
-  shape; `build/drafts/prefill-kernels-by-shape-21k-at-65536.txt`): at 64K, 21K tokens in
+  shape): at 64K, 21K tokens in
   1,024-token runs, the global layers' attention is 1,390 ms of 7,639 ms of prefill kernel time and
   the local layers' ring attention 555 ms. The global products already stop at the fill (the T4
   rewrite reads the run's end index; the same cost at 32K and 64K); what still scales with the
   window is small: the global-cache conversions (~7 ms a run) and the bounds kernel (3.9 ms a run).
   Tile skipping in the rings is worth at most ~4 % on the Mac. The rest of the run: the INT8 weight
   products 47 %, the INT4-to-INT8 weight conversions 8 %, the activations' quantization 5 %.
-- Memory follows each buffer's size, not the fill (`build/drafts/metal-residency-2026-11-14.md`):
+- Memory follows each buffer's size, not the fill:
   a short chat is 1.09 GB at 32K and 1.64 GB at 64K, the eight global KV buffers and the prefill's
   two converted copies wholly resident after 700 tokens. Not the creation-time clear (skipping it
   changed nothing): once a kernel uses a Metal buffer at all, the whole buffer is resident (a test
   program: 4 KB written of 256 MB costs 256 MB). So bounding writers by fill can't lower the peak.
   Metal 4's placement sparse buffers do cost only what's mapped (tier 1 on the M6: unmapped reads
   return zero, writes there are dropped), but must be private, and the KV snapshots and ring copies
-  are CPU copies today: a "virtual window" is a design question, taken to the advisor.
+  are CPU copies today: a "virtual window" is a design question, taken to design review.
 - Where the resident round's gain is (`ff862efb`, the replay's wait placements, M6, the replayed
   round against the real one in the same run): the whole round chained +12.3 % short and +13.1 %
   at 44K; a drafter chain with one wait before verify +2.9 % and +2.3 %; the same with verify's
@@ -739,7 +729,7 @@ only now and then; no Mac step depends on P0):
   the tables' memory, but a no-copy Metal buffer over a mapped file stays out of the footprint when
   a kernel reads rows of it (a test program: 512 MB mapped, rows read correctly, footprint flat),
   as the weights do: the tables would cost no memory. Replies identical in every mode.
-- The sparse KV (the advisor's review, `build/drafts/sparse-kv-review-fable-2026-11-14.md`):
+- The sparse KV (2026-11-14 sparse-KV review):
   build it in gated steps, a fixed 64K window that costs its fill (a short chat ~0.92 GB on the
   Mac against 1.64 today and 1.09 at 32K [E]), in place of growing from 32K to 64K with a reload.
   Step 0 done on the M6: 16 KB tiles (K grows in 4,096-position steps), blits to and from sparse
@@ -763,8 +753,8 @@ review: purgeable state as a trap (it works on buffers nothing runs on), decode'
 
 ## Order of work, revised (2026-11-14)
 
-Adopted by the maintainer on 2026-11-14 after this session's Mac measurements and an independent
-review (Claude Fable 5.2; the full text is in `build/drafts/roadmap-review-fable-2026-11-14.md`).
+Adopted by the maintainer on 2026-11-14 after this session's Mac measurements and the 2026-11-14
+roadmap review.
 It replaces the phase order below, which stays as the record of the original plan; the estimates
 there predate the measurements.
 
@@ -804,7 +794,7 @@ there predate the measurements.
    −7.9 %, free writing unchanged. Copy-heavy replies are bound by the verify's four positions,
    not by the drafts: B2 pays off with B5's longer verifies, where copied drafts fill a long
    round for free and the drafter would need a run per draft.
-   **B5 scoped (2026-11-17, `build/drafts/b5-longer-verify-scope-2026-11-17.md`):** a `verify_8`
+   **B5 scoped (2026-11-17):** a `verify_8`
    signature added beside `verify` by graph surgery (its shapes and constants solved from the
    `decode`, `verify` and `prefill_128` exports, weights shared, checked on the CPU against
    `verify`), then a cost probe as the go/no-go (at most about 1.3 times `verify`: weight

@@ -2,9 +2,11 @@
 
 A plan, approved by the maintainer on 2026-11-10. H1 to H4 and H6 are done (below); H5 isn't built.
 
-The goal: one command runs Agello on the iPhone as a user would, through its real screens, and
+The goal: one command runs Agello on the physical iPhone as a user would, through its real screens in Release, and
 comes back with one report per reply that joins what was on screen, what the app did, and what the
-engine did. No screen mirroring, and no one watching.
+engine did. No screen mirroring, and no one watching. For fast Simulator UI, iOS-feature, and in-app
+output-quality iteration (`AgelloSim` + `agello serve`), see [TESTING.md](TESTING.md#on-the-ios-simulator-agellosim--agello-serve);
+this document covers physical-iPhone Release benchmarking (`bench`, `phone-bench.sh`, `bench-direct.sh`).
 
 ## Why
 
@@ -121,7 +123,7 @@ This list is the plan. What H4 built of it, and what it left unchecked, is under
 | **H3** | Deeper probes: first render and flush cadence, scroll jumps and hitches, a memory timeline, helper tasks (titles, memories), signposts. | A slow or jumpy reply shows which layer was slow. |
 | **H4** | Autonomy: preflight, one session, interruptions, resume, comparison with a baseline. | A full run needs nothing but an unlocked phone, and says what changed since the last. |
 | **H5** | Coverage: every screen and menu, the attach menu with sample files, Voice with the fake microphone, share and intent routes. | The driver has touched every control the app has. |
-| **H6** | Retire and document: mirroring kept for looking only, docs and skills updated. | The fix loop in `CLAUDE.md` names the harness, not the mirror. |
+| **H6** | Retire and document: mirroring kept for looking only, docs and skills updated. | The fix loop in `AGENTS.md` names the harness, not the mirror. |
 
 H1 proves the design. If the three layers don't join cleanly there, the plan changes before the
 rest is built.
@@ -155,12 +157,13 @@ reply as Markdown.
   day of runs and the accessibility session XCUITest keeps open are not. [H3](#h3-done-on-2026-11-10)
   measured both.
 
-### H2, done on 2026-11-10
+### H2, done on 2026-11-10 (historical log; bench now holds 14 cases / 17 turns)
 
-The bench holds twelve cases (`AgelloUITests/BenchCases.swift`): the quality bench's eight
-requests, the three-part coding prompt, a Search follow-up, a file with a follow-up, and since
-2026-11-15 `mockup-os-search`, a coding chat from the iPhone word for word (Search on for both
-messages: `searchFollowUps` turns it on again for follow-ups).
+The bench currently holds **14 cases / 17 turns** (`AgelloUITests/BenchCases.swift`): the quality bench's original eight
+requests, the three-part coding prompt, a Search follow-up, a file with a follow-up,
+`mockup-os-search` (added 2026-11-15: a coding chat from the iPhone word for word with Search on for both
+messages via `searchFollowUps`), plus `typo-fix` and `comment-module` (added 2026-11-17 for `verify_8`
+speculative-decode tracking).
 `QualityBenchProbe` and `scripts/quality-codecheck.sh` are gone.
 
 - **The driver** types follow-ups into the composer and attaches the app's sample report at
@@ -170,9 +173,9 @@ messages: `searchFollowUps` turns it on again for follow-ups).
   web view and pressed (`scripts/bench/webapp-check.swift`), Swift type-checked against the iOS
   SDK, Python compiled, expected facts looked for, citations counted. The report opens with one
   line per turn.
-- **The first full run** (iPhone 17 Pro, 13 turns, about 20 minutes, nobody watching): every
+- **The first full run (2026-11-10 historical baseline,** iPhone 17 Pro, 12 cases / 13 turns then, about 20 minutes, nobody watching): every
   reply ended by itself and every screen matched its trace. Failed checks, all the model's: the
-  calculator doesn't show 56 for 7 × 8, the SwiftUI view has one compile error, and the
+  calculator doesn't show 56 for 7 × 8, the SwiftUI answer has one compile error, and the
   three-part prompt's code misses requirements as before.
 - **Heat is part of H1's open question.** The phone's thermal state went from nominal to fair at
   the third case and decode fell from about 42 to 35 tok/s over the run; two short cases alone
@@ -233,16 +236,19 @@ A full run needs an unlocked phone and nothing else, and says what changed since
   (`scripts/bench/baseline.json`, committed: per turn how it ended, its tokens, its speed, its
   failed checks). Every later report opens with what changed: a check that now fails or passes,
   a reply that ended another way, a different reply where Search is off (the model repeats
-  itself exactly there), a speed more than 15 % away.
+  itself exactly there), a speed more than 15 % away. *(Note: the currently committed
+  `scripts/bench/baseline.json` was accepted on `2026-11-17` against v1 32K across 15 turns and
+  needs a `BENCH_ACCEPT=1` refresh on the next physical iPhone `bench` run against v2 64K /
+  `agello-one-20261124`.)*
 - **Cooling.** `BENCH_COOL=1` waits, up to ten minutes a case, for the thermal state to return
   to nominal: for runs whose speeds matter.
 
-Checked on the iPhone 17 Pro: a resumed run of ten cases (18 minutes) completed the report, was
+Checked on the iPhone 17 Pro (2026-11-10): a resumed run of ten cases (18 minutes) completed the report, was
 accepted as the baseline, and a second resume answered "Nothing to resume"; a run started on a
 locked phone stopped at the preflight with exit 4 and left no lock. Not exercised: no case was
 interrupted during the run, so the retry hasn't met a real call or lock yet.
 
-The first baseline, 13 turns: every reply ended by itself with the screen matching its trace,
+The first baseline (2026-11-10 historical run, 13 turns on v1 32K): every reply ended by itself with the screen matching its trace,
 at 29 to 44 tok/s with the driver attached and the phone warming. The first token came after
 0.6 s in the four plain cases (Think on), 1.5 s on the three-part prompt, and 3 to 9 s where a
 search or a file comes first. Three cases fail checks, and
@@ -252,7 +258,7 @@ requirements (one failure in each part, two in its own tests).
 
 ### H6, done on 2026-11-10
 
-Done with the documentation audit of that day, ahead of H5. `CLAUDE.md` and the
+Done with the documentation audit of that day, ahead of H5. `AGENTS.md` and the
 `agello-device-testing` skill name the bench as the way the app is driven and checked on the
 phone; iPhone Mirroring is the user's own tool, for looking only, and the instructions say that
 it and a harness run exclude each other (the preflight refuses a run while it's open). What was

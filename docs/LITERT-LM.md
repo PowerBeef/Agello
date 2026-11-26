@@ -1,33 +1,39 @@
 # LiteRT-LM in Agello
 
-Agello runs Gemma 4 E4B and EmbeddingGemma through Google's LiteRT-LM. This page says which
-LiteRT-LM the app ships, what it sets, what the runtime does that matters to the app, and where to
-read the rest.
+Agello runs Gemma 4 E4B through our hard fork of LiteRT-LM (`PowerBeef/agello-litert-lm`, with
+LiteRT and ML Drift in-tree) and runs primary `EmbeddingGemma 2` embeddings on the 16-core Apple
+Neural Engine via Core AI (`CoreAIEmbedder`, with `LiteRTEmbedder` as GPU fallback). This page maps
+what Agello configures on the runtime, what runtime behavior matters to the app, and where canonical
+inventories and deep references live.
 
-The rest is the **LiteRT-LM reference** in our fork: [`docs/agello/reference/`](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/README.md) on
+The deep runtime reference lives in our fork: [`docs/agello/reference/`](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/README.md) on
 `main`, the one branch of `PowerBeef/agello-litert-lm`, cloned at `../LiteRT-LM/docs/agello/reference/`.
 It covers LiteRT-LM, LiteRT, ML Drift and the Gemma 4 models, Apple paths in depth. Every statement
 in it is a claim with sources, checked by an independent verifier, and every number to quote is a
-row in [`facts.md`](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md) with its conditions and a safe wording. It documents our source
-build (the fork's `main`); where the shipped runtime differs, it says so.
+row in [`facts.md`](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md) with its conditions and a safe wording.
 
 ## What ships
 
-| Part | What | Reference |
+Exact binary release pins, vendored `swift/` commits, checksums, and the full Swift patch inventory
+live in [Vendor/README.md](../Vendor/README.md) (single source of truth). Performance release rows
+live in [BACKEND.md](BACKEND.md#the-ledger).
+
+| Part | What | Canonical owner / reference |
 | --- | --- | --- |
-| Swift wrapper | The fork's `main` at `c819aecb` (release `agello-one-20261124`): Google's 0.19.0 nightly plus our Swift patches (a failed tool call is answered with an error the model reads; a stream holds its conversation weakly; streams kept by ID with generation-tagged inter-tool cancel, `sendGateLock`, and `waitUntilDone()` GPU drain; `followUpThinkingConfig` & `extraContext` across tool rounds; non-finite float normalization in `ToolManager`; parallel read-only tool dispatch via `Tool.isReadOnly`; tokenizer and embedding-overflow APIs; Swift 6 language mode with `ExperimentalFlags` behind `NSLock`) and the build-info and telemetry APIs. `Vendor/LiteRT-LM` holds it byte for byte, apart from the binary target's URL. | [F-003](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-003), [patches.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/patches.md) |
-| Native runtime | Our build: the checksummed `CLiteRTLM.xcframework` of release `agello-one-20261124` (build id `8a7e34594612`), built from `c819aecb` with LiteRT and ML Drift as folders of the same repository, iPhone and Mac slices on Metal 4 / MSL 4.1; FlashAttention, zero-copy NEON greedy sampling, persistent `MTLBinaryArchive`, Metal 4 `copyBufferMappingsFromBuffer:` helper snapshots, `verify_8` rounds, sparse KV caches, GPU Vision MPP kernels, lazy `AudioExecutor` + `USER_INTERACTIVE` QoS, fixed `LlgConstraintProvider` `TokTrie` + Think-tool continuity + recursive-descent FC parser, Audit Wave 2 kernel/concurrency/UTF-8 FFI hardening, and the window read from the model file. Previously shipped `agello-one-20261122-3` (`4712b414941a`), `agello-one-20261122-2` (`f4f0ec25e764`), `agello-one-20261122` (`47b132c0cbd6`), `agello-one-20261115` (`0c749789100a`) and `agello-next-20261024` (`99b8f5f6ea49`). | [F-018](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-018), [versions.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/versions.md) |
+| Swift wrapper | Vendored in `Vendor/LiteRT-LM/swift/` byte-for-byte from `../LiteRT-LM/swift/` (tracks fork `main` ahead of binary cuts when Swift-only patches land, including the pure-Swift `LiteRTLMTools` split). | [Vendor/README.md](../Vendor/README.md#swift-patches), [patches.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/patches.md) |
+| Native runtime | Checksummed dual-slice (`ios-arm64` + `macos-arm64`) `CLiteRTLM.xcframework` built from our fork (`PowerBeef/agello-litert-lm` `main`, LiteRT and ML Drift in-tree, Metal 4 / MSL 4.1). | [Vendor/README.md](../Vendor/README.md#the-runtime), [BACKEND.md](BACKEND.md), [versions.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/versions.md) |
 | Our source build | The fork's one branch, `main` (`agello-one` and `agello-next` before 2026-11-15): Google's 0.19.0 nightly plus our commits, LiteRT and ML Drift in the same tree. Releases of it are what Agello vendors; `Vendor/use-local-litert.sh` swaps in a local build for test runs. | [build-and-release.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/litert-lm/build-and-release.md) |
-| Chat model | `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` (`gemma-4-E4B-it-agello-v2.litertlm`) at `9935a811` (3,686,465,536 bytes): 1,536-slot local KV rings, 128K window with unshifted Dual-`GATHER` RoPE tables (<0.001 rad across 0..131,071), and `verify_8` speculative signature (`build_v2.sh`). | [F-020](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-020), [models/gemma4-e4b.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/models/gemma4-e4b.md) |
-| Embedding model | `PowerBeef02/embeddinggemma-2-text-270m-coreai-ane` (`embeddinggemma-2-text-270m-ane.aar`, 128,245,086 bytes, pinned to revision `41026d1c` with SHA-256, Apache 2.0 `LICENSE` & `NOTICE`), unpacked atomically into a 4-bucket INT4 Core AI Apple Neural Engine bundle (0% GPU contention; converted from `litert-community/embeddinggemma-2-text-270m-litert-lm`). | [F-029](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-029), [models/embeddinggemma.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/models/embeddinggemma.md) |
+| Chat model | `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` (`gemma-4-E4B-it-agello-v2.litertlm`, 1,536-slot local KV rings, 128K Dual-`GATHER` RoPE, `verify_8`), pinned in `Agello/ModelHub/ModelCatalog.swift`. | [ModelCatalog.swift](../Agello/ModelHub/ModelCatalog.swift), [models/gemma4-e4b.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/models/gemma4-e4b.md) |
+| Embedding model | `PowerBeef02/embeddinggemma-2-text-270m-coreai-ane` (`embeddinggemma-2-text-270m-ane.aar`), unpacked atomically into a 4-bucket asymmetric INT4 Core AI Apple Neural Engine bundle (0% GPU contention), pinned in `Agello/ModelHub/ModelCatalog.swift`. | [ModelCatalog.swift](../Agello/ModelHub/ModelCatalog.swift), [models/embeddinggemma.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/models/embeddinggemma.md) |
 
 > [!NOTE]
-> The fork's claim-checked reference (`../LiteRT-LM/docs/agello/reference/facts.md`) was last re-pinned on 2026-11-18 against `main` `b7b856a0` (fork `4318c4a1`, `agello-one-20261115`, v1 32K; 648 claims checked). It awaits its next `repin.py` pass — cross-check [ROADMAP.md](ROADMAP.md#current-status) and `ModelCatalog.swift` for Phases 3–6 and Audit Waves 1–2 (`agello-one-20261124`) facts rather than quoting pre-v2 rows from `facts.md`. Remaining loose ends are tracked in `../LiteRT-LM/docs/agello/reference/_work/audits.md`.
+> The fork's claim-checked reference (`../LiteRT-LM/docs/agello/reference/facts.md`) was last re-pinned on 2026-11-17 against `main` `b7b856a0` (fork `4318c4a1`, `agello-one-20261115`, v1 32K; 648 claims checked). It awaits its next `repin.py` pass after the next binary cut — cross-check [Vendor/README.md](../Vendor/README.md), [BACKEND.md](BACKEND.md), [ROADMAP.md](ROADMAP.md#current-status), and `ModelCatalog.swift` for Phases 3–6, Audit Waves 1–2, and Phases A–C rather than quoting superseded v1 rows from `facts.md`. Remaining loose ends are tracked in `../LiteRT-LM/docs/agello/reference/_work/audits.md`.
 
 ## What Agello sets
 
-All through the Swift API, in `ChatEngine.swift`, `Embedding.swift` and `EngineCache.swift`; the
-full table, with what's left at defaults, is in
+All through the Swift API, in `Inference/ChatEngine.swift`, `Knowledge/LiteRTEmbedder.swift`,
+`Knowledge/CoreAIEmbedder.swift`, and `ModelHub/EngineCache.swift`; the full table, with what's left
+at defaults, is in
 [configuration.md, "What Agello sets"](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/configuration.md#what-agello-sets).
 
 - **Every load:** `enableBenchmark` off (reply stats come from the runtime's telemetry,
@@ -71,7 +77,7 @@ The rest is in [glossary.md](https://github.com/PowerBeef/agello-litert-lm/blob/
 | Finding | Effect | Status | Reference |
 | --- | --- | --- | --- |
 | `enableBenchmark` makes LiteRT-LM request active (busy-wait) GPU waits, in both builds | A CPU core spins during every GPU wait; our passive-wait commit never applied in the app | with our build the app now leaves it off: 7.5–8.7 ms of CPU per decoded token on the M6, 0.7 ms without (2026-10-24) | [F-019](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-019) |
-| The engine's sampler takes its parameters from the first session that samples, and `validate()` samples first | The chat's temperature, top-k and top-p didn't reach plain decode steps, and Regenerate's seeds didn't vary replies | seen in probe 18 on our build; fixed there by `agello-next` `f1b88286` (each session's own sampler settings and random state). Google's binary applies them | [configuration.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/configuration.md#what-agello-sets) |
+| The engine's sampler takes its parameters from the first session that samples, and `validate()` samples first | The chat's temperature, top-k and top-p didn't reach plain decode steps, and Regenerate's seeds didn't vary replies | seen in probe 18 on our build; fixed in fork `f1b88286` (each session owns its sampler settings and random state) | [configuration.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/configuration.md#what-agello-sets) |
 | The E4B file exports at most 280 visual tokens per image | There's no image-detail setting (since 2026-11-11): the app sends 280 per image (`VisualDetail.balanced`), the file's most | from the file and the code | [F-066](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/facts.md#f-066) |
 | With tools declared, a tool-call block the parser rejects sends up to three final error chunks; the wrapper releases its stream context on each | A use-after-free in the shipped wrapper | from the code; not reproduced. Our wrapper keeps streams by ID, and our build sends one final chunk per send at the C boundary (`agello-next` `8acc748c`) | [swift-api.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/litert-lm/swift-api.md#error-chunks-and-the-retained-context) |
 | Upstream MTP and JSON/regex constraints shared one grammar matcher across drafts, and `LlgConstraintProvider` mangled `▁` / control tokens in `TokTrie` | Constrained output broke under MTP and rejected multi-word JSON enums | fixed in fork `1382157b` + `7d80c7ec` (shipped in `agello-one-20261122-3`); `jsonHelpersSpeculate` now defaults ON and `test16_MultiWordJsonEnumWithMTP` passes | [troubleshooting.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/troubleshooting.md#json-constrained-replies-break-with-mtp-on) |
@@ -103,7 +109,11 @@ The rest is in [glossary.md](https://github.com/PowerBeef/agello-litert-lm/blob/
 
 ## Writing about the runtime or the models
 
-- Quote numbers from `facts.md`, with their conditions and its safe wording.
+- Quote numbers from `facts.md` (with their conditions and safe wording) only for rows still valid
+  at the current pin. While `facts.md` remains pinned to `b7b856a0` (`agello-one-20261115`, v1 32K),
+  cross-check [Vendor/README.md](../Vendor/README.md), [BACKEND.md](BACKEND.md),
+  [ROADMAP.md](ROADMAP.md#current-status), and `ModelCatalog.swift` instead of quoting superseded
+  v1 / pre-Phase-4 rows.
 - Follow the checklist in [contributing.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/contributing.md) for user docs, commit messages
   and anything posted upstream: name the build and date with any speed or memory figure, and say
   whether a statement is about the trained model, the exported file or the runtime.
@@ -117,5 +127,6 @@ The rest is in [glossary.md](https://github.com/PowerBeef/agello-litert-lm/blob/
    [maintenance.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/maintenance.md) describes: move the pins in `tools/agello-docs/pins.json`,
    and `tools/agello-docs/repin.py` re-cites every citation whose lines didn't change and lists the
    claims to re-verify; they are re-verified and the pages fixed before anyone quotes them.
-3. After vendoring a new release, update this page's "What ships" table, the README's performance
-   numbers (from a fresh measurement with its build id) and `AGENTS.md`.
+3. After vendoring a new release, update [Vendor/README.md](../Vendor/README.md) (sole canonical
+   inventory for pins and Swift patches), [BACKEND.md](BACKEND.md#the-ledger), `NOTICE` /
+   `Agello/Resources/NOTICE.txt`, and `docs/ROADMAP.md` `Current status`.

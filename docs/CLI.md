@@ -199,7 +199,7 @@ scripts/cli-report.py build/cli/runs/quality.jsonl
 
 ```sh
 # 1. Start the local server (emulating A19 Pro kernel paths)
-SIM_GPU=Apple_A19_Pro MallocLargeCache=0 \
+AGELLO_SIMULATE_APPLE_GPU=Apple_A19_Pro MallocLargeCache=0 \
   build/cli/release/release/agello serve --port 8091 --model-id google/gemma-4-E4B-it
 
 # 2. Run google-deepmind/gbench's 16-case Golden Set (~17 s)
@@ -219,25 +219,20 @@ NLTK_DATA=build/gbench/nltk_data HF_DATASETS_CACHE=build/gbench/hf_datasets \
 
 Keep `build/gbench/hf_datasets` as scratch (`scripts/storage.sh clean` reclaims downloaded HF dataset parquets while keeping the `gbench` checkout and venv intact).
 
-## iOS Simulator UI, feature & quality bridge (`AgelloSim`)
+## iOS Simulator bridge (`AgelloSim`)
 
-The unshipped `AgelloSim` target (`com.patricedery.agello.sim`, `SUPPORTED_PLATFORMS = iphonesimulator`, `SKIP_INSTALL = YES`) is the **primary way** to test Agello's iOS 27 SwiftUI interface, iOS features, and real model output quality inside the shipping app and its 16 Swift tools. It runs the app and all Swift tools natively inside the iOS Simulator while proxying live SSE inference (`POST /v1/chat/completions`) and ANE embeddings (`POST /v1/embeddings`) to host `agello serve` over `127.0.0.1:8091`.
+`AgelloSim` consumes `agello serve`'s loopback `/v1/chat/completions` and `/v1/embeddings` endpoints to drive the full iOS 27 SwiftUI app and shipping tools inside the iOS Simulator. For launch flags, Simulator workflows, and hardware-vs-Simulator boundaries, see [TESTING.md](TESTING.md#on-the-ios-simulator-agellosim--agello-serve).
 
-```sh
-scripts/sim-launch.sh              # boot iPhone 18 Pro Simulator, start agello serve, build, grant perms & spoof GPS, launch AgelloSim
-scripts/sim-launch.sh --reset      # clear simulator container for a fresh launch
-scripts/sim-launch.sh --no-build   # relaunch without rebuilding
-scripts/sim-launch.sh --mock       # launch against MockChatEngine without starting agello serve
-```
+## Exporting EmbeddingGemma 2 for Core AI ANE
 
-Use `AgelloSim` (driven interactively or via `mobilebuildmcp` `ui-automation` + `xcrun simctl openurl <udid> 'agello://ask?q=...'`) to verify answer quality in the real UI (Liquid Glass, Markdown, LaTeX, Think drawer, `ToolConfirmationCard`) and sandboxed iOS features (MapKit with `simctl location` spoofed GPS, EventKit Calendar/Reminders, Contacts, WebSearch, PDF/Files). All benchmarking, hardware test suites (`device-harness.sh`, `phone-bench.sh`), Metal kernels, jetsam memory envelopes, App Store screenshots, and final feature confirmation remain on the physical iPhone. `build/sim/` is tracked as scratch in `scripts/storage.sh`.
+`scripts/export-embeddinggemma-ane.py` builds the reproducible 4-bucket (`128 / 256 / 512 / 1024`) asymmetric INT4 Core AI Apple Neural Engine bundle shipped in `ModelCatalog.embeddingGemma` (`text_encoder.aimodel/`, `embed_tokens.bin`, `tokenizer.model`, and `manifest.json`). It requires a Python 3.13 environment with `coreai-core`, `coreai-torch`, `coreai-opt`, `ai-edge-litert`, `litert-lm-builder`, and `sentencepiece`; by default it reads the legacy `~/Models/agello/embeddinggemma-2-text-270m.litertlm` file and writes `~/Models/agello/embeddinggemma-2-text-270m-ane`.
 
 ## The tests, natively
 
 ```sh
-scripts/cli-test.sh unit                         # 384 unit tests on the scripted engine, ~20 s
+scripts/cli-test.sh unit                         # 404 unit tests on the scripted engine, ~20–30 s (full counts in TESTING.md)
 scripts/cli-test.sh unit AppStateTests           # one class, or Class/method
-scripts/cli-test.sh inference                    # the real-model scenarios on this Mac's GPU, SIM_GPU=Apple_A19_Pro (also files, web, thinking, security, probes, calibrate)
+scripts/cli-test.sh inference                    # real-model scenarios on this Mac's GPU, SIM_GPU=Apple_A19_Pro (also files, web, thinking, security, probes, calibrate, soak, research-probes)
 ```
 
 The package has two test targets on the same folders the iPhone's test targets compile,
@@ -265,7 +260,7 @@ agello bench --only email --telemetry 3 --out build/cli/runs/trace.jsonl       #
 - **Level 4** times each GPU kernel in its own encoder. It halves the speed, so it's a pass of
   its own, read for shares (`telemetry.py --kernels`).
 - **Level 3** writes the runtime's events as a Chrome/Perfetto trace beside the app's trace
-  (`*.engine.json`). A runtime with C7's probes (`agello-one-20261115` and `agello-one-20261122`)
+  (`*.engine.json`). A runtime with C7's probes (`agello-one-20261115` through `agello-one-20261124`)
   keeps the last 262,144 events per thread and leaves LiteRT's own trace sites out of them, so a
   1,500-token reply fits whole; the previous release (`agello-next-20261024`, shipped until
   2026-11-15) keeps 65,536 with those sites in, about three seconds of decoding.
@@ -275,7 +270,7 @@ agello bench --only email --telemetry 3 --out build/cli/runs/trace.jsonl       #
   environment writes the eight best logits of every row the sampler reads, for comparing two
   builds where their replies part.
 
-## Milestones
+## Milestones (historical build log, 2026-11-10 – 2026-11-11)
 
 | | What | Done when |
 | --- | --- | --- |
@@ -385,7 +380,7 @@ the fork's `main` and shipped since `agello-one-20261115`):
 ### C8, built on 2026-11-10
 
 - **269 unit tests passed natively** in 73 s on 2026-11-10 (of the iPhone's 333 then: the rest
-  test the interface). Today the package compiles 384 of the iPhone's 456 (2026-11-23).
+  test the interface). Today the package compiles **404** of the iPhone's **476** (see [TESTING.md](TESTING.md#the-suites)).
 - **The `inference` suite passes natively, 23 of 23, in 105 s**: load, text, chat isolation,
   stop, tools, Think, image, audio, vision toggles, the context limit, exact token counts,
   titles, memory, dictation, voice turns, digits past 2,048 and 4,096 tokens, the benchmark.

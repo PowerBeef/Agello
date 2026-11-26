@@ -10,29 +10,40 @@ This product includes software developed by Google LLC:
   Licensed under the Apache License, Version 2.0
   https://github.com/google-ai-edge/LiteRT-LM
   Modified: a failed tool call is answered with an error response instead of
-  throwing; a stream holds its conversation weakly (a deadlock fix); streams
-  are found by ID and end once (a use-after-free fix), stop their native work
-  when cancelled and cap their tool rounds; a tokenizer API, an embedding
-  input-overflow option and its activation type; build information and telemetry; speculative
-  decoding stays within the KV cache, each message ends with one final event,
-  and the sampler follows the active conversation; KV caches in Metal sparse
-  buffers mapped as they fill and trimmed on reset/rewind, snapshots detached
-  via Metal 4 copyBufferMappingsFromBuffer:, zero-copy NEON greedy sampling,
-  verify_8 speculative rounds, ring caches kept across rewinds, prefill
-  stoppable between its runs, background GPU drain, and the model's window read
-  from its file; sources the Apple build doesn't use removed; from
-  https://github.com/PowerBeef/agello-litert-lm (branch main, release
-  agello-one-20261122)
+  throwing; read-only tool rounds execute concurrently (Tool.isReadOnly) and
+  multi-call mutating rounds support grouped confirmation (BatchConfirmHandler,
+  NSLock-backed) with 1-to-1 skipped_by_user parity; pure-Swift LiteRTLMTools
+  library split, @ToolParam(allowedValues:) enum schemas, scalar coercion,
+  ConversationConfig.rawToolsJSON, and automaticToolCalling == false stream
+  support; a stream holds its conversation weakly (deadlock fix); streams are
+  found by ID and end once (use-after-free fix), stop native and tool work on
+  cancel (sendGateLock, activeToolRounds), propagate followUpThinkingConfig and
+  extraContext across rounds, and cap tool rounds; tokenizer, embedding
+  input-overflow/activation-type, build-info, and telemetry APIs; speculative
+  decoding stays within KV cache with verify_8 rounds, each message ends with
+  one final event, and the sampler follows the active session; sparse Metal KV
+  caches mapped as they fill and trimmed on reset/rewind, snapshots detached via
+  Metal 4 copyBufferMappingsFromBuffer:, zero-copy NEON greedy sampling, ring
+  caches kept across rewinds, prefill stoppable between runs, background GPU
+  drain, lazy AudioExecutor with USER_INTERACTIVE QoS, fixed LlgConstraintProvider
+  TokTrie with live Think-tool continuity, recursive-descent LL(1) FC parser,
+  UTF-8 FFI and executor concurrency hardening, and model window read from the
+  file; sources unused by Apple builds removed; from
+  https://github.com/PowerBeef/agello-litert-lm (branch main, binary release
+  agello-one-20261124 and vendored Swift wrapper from main)
 
   LiteRT and ML Drift (linked into the CLiteRTLM runtime) — Copyright Google
   LLC
   Licensed under the Apache License, Version 2.0
   https://github.com/google-ai-edge/LiteRT
   https://github.com/google-ai-edge/ml-drift
-  Modified: attention reads only the filled part of the KV cache and the
-  local layers' window, with per-row bounds and query-row slices in prefill;
-  Metal reads and waits, weight caches, memory pools released after each
-  prompt, and telemetry; kept as folders of
+  Modified: attention reads only the filled part of the KV cache and local
+  window with per-row bounds and query-row slices in prefill; MSL 4.1
+  cooperative-tensor FlashAttention, Apple10-tuned ConvAppleMPP, GPU Vision
+  MPP kernels, fused FP32 RMSNorm, PSO deduplication with persistent
+  MTLBinaryArchive, FP32 KV quantization and PV accumulation, Metal reads and
+  waits, weight caches, memory pools released after each prompt, Metal 4
+  kernel/residency hardening, and telemetry; kept as folders of
   https://github.com/PowerBeef/agello-litert-lm (branch main), from
   https://github.com/PowerBeef/LiteRT and https://github.com/PowerBeef/ml-drift
 
@@ -130,10 +141,10 @@ end of this file.
   Ooura's FFT (fft2d): LicenseRef-Ooura
   FlatBuffers: Apache-2.0
   KISS FFT: BSD-3-Clause
-  LiteRT (PowerBeef/LiteRT, branch agello-next): Apache-2.0
+  LiteRT (PowerBeef/agello-litert-lm, agello/litert): Apache-2.0
   miniaudio: MIT-0 OR Unlicense
   minizip (zlib contrib): Zlib
-  ML Drift (PowerBeef/ml-drift, branch agello-next): Apache-2.0
+  ML Drift (PowerBeef/agello-litert-lm, agello/ml_drift): Apache-2.0
   pthreadpool: BSD-2-Clause
   ruy: Apache-2.0
   SentencePiece: Apache-2.0
@@ -1222,7 +1233,7 @@ equivalent-1.0.2 (Rust crate)
   IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
   DEALINGS IN THE SOFTWARE.
 
-esaxx-rs-0.1.10 (Rust crate), spm_precompiled-0.1.4 (Rust crate), tokenizers-0.21.0 (Rust crate), FlatBuffers, LiteRT (PowerBeef/LiteRT, branch agello-next), ML Drift (PowerBeef/ml-drift, branch agello-next), ruy, SentencePiece, tokenizers-cpp
+esaxx-rs-0.1.10 (Rust crate), spm_precompiled-0.1.4 (Rust crate), tokenizers-0.21.0 (Rust crate), FlatBuffers, LiteRT (PowerBeef/agello-litert-lm, agello/litert), ML Drift (PowerBeef/agello-litert-lm, agello/ml_drift), ruy, SentencePiece, tokenizers-cpp
 
   Apache License
                              Version 2.0, January 2004

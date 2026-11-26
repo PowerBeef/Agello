@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="400" height="424" viewBox="0 0 400 424" role="img" aria-labelledby="title desc">
 <title id="title">Agello engineering by the numbers</title>
-<desc id="desc">64K exact token context; 0 host read copies; 0% GPU load during RAG on the 16-Core ANE; 4.5x faster Vision encode; +5 MB across a 200-turn soak; 573 on-hardware tests on a real iPhone 17 Pro.</desc>
+<desc id="desc">64K exact token context; 0 host read copies; 0% GPU load during RAG on the 16-Core ANE; 4.5x faster Vision encode; +5 MB across a 200-turn soak; 594 automated tests (476 unit, 90 device, 28 UI) across real iPhone 17 Pro hardware gates and AgelloSim.</desc>
 <defs><linearGradient id="canvas" x1="0" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#161823"/><stop offset="0.45" stop-color="#1C1E26"/><stop offset="1" stop-color="#0C0E14"/></linearGradient><radialGradient id="glow0" cx="400" cy="0" r="280" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#BFAADC" stop-opacity="0.08"/><stop offset="1" stop-color="#BFAADC" stop-opacity="0"/></radialGradient></defs>
 <rect width="400" height="424" rx="24" fill="url(#canvas)"/><rect width="400" height="424" rx="24" fill="url(#glow0)"/><rect x="0.5" y="0.5" width="399" height="423" rx="23.5" fill="none" stroke="#F7EBD1" stroke-opacity="0.10"/>
 <text x="34" y="70" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="29" font-weight="700" fill="#BFAADC" letter-spacing="-0.5">64K</text>
@@ -25,7 +25,7 @@
 <text x="34" y="370" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84">100% shared verify/decode</text><text x="34" y="385" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84">pool</text>
 <rect x="200" y="294" width="1" height="92" fill="#2F3342"/>
 <rect x="214" y="276" width="152" height="1" fill="#2F3342"/>
-<text x="214" y="326" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="29" font-weight="700" fill="#8CC7BF" letter-spacing="-0.5">573</text>
-<text x="214" y="351" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#F2F0EB">on-hardware tests</text>
-<text x="214" y="370" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84">real iPhone 17 Pro, no</text><text x="214" y="385" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84">Simulator</text>
+<text x="214" y="326" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="29" font-weight="700" fill="#8CC7BF" letter-spacing="-0.5">594</text>
+<text x="214" y="351" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#F2F0EB">automated tests</text>
+<text x="214" y="370" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84">iPhone 17 Pro gates +</text><text x="214" y="385" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84">AgelloSim UI</text>
 </svg>

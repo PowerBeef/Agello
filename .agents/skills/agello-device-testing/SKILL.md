@@ -5,511 +5,150 @@ description: Test Agello's iOS UI, features, and in-app output quality in the iO
 
 # Agello testing (Simulator, Mac workbench & physical iPhone)
 
-- **Primary UI, iOS-feature & in-app output quality workbench (`AgelloSim` on iOS Simulator):** Use `scripts/sim-launch.sh` + `mobilebuildmcp` (`ui-automation` + `simulator`) to test the real iOS 27 SwiftUI UI, Liquid Glass, Markdown/LaTeX rendering, Think drawer, `ToolConfirmationCard`, sandboxed iOS features (Maps with `simctl location`, EventKit Calendar/Reminders, Contacts, deep links, Files/PDF), and real Gemma 4 E4B model behavior inside the app with all 16 shipping Swift tools. `AgelloSim` (`com.patricedery.agello.sim`, unshipped) proxies live SSE inference and ANE embeddings over `127.0.0.1:8091` to host `agello serve` (`SIM_GPU=Apple_A19_Pro`).
-- **Physical iPhone (hardware truth & benchmarking):** All benchmarking (`phone-bench.sh`, `bench`), hardware device tests (`scripts/device-harness.sh` — `gate`, `memory`, `soak`, Metal 4 / A19 Pro kernels, on-device ANE `CoreAIEmbedder`, `BGContinuedProcessingTask`, `AVFAudio` / `SpeechAnalyzer`, `WeatherKit`), App Store screenshots, and final feature verification stay on the physical iPhone (`CLiteRTLM.xcframework` has no simulator slice). Run device/CLI suites through the harness scripts below; `.agents/hooks.json` still blocks `axiom_xclog_*`, `asc-shots-pipeline`, and `asc-notarization`.
+- **`AgelloSim` (primary UI, iOS-feature & in-app quality workbench):** `scripts/sim-launch.sh` + `mobilebuildmcp` (`ui-automation` + `simulator`) test the real iOS 27 SwiftUI UI, sandboxed iOS features (Maps w/ `simctl location`, EventKit, Contacts, Photos, Shortcuts/Recipes, WebSearch, Files/PDF), and real Gemma 4 E4B replies across all shipping Swift tools ([docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md)). Streams real Metal 4 E4B (`SIM_GPU=Apple_A19_Pro`) + ANE EmbeddingGemma 2 from host `agello serve` (`127.0.0.1:8091`).
+- **Physical iPhone (hardware truth & benchmarking):** All benchmarks (`phone-bench.sh`, `bench`), hardware suites (`gate`, `memory`, `soak`, Metal 4, on-device ANE, `BGContinuedProcessingTask`, `AVFAudio`/`SpeechAnalyzer`, signed `WeatherKit`, `AlarmKit` Live Activities, real Shortcuts round-trip), App Store screenshots, and final silicon checks stay on physical iPhone (`CLiteRTLM.xcframework` has no simulator slice). `.agents/hooks.json` blocks `axiom_xclog_*` (incl. `mcp_*`), `asc-shots-pipeline`, and `asc-notarization`.
 
-## Primary UI, iOS-feature & in-app quality testing (`AgelloSim` Simulator)
+SSOT references: suite catalog, exact test totals & measured durations → [docs/TESTING.md](../../../docs/TESTING.md); `bench` & `phone-bench.sh` internals → [docs/HARNESS.md](../../../docs/HARNESS.md); `agello` CLI & `agello serve` → [docs/CLI.md](../../../docs/CLI.md).
+
+## `AgelloSim` Simulator playbook
 
 ```sh
-scripts/sim-launch.sh              # boot iPhone 18 Pro Simulator, start agello serve, build AgelloSim, grant perms & GPS, launch
+scripts/sim-launch.sh              # boot Simulator, start agello serve, build AgelloSim, grant perms & GPS, launch
 scripts/sim-launch.sh --no-build   # fast relaunch without rebuilding
+scripts/sim-launch.sh --no-serve   # build & launch without starting host agello serve
 scripts/sim-launch.sh --reset      # wipe simulator chats/settings for a clean session
 scripts/sim-launch.sh --mock       # launch with --mock-engine (no host server needed)
 ```
 
-- **Environment overrides:** `SIM_DEVICE` (default `"iPhone 18 Pro"`), `SIM_PORT` (default `8091`), `SIM_LOCATION` (default `45.5017,-73.5673`, Montreal), `SIM_GPU` (default `Apple_A19_Pro`). Requires `BypassSandbox: true`.
+- **Overrides (`BypassSandbox: true`):** `SIM_DEVICE` (`"iPhone 18 Pro"`), `SIM_PORT` (`8091`), `SIM_LOCATION` (`45.5017,-73.5673`), `SIM_GPU` (`Apple_A19_Pro`).
 - **Driving with `mobilebuildmcp`:**
-  1. Enable UI automation once per session: `manage-workflows({ workflowNames: ["ui-automation"], enable: true })`.
-  2. Set defaults: `session_set_defaults({ projectPath: ".../Agello.xcodeproj", scheme: "AgelloSim", simulatorId: "<udid>", simulatorName: "iPhone 18 Pro", bundleId: "com.patricedery.agello.sim", derivedDataPath: ".../build/sim/DerivedData" })`.
-  3. Inspect and drive with `snapshot_ui`, `screenshot` (`returnFormat: "path"` + inspect via `read_file`), `tap`, `batch` (for multiple visible toggles on one screen), `type_text`, and `wait_for_ui` (e.g. wait for `composer.voice` after sending, or `tool.confirm.approve` when testing mutating tools). Note: `snapshot_ui` refs expire quickly — issue `tap`/`batch` promptly after taking a snapshot.
-- **Exact prompts without keyboard autocorrect:** Hardware-key `type_text` goes through the Simulator's keyboard layout/autocorrect (which can mangle LaTeX punctuation or English words under French Canadian keyboards). For exact UTF-8, LaTeX, code, or multilingual prompts, use the app's own deep link:
+  1. `manage-workflows({ workflowNames: ["ui-automation"], enable: true })` (once per session).
+  2. `session_set_defaults({ projectPath: ".../Agello.xcodeproj", scheme: "AgelloSim", simulatorId: "<udid>", simulatorName: "iPhone 18 Pro", bundleId: "com.patricedery.agello.sim", derivedDataPath: ".../build/sim/DerivedData" })`.
+  3. Drive via `snapshot_ui`, `screenshot` (`returnFormat: "path"` + `read_file`), `tap`, `batch`, `type_text`, and `wait_for_ui` (e.g., `composer.voice` or `tool.confirm.approve`). Issue `tap`/`batch` promptly before `snapshot_ui` refs expire.
+- **Exact prompts (no autocorrect):** Use the deep link for UTF-8, LaTeX, code, or multilingual prompts, then refresh `snapshot_ui` and tap `chat.send`:
   ```sh
   xcrun simctl openurl <udid> 'agello://ask?q=Find%20three%20coffee%20shops%20near%20me'
   ```
-  Then refresh `snapshot_ui` and tap `chat.send`.
-- **Inspecting server & Simulator logs:** Host inference/tool-round traffic is logged to `build/sim/serve.log` (PID in `build/sim/serve.pid`); Simulator app logs come from `xcrun simctl spawn <udid> log stream --level debug --predicate 'subsystem == "com.patricedery.agello"'`.
-- **Cleanup when done:** Stop the background server and app cleanly (`kill "$(cat build/sim/serve.pid)" && rm -f build/sim/serve.pid; xcrun simctl terminate <udid> com.patricedery.agello.sim`). `build/sim/` is tracked as scratch in `scripts/storage.sh`.
+- **Logs & cleanup:** Host server logs at `build/sim/serve.log` (`build/sim/serve.pid`); Simulator app logs via `xcrun simctl spawn <udid> log stream --level debug --predicate 'subsystem == "com.patricedery.agello"'`. Stop when done: `kill "$(cat build/sim/serve.pid)" && rm -f build/sim/serve.pid; xcrun simctl terminate <udid> com.patricedery.agello.sim`.
 
 ## Before a physical iPhone run
 
-0. **Ask the user before running tests or benchmarks on the physical iPhone.**
-   Use `AgelloSim` (`scripts/sim-launch.sh`) for iOS UI, features, and in-app output quality, and the Mac workbench (`scripts/cli-test.sh`, `PLATFORM=mac scripts/device-harness.sh`) for fast unit/engine checks; run physical iPhone gates and benchmarks after asking the user.
-1. The iPhone is connected, paired, and **unlocked**, and stays unlocked for
-   the whole run. A lock makes Xcode stall ("device is locked") and makes UI
-   tests fail with "Timed out while enabling automation mode".
-   - The script checks the start itself (the preflight: phone reachable and
-     unlocked, iPhone Mirroring closed, 10 GB free on this Mac) and exits with
-     4 and the one thing to fix. On exit 4, ask the user to unlock the phone
-     or close Mirroring. Never lock the phone or end iPhone Mirroring yourself
-     unless the user asks at the time, and don't skip the check
-     (`PREFLIGHT=off`) to get past it.
-   - During the run: the device suites keep the screen awake themselves
-     (`isIdleTimerDisabled` in `DeviceHarness`). `unit`, `ui`, `screenshots`
-     and `bench` don't set it: for those, ask the user to set Auto-Lock to
-     Never if the phone locks mid-run.
-   - Opening iPhone Mirroring during a run locks the phone and stops the
-     suite ("Unlock iPhone … to Continue"; 2026-11-02, probe 20 after 45
-     cases): ask the user to leave it closed until the run ends.
-2. For `ui` and `screenshots`: Settings → Developer → Enable UI Automation is
-   on (it asks for the passcode once). Otherwise XCUITest waits 60 s for a
-   passcode prompt on the phone and fails with "Timed out while enabling
-   automation mode", so those suites can't run unattended. The device-test
-   suites (`inference`, `probes`, …) don't need it.
-3. The device comes from `deviceId` in the git-ignored
-   `.mobilebuildmcp/config.yaml` (copy `config.example.yaml`), or
-   `DEVICE_ID=<udid>`. `xcrun devicectl list devices` shows whether it's
-   connected.
-4. Don't edit files in the target folders (`Agello*/`) while a run is
-   building: stage changes in `<Artifact Directory Path>/scratch/` and apply
-   them after the run. Files outside them (`docs/`, `.agents/`, `scripts/`)
-   are safe to edit. The `.agents/hooks/guard-target-edits.sh` hook denies
-   file edits there until the run's last suite has started testing; edits made
-   through shell commands aren't checked, and the rule still holds for them.
-5. For `ui` and `screenshots`, ask the user to turn on a Focus (Do Not
-   Disturb) on the iPhone: notification banners land on top of the app under
-   test and in the screenshots.
+0. **Ask the user first.** Iterate in `AgelloSim` and on Mac (`cli-test.sh`, `PLATFORM=mac`) before requesting physical iPhone runs.
+1. **Connected, unlocked, Mirroring closed.** Preflight checks reachability, unlock, Mirroring closed, and `>= 10 GB` free on Mac — exiting `4` with the fix. On exit `4`, ask the user; never lock the phone, toggle Mirroring, or pass `PREFLIGHT=off`. Device suites set `isIdleTimerDisabled`; `unit`, `ui`, `screenshots`, `bench`, and `phone-bench.sh` need Auto-Lock set to Never. Opening Mirroring mid-run aborts active suites.
+2. **UI tests & screenshots:** Enable Settings → Developer → Enable UI Automation and ask the user for Focus (Do Not Disturb) so banners don't obscure UI/screenshots.
+3. **Device ID:** Set `deviceId` in git-ignored `.mobilebuildmcp/config.yaml` or `DEVICE_ID=<udid>` (`xcrun devicectl list devices`).
+4. **No target edits while building:** Never edit `Agello*/` or `Vendor/LiteRT-LM/` until the last `xcodebuild` starts testing (`guard-target-edits.sh` denies edits; applies to shell too). Stage edits in `<Artifact Directory Path>/scratch/` or work in `docs/`, `.agents/`, `scripts/`.
 
-## Running suites
-
-Measured iPhone 17 Pro durations (including build/install/post-check overhead):
+## Running suites (`scripts/device-harness.sh`)
 
 ```sh
-scripts/device-harness.sh gate        # ~7.5-9 min: 1x build + shared-engine device/ANE/memory (2.3 min) + core UI (4.1 min) — recommended iPhone check
-scripts/device-harness.sh unit        # ~1-1.5 min, 456 unit tests on scripted engine
-scripts/device-harness.sh inference   # ~5.5-6.5 min, 25 real E4B engine scenarios
-scripts/device-harness.sh files       # ~2.5-3.5 min warm ANE (+65 s on cold ANE specialize): 40-page PDF, citations, workspace & multilingual tools
-scripts/device-harness.sh web         # ~7-8 min, live web search (21 decisions + 13 sources; needs internet)
-scripts/device-harness.sh security    # ~1-1.5 min, 6-vector adversarial prompt-injection gate (0% breach)
-scripts/device-harness.sh ui          # ~11-15 min (7 real-GPU E2E + 16 --mock-engine UI + Floor + A11y; TEST_RUNNER_UITEST_REAL_ENGINE=1 ~16-18 min)
-scripts/device-harness.sh all         # ~25-32 min: builds once, then unit, inference+files+web, and ui
+scripts/device-harness.sh gate             # recommended iPhone check: 1x build + shared-engine device/ANE/memory + core UI
+scripts/device-harness.sh unit             # AgelloTests (MockChatEngine)
+scripts/device-harness.sh inference        # real E4B engine scenarios
+scripts/device-harness.sh files            # ANE EmbeddingGemma, PDF, citations, workspace & multilingual tools
+scripts/device-harness.sh web              # live web search decisions & grounded answers (needs internet)
+scripts/device-harness.sh security         # adversarial prompt-injection gate (0% breach)
+scripts/device-harness.sh ui               # real-GPU E2E + --mock-engine UI + Floor + A11y
+scripts/device-harness.sh all              # 1x build -> unit, inference+files+web, ui
 # Opt-in / milestone / pre-release:
-scripts/device-harness.sh thinking    # ~2 min (budgets, answer room, KV stripping)
-scripts/device-harness.sh memory      # ~2.5-3 min (6.0 / 5.0 / 4.0 / 3.5 GB envelopes)
-scripts/device-harness.sh probes      # ~3-5 min (fast regression probes only)
-scripts/device-harness.sh soak        # ~4-5 min (200-turn GPU pool soak: test38_PoolSoak)
-scripts/device-harness.sh research-probes  # ~60-75+ min (includes 315-gen test34, test23, test10, test37, test38)
-scripts/device-harness.sh calibrate   # ~1.5 min
-scripts/device-harness.sh screenshots # ~4 min, UI tour, one screenshot per screen
-scripts/device-harness.sh bench       # ~25-30 min, autonomous harness (docs/HARNESS.md), Release
+scripts/device-harness.sh thinking | memory | probes | soak | research-probes | calibrate | screenshots | bench
 ```
 
-Start suites with `run_command` using `WaitMsBeforeAsync: 500` (and
-`BypassSandbox: true`, since `xcodebuild` / `devicectl` / `DerivedData` need
-host access) so the run backgrounds automatically. Stop calling tools and wait
-for the completion notification — never poll. Inspect or cancel via
-`manage_task`. Invoke scripts directly without extra shell wrappers so
-prefix-matched "Always Allow" approvals work cleanly; chain back-to-back
-suites with `;` only when required.
+- **Backgrounding & lock:** Launch with `run_command` (`WaitMsBeforeAsync: 500`, `BypassSandbox: true`), stop calling tools, and wait for completion — never poll (`manage_task` to inspect/cancel). Invoke scripts directly for prefix-matched approvals. `build/.harness.lock` serializes runs across worktrees (exit `3`; never delete a live lock). Scripts run `caffeinate`; watch live via `tail -n +1 -f build/device-harness/<suite>.log | /opt/homebrew/bin/xcbeautify`.
+- **Targeting (`ONLY`):** Comma- or space-separated `Target/Class[/method]` inside the suite (**not with `gate` or `all`**):
+  ```sh
+  ONLY=AgelloTests/AppStateTests scripts/device-harness.sh unit
+  ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-harness.sh inference
+  ```
+- **Chained runs:** Each suite builds separately — keep targets untouched until the last suite starts testing.
 
-- **One run at a time.** The script takes `build/.harness.lock` in the main
-  checkout and exits with 3, printing the other run's suite, pid and
-  checkout, while another run holds it (from another session or worktree
-  too). Wait for that run rather than deleting its lock; a lock whose process
-  has gone is replaced at the next start. Chained runs are separate runs to
-  the edit hook: it lets edits through once the first is testing, and the
-  next one builds them, so leave the targets alone until the last has
-  started testing.
-- **Watching.** The raw log grows as the run goes. The user can watch it live
-  in a terminal with:
-  `tail -n +1 -f build/device-harness/<suite>.log | /opt/homebrew/bin/xcbeautify`
-- **Staying awake.** The script runs `caffeinate` until it exits, on the
-  iPhone and the Mac, so a run outlasts the turn that started it. A closed
-  lid still puts the Mac to sleep.
+## Autonomous `bench` & `phone-bench.sh`
 
-Pick the narrowest suite that covers the change: `unit` for pure logic
-(planner, budgets, schema, markdown, parsers), `inference` or `files` for
-engine and retrieval changes, `ui` for views and flows.
+Full details in [docs/HARNESS.md](../../../docs/HARNESS.md):
 
-Run part of a suite with `ONLY` (comma- or space-separated test identifiers
-inside that suite; not with `all`). Use the suite the test belongs to, so
-opt-in suites get their environment:
+- **`scripts/device-harness.sh bench`:** Runs `AgelloUITests/BenchCases.swift` (incl. `mockup-os-search`, `typo-fix`, `comment-module`, multi-turn coding, Search & file follow-ups) in the **Bench** config (Release + `BENCH`) with `--trace`, writing `build/device-harness/bench/report.md` against `scripts/bench/baseline.json`. Flags: `BENCH_ONLY`, `BENCH_TRACE=off`, `BENCH_RESUME=1`, `BENCH_COOL=1`, `BENCH_ACCEPT=1` (user approval only). Use `scripts/bench-direct.sh CASE` for driverless speed (XCUITest costs ~8% decode speed).
+- **`scripts/phone-bench.sh`:** Interleaved driverless A/B runtime comparison on iPhone (`release next`, `ROUNDS=5`, `release again=release`, `--read <run>` offline). Needs Auto-Lock Never, Focus, Mirroring closed, plugged in, clean committed `Vendor/LiteRT-LM`. Uses `P6.2` alternating heavy/light case order + hysteresis rests (`REST=on` when `COOL=on`; `CASE_REST=15 s`, `HEAVY_REST=45 s`, `WARM_REST=90 s`) because `thermalState` can stay `nominal` while the die warms. Read `records.txt`, `load.txt`, `compare.txt`, `replies/` in `build/phone/runs/<time>/`. Never edit `phone-bench.sh` while running.
+- **Don't kill mid-test:** A killed device test leaves harness options in app settings until the next device test restores `harnessSettingsSnapshot`.
+
+## Mac workbench (`PLATFORM=mac` & `agello` CLI)
+
+- **`PLATFORM=mac`:** Runs the signed `arm64-iphoneos` binary on M6 Metal into `build/mac-harness/` (`ui`, `screenshots`, `memory`, `bench` stay iPhone-only; `all` skips `ui`):
+  ```sh
+  PLATFORM=mac scripts/device-harness.sh unit
+  PLATFORM=mac scripts/device-harness.sh gate
+  PLATFORM=mac ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-harness.sh inference
+  ```
+  Seed models via `cp -c` from `~/Models/agello/` into the app container's `Data/Library/Application Support/Models/`. Inspect outside a run with `open -b com.patricedery.agello [--args --mock-engine]` + `cua-driver` MCP; quit via `osascript -e 'tell application id "com.patricedery.agello" to quit'` before the next run.
+- **Native `agello` CLI ([docs/CLI.md](../../../docs/CLI.md)):** Defaults to `SIM_GPU=Apple_A19_Pro` (8 GiB simulated limit, `MallocLargeCache=0`; `SIM_GPU=native` for M6 kernels), reads `~/Models/agello` read-only, isolates test home in `build/cli/test-home`:
+  ```sh
+  swift build -c release --scratch-path build/cli/release
+  scripts/cli-check.sh                                                # verify CLI compiles after engine edits
+  scripts/cli-test.sh unit [Class[/method]]
+  scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall
+  scripts/cli-test.sh security
+  MTL_DEBUG_LAYER=1 scripts/cli-test.sh inference InferenceScenarioTests/test02_TextReply
+  scripts/cli-bench.sh release next -- --only explain                 # guarded by scripts/mac-ready.sh
+  scripts/cli-report.py | cli-timeline.py | cli-replies.py | cli-load.py   # sandboxed Python
+  ```
+  `swift build`, `cli-check.sh`, `cli-test.sh`, and `cli-bench.sh` need `BypassSandbox: true`. Stay idle during `cli-bench.sh` (exit `4` if busy; `QUIET=off` for reply-only inspection). Pair with `../LiteRT-LM/agello/build-xcframework.sh --mac-only`.
+
+## Outside test runs & looking at the iPhone
 
 ```sh
-ONLY=AgelloTests/AppStateTests scripts/device-harness.sh unit
-ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-harness.sh inference
+scripts/device-run.sh logs 20 [--mock-engine]   # relaunch installed app, capture 20 s of logs (BypassSandbox: true)
+scripts/device-run.sh screenshot <name>         # unlocked iPhone PNG (only when user expects it)
+scripts/device-run.sh crashes [pull]            # list/pull crashes -> build/device-run/crashes/
 ```
 
-Other extra arguments go to `xcodebuild` as is.
+Symbolicate crashes via `axiom` MCP (`axiom_xcsym_crash`/`triage`/`axiom_get_agent`; never `axiom_xclog_*`). iPhone Mirroring (`com.apple.ScreenContinuity`) is the user's tool only — inspect via `cua-driver` only if already open and explicitly requested.
 
-## The bench (the autonomous harness)
+## Tuning a prompt or model decision (Mac-first)
 
-`scripts/device-harness.sh bench` sends each bench case (`AgelloUITests/BenchCases.swift`: the quality
-bench's eight requests, a three-part coding prompt, a Search follow-up, a file with a follow-up) through
-the app's own screens in a **Bench** build (Release with `BENCH` defined, which keeps the test hooks out of Release since 2026-11-17), with the app tracing the reply (`--trace`,
-`Agello/Support/ReplyTrace.swift`). It then pulls the traces and writes
-`build/device-harness/bench/report.md` (and `report.json`, and each reply as Markdown):
-settings in effect, each step with memory, why the reply ended, what the screen showed, the
-engine's telemetry, and each case's checks from `scripts/bench-report.py` (web apps loaded and
-pressed, Swift type-checked, Python compiled or run against `scripts/bench/<id>/`, expected facts).
-A full run is 13 turns and about 25–30 minutes (measured `1,563 s` on iPhone 17 Pro); the phone warms up, so compare speeds case by case.
+1. Put cases in a table test catching per-case errors and recording raw output (model: `WebScenarioTests/test04_SearchDecisions`).
+2. **Iterate on Mac first** via `scripts/cli-test.sh <suite> <Class>/<test>` and verify in-app replies in `AgelloSim` (`scripts/sim-launch.sh`), checking `recordedAt` in `harness-report.json` so pre-record throws don't show stale data.
+3. Ask the user, then confirm on physical iPhone (`ONLY=... scripts/device-harness.sh <suite>` and `bench`).
+4. E4B rules: classify into short enum labels instead of yes/no self-assessments; enforce required fields in JSON schema (`anyOf`); include multi-turn follow-ups with real truncated app replies; keep multi-word enums short to save helper tokens (`test16_MultiWordJsonEnumWithMTP`).
 
-- `BENCH_ONLY=id,id` runs some cases; `BENCH_TRACE=off` runs without tracing (screen timings only).
-- `BENCH_RESUME=1` runs only the cases the last report doesn't hold complete and keeps the
-  others: use it after a run cut short (a call, a lock). A case that loses the foreground is
-  retried once by itself.
-- Each report opens with what changed since the baseline (`scripts/bench/baseline.json`:
-  checks, how replies ended, a different reply where Search is off, speeds more than 15 % away).
-  `BENCH_ACCEPT=1` makes a run the new baseline: only when the user accepts its results.
-- `BENCH_COOL=1` waits for the phone to cool before each case, for speeds.
-- `scripts/bench-direct.sh CASE` sends one case with no driver attached (the installed Bench
-  build launches with the prompt, sets the case's Think and sends it itself). Use it for speed: XCUITest's
-  accessibility session costs about 8 % of decode speed and causes late frames (2026-11-10).
-- The phone reaches thermal state "fair" within three cases and decodes up to a fifth slower:
-  the report's "Engine over time" line shows the state and the decode rate by thirds. Let the
-  phone cool before a run whose speeds matter.
-- Each case's report says where the time went: before the first token, reasoning, answer; the
-  main thread's work (chat writes, markdown parses); late frames; the helpers after the reply.
-- It leaves the Bench build on the phone, and keeps the user's chats: each case starts a new
-  chat. It does change Think and Search, through the composer's own buttons; Think's budget is
-  the app's fixed 4,096, which the bench doesn't set.
-- Use it, not a device test, to answer "what does the app do with this prompt": device tests
-  run `AppState` with the harness's options, which once differed from the phone's.
-- A device-test run that is killed leaves its options in the app's settings until the next
-  device-test run restores them (`harnessSettingsSnapshot`). Don't kill one mid-test if a wait
-  will do.
+## Results, test host, writing tests & UI rules
 
-## Runtime builds on the iPhone
-
-`scripts/phone-bench.sh` compares builds of our runtime on the phone, as `cli-bench.sh` does on
-this Mac ([HARNESS.md](../../../docs/HARNESS.md), "Runtime builds on the iPhone"). Use it to
-confirm a Mac result, or in place of the Mac's run when the Mac is busy: the Mac only builds.
-
-```sh
-scripts/phone-bench.sh release next                    # explain, email, file-report; 3 rounds
-ROUNDS=5 scripts/phone-bench.sh release next -- explain email
-scripts/phone-bench.sh release again=release           # the noise: the shipped build against itself
-```
-
-- Start it in the background (`WaitMsBeforeAsync: 500`, `BypassSandbox: true`) and wait for the
-  notification: about 60 to 90 minutes for the default (`ROUNDS=3` with alternating thermal rests; reserve for speed-verification milestones or pre-release). Before it, ask the user for
-  Auto-Lock set to Never, a Focus on, iPhone Mirroring closed, and the phone plugged in.
-- It builds the app once per runtime (Bench/Release; background priority unless
-  `BUILD_PRIORITY=normal`), then installs the builds in turns, a warm-up after each install. It
-  vendors each runtime into `Vendor/LiteRT-LM` to build it and puts it back, so it refuses to
-  start when `Vendor/LiteRT-LM` isn't as committed. Leave the `Agello*` folders alone until both
-  builds are done (the edit guard holds them).
-- Each case is a driverless launch: the app sets the case's Think, waits for the phone to cool
-  to nominal (`COOL=off` sends at once), keeps the screen on, and runs with memories off.
-  Cases with Search are refused; only a case's first message is sent.
-- Results in `build/phone/runs/<time>/`: read `records.txt` first (each launch, the runtime it
-  ran, the heat at the send and at its hottest), then `load.txt` (which runs were disturbed,
-  each build's best run), `compare.txt` (undisturbed records), `replies.txt` and `replies/`.
-  A build that ran two runtimes is an install gone wrong, and the run says so.
-- It holds the harness lock for the whole run, so `bench-direct.sh`, `device-run.sh logs` and
-  harness suites wait for it.
-- `--read build/phone/runs/<time>` reads a run again without the phone.
-- Heat isn't the thermal state: on 2026-11-12 the phone said "nominal" while a long case lost a
-  quarter of its decode speed on the GPU's side over the run. Short cases stay clean; for a long
-  one, read `load.txt` and the order the builds ran in before believing a difference.
-- Never edit `phone-bench.sh` while it runs: `sh` reads the script as it goes.
-
-## On this Mac
-
-`PLATFORM=mac` runs the suites on this M6 Mac mini, which runs the real iPhone app
-("Designed for iPad/iPhone") through the same Metal path and the iOS slice of
-`CLiteRTLM`. This Mac is the primary development and iPhone 17 Pro simulation
-workbench; run Mac GPU tests and `cli-bench.sh` freely (relying on
-`scripts/mac-ready.sh` for quiet measuring runs), and reserve the personal
-iPhone 17 Pro for batched phase/milestone gates (`phone-bench.sh`, `memory`,
-`ui`, `bench`, background-GPU expiration, and iPhone-only hardware checks).
-
-```sh
-PLATFORM=mac scripts/device-harness.sh unit
-PLATFORM=mac ONLY=AgelloDeviceTests/InferenceScenarioTests/test05_ToolCall scripts/device-harness.sh inference
-```
-
-- `ui`, `screenshots`, `memory` and `bench` stay iPhone-only: the script
-  refuses them, and `all` skips `ui`. The Mac has no jetsam limit to simulate.
-- The destination is the Mac's provisioning UDID (`system_profiler
-  SPHardwareDataType`). The first run registers the Mac for development.
-- Results land in `build/mac-harness/`. Device suites print
-  `HARNESS_REPORT_PATH=` in their log, and the script copies
-  `harness-report.json` from there.
-- The app's data lives in its sandbox container,
-  `~/Library/Containers/<uuid>/Data/`. Find it with
-  `for d in ~/Library/Containers/*/; do [ "$(plutil -extract MCMMetadataIdentifier raw "$d.com.apple.containermanagerd.metadata.plist" 2>/dev/null)" = com.patricedery.agello ] && echo "$d"; done`.
-  - Skip downloads: clone the models from `~/Models/agello/` into
-    `Data/Library/Application Support/Models/` with `cp -c`.
-  - Lab models for the probes go in `Data/Documents/lab/`. Download them with
-    `hf download … --local-dir ~/Models/agello/lab`, never into the shared
-    Hugging Face cache (`agello-litert-update`, "Lab models").
-  - Settings: `defaults read <container>/Data/Library/Preferences/com.patricedery.agello`.
-- Logs: `log stream --level debug --predicate 'subsystem == "com.patricedery.agello"'`.
-  Crash reports: `~/Library/Logs/DiagnosticReports/Agello-*.ips`.
-- To look at the app outside a run, open the last run's build with
-  `open -b com.patricedery.agello --args --mock-engine` (drop `--mock-engine`
-  for the real model), inspect/tap via `cua-driver` MCP (`list_windows`,
-  `get_window_state`, `click`, `run_steps`), and quit with
-  `osascript -e 'tell application id "com.patricedery.agello" to quit'`
-  before the next run.
-
-## On this Mac, natively: the command line
-
-`agello` (docs/CLI.md) is the app's own engine code built for macOS with SwiftPM: a development
-tool for work on the runtime, never shipped. It's faster to iterate with than the iPhone, and it
-can be built against any checkout of our LiteRT-LM. The iPhone still confirms what ships.
-
-```sh
-swift build -c release --scratch-path build/cli/release            # then build/cli/release/release/agello
-scripts/cli-check.sh                                                # does it still build? (every harness run ends with it)
-scripts/cli-test.sh unit [Class[/method]]                           # 384 unit tests, ~20 s, no phone
-scripts/cli-test.sh inference InferenceScenarioTests/test05_ToolCall   # real-model scenarios on this Mac's GPU
-scripts/cli-test.sh security                                        # 6-vector prompt-injection gate on Mac
-MTL_DEBUG_LAYER=1 scripts/cli-test.sh inference InferenceScenarioTests/test01_BasicReply   # Metal API validation
-build/cli/release/release/agello bench --only todo,explain --out build/cli/runs/x.jsonl
-scripts/cli-bench.sh release next -- --only explain                 # two runtime builds, in turns, with the comparison
-scripts/cli-report.py | cli-timeline.py | cli-replies.py            # answer checks, where the time went, where two builds' replies part
-scripts/mac-ready.sh | cli-load.py                                   # is the Mac quiet enough to measure; which runs its load disturbed
-```
-
-- **Sandbox note:** `swift build`, `cli-check.sh`, `cli-test.sh`, and `cli-bench.sh` need
-  `BypassSandbox: true` (SwiftPM's manifest sandbox collides with Seatbelt, and scenarios read
-  `~/Models/agello`). Pure Python report scripts (`cli-report.py`, `cli-timeline.py`,
-  `cli-replies.py`, `cli-load.py`) run sandboxed.
-- **Mac GPU autonomy & simulation profile:** `cli-test.sh` and `cli-bench.sh` default to
-  `SIM_GPU=Apple_A19_Pro` (A19 Pro's 6-CU Apple10 kernel paths; pass `SIM_GPU=native` for native
-  M6 kernels). Run them freely on this M6 Mac mini — `cli-bench.sh` guards measuring runs with
-  `scripts/mac-ready.sh` automatically. Use `../LiteRT-LM/agello/build-xcframework.sh --mac-only`
-  for fast inner-loop runtime rebuilds (~2× faster); run without `--mac-only` before vendoring for
-  `PLATFORM=mac` or iPhone gates.
-- **A measuring run handles the Mac's load itself** (`docs/CLI.md`, "System load"):
-  `cli-bench.sh` asks `scripts/mac-ready.sh` first and refuses a busy Mac (exit 4, with what to
-  fix: tell the user, never work around it), reads from the records which runs were disturbed
-  (`load.txt`), adds rounds while a case lacks undisturbed ones, and compares on those
-  (`compare.txt`; `compare-all.txt` has every record). Start it in the background and stay
-  idle until it ends: a session streaming text is load too. `QUIET=off` is for a run read only
-  for its replies. A change inside the noise band isn't a change.
-- **What compiles there** is `Package.swift`'s list: `AppState`, `Inference/`, `Knowledge/`,
-  `ModelHub/`, `Persistence/` and a few files of `Support/` and `System/`. A platform type the
-  engine calls needs its twin in `AgelloCLI/Sources/Platform/`; an engine file elsewhere must be
-  added to the list. `cli-check.sh` says when an app change broke it.
-- **It runs as the iPhone decides:** the engine sees a simulated app limit, the iPhone 17 Pro's
-  8 GiB (8.59 GB) by default, which leaves more than 4.2 GB of room at load, so the app asks for
-  65,536 and the shipped v2 model file runs at the full 65,536, as on the phone (older 32K files
-  cap it at 32,000). `--memory-limit` can only lower it: a limit that leaves less room steps down
-  to 16K or 8K. Six bench cases were checked to reach the engine exactly as on the iPhone 17 Pro;
-  the replies themselves differ between the GPUs.
-- **Nothing of this Mac's is touched:** models are read from `~/Models/agello` and never
-  changed, caches go to `~/Models/agello/cache/agello-cli/<build id>/`, tests run with their home
-  folder redirected to `build/cli/test-home`, and chats live in memory.
-- **Not there:** the interface's tests, the `ui`, `screenshots`, `bench` (the iPhone's) and
-  `memory` suites, Search providers that need a key.
-- `PLATFORM=mac` (above) runs the iPhone app's own build on this Mac through Xcode; the command
-  line is the lighter way to the same engine, and the one that can change runtimes.
-
-## Outside test runs
-
-`scripts/device-run.sh` looks at the installed app directly (results in
-`build/device-run/`; needs `BypassSandbox: true`):
-
-```sh
-scripts/device-run.sh logs 20                 # relaunch, save its logs for 20 s
-scripts/device-run.sh logs 20 --mock-engine   # with launch arguments
-scripts/device-run.sh screenshot settings     # the iPhone's screen as a PNG
-scripts/device-run.sh crashes                 # Agello crash/resource reports
-scripts/device-run.sh crashes pull            # copy them to build/device-run/crashes/
-```
-
-- Symbolicate pulled reports with the `axiom` MCP server (`axiom_xcsym_crash`
-  for one report, `axiom_xcsym_triage` for a batch).
-- `logs` relaunches the app, which brings it to the front on the phone.
-- Screenshots show whatever is on screen, so only take them when the user
-  expects it.
-- Axiom's `axiom_xclog_*` console capture is simulator-only (and blocked by
-  `.agents/hooks.json`), and `log collect` needs root for a physical device:
-  use `logs` instead.
-
-## Looking at the iPhone
-
-The bench is how the app is driven and checked on the phone (above): a check
-worth repeating becomes a bench case or a UI test, not a session of taps. To
-see the screen once, `scripts/device-run.sh screenshot <name>` captures an
-unlocked phone.
-
-iPhone Mirroring ("Recopie de l'iPhone", `com.apple.ScreenContinuity`) is the
-user's own tool, for looking only (dropped as a testing tool on 2026-11-10):
-
-- It and the harness exclude each other. Opening it locks the phone; the
-  preflight refuses a run while it's open; a run takes over the phone, and
-  the mirror then shows "iPhone en cours d'utilisation" until the phone is
-  locked. Opening it, closing it and locking the phone are the user's calls.
-- When the user already has it open and explicitly asks for a look, inspect
-  its window through `cua-driver` MCP (`list_windows`, `get_window_state`,
-  `click` / `run_steps`; follow the `cua-driver` skill). Remember the mirror
-  surface has a sparse accessibility tree, pauses after a few minutes idle
-  ("Connexion" resumes), and doesn't expose the microphone.
-- The app on the phone is the last run's build: Bench/Release after `bench`,
-  Debug (the test host) after the other suites. It holds the user's chats and
-  settings, so start a new chat for a check.
-
-## Tuning a prompt or a model decision
-
-Judge a prompt or schema change against a table of cases, not one try:
-
-1. A device test runs each case with its expected outcome, records the raw
-   output and the error per case (catch them: one bad case mustn't hide the
-   rest), and fails on the wrong ones. Model: `WebScenarioTests/test04_SearchDecisions`.
-2. Run it alone on the iPhone, about three minutes a round:
-   `ONLY=AgelloDeviceTests/<Class>/<test> scripts/device-harness.sh <suite>`,
-   and read `jq '.scenarios.<name>' build/device-harness/harness-report.json`.
-   Check `recordedAt`: a test that throws before `harness.record` leaves the
-   last run's record in place.
-3. Iterate until the table is right, then the bench for the answers' quality
-   (`scripts/device-harness.sh bench`), then the suites the change touches.
-
-Lessons from the first round (Search when needed, 2026-11-02):
-- E4B answers a yes/no "does this need X?" by what it thinks it can do alone;
-  asked to name the message's kind from a short list, it gets the decision
-  right, and the code decides from the kind.
-- What the output must hold, the grammar should enforce: with queries
-  optional, a "question" came back with none (`anyOf` now requires 1–3 for
-  questions and requests, none for the rest).
-- Put follow-ups with their conversation in the table: they fail
-  differently from first messages.
-- Multi-word JSON enum values now work with MTP ON since `agello-one-20261122-3`
-  (`LiteRT-LM@7d80c7ec`, guarded by `test16_MultiWordJsonEnumWithMTP`); keep
-  enum labels short to save helper tokens (`agello-inference-rules`).
-- Put the real input in the table, not a tidy stand-in: a follow-up passed with a two-sentence
-  made-up reply as history and failed with the reply the app had actually given (2026-11-10).
-  Look at what the helper reads after truncation: a cited reply cut to 400 bytes ended on the
-  runner-up's name, and the plan followed that name.
-
-## The test host
-
-Unit and device tests run inside the app, which shows only a black screen
-while it hosts them (`AppBootstrap.hostsTests`, from `XCTestConfigurationFilePath`):
-the tests build their own `AppState`, and the app's own UI used to warm up a
-second E4B engine next to theirs. Device memory figures recorded before
-2026-10-15 (afternoon) include that engine, about 1.2 GB once it had loaded.
-Probe 16 (`test16_MemoryAfterUnload`) checks that nothing stays after an
-unload. UI tests launch the app normally and see its UI.
-
-## Reading results
-
-Everything lands in `build/device-harness/` (`build/mac-harness/` on the Mac):
-
-| File | Use |
-| --- | --- |
-| Console | Formatted by Homebrew's xcbeautify (`XCBEAUTIFY=off` for raw) |
-| `<suite>.log` | Full raw `xcodebuild` output: grep it for `error:` |
-| `<suite>.xcresult` | `xcrun xcresulttool get test-results summary --path <bundle>` gives counts and `testFailures` as JSON |
-| `attachments/<suite>/` | Per-scenario JSON metrics (device suites) and screenshots (UI tests) |
-| `harness-report.json` | In-app report pulled from the device: every recorded scenario of the last run, and the device (hardware, `isiOSAppOnMac`, GPU family, Metal working set) |
-
-Exit codes: `xcodebuild`'s (65 = test failures), 2 for a usage error, 3 while
-another run holds the lock, 4 when the preflight refuses, and for `bench` 1
-when the report finds a problem. The script ends with
-`scripts/storage.sh brief`: the project's disk use against its budget, and any
-scratch the run left. An `OUT=build/<name>` run is scratch once its numbers are
-recorded (in the roadmap, a doc or a commit message); then run
-`scripts/storage.sh clean`.
-
-Each scenario in `harness-report.json` also carries `telemetry`, the engine's
-account of that scenario (our runtime's, see `agello-litert-update`, "The
-source build"): span timings, GPU time, host copies by buffer size, cache and
-delegation counters, logits probes, anomalies. Read it with the fork's report
-script:
-
-```sh
-python3 ../LiteRT-LM/tools/agello-bench/telemetry.py build/mac-harness/harness-report.json
-```
-
-App logs use subsystem `com.patricedery.agello`, categories `engine`,
-`generation`, and `lifecycle`. CoreData "database is corrupted" lines during
-`unit` come from tests that feed a corrupt store on purpose.
-
-## Writing tests
-
-- **Unit tests** (`AgelloTests`, XCTest): build `AppState(useMockEngine:
-  true)` with an in-memory `ModelContainer(for: ChatStore.schema,
-  configurations: ModelConfiguration(isStoredInMemoryOnly: true))`, set
-  `appState.modelContext`, and script the engine through
-  `appState.engine as! MockChatEngine` (`setScript`, `setHelperResponse`,
-  `setFitResult`, …). Fixtures live in `AgelloTests/Fixtures/`.
-- **Shared state.** Tests run inside the app on the phone and share its
-  UserDefaults and Documents. A test that reads settings clears those keys
-  before creating `AppState` and restores them in `tearDown` (see
-  `AppStateTests`). In device tests, add new settings keys to
-  `DeviceHarness.defaultsKeys`.
-- **Device scenarios** subclass `DeviceTestCase`
-  (`AgelloDeviceTests/DeviceHarness.swift`), call `requireLoadedModel()`, and
-  call `harness.record(...)` before asserting, so the metrics survive a
-  failure. Assert `exchange.accepted` (with `appState.generationError` as the
-  message) so a rejected send can't pass for a wrong answer.
-- **Order.** `testNN_Name` methods run in name order. Insert with letter
-  suffixes (`test06b_…`), and keep `test90_Benchmark` last.
-- **Long prompts.** The engine counts a message's tokens exactly (probe 17),
-  and a send must leave room for a reply (`agello-inference-rules`, "Context
-  window", has the reserve): about 56K–60K tokens fit a 64K window, about
-  23K–27K at 32K, about 10K–11K at 16K. Digits cost a token each. Longer prompts, or a test that needs one
-  window whatever the phone's memory, need
-  `appState.options.maxNumTokensOverride` plus
-  `await appState.applyCurrentOptions()`; `tearDown` restores the options.
-- **Opt-in suites.** Opt-in classes throw `XCTSkip` in `setUp` unless their
-  `HARNESS_*` variable is set: the script exports `TEST_RUNNER_HARNESS_*`, and
-  xcodebuild strips the prefix. A new device-test class runs in no suite until
-  `scripts/device-harness.sh` maps one to it.
-- **Target membership.** New files in a test folder join its target
-  automatically; non-Swift files become bundle resources unless excluded in
-  `project.pbxproj` (as each `.swiftlint.yml` is).
-
-## UI tests and the design
-
-- Reply stats (`message.stats`) are hidden unless "Show performance details"
-  is on, in the developer screen: five taps on Settings' version line
-  (`settings.version`), then `settings.showStats`.
-- There's no Advanced screen (removed 2026-11-11): the sampler presets, the
-  Think budget and the other engine choices aren't in the UI. The tool toggles
-  in Settings are On-device tools (`settings.tools`) and opt-in Personal tools
-  (`PersonalToolsSettings`: Calendar, Reminders, Contacts, Apple Maps).
-- `--uitest-reset` wipes chats, projects, files, memories and all settings
-  (models are kept): the dev install's own data on the phone goes too.
-- Screenshots for the README and App Store come from
-  `scripts/device-harness.sh screenshots` (`attachments/screenshots/`,
-  names `tour-NN-…` in its `manifest.json`), never the simulator.
+- **Test host & outputs:** Unit/device tests run under blank `AppBootstrap.hostsTests` (`#if DEBUG`, no duplicate UI engine). Results land in `build/device-harness/` (`build/mac-harness/` on Mac): `<suite>.log`, `<suite>.xcresult` (`xcrun xcresulttool get test-results summary`), `attachments/<suite>/`, `harness-report.json` (read `telemetry` with `python3 ../LiteRT-LM/tools/agello-bench/telemetry.py <report>`). **Exit codes:** `65` test failures, `3` lock held, `4` preflight/busy Mac, `2` usage, `1` bench report issue. Clean `OUT=build/<name>` scratch with `scripts/storage.sh clean`. Logs use subsystem `com.patricedery.agello` (`engine`, `generation`, `lifecycle`).
+- **Unit tests (`AgelloTests`):** Use `AppState(useMockEngine: true)`, in-memory `ModelContainer(for: ChatStore.schema, ...)`, and `appState.engine as! MockChatEngine`. Fixtures in `AgelloTests/Fixtures/`.
+- **Isolation & device scenarios:** Tests share UserDefaults & Documents — clear/restore touched keys in `setUp`/`tearDown` and add new settings keys to `DeviceHarness.defaultsKeys`. Subclass `DeviceTestCase`, call `requireLoadedModel()`, call `harness.record(...)` before asserting, assert `exchange.accepted`. Order methods `testNN_Name` (`test90_Benchmark` last). Long prompts (~56–60K at 64K; digits = 1 tok each) use `maxNumTokensOverride` + `applyCurrentOptions()` and restore in `tearDown`. Opt-in classes `XCTSkip` without `TEST_RUNNER_HARNESS_*`. Exclude non-Swift files in `project.pbxproj`.
+- **UI expectations:** Reply stats (`message.stats`) require 5 taps on `settings.version` → `settings.showStats`. No Advanced screen. Settings tool controls: On-device tools (`settings.tools`), opt-in Personal tools (`PersonalToolsSettings`: Calendar, Reminders, Contacts, Apple Maps, Weather, Alarms & Timers, Photos OCR), and Automations & Shortcuts (`AutomationRegistry`). `--uitest-reset` wipes user data/settings (keeps models). Release/README screenshots come only from physical iPhone `scripts/device-harness.sh screenshots`.
 
 ## Known issues
 
-- "Failed to create a bundle instance … AgelloDeviceTests.xctest": run
-  `xcrun devicectl device uninstall app --device <udid> com.patricedery.agello`
-  and retry. This also deletes the downloaded models (about 3.8 GB to
-  download again).
-- XCTest can't answer system permission prompts on device, so UI tests use
-  launch arguments instead.
-- `PLATFORM=mac` fails with "Test crashed with signal kill before
-  establishing connection", and macOS says "Agello est endommagé" (damaged):
-  the iPhone app's build in DerivedData (`Build/Products/Debug-iphoneos/
-  Agello.app`) has a broken signature (`codesign --verify` says a sealed
-  resource is missing or invalid), left by a stopped run or an unsigned
-  compile check writing into the same folder. Cancel the dialog, delete that
-  `Agello.app`, and run again.
-- `ThinkingScenarioTests/test02_ReasoningStaysOutOfCache` failed on the Mac
-  only with Google's v0.18.0 (2026-10-16: the cache grew 139 tokens over the
-  second Think turn). With our runtime, which drops the reasoning right after
-  the reply, it passes on the Mac too (natively, 2026-11-11) and on the
-  iPhone: a failure on either is a regression.
+- **`Failed to create a bundle instance … AgelloDeviceTests.xctest`:** `xcrun devicectl device uninstall app --device <udid> com.patricedery.agello` and retry (deletes ~3.8 GB models).
+- **System permission prompts:** XCTest cannot answer them on device; use launch arguments.
+- **`PLATFORM=mac` `"Test crashed with signal kill"` / `"Agello est endommagé"`:** Corrupted `Debug-iphoneos/Agello.app` signature in DerivedData; delete that `Agello.app` and re-run.
+- **`ThinkingScenarioTests/test02_ReasoningStaysOutOfCache`:** Must pass on both Mac and iPhone; any failure is a KV-stripping regression.
 
 ## Launch arguments and environment
 
 | Name | Effect |
 | --- | --- |
-| `--mock-engine` (or env `AGELLO_MOCK_ENGINE`) | Scripted engine: the whole UI without a model |
-| `--remote-engine <url>` (or env `AGELLO_REMOTE_ENGINE_URL`) | Loopback `agello serve` endpoint for `AgelloSim` (default `http://127.0.0.1:8091/v1`) |
-| `--uitest-reset` | Wipes chats, projects, files, memories and all settings before a UI test (models are kept) |
+| `--mock-engine` / `AGELLO_MOCK_ENGINE` | Scripted `MockChatEngine`: full UI without a model (`#if DEBUG \|\| BENCH`) |
+| `--remote-engine <url>` / `AGELLO_REMOTE_ENGINE_URL` | Loopback `agello serve` URL for `AgelloSim` (default `http://127.0.0.1:8091/v1`) |
+| `--uitest-reset` | Wipe chats, projects, files, memories, settings before UI test (keeps models) |
 | `--uitest-fake-mic` | Fake microphone input (no permission prompt) |
-| `--uitest-sample-file`, `--uitest-sample-report` | Attach sample documents generated in code (`ChatView`) |
-| `--trace` | The app writes a trace of each reply to `Documents/traces/` (`ReplyTrace`); the bench passes it |
-| `AGELLO_BENCH_DRAFT`, `AGELLO_BENCH_AUTOSEND=1` (env) | Open on a new chat with this draft; with autosend, send it once the model is ready (the bench and `bench-direct.sh`) |
-| `AGELLO_BENCH_THINK` (1 or 0), `AGELLO_BENCH_COOL=1` (env, with autosend) | Set Think as the driver's pill would; wait up to ten minutes for the thermal state to be nominal before sending (`phone-bench.sh`, `bench-direct.sh`). Autosend also keeps the screen on |
-| `--uitest-window N` | Hold the window at N tokens, as a load short of memory does (`InferenceOptions.launch`): since 32K the sample report fits whole, and `testLongSummarySurvivesBackgrounding` holds 8192 to reach the section-by-section summary |
-| `-memoryEnabled NO` | The argument domain's value for that launch: no memories in the system prompt, the saved setting untouched (`phone-bench.sh`, `bench-direct.sh`) |
-| `AGELLO_SIMULATE_MEMORY_GB` (env) | Stands in for the phone's memory at the hardware-floor check (`DeviceFloorUITests`) |
-| `TEST_RUNNER_HARNESS_THINKING`, `_MEMORY`, `_CALIBRATE`, `_PROBES`, `_SCREENSHOTS`, `_BENCH` | Enable the opt-in suites (the script sets them) |
-| `AGELLO_TELEMETRY=<0-4>` (to the script) | Engine telemetry level on our LiteRT-LM build, passed as `TEST_RUNNER_AGELLO_TELEMETRY` (default 2: span timings; 4 times each GPU kernel and slows the run) |
-| `TEST_RUNNER_AGELLO_VERIFY_DIRECT_COPIES=1` | Our build checks every direct Metal host copy against ML Drift's own conversion; a difference is an error anomaly in the scenario's telemetry |
-| `AGELLO_SIMULATE_APPLE_GPU="Apple A17 Pro"` (to the script) | Our build picks another Apple GPU's kernels (here the Apple9 paths), with caches of their own. A runtime debugging aid: no supported iPhone has that GPU. Code paths only: speed, thermals and memory stay this device's; telemetry's `gpu` fact names the family used. Run memory envelopes one per launch (`ONLY=…/test03_…`): in sequence each test inherits 0.8–1.4 GB from the last |
+| `--uitest-sample-file`, `--uitest-sample-report` | Attach code-generated sample documents (`ChatView`) |
+| `--uitest-window N` | Hold context window at `N` tokens (`InferenceOptions.launch`, e.g., `8192`) |
+| `--trace` | Write per-reply `ReplyTrace` JSON under `Documents/traces/` (`bench`) |
+| `-memoryEnabled NO` | Disable memories for this launch without changing saved setting |
+| `AGELLO_BENCH_DRAFT`, `AGELLO_BENCH_AUTOSEND=1` | Open new chat with draft and autosend once loaded (`bench`, `bench-direct.sh`) |
+| `AGELLO_BENCH_THINK` (`1`/`0`), `AGELLO_BENCH_COOL=1` | Set Think pill; wait up to 10 min for `nominal` thermal state before autosend |
+| `AGELLO_SIMULATE_MEMORY_GB` | Override physical memory check (`DeviceFloorUITests`) |
+| `AGELLO_SIMULATE_APPLE_GPU` | Emulate another Apple GPU's kernel paths (e.g., `Apple_A19_Pro`; separate caches) |
+| `AGELLO_TELEMETRY=<0-4>` | Engine telemetry level (default `2`; `4` times every GPU kernel; `TEST_RUNNER_AGELLO_TELEMETRY`) |
+| `AGELLO_JSON_MTP` (`1`/`0`) | Toggle MTP speculation for JSON-constrained helpers (default `1` / ON) |
+| `AGELLO_EXPORT_WINDOW` | Override model export context window for runtime/lab experiments |
+| `AGELLO_MODELS_DIR`, `AGELLO_ENGINE_CACHE_DIR`, `AGELLO_TRACE_DIR` | Redirect model, engine cache, and trace paths (Mac CLI / `agello serve`) |
+| `TEST_RUNNER_AGELLO_VERIFY_DIRECT_COPIES=1` | Verify every direct Metal host copy against ML Drift (flags diffs as anomalies) |
+| `TEST_RUNNER_UITEST_REAL_ENGINE=1` | Run all `ChatFlowUITests` on real GPU instead of `--mock-engine` split |
+| `TEST_RUNNER_HARNESS_THINKING`, `_MEMORY`, `_CALIBRATE`, `_PROBES`, `_RESEARCH_PROBES`, `_SCREENSHOTS`, `_BENCH` | Enable opt-in suites (`HARNESS_SYSTEM_PROMPT` overrides probe system prompt) |
+| `BENCH_ONLY`, `BENCH_TRACE`, `BENCH_COOL`, `BENCH_RESUME`, `BENCH_ACCEPT` | Filter cases, toggle tracing, cool wait, resume, or accept `baseline.json` (`bench`) |
+| `COOL`, `REST`, `CASE_REST`, `HEAVY_REST`, `WARM_REST` | Cooldown & inter-case hysteresis rests (`15 / 45 / 90 s`) in `phone-bench.sh` |
 
 ## After a change
 
-Run the relevant suite, then commit each verified chunk. Push only when the
-user asks.
+Run the narrowest covering suite, verify replies/screenshots, then commit on `main`. Push only when asked.

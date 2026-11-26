@@ -2,18 +2,18 @@
 
 Agello uses a clear split between fast in-app Simulator testing and physical-hardware verification:
 
-- **iOS Simulator (`AgelloSim` + host `agello serve`):** Primary way to test iOS app features, UI presentation (Liquid Glass, Markdown/LaTeX, Think drawer, `ToolConfirmationCard`, deep links), and real model output quality inside the shipping iOS app and its 16 Swift tools (MapKit with spoofed GPS, EventKit Calendar/Reminders, Contacts, WebSearch, Files/PDF).
+- **iOS Simulator (`AgelloSim` + host `agello serve`):** Primary way to test iOS app features, UI presentation (Liquid Glass, Markdown/LaTeX, Think drawer, 9 inline Action Cards, `ToolConfirmationCard`/`PlanConfirmationCard`, deep links), and real model output quality inside the shipping iOS app and all **21 Swift tools** (MapKit with spoofed GPS, EventKit Calendar/Reminders, Contacts, Weather, Alarms & Timers, Photos OCR, WebSearch, Files/PDF, Shortcuts).
 - **Physical iPhone (and Mac Metal CLI):** Source of truth for **all benchmarking, hardware test suites, and final feature verification on real silicon**. Our `CLiteRTLM.xcframework` has no simulator slice, and hardware failures (native heap corruption, Metal GPU precision, jetsam memory pressure, background GPU termination, ANE/audio hardware) only show up on real silicon.
 
 ## The suites
 
-Test methods declared on 2026-11-23 (including Audit Waves 1–2 coverage). The dated iPhone and M6 runs and their results are in the [roadmap](ROADMAP.md#current-status).
+**594** test methods declared on 2026-11-25 (covering Phases 1–6, Audit Waves 1–2, and Agentic Integrations Phases A–C). The dated iPhone and M6 runs and their results are in the [roadmap](ROADMAP.md#current-status).
 
 | Target | Tests | Covers |
 | --- | --- | --- |
-| `AgelloTests` | 456 | Planner, context budgeting, schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers, SSRF/redirect guards and Billion-Laughs-safe page extraction (`WebTests`, recorded fixtures), workspace & structured CSV/JSON tools (`WorkspaceToolsTests`), language-agnostic parsing across 13 languages (`LanguageSupportTests`), deterministic agentic security & request-ID confirmation gate (`AgentSecurityTests`), post-tool Think budgets & stream tool-round cancellation (`ToolHostTests`, `StreamRegistryTests`), Core AI ANE embedder & SentencePiece (`CoreAIEmbedderTests`), dictation, voice-activity & neural turn detection, deep links, multimodal intents & `AppEntities` (`AppRouterTests`, `AppEntitiesTests`), Spotlight chats/projects/documents, isolated `ComposerBridge`, multi-step `BackgroundWorkPlan`, iOS 27 `MetricKit.MetricManager` & `MemoryProbe` peak-delta diagnostics (`DiagnosticsTests`), the share inbox, chat grouping and search, personalization, titles, downloads, and the whole app pipeline through a scripted engine |
-| `AgelloDeviceTests` | 89 | The real models, in-process: download, load, text, chat isolation, stop and continue, tools, multi-word JSON enums under MTP, Think + tool continuity, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, voice turns, exact digits past 2,048 and 4,096 tokens, benchmark; files (ANE EmbeddingGemma 2 indexing & FP32 parity, "summarize this 40-page PDF", cited follow-up, search chats by meaning, workspace CSV/page/unit tools, parallel read-only tool calls, natural-language multilingual tool intent); live web search, automatic search with on-device tools off; and the 6-vector adversarial prompt-injection evaluation suite (`security`, gated at 0% unauthorized tool execution) |
-| `AgelloUITests` | 28 | Real taps: send, no jumping while a reply streams, Stop, Home button mid-reply, leaving and returning mid-reply, rapid settings changes, drawer and search, pin / rename / delete, projects, attached files, web search, dictation, voice mode, deep links, a long summary in the background, regenerate / edit / versions, Think, memory settings, markdown, keyboard clearance, composer controls that fit at every text size, Models, the screen an iPhone below the 12 GB floor opens on, an accessibility audit of the main screens; plus the opt-in screenshot tour and the bench driver |
+| `AgelloTests` | 476 *(404 CLI)* | 45 files (37 in Mac CLI): Planner, context budgeting (incl. `estimateToolSchemaTokens`), schema migration and branching, regenerate / edit / versions, markdown, file reading and chunking, retrieval and citations, summaries, projects, memory, web parsers, SSRF/redirect guards and Billion-Laughs-safe page extraction (`WebTests`, recorded fixtures), workspace & structured CSV/JSON tools (`WorkspaceToolsTests`), language-agnostic parsing across 13 languages (`LanguageSupportTests`), deterministic agentic security, taint provenance & request-ID confirmation gate (`AgentSecurityTests`), Action Cards, personal CRUD tools & native URL builders (`ActionCardsAndToolsTests`), Shortcuts Bridge, `ShortcutCallbackBroker`, `BatchConfirmationPlanner`, `FolderBookmarks` & `ThermalPolicy` (`PhaseCAutomationTests`), post-tool Think budgets & stream tool-round cancellation (`ToolHostTests`, `StreamRegistryTests`), Core AI ANE embedder, `INT4EmbeddingTable` SIMD LUT parity & SentencePiece (`CoreAIEmbedderTests`), dictation, voice-activity & neural turn detection, deep links, composable & multimodal intents, Focus Filter & `AppEntities` (`AppRouterTests` — also houses `AppEntitiesTests` and `SpotlightTests`), isolated `ComposerBridge`, multi-step `BackgroundWorkPlan`, iOS 27 `MetricKit.MetricManager` & `MemoryProbe` peak-delta diagnostics (`DiagnosticsTests`), the share inbox, chat grouping and search, personalization, titles, downloads, and the whole app pipeline through a scripted engine |
+| `AgelloDeviceTests` | 90 *(86 CLI)* | 27 files (26 in Mac CLI; `MemoryEnvelopeScenarioTests` is iPhone-only): The real models, in-process — download, load, text, chat isolation, stop and continue, tools, multi-word JSON enums under MTP, Think + tool continuity, thinking, image, audio, settings rebuilds, context limits, titles, memory, dictation accuracy, voice turns, exact digits past 2,048 and 4,096 tokens, benchmark; files (ANE EmbeddingGemma 2 indexing & FP32 parity, "summarize this 40-page PDF", cited follow-up, search chats by meaning, workspace CSV/page/unit tools, parallel read-only tool calls, natural-language multilingual tool intent); live web search, automatic search with on-device tools off; and the **12-vector (`V1–V12`)** adversarial prompt-injection evaluation suite (`security`, gated at 0% unauthorized tool execution) |
+| `AgelloUITests` | 28 | 5 files: Real taps — send, no jumping while a reply streams, Stop, Home button mid-reply, leaving and returning mid-reply, rapid settings changes, drawer and search, pin / rename / delete, projects, attached files, web search, dictation, voice mode, deep links, a long summary in the background, regenerate / edit / versions, Think, memory settings, markdown, keyboard clearance, composer controls that fit at every text size, Models, the screen an iPhone below the 12 GB floor opens on, an accessibility audit of the main screens; plus the opt-in screenshot tour and the Release bench driver (`BenchCases.swift`: 14 cases / 17 turns, [HARNESS.md](HARNESS.md)) |
 
 The device scenarios include opt-in suites for work that's too slow or too specialized for every run: long Thinking answers, a **memory pressure simulation** (incompressible ballast shrinks usable memory to 6.0, 5.0, 4.0 and 3.5 GB, as when other apps hold memory; it once stood for 8 GB iPhones, which the app no longer runs on), **context calibration** (speed and memory at 4K–32K), and **LiteRT-LM probes** that test the runtime directly. The probes are how [#3913](ENGINEERING.md#long-context-digits-on-the-gpu-litert-lm-3913) was pinned to position 2,048 and its fix proven.
 
@@ -29,7 +29,7 @@ scripts/device-harness.sh unit        # unit tests (~1-1.5 min, scripted engine)
 scripts/device-harness.sh inference   # engine scenarios with the real model (~5.5-6.5 min)
 scripts/device-harness.sh files       # files, ANE retrieval, and workspace/multilingual tools (~2.5-3.5 min warm ANE)
 scripts/device-harness.sh web         # live web search (~7-8 min, needs internet)
-scripts/device-harness.sh security    # 6-vector adversarial prompt-injection gate (0% breach, ~1-1.5 min)
+scripts/device-harness.sh security    # 12-vector (V1–V12) adversarial prompt-injection gate (0% breach, ~1-1.5 min)
 scripts/device-harness.sh ui          # real-tap UI flows (~11-15 min; TEST_RUNNER_UITEST_REAL_ENGINE=1 ~16-18 min)
 scripts/device-harness.sh all         # builds once, then unit, inference + files + web, and UI (~25-32 min)
 scripts/device-harness.sh thinking | memory | calibrate | probes   # opt-in (probes ~3-5 min, fast regression only)
@@ -44,11 +44,12 @@ One run goes at a time on a machine: a second start exits with 3 while the first
 
 ### On the iOS Simulator (`AgelloSim` + `agello serve`)
 
-`AgelloSim` (`com.patricedery.agello.sim`, `SUPPORTED_PLATFORMS = iphonesimulator`, `SKIP_INSTALL = YES`) is the **primary workflow** for testing iOS app features, UI layout/rendering, and end-to-end model output quality from inside the app with the exact system prompt and all 16 shipping Swift tools. It runs the full iOS 27 SwiftUI app, SwiftData store, and native Simulator frameworks (MapKit, EventKit Calendar & Reminders, Contacts, PDFKit/Vision, WebSearch, `ToolConfirmationCard`) locally in the Simulator while proxying token-by-token SSE inference (`POST /v1/chat/completions`) and ANE embeddings (`POST /v1/embeddings`) over `127.0.0.1:8091` to host `agello serve` (`SIM_GPU=Apple_A19_Pro`, Gemma 4 E4B v2 64K + Core AI ANE EmbeddingGemma 2).
+`AgelloSim` (`com.patricedery.agello.sim`, `SUPPORTED_PLATFORMS = iphonesimulator`, `SKIP_INSTALL = YES`) is the **primary workflow** for testing iOS app features, UI layout/rendering, and end-to-end model output quality from inside the app with the exact system prompt and all **21 shipping Swift tools**. It runs the full iOS 27 SwiftUI app, SwiftData store, and native Simulator frameworks (MapKit, EventKit Calendar & Reminders, Contacts, Photos OCR, PDFKit/Vision, WebSearch, 9 inline Action Cards, `ToolConfirmationCard`/`PlanConfirmationCard`) locally in the Simulator while proxying token-by-token SSE inference (`POST /v1/chat/completions`) and ANE embeddings (`POST /v1/embeddings`) over `127.0.0.1:8091` to host `agello serve` (`SIM_GPU=Apple_A19_Pro`, Gemma 4 E4B v2 64K + Core AI ANE EmbeddingGemma 2).
 
 ```sh
 scripts/sim-launch.sh              # boot iPhone 18 Pro Simulator, start agello serve, build, grant perms & spoof GPS, launch AgelloSim
 scripts/sim-launch.sh --no-build   # fast relaunch without rebuilding
+scripts/sim-launch.sh --no-serve   # attach to an already-running host agello serve instance
 scripts/sim-launch.sh --reset      # wipe simulator chats and settings for a fresh run
 scripts/sim-launch.sh --mock       # launch against the scripted MockChatEngine (no server)
 ```
@@ -60,8 +61,9 @@ scripts/sim-launch.sh --mock       # launch against the scripted MockChatEngine 
 `PLATFORM=mac` runs the suites on the Mac itself: it runs the iPhone app ("Designed for iPad/iPhone") through the same Metal path and the iOS build of LiteRT-LM, which makes it a development bed when no iPhone is at hand. The UI suites, the bench and the memory simulation stay iPhone-only, and the Mac's speed and memory aren't an iPhone's: every change still gets an iPhone run before it ships.
 
 ```sh
-PLATFORM=mac scripts/device-harness.sh unit
-PLATFORM=mac scripts/device-harness.sh inference
+PLATFORM=mac scripts/device-harness.sh unit       # all 476 unit tests in the signed iOS binary (~1-1.5 min)
+PLATFORM=mac scripts/device-harness.sh gate       # fast shared-engine hardware-subset check (~2-3 min)
+PLATFORM=mac scripts/device-harness.sh inference  # real-model inference scenarios in the iOS binary
 ```
 
 The first run registers the Mac for development with the signing team. Results land in `build/mac-harness/`; app logs come from `log stream --predicate 'subsystem == "com.patricedery.agello"'` and crash reports from `~/Library/Logs/DiagnosticReports/`.
@@ -70,7 +72,7 @@ The first run registers the Mac for development with the signing team. Results l
 
 For work on the runtime, the app's engine also builds as a command line for macOS
 ([CLI.md](CLI.md)): `scripts/cli-test.sh unit` runs the unit tests that need no interface
-natively (384, about 20 seconds), `scripts/cli-test.sh inference|files|web|security` runs the
+natively (**404**, about 20–30 seconds), `scripts/cli-test.sh inference|files|web|security|thinking|probes|calibrate|soak|research-probes` runs the
 real-model scenarios on the Mac's GPU (`SIM_GPU=Apple_A19_Pro`), and `agello bench` runs the bench's
 cases with the runtime's telemetry, against any build of our LiteRT-LM. It's a development tool:
 what ships is confirmed on the iPhone.
@@ -99,3 +101,12 @@ Outside test runs, `scripts/device-run.sh` relaunches the installed app and save
 ## Without a model
 
 Launch the app with `--mock-engine` (**Product → Scheme → Edit Scheme → Run → Arguments**) to drive the whole interface with a scripted engine: streaming, reasoning, titles, regenerate and edit, without downloading anything. A prompt containing "show me markdown" returns a rich sample with code, a table and math. The unit tests use the same engine.
+
+## Troubleshooting (development & Xcode)
+
+| Symptom | Fix |
+| --- | --- |
+| Signing error *"PLA Update available"* | Accept the latest Program License Agreement at [developer.apple.com/account](https://developer.apple.com/account). |
+| *"Failed to create a bundle instance … AgelloDeviceTests.xctest"* | The iPhone has an install from before that target existed. Run `xcrun devicectl device uninstall app --device <udid> com.patricedery.agello` and retry. This also removes downloaded models. |
+| UI tests fail with *"Timed out while enabling automation mode"* | Unlock the iPhone and keep it unlocked during the run. |
+| UI tests stall on a system alert | XCTest can't answer system permission prompts on device; tests use `--uitest-fake-mic` and `--mock-engine` where needed. |

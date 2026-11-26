@@ -1,0 +1,32 @@
+# LiteRT-LM Issue #3913 Chronology & Retired Fork Branches (Oct–Nov 2026)
+
+> [!IMPORTANT]
+> **Archived upstream investigation log and retired-branch provenance (2026-11-25).**
+> For the active LiteRT-LM vendoring, Bazel build, model-surgery, and upstream reporting runbook, see [.agents/skills/agello-litert-update/SKILL.md](../../.agents/skills/agello-litert-update/SKILL.md). For the shipped v2 Dual-`GATHER` 128K RoPE design, see [docs/ENGINEERING.md](../ENGINEERING.md).
+
+---
+
+## Retired Fork Branches & Pre-Monorepo Clones
+
+Since 2026-11-15 the runtime fork lives in a single repository and branch: `PowerBeef/agello-litert-lm` (`main`, checked out at `../LiteRT-LM`), with LiteRT in `agello/litert` and ML Drift in `agello/ml_drift`. Historical notes and GitHub comments reference earlier layouts:
+
+- **`PowerBeef/LiteRT-LM` → `PowerBeef/agello-litert-lm`:** renamed on 2026-10-14 (old URLs redirect).
+- **`agello` branch:** v0.18.0 plus Swift patches, docs, and tools; renamed to `main` (links redirect — never recreate a branch named `agello`).
+- **`agello-next` and `agello-one` branches:** the source build; both folded into `main`'s history and deleted.
+- **Google's `main` mirror branch:** deleted on 2026-11-15 under the one-branch-per-repo policy.
+- **Former local worktree & separate clones:** `../agello-arms/next/LiteRT-LM`, `../LiteRT`, and `../ml-drift` were removed once LiteRT and ML Drift moved in-tree. `PowerBeef/LiteRT` and `PowerBeef/ml-drift` preserve our earlier commits on `main` and are archived on GitHub.
+- **Historical release tags:** `agello-next-20261024`, `agello-one-20261115`, `agello-one-20261122`, `agello-one-20261122-2`, `agello-one-20261122-3`, `agello-one-20261124`.
+
+---
+
+## Issue #3913 Investigation Chronology (Float16 Rotary Positions)
+
+- **2026-10-13 — Root-cause analysis & initial patch:** Posted analysis at https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6157362598 (pointer on #2814), followed by the model-side fix at https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6159684389.
+- **2026-10-13 — WebGPU op-check correction:** The initial follow-up noted two WebGPU delegate bugs (`FULLY_CONNECTED` with float weights; `REDUCE_MAX` over a non-last axis). Standalone single-op tests on v0.18.0 WebGPU proved exact and fully accelerated up to `N=2048` and `F=256`; the failures stemmed from surrounding `INT32`/`BOOL` graph producers (`ADD`, comparisons, `CAST`, `SELECT_V2`). Decided not to file standalone bugs and posted a correction: https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6160403434 (check preserved on fork tag `research/3913`, `research/issue-3913/webgpu-op-check/`, commit `7cebaa0c`).
+- **2026-10-14 to 16 — 512-token block confirmation:** `picitujeromanov` (M1 Max losing digits below 2,048, fixed by 512-token blocks) and `john-rocky` (both patches confirmed on M4 Max and Pixel 8a) replied. Posted 512-block results, affected GPU families (A15 is Apple8, not M1's Apple7), and ML Drift FP32 RoPE kernels as the widest fix: https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6220359922.
+- **2026-10-17 — Android #4001:** LiteRT-LM #4001 reported the same failure on Android (Adreno 840 with E4B, Adreno 740 with E2B, FLOAT32 workaround). Asked for A/B repro runs before presenting our patched file as its fix.
+- **2026-10-18 to 23 — `odml.rope` composite export:** `john-rocky` demonstrated a Gemma 4 E2B file exported with `litert-torch`'s `--use_rope_composite=True` exact at FP16 on M4 Max and filed `google-ai-edge/litert-torch#1343` (triaged 2026-10-21). Replied 2026-10-23 accepting benchmark runs on M6 and iPhone 17 Pro, requesting an E4B export, and pointing to #4001: https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6359855208.
+- **2026-10-24 — E2B composite benchmark:** `john-rocky` shared `mlboydaisuke/gemma-4-E2B-it-litert-lm-rope-composite` (8,192 cache, INT8 weights, no MTP drafter). Probe 20 (`LabSuiteProbe.swift`) and `agello-bench` verified 118/118 exact across iPhone 17 Pro, M6 iOS app, WebGPU, and our Metal build (vs stock E2B 35/118), though 2–3× slower due to its INT8 recipe; requested a control export without the flag: https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6385900547.
+- **2026-10-25 to 2026-11-03 — E2B control, E2B 32K & E4B composite:** `john-rocky` published the E2B control (`gemma-4-E2B-it-no-ropecomposite.litertlm`), E2B 32K composite (`…-ropecomposite-32k.litertlm`), and E4B composite (`mlboydaisuke/gemma-4-E4B-it-litert-lm-rope-composite`, 8.21 GB INT8). Our runs (2026-11-02/03) confirmed: control 37/118 everywhere and same speed as composite; E2B 32K 130/130 on M6 but 2.2–3.7× slower and jetsam-killed on iPhone past ~500-token prompts (5.6 GB footprint); E4B composite 118/118 everywhere, fitting iPhone foreground at 6.65 GB but 2.5–2.6× slower than our patched E4B. Posted 2026-11-03: https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6596803301 (lab files deleted from `~/Models/agello/lab` on 2026-11-03).
+- **2026-10-31 to 2026-11-03 — `elbrinner` RAG repro:** Replied to `elbrinner` (iPhone 15 Pro, E2B, v0.17.1) asking whether prompts crossed position 2,048, linking the composite and `patch_rope.py`, and suggesting greedy runs to isolate sampler differences: https://github.com/google-ai-edge/LiteRT-LM/issues/3913#issuecomment-6596859591.
+- **2026-11-10 status:** Issue #3913 remained open and assigned to `hheydary` (Google); reproduction scripts and raw data remain preserved on fork tag `research/3913` under `research/issue-3913/`.

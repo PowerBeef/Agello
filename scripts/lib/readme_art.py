@@ -891,7 +891,7 @@ NUMBERS = (
     ("0%", "GPU load during RAG", "EmbeddingGemma 2 on 16-Core ANE", TEAL),
     ("4.5×", "faster Vision encode", "112 ViT linears on matrix units", GOLD),
     ("+5 MB", "200-turn soak delta", "100% shared verify/decode pool", GLACIER),
-    ("573", "on-hardware tests", "real iPhone 17 Pro, no Simulator", TEAL),
+    ("594", "automated tests", "iPhone 17 Pro gates + AgelloSim UI", TEAL),
 )
 
 
@@ -925,7 +925,8 @@ def numbers(columns: int = 3) -> str:
         width, height,
         "Agello engineering by the numbers",
         "64K exact token context; 0 host read copies; 0% GPU load during RAG on the 16-Core ANE; 4.5x faster Vision "
-        "encode; +5 MB across a 200-turn soak; 573 on-hardware tests on a real iPhone 17 Pro.",
+        "encode; +5 MB across a 200-turn soak; 594 automated tests (476 unit, 90 device, 28 UI) across real iPhone 17 "
+        "Pro hardware gates and AgelloSim.",
         body, defs,
     )
 

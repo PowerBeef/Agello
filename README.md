@@ -15,7 +15,7 @@
 
 Agello is a private AI assistant for your iPhone. Ask a question, attach a 60-page PDF, snap a photo, or start a hands-free spoken conversation, and Agello answers with Google's [Gemma 4](https://huggingface.co/google/gemma-4-E4B-it) running directly on your phone's own Apple Silicon.
 
-There is no account, no subscription, no API key and no cloud. Your conversations, photos, documents, voice recordings and memories stay on your iPhone. Once the models download, Agello works completely offline — touching the network only when you ask it to search the web.
+There is no account, no subscription, no API key and no cloud. Your conversations, photos, documents, voice recordings and memories stay on your iPhone. Once the models download, Agello works completely offline — touching the network only when you ask it to search the web, enable opt-in Apple Weather or Apple Maps personal tools, or confirm an allowlisted Apple Shortcut that accesses the network.
 
 <table>
 <tr>
@@ -41,7 +41,7 @@ There is no account, no subscription, no API key and no cloud. Your conversation
   <img src="docs/readme/features.svg" width="100%" alt="Built for everyday work on iPhone: PDFs and scans that cite exact pages, vision and camera, projects and message branches, 13+ languages, personal tools with gated in-chat approval, editable memory, Siri and widgets, and 100% on-device privacy.">
 </picture>
 
-Group related work into **Projects** with shared instructions and reference files, search your history by words or by meaning (*"Japan vacation"* finds *"Kyoto itinerary"*), and opt in to **Personal tools** (Calendar, Reminders, Contacts and Apple Maps) that always show an explicit in-chat confirmation card before creating an event or reminder. Agello integrates across iOS 27 with Siri and Shortcuts, the Action Button, Spotlight, Home and Lock Screen widgets, Control Center, Live Activities for long multi-document synthesis, and the Share Sheet. → [User guide](docs/USER_GUIDE.md) · [Privacy policy](https://powerbeef.github.io/Agello/privacy)
+Group related work into **Projects** with shared instructions, reference files, and security-scoped **linked folders**, search your history by words or by meaning (*"Japan vacation"* finds *"Kyoto itinerary"*), and opt in to **Personal tools** across **7 domains** (Calendar, Reminders, Contacts, Maps & Places, Weather, Alarms & Timers, and Photos OCR) plus an allowlisted **Shortcuts Bridge** and saved **Recipes**. Replies surface **9 interactive inline Action Cards** (Maps with Look Around and turn-by-turn routes, Weather with alerts, Calendar, Reminders with live Complete and Snooze, Contacts, native SMS/Email Drafts, live Alarm/Timer countdowns, and Automation Handoffs), while every mutating or external action requires explicit approval on a tiered `.standard`/`.destructive`/`.external` confirmation card or multi-step `PlanConfirmationCard` (with a provenance warning banner whenever untrusted content is in context). Agello integrates across iOS 27 with Siri and composable **Shortcuts** actions (including silent background ANE file search), **Focus Filters**, the Action Button, Spotlight, Home and Lock Screen widgets, Control Center, **Live Activities** (long synthesis, research, and `AlarmKit` timers), and the Share Sheet. → [User guide](docs/USER_GUIDE.md) · [Privacy policy](https://powerbeef.github.io/Agello/privacy)
 
 <table>
 <tr>
@@ -106,11 +106,11 @@ Agello treats the A19 Pro+ as a heterogeneous computer rather than a single GPU 
   <img src="docs/readme/architecture.svg" width="100%" alt="How Agello maps every workload across Apple A19 Pro+ silicon: SwiftUI, files, web and voice flow through AppState, ContextBudget and the security gate into three parallel units — the 6-Core Apple10+ GPU with per-core Neural Accelerators (Metal 4 FlashAttention, verify_8 and GPU Vision), the 16-Core Neural Engine (Core AI EmbeddingGemma 2 and iOS 27 SpeechAnalyzer with 0% GPU contention), and P-Cores (lazy Conformer audio, LL(1) tool grammar and JSON MTP) — over 12 GB unified memory with sparse 64K KV.">
 </picture>
 
-Every turn — typed, edited, regenerated, spoken, or shared — enters one pipeline in `AppState`, fits cleanly inside the KV budget before touching native memory, streams into a branching SwiftData tree, and snapshots its sparse KV state in zero-blit Metal 4 virtual mappings when background helper tasks extract titles or memories. → [Architecture](docs/ARCHITECTURE.md) · [Runtime audit](docs/RUNTIME-AUDIT-2026-11-21.md)
+Every turn — typed, edited, regenerated, spoken, or shared — enters one pipeline in `AppState`, fits cleanly inside the KV budget before touching native memory, streams into a branching SwiftData tree, and snapshots its sparse KV state in zero-blit Metal 4 virtual mappings when background helper tasks extract titles or memories. → [Architecture](docs/ARCHITECTURE.md) · [Engineering notes](docs/ENGINEERING.md)
 
 <picture>
   <source media="(max-width: 700px)" srcset="docs/readme/numbers-narrow.svg">
-  <img src="docs/readme/numbers.svg" width="100%" alt="Agello engineering by the numbers: 64K exact token context, 0 host read copies, 0% GPU load during RAG on the 16-Core ANE, 4.5x faster Vision encode, +5 MB across a 200-turn soak, and 573 on-hardware tests on a real iPhone 17 Pro.">
+  <img src="docs/readme/numbers.svg" width="100%" alt="Agello engineering by the numbers: 64K exact token context, 0 host read copies, 0% GPU load during RAG on the 16-Core ANE, 4.5x faster Vision encode, +5 MB across a 200-turn soak, and 594 automated tests (476 unit, 90 device, 28 UI) across real iPhone 17 Pro hardware gates and AgelloSim.">
 </picture>
 
 <table>
@@ -128,15 +128,15 @@ Every turn — typed, edited, regenerated, spoken, or shared — enters one pipe
 </tr>
 <tr>
 <td valign="top"><img src="docs/readme/icons/security.svg" width="40" height="40" alt=""></td>
-<td><b>Unbreakable context budget, LL(1) tool grammar and prompt-injection defense.</b> Every prompt is rendered identically to the runtime and counted with the model's tokenizer before dispatch; evicted turns are recalled semantically and overflowing inputs explain why instead of corrupting the native heap. Tool calling pairs a self-contained recursive-descent LL(1) parser (native <code>&lt;|"|&gt;</code> and RFC 8259 JSON), <code>llguidance</code> <code>TokTrie</code> multi-word JSON enums under MTP, live <code>&lt;thought&gt;</code> continuity across tool steps, and parallel read-only dispatch. External content is spotlighted inside random-nonced <code>&lt;untrusted_data&gt;</code> blocks, quarantined from memory, fetched over DNS-verified public IPs, and gated by fail-closed confirmation cards (<b>0%</b> breach across 6 adversarial vectors).</td>
+<td><b>Unbreakable context budget, LL(1) tool grammar and prompt-injection defense.</b> Every prompt is rendered identically to the runtime and counted with the model's tokenizer before dispatch; evicted turns are recalled semantically and overflowing inputs explain why instead of corrupting the native heap. Tool calling pairs a self-contained recursive-descent LL(1) parser (native <code>&lt;|"|&gt;</code> and RFC 8259 JSON), <code>llguidance</code> <code>TokTrie</code> multi-word JSON enums under MTP, live <code>&lt;thought&gt;</code> continuity across tool steps, and parallel read-only dispatch. External content is spotlighted inside random-nonced <code>&lt;untrusted_data&gt;</code> blocks, quarantined from memory, fetched over DNS-verified public IPs, tracked for taint provenance, and gated by fail-closed tiered confirmations (<code>.standard</code> / <code>.destructive</code> / <code>.external</code>, multi-step <code>PlanConfirmationCard</code>, and 256-bit CSPRNG Shortcut callback nonces — <b>0%</b> breach across 12 adversarial vectors <code>V1–V12</code>).</td>
 </tr>
 <tr>
 <td valign="top"><img src="docs/readme/icons/tree.svg" width="40" height="40" alt=""></td>
-<td><b>Branching SwiftData history, isolated UI and safe background GPU drain.</b> Conversations form a versioned SwiftData tree (<code>V3</code>) where edit and regenerate move <code>activeLeafID</code> without cross-branch or cancelled-helper KV bleed. <code>ComposerBridge</code> isolates keystrokes from message-list diffing; Conformer audio loads lazily on P-cores in <b>3 ms</b> (<code>1 ms</code> unload); and synchronous <code>GPUGate</code> + <code>BGContinuedProcessingTask</code> guards drain Metal work cleanly before suspension.</td>
+<td><b>Branching SwiftData history, isolated UI and safe background GPU drain.</b> Conversations form a versioned SwiftData tree (<code>V3</code>) where edit and regenerate move <code>activeLeafID</code> without cross-branch or cancelled-helper KV bleed. <code>ComposerBridge</code> isolates keystrokes from message-list diffing; Conformer audio loads lazily on P-cores in <b>3 ms</b> (<code>1 ms</code> unload); and synchronous <code>GPUGate</code> + <code>BGContinuedProcessingTask</code> guards drain Metal work cleanly before suspension (and park active Shortcut handoffs safely).</td>
 </tr>
 <tr>
 <td valign="top"><img src="docs/readme/icons/proof.svg" width="40" height="40" alt=""></td>
-<td><b>Benchmarked and verified on real silicon.</b> All <b>573 automated tests</b> (456 unit, 89 real-model hardware scenarios and probes, 28 real-tap UI and accessibility tests) and every speed/memory number run on real Apple silicon across a 25-second M6 <code>SIM_GPU=Apple_A19_Pro</code> CLI workbench, a 200-turn memory soak (<code>+4.95 MB</code>), jetsam ballast envelopes on a 12 GB phone, and physical iPhone 17 Pro gates. Our XCFramework ships no simulator slice; for fast UI, iOS-feature, and in-app output-quality iteration, the unshipped <code>AgelloSim</code> target proxies real Metal 4 + ANE inference from host <code>agello serve</code> into the iOS Simulator while executing all 16 Swift tools natively. → <a href="docs/TESTING.md">Testing</a> · <a href="docs/HARNESS.md">Autonomous harness</a></td>
+<td><b>Benchmarked and verified on real silicon.</b> All <b>594 automated tests</b> (476 unit, 90 real-model hardware scenarios and probes, 28 real-tap UI and accessibility tests) and every speed/memory number run on real Apple silicon across a 25-second M6 <code>SIM_GPU=Apple_A19_Pro</code> CLI workbench, a 200-turn memory soak (<code>+4.95 MB</code>), jetsam ballast envelopes on a 12 GB phone, and physical iPhone 17 Pro gates. Our XCFramework ships no simulator slice; for fast UI, iOS-feature, and in-app output-quality iteration, the unshipped <code>AgelloSim</code> target proxies real Metal 4 + ANE inference from host <code>agello serve</code> into the iOS Simulator while executing all 21 Swift tools natively. → <a href="docs/TESTING.md">Testing</a> · <a href="docs/HARNESS.md">Autonomous harness</a></td>
 </tr>
 </table>
 
@@ -154,12 +154,12 @@ Every turn — typed, edited, regenerated, spoken, or shared — enters one pipe
 ```sh
 scripts/sim-launch.sh                  # iOS Simulator UI, tools & live quality bridge (AgelloSim + agello serve)
 scripts/cli-test.sh unit               # fast Mac CLI unit suite (~25 s, no phone)
-scripts/cli-test.sh security           # 6-vector adversarial prompt-injection gate (~25 s)
+scripts/cli-test.sh security           # 12-vector (V1–V12) adversarial prompt-injection gate (~25 s)
 scripts/device-harness.sh gate         # single-build physical iPhone hardware + UI gate
 python3 scripts/generate_readme_art.py --check
 ```
 
-→ [Architecture](docs/ARCHITECTURE.md) · [Engineering notes](docs/ENGINEERING.md) · [LiteRT-LM reference](docs/LITERT-LM.md) · [Mac CLI](docs/CLI.md) · [Performance ledger](docs/PERFORMANCE.md) · [Roadmap](docs/ROADMAP.md)
+→ [Architecture](docs/ARCHITECTURE.md) · [Engineering notes](docs/ENGINEERING.md) · [LiteRT-LM reference](docs/LITERT-LM.md) · [Mac CLI](docs/CLI.md) · [B5 performance archive](docs/archive/performance-b5-2026-11.md) · [Roadmap](docs/ROADMAP.md)
 
 ## Credits and attribution
 

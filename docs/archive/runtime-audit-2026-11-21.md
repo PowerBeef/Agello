@@ -1,8 +1,11 @@
+> [!IMPORTANT]
+> **Archived audit — 100% resolved (2026-11-24).** Every finding across §§1–6 of this audit was fixed or empirically settled during Phases 1–6 and Full-Stack Audit Waves 1–2 (shipped in `agello-one-20261124` and verified on physical iPhone 17 Pro). For active status, see [ROADMAP.md](../ROADMAP.md); for current architectural safeguards, see [ENGINEERING.md](../ENGINEERING.md).
+
 # Custom LiteRT-LM Runtime & Apple Silicon Audit (2026-11-21)
 
 Code-level architecture, performance, numerical accuracy, and iOS 27 / A19 Pro+ hardware audit across `../LiteRT-LM` (`main` @ `4318c4a1`, shipping release `agello-one-20261115`) and `iRT` (`main` @ `4d2363a`), cross-checked against Xcode's iOS 27.2 SDK headers (`Metal`, `MetalPerformancePrimitives`, `BackgroundTasks`), WWDC26 Session 330 (*Optimize custom machine learning operations with Metal tensors*), Apple Tech Talk 111432 (*Accelerate your machine learning workloads with the M5 and A19 GPUs*), `llguidance`'s `TokTrie` specification, and saved iPhone 17 Pro / Mac M6 telemetry runs.
 
-This audit underpins the 6-phase A19 Pro+ engineering plan in [ROADMAP.md](ROADMAP.md).
+This audit underpinned the 6-phase A19 Pro+ engineering plan in [ROADMAP.md](../ROADMAP.md) (archived milestone details in [roadmap-2026-11-phases-1-6.md](roadmap-2026-11-phases-1-6.md)).
 
 ---
 

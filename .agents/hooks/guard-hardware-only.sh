@@ -29,7 +29,7 @@ esac
 
 # 2. Keep Axiom xclog blocked for physical iPhone log capture (use device-run.sh logs for hardware).
 case "$tool_name:$mcp_server:$mcp_tool" in
-  call_mcp_tool:axiom:axiom_xclog_*)
+  call_mcp_tool:axiom:axiom_xclog_* | mcp_*xclog*:*:* | *:*:axiom_xclog_*)
     deny "Axiom xclog tools are simulator-only. Use scripts/device-run.sh logs for physical iPhone log capture or xcrun simctl spawn log stream for AgelloSim."
     ;;
 esac

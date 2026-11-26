@@ -5,95 +5,38 @@ description: First-release checklist for Agello (TestFlight and App Store), and 
 
 # Agello release checklist
 
-This checklist is for when the user decides Agello is ready for the store.
-That call is the user's: don't schedule a release, put one on the roadmap, or
-start these steps unprompted. App Store Connect work goes through `/opt/homebrew/bin/asc`
-(outside the terminal sandbox, `BypassSandbox: true`). Load `asc-cli-usage`
-first, then the skill named for each step.
+Use this only when the user decides Agello is ready for TestFlight or the App Store — never schedule or start a release unprompted. App Store Connect work uses `/opt/homebrew/bin/asc` (`BypassSandbox: true`). Load `asc-cli-usage` first, then the skill named for each step. Any Apple account mutation (IDs, records, uploads, submission) requires explicit user go-ahead first.
 
-Anything that changes the Apple account (registering IDs, creating records,
-uploading, submitting) needs the user's go-ahead first.
-
-## Identity
+## Identity & Capabilities
 
 | Item | Value |
 | --- | --- |
-| Team | `FK2D8X36G2` |
-| App | `com.patricedery.agello` |
-| Widgets extension | `com.patricedery.agello.widgets` |
-| Share extension | `com.patricedery.agello.share` |
-| App Group | `group.com.patricedery.agello` (app and share extension) |
-| App capabilities | Extended Virtual Addressing, Increased Memory Limit, Background GPU (`continued-processing` + `continued-processing.inference`), App Groups, WeatherKit (the App ID needs it under Capabilities and App Services) |
+| Team / Bundle IDs | `FK2D8X36G2` · `com.patricedery.agello` · `.widgets` · `.share` |
+| App Group | `group.com.patricedery.agello` (app + share extension) |
+| Capabilities | Extended Virtual Addressing, Increased Memory Limit, Background GPU (`continued-processing` + `continued-processing.inference`), App Groups, WeatherKit (Capabilities + App Services) |
+| Info.plist / Live Activities & Permissions | `NSSupportsLiveActivities = true`, `NSAlarmKitUsageDescription`, `NSPhotoLibraryUsageDescription` (`INFOPLIST_KEY_*` in `project.pbxproj`), `NSCalendarsFullAccessUsageDescription`, `NSRemindersFullAccessUsageDescription`, `NSContactsUsageDescription`, Mic / Speech / Camera / Location |
 
 ## Checklist
 
-1. **Bundle IDs and capabilities** (`asc-signing-setup`). The app was
-   renamed from iRTChat on 2026-10-14; its old `com.patricedery.irtchat` IDs
-   are unused and can be removed from the portal. The first device build on
-   2026-10-14 registered the app, share and widgets IDs, the App Group and
-   the app's capabilities through automatic signing (development only);
-   confirm them in the portal before the first distribution build.
-2. **App record** (`asc-app-create-ui`, driven via Antigravity's `browser`
-   subagent or the user's visible browser; the user signs in to Apple
-   themselves). There was no record for the app (under either name) as of
-   2026-10-14.
-3. **Privacy.** `Agello/PrivacyInfo.xcprivacy` and
-   `AgelloShare/PrivacyInfo.xcprivacy` (`C617.1`) declare no tracking, no data
-   collected, and the required-reason APIs (see `agello-litert-update` for
-   the LiteRT-LM part). The App Store privacy answers must match: "Data Not
-   Collected". At the user's request, web search sends its queries to the
-   sources the planner picks, Apple Weather a place's coordinates and Apple
-   Maps the user's area for "near me" questions, and it downloads the pages it
-   found (`docs/privacy.md`); nothing goes to the developer. Confirm the user
-   agrees with that classification.
-4. **Model hosting.** Both model repos are Apache 2.0 with `LICENSE` and
-   `NOTICE` files:
-   - Chat model: `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` (our patched
-     v2 128K copy of litert-community's E4B file, `gemma-4-E4B-it-agello-v2.litertlm`).
-   - Embedding model: `PowerBeef02/embeddinggemma-2-text-270m-coreai-ane`
-     (revision `41026d1c`, our 4-bucket asymmetric INT4 Core AI ANE conversion
-     of litert-community's EmbeddingGemma 2).
-   Keep both repos public, and keep the app's licenses screen (`NOTICE` /
-   `Agello/Resources/NOTICE.txt`) crediting Google, litert-community and the
-   modifications.
-5. **Export compliance.** Done: `AgelloiOS/Info.plist` sets
-   `ITSAppUsesNonExemptEncryption` to false (the app only uses HTTPS through
-   URLSession, which qualifies as exempt). Revisit it if the app ever adds
-   its own cryptography.
-6. **App icon.** `Agello/Assets.xcassets/AppIcon.appiconset`: one 1024 image
-   plus dark and tinted variants (added 2026-10-14). App Store Connect takes
-   the 1024 marketing icon from the build.
-7. **Build and upload** (`asc-xcode-build`). Use the Release configuration;
-   all three targets must sign. Then follow `asc-build-lifecycle` until the
-   build finishes processing.
-8. **TestFlight** (`asc-testflight-orchestration`). Testers need an iPhone
-   with 12 GB of memory (iPhone 17 Pro and Pro Max, iPhone Air, or later) on
-   iOS 27 and about 6.9 GB free: the app starts a download only when the file,
-   the engine cache its first load writes and a 0.5 GB margin fit
-   (`ModelStore.requiredBytes`), 6.7 GB for E4B (3.69 + 2.5 + 0.5), and
-   EmbeddingGemma, which follows, needs its 128 MB Core AI ANE archive and
-   unpacked bundle (~0.26 GB headroom during unpack) on top.
-   The App Store can't enforce the memory: there's no capability key for it,
-   and `iphone-performance-gaming-tier` is for games (dropped 2026-11-12).
-   Any iPhone on iOS 27 can install the app; below 12 GB it opens on
-   `UnsupportedDeviceView` and downloads nothing. Say 12 GB in the store text
-   and the review notes (a reviewer's iPhone may have 8 GB).
-   Requirements can be relaxed in an update, never tightened.
-9. **Screenshots** (`asc-screenshot-resize`, then `asc screenshots upload`).
-   Take them with `scripts/device-harness.sh screenshots`
-   (`build/device-harness/attachments/screenshots/`), never the simulator.
-   `asc-shots-pipeline` is blocked in `.agents/hooks.json` for that reason.
-10. **Metadata** (`asc-metadata-sync`, `asc-whats-new-writer`). Privacy is the
-   core pitch: on-device, no account, no cloud. Mention the 3.7 GB model
-   download.
-11. **Review** (`asc-submission-health`, `asc-release-flow`).
-    - Web search uses only sources whose terms permit the app (App Review
-      5.2.2: "specifically permitted" under each service's terms; ready to
-      show Apple). DuckDuckGo was removed for that on 2026-11-12. Check any
-      new source's terms before it ships (ROADMAP "Current status").
-    - Explain the large model download and the memory entitlements in the
-      review notes.
-12. **After release** (`asc-crash-triage`). TestFlight crashes may come from
-    LiteRT-LM's native code. Symbolicate one report with `axiom_xcsym_crash`
-    or triage a batch with `axiom_xcsym_triage` (plus `axiom_get_agent` if
-    deeper audit guidance is needed).
+1. **Bundle IDs & capabilities** (`asc-signing-setup`). Old `com.patricedery.irtchat` IDs can be removed. Confirm all three bundle IDs, App Group, WeatherKit, and memory/background entitlements in the Developer portal before distribution signing.
+2. **App record** (`asc-app-create-ui`, user's visible browser; user signs in to Apple). Confirm whether a record exists before creating one.
+3. **Privacy & usage-string parity.**
+   - `Agello/PrivacyInfo.xcprivacy` and `AgelloShare/PrivacyInfo.xcprivacy` (`C617.1`) declare no tracking, no data collected, and required-reason APIs (re-check `CLiteRTLM` via `agello-litert-update`). App Store answers must match: **"Data Not Collected"**.
+   - **Pre-submission parity check:** Confirm [docs/privacy.md](../../../docs/privacy.md) and every `AgelloiOS/Info.plist` / `project.pbxproj` usage description match all shipping features & network calls: Web Search, opt-in WeatherKit/MapKit even with Search OFF, Calendar & Reminders CRUD (incl. `.destructive` delete), Contacts & `prepare_message` compose sheets, `AlarmKit` + Live Activities, opt-in Photos OCR (`.limited`-safe ANE), Outbound Shortcuts Bridge (`.external`, outside sandbox), linked project folders, `PasteButton`, lock-screen authenticated AppIntents, and Spotlight indexing. Get user confirmation.
+4. **Model hosting.** Keep both Apache 2.0 repos public (`LICENSE`, `NOTICE`, SHA-256s pinned in `ModelCatalog.swift`):
+   - `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` (`gemma-4-E4B-it-agello-v2.litertlm`)
+   - `PowerBeef02/embeddinggemma-2-text-270m-coreai-ane` (`embeddinggemma-2-text-270m-ane.aar`)
+   - Keep `NOTICE` byte-identical to `Agello/Resources/NOTICE.txt` (`cmp NOTICE Agello/Resources/NOTICE.txt`).
+5. **Export compliance.** `AgelloiOS/Info.plist` sets `ITSAppUsesNonExemptEncryption = false` (HTTPS via `URLSession` only). Revisit if custom crypto is added.
+6. **App icon.** `Agello/Assets.xcassets/AppIcon.appiconset` ships 1024 + dark + tinted variants.
+7. **Build & upload** (`asc-xcode-build`, `asc-build-lifecycle`). Release config; all three targets (`Agello`, `AgelloWidgets`, `AgelloShare`) must sign (`AgelloSim` has `SKIP_INSTALL = YES`). Wait for processing.
+8. **TestFlight** (`asc-testflight-orchestration`). Requires **12 GB iPhone** (iPhone 17 Pro / Pro Max, iPhone Air, later), **iOS 27.0+**, and **`~7.0 GB` free** before starting sequential downloads:
+   - `ModelStore.requiredBytes` (`sizeBytes + engineCacheBytes + 500 MB` margin):
+     - **Gemma 4 E4B:** `3.69 GB` + `2.50 GB` cache + `0.50 GB` margin = **`6.69 GB`**.
+     - **EmbeddingGemma 2 (ANE):** `128 MB` `.aar` + `180 MB` cache/unpacked + `500 MB` margin = **`0.81 GB`**.
+     - **Combined installed footprint (files + caches):** **`6.49 GB`** (**`~7.0 GB` free** at start with 500 MB headroom).
+   - No App Store 12 GB capability key exists; devices `< 12 GB` open `UnsupportedDeviceView` and download nothing. State 12 GB in store text and App Review notes (reviewers may test on 8 GB). Requirements can be relaxed later, never tightened.
+9. **Screenshots** (`asc-screenshot-resize`, `asc screenshots upload`). Capture only on physical iPhone via `scripts/device-harness.sh screenshots`, never Simulator (`asc-shots-pipeline` blocked).
+10. **Metadata** (`asc-metadata-sync`, `asc-whats-new-writer`). Lead with private on-device AI (no account, no cloud); mention ~3.8 GB model downloads and 12 GB floor.
+11. **Review** (`asc-submission-health`, `asc-release-flow`). Web search queries only terms-permitted sources (App Review 5.2.2; verify terms and document in [docs/privacy.md](../../../docs/privacy.md) and `Knowledge/Web/` before shipping). Explain model downloads, 12 GB floor, memory/background-GPU entitlements, and opt-in personal/Shortcuts confirmations in review notes.
+12. **After release** (`asc-crash-triage`). Symbolicate native LiteRT-LM or Swift crash reports with `axiom` MCP (`axiom_xcsym_crash`, `axiom_xcsym_triage`, `axiom_get_agent`).
