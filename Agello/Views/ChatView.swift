@@ -141,7 +141,17 @@ struct ChatView: View {
   /// An error first, else a notice (same place and identifier; errors look like warnings).
   @ViewBuilder
   private var noticeBanner: some View {
-    if let error = appState.generationError {
+    if let shortcutName = appState.pendingShortcutReturnName {
+      InlineBanner(
+        symbol: "bolt.horizontal.circle",
+        message: String(localized: "Waiting for “\(shortcutName)” to return from Shortcuts."),
+        tint: Theme.Brand.glacier,
+        identifier: "chat.banner.shortcut"
+      ) {
+        Button("Continue") { appState.continueWithoutShortcutCallback() }
+      }
+      .bannerInsets()
+    } else if let error = appState.generationError {
       InlineBanner(
         symbol: "exclamationmark.triangle", message: error, tint: Theme.Status.guarded,
         identifier: "chat.banner.notice"
@@ -184,6 +194,9 @@ struct ChatView: View {
                   request: confirmation,
                   onApprove: {
                     appState.resolvePendingToolConfirmation(id: confirmation.id, approved: true)
+                  },
+                  onApproveSteps: { selected in
+                    appState.resolvePendingToolConfirmation(id: confirmation.id, approvedSteps: selected)
                   },
                   onDeny: {
                     appState.resolvePendingToolConfirmation(id: confirmation.id, approved: false)

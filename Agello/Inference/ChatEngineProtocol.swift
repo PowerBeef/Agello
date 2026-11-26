@@ -51,6 +51,12 @@ enum ActiveTools {
         tools.append(ListAlarmsTool())
         tools.append(ManageAlarmTool())
       }
+      if options.personalTools.photos {
+        tools.append(SearchPhotosTool())
+      }
+      if !options.shortcutAllowlistKey.isEmpty {
+        tools.append(RunShortcutTool())
+      }
     }
     if options.webSearchTool { tools.append(WebSearchTool()) }
     return tools

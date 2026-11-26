@@ -1,4 +1,5 @@
 import Foundation
+import LiteRTLMTools
 import SwiftData
 
 /// On-device workspace tool wiring (`search_files`, `read_document_pages`, `search_past_chats`,
@@ -33,13 +34,22 @@ extension AppState {
     }
   }
 
-  /// Registers the fail-closed UI confirmation presenter for mutating tools (`isReadOnly == false`).
+  /// Registers the fail-closed UI confirmation presenter for mutating tools (`isReadOnly == false`),
+  /// the multi-step `PlanConfirmationCard` batch handler, and the `ShortcutCallbackBroker`
+  /// foreground readiness check.
   func installToolConfirmationGate() {
     ToolConfirmationGate.installPresenter { [weak self] request in
       guard let self else {
         return .denied(reason: "Agello is unavailable; action was not executed.")
       }
       return await self.requestToolConfirmation(request)
+    }
+    ToolManager.setBatchConfirmHandler { invocations in
+      await BatchConfirmationPlanner.confirmBatch(invocations)
+    }
+    ShortcutCallbackBroker.shared.setAppInForeground(isInForeground)
+    ShortcutCallbackBroker.shared.setForegroundReadyCheck {
+      GPUGate.isOpen
     }
   }
 
@@ -82,6 +92,20 @@ extension AppState {
   /// Resolves the inline confirmation card in the chat stream when the user taps Approve or Deny.
   /// When `id` is provided, ignores taps that race with a superseded request (TOCTOU protection).
   func resolvePendingToolConfirmation(id: UUID? = nil, approved: Bool) {
+    resolvePendingToolConfirmation(
+      id: id, decision: approved ? .approved : .denied(reason: "Denied by the user."))
+  }
+
+  /// Resolves a multi-step `PlanConfirmationCard` with the exact step indices checked by the user.
+  func resolvePendingToolConfirmation(id: UUID? = nil, approvedSteps: Set<Int>) {
+    let decision: ToolConfirmationDecision =
+      approvedSteps.isEmpty
+      ? .denied(reason: "No steps selected by the user.")
+      : .approvedSteps(approvedSteps)
+    resolvePendingToolConfirmation(id: id, decision: decision)
+  }
+
+  private func resolvePendingToolConfirmation(id: UUID?, decision: ToolConfirmationDecision) {
     if let id, pendingToolConfirmation?.id != id { return }
     guard let continuation = pendingToolConfirmationContinuation else {
       pendingToolConfirmation = nil
@@ -91,8 +115,13 @@ extension AppState {
     pendingToolConfirmation = nil
     pendingToolConfirmationThreadID = nil
     pendingToolConfirmationContinuation = nil
-    continuation.resume(
-      returning: approved ? .approved : .denied(reason: "Denied by the user."))
+    continuation.resume(returning: decision)
+  }
+
+  /// Resolves an unresolved external Shortcut wait when the user returns manually without a callback.
+  func continueWithoutShortcutCallback() {
+    pendingShortcutReturnName = nil
+    ShortcutCallbackBroker.shared.cancelPending(reason: "User continued without waiting for Shortcut.")
   }
 
   /// Cancels any pending confirmation card (or only the card matching `id`) with a fail-closed

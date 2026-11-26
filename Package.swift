@@ -55,7 +55,8 @@ let package = Package(
         "Agello/System/SpotlightIndex.swift",
         // Logic the engine doesn't call, kept in so its unit tests run here too (`swift test`).
         "Agello/System/AppReset.swift", "Agello/System/AppRouter.swift",
-        "Agello/System/NativeActionURLs.swift",
+        "Agello/System/AutomationRegistry.swift", "Agello/System/FolderBookmarks.swift",
+        "Agello/System/NativeActionURLs.swift", "Agello/System/ShortcutCallbackBroker.swift",
         "Agello/Support/MetricsReporter.swift",
         "Agello/Voice/VoiceText.swift",
         // One list of bench cases for the iPhone's driver and for `agello bench`.

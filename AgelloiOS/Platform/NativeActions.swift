@@ -201,6 +201,10 @@ enum NativeActions {
     UIApplication.shared.open(url)
   }
 
+  static func openExternalURL(_ url: URL) async -> Bool {
+    await UIApplication.shared.open(url)
+  }
+
   static var canSendText: Bool { MFMessageComposeViewController.canSendText() }
   static var canSendMail: Bool { MFMailComposeViewController.canSendMail() }
 }

@@ -1,14 +1,42 @@
 import SwiftUI
 
-/// Deterministic pre-execution confirmation card shown inline in the chat stream before any
-/// mutating tool (`isReadOnly == false`) executes. Displays exact tool name and parameters.
+/// Deterministic pre-execution confirmation card shown inline in the chat stream (and Voice Mode)
+/// before any mutating tool (`isReadOnly == false`) executes.
+///
+/// Supports both single-action confirmation and grouped multi-step `PlanConfirmationCard` batches
+/// (with per-step checkboxes, risk badges, and zero-TOCTOU execution), plus an amber provenance
+/// warning banner whenever external/untrusted content entered the active turn.
 struct ToolConfirmationCard: View {
   let request: ToolConfirmationRequest
   let onApprove: () -> Void
+  let onApproveSteps: ((Set<Int>) -> Void)?
   let onDeny: () -> Void
 
+  @State private var selectedSteps: Set<Int>
+
+  init(
+    request: ToolConfirmationRequest,
+    onApprove: @escaping () -> Void,
+    onApproveSteps: ((Set<Int>) -> Void)? = nil,
+    onDeny: @escaping () -> Void
+  ) {
+    self.request = request
+    self.onApprove = onApprove
+    self.onApproveSteps = onApproveSteps
+    self.onDeny = onDeny
+    _selectedSteps = State(initialValue: Set(request.steps.map(\.index)))
+  }
+
+  private var effectiveRisk: ToolConfirmationRequest.RiskTier {
+    guard request.isPlanBatch else { return request.risk }
+    let active = request.steps.filter { selectedSteps.contains($0.index) }
+    if active.contains(where: { $0.risk == .destructive }) { return .destructive }
+    if active.contains(where: { $0.risk == .external }) { return .external }
+    return .standard
+  }
+
   private var accentTint: Color {
-    switch request.risk {
+    switch effectiveRisk {
     case .standard: Theme.Brand.gold
     case .destructive: Theme.Status.critical
     case .external: Theme.Brand.glacier
@@ -16,100 +44,226 @@ struct ToolConfirmationCard: View {
   }
 
   private var shieldSymbol: String {
+    if request.isPlanBatch { return "checklist.checked" }
     switch request.risk {
-    case .standard: "checkmark.shield.fill"
-    case .destructive: "exclamationmark.triangle.fill"
-    case .external: "arrow.up.forward.app.fill"
+    case .standard: return "checkmark.shield.fill"
+    case .destructive: return "exclamationmark.triangle.fill"
+    case .external: return "arrow.up.forward.app.fill"
     }
   }
 
   private var badgeText: String {
-    switch request.risk {
-    case .standard: String(localized: "Confirm")
+    switch effectiveRisk {
+    case .standard: request.isPlanBatch ? String(localized: "Plan") : String(localized: "Confirm")
     case .destructive: String(localized: "Destructive")
     case .external: String(localized: "External")
     }
   }
 
   private var approveLabel: String {
-    request.risk == .destructive ? String(localized: "Delete") : String(localized: "Approve")
+    if request.isPlanBatch {
+      let count = selectedSteps.count
+      return count == 1
+        ? String(localized: "Run 1 Action")
+        : String(localized: "Run \(count) Actions")
+    }
+    switch request.risk {
+    case .destructive: return String(localized: "Delete")
+    case .external: return String(localized: "Run")
+    case .standard: return String(localized: "Approve")
+    }
   }
 
   var body: some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-      HStack(spacing: Theme.Spacing.sm) {
-        Image(systemName: shieldSymbol)
-          .font(.title3)
-          .foregroundStyle(accentTint)
-          .accessibilityHidden(true)
-        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-          Text(request.title)
-            .font(.headline)
-            .foregroundStyle(Theme.Text.primary)
-          Text(request.toolName)
-            .font(.caption.monospaced())
-            .foregroundStyle(Theme.Text.tertiary)
-            .accessibilityIdentifier("tool.confirm.name")
-        }
-        Spacer(minLength: Theme.Spacing.xs)
-        StatusBadge(
-          text: badgeText,
-          tone: request.risk == .destructive ? Theme.Status.critical : Theme.Status.guarded)
+      header
+
+      if !request.untrustedSources.isEmpty {
+        taintBanner
       }
 
       Text(request.summary)
         .font(.subheadline)
         .foregroundStyle(Theme.Text.secondary)
 
-      if !request.parameters.isEmpty {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-          ForEach(request.parameters) { param in
-            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
-              Text(param.name)
-                .font(.caption.monospaced())
-                .foregroundStyle(Theme.Text.tertiary)
-                .frame(minWidth: 68, alignment: .leading)
-              Text(param.value)
-                .font(.subheadline)
-                .foregroundStyle(Theme.Text.primary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-          }
-        }
-        .padding(Theme.Spacing.md)
-        .surfaceCard(radius: Theme.Radius.row)
+      if request.isPlanBatch {
+        planStepsList
+      } else if !request.parameters.isEmpty {
+        parameterList(request.parameters)
       }
 
-      HStack(spacing: Theme.Spacing.sm) {
-        Button {
-          Haptics.selection()
-          onDeny()
-        } label: {
-          Text("Deny")
-            .font(.headline)
-            .foregroundStyle(Theme.Text.secondary)
-            .frame(maxWidth: .infinity, minHeight: Theme.Size.target)
-            .surfaceCard(radius: Theme.Radius.row)
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("tool.confirm.deny")
-
-        Button {
-          Haptics.selection()
-          onApprove()
-        } label: {
-          Text(approveLabel)
-        }
-        .buttonStyle(LitButtonStyle(tint: accentTint))
-        .accessibilityIdentifier("tool.confirm.approve")
-      }
+      actionButtons
     }
     .padding(Theme.Spacing.lg)
     .surfaceCard(
       radius: Theme.Radius.card,
-      stroke: request.risk == .destructive ? Theme.Status.critical.opacity(0.35) : Theme.Surface.hairline)
+      stroke: effectiveRisk == .destructive ? Theme.Status.critical.opacity(0.35) : Theme.Surface.hairline)
     .accessibilityElement(children: .contain)
-    .accessibilityIdentifier("tool.confirm.card")
+    .accessibilityIdentifier(request.isPlanBatch ? "tool.plan.card" : "tool.confirm.card")
+  }
+
+  private var header: some View {
+    HStack(spacing: Theme.Spacing.sm) {
+      Image(systemName: shieldSymbol)
+        .font(.title3)
+        .foregroundStyle(accentTint)
+        .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+        Text(request.title)
+          .font(.headline)
+          .foregroundStyle(Theme.Text.primary)
+        Text(request.toolName)
+          .font(.caption.monospaced())
+          .foregroundStyle(Theme.Text.tertiary)
+          .accessibilityIdentifier("tool.confirm.name")
+      }
+      Spacer(minLength: Theme.Spacing.xs)
+      StatusBadge(
+        text: badgeText,
+        tone: effectiveRisk == .destructive ? Theme.Status.critical : Theme.Status.guarded)
+    }
+  }
+
+  private var taintBanner: some View {
+    let sourceList = request.untrustedSources.prefix(3).joined(separator: ", ")
+    return HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+      Image(systemName: "exclamationmark.shield.fill")
+        .font(.subheadline)
+        .foregroundStyle(Theme.Status.guarded)
+      Text("Triggered after reading external content (\(sourceList)). Verify all details carefully.")
+        .font(.caption)
+        .foregroundStyle(Theme.Text.primary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .padding(Theme.Spacing.sm)
+    .background(Theme.Status.guarded.opacity(0.14), in: RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous))
+    .overlay {
+      RoundedRectangle(cornerRadius: Theme.Radius.row, style: .continuous)
+        .stroke(Theme.Status.guarded.opacity(0.35), lineWidth: Theme.Stroke.hairline)
+    }
+    .accessibilityIdentifier("tool.confirm.taintBanner")
+  }
+
+  private var planStepsList: some View {
+    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+      ForEach(request.steps) { step in
+        let isSelected = selectedSteps.contains(step.index)
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+          Button {
+            Haptics.selection()
+            if isSelected {
+              selectedSteps.remove(step.index)
+            } else {
+              selectedSteps.insert(step.index)
+            }
+          } label: {
+            HStack(alignment: .center, spacing: Theme.Spacing.sm) {
+              Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.title3)
+                .foregroundStyle(isSelected ? tint(for: step.risk) : Theme.Text.tertiary)
+                .frame(width: 28, height: Theme.Size.target)
+              VStack(alignment: .leading, spacing: 2) {
+                Text(step.title)
+                  .font(.system(.subheadline, weight: .semibold))
+                  .foregroundStyle(isSelected ? Theme.Text.primary : Theme.Text.tertiary)
+                Text(step.summary)
+                  .font(.caption)
+                  .foregroundStyle(Theme.Text.secondary)
+                  .lineLimit(2)
+              }
+              .frame(maxWidth: .infinity, alignment: .leading)
+              if step.risk != .standard {
+                StatusBadge(
+                  text: step.risk == .destructive ? String(localized: "Destructive") : String(localized: "External"),
+                  tone: step.risk == .destructive ? Theme.Status.critical : Theme.Status.guarded)
+              }
+            }
+            .contentShape(.rect)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("\(step.title), \(isSelected ? "selected" : "unselected")")
+          .accessibilityIdentifier("tool.plan.step.\(step.index)")
+
+          if isSelected, !step.parameters.isEmpty {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+              ForEach(step.parameters) { param in
+                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+                  Text(param.name)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(Theme.Text.tertiary)
+                    .frame(minWidth: 58, alignment: .leading)
+                  Text(param.value)
+                    .font(.caption)
+                    .foregroundStyle(Theme.Text.primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+              }
+            }
+            .padding(.leading, 36)
+          }
+        }
+        .padding(Theme.Spacing.sm)
+        .surfaceCard(radius: Theme.Radius.row)
+      }
+    }
+  }
+
+  private func parameterList(_ parameters: [ToolConfirmationRequest.Parameter]) -> some View {
+    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+      ForEach(parameters) { param in
+        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+          Text(param.name)
+            .font(.caption.monospaced())
+            .foregroundStyle(Theme.Text.tertiary)
+            .frame(minWidth: 68, alignment: .leading)
+          Text(param.value)
+            .font(.subheadline)
+            .foregroundStyle(Theme.Text.primary)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+    }
+    .padding(Theme.Spacing.md)
+    .surfaceCard(radius: Theme.Radius.row)
+  }
+
+  private var actionButtons: some View {
+    HStack(spacing: Theme.Spacing.sm) {
+      Button {
+        Haptics.selection()
+        onDeny()
+      } label: {
+        Text(request.isPlanBatch ? String(localized: "Cancel") : String(localized: "Deny"))
+          .font(.headline)
+          .foregroundStyle(Theme.Text.secondary)
+          .frame(maxWidth: .infinity, minHeight: Theme.Size.target)
+          .surfaceCard(radius: Theme.Radius.row)
+      }
+      .buttonStyle(.plain)
+      .accessibilityIdentifier("tool.confirm.deny")
+
+      Button {
+        Haptics.selection()
+        if request.isPlanBatch, let onApproveSteps {
+          onApproveSteps(selectedSteps)
+        } else {
+          onApprove()
+        }
+      } label: {
+        Text(approveLabel)
+      }
+      .buttonStyle(LitButtonStyle(tint: accentTint))
+      .disabled(request.isPlanBatch && selectedSteps.isEmpty)
+      .accessibilityIdentifier("tool.confirm.approve")
+    }
+  }
+
+  private func tint(for risk: ToolConfirmationRequest.RiskTier) -> Color {
+    switch risk {
+    case .standard: Theme.Brand.gold
+    case .destructive: Theme.Status.critical
+    case .external: Theme.Brand.glacier
+    }
   }
 }

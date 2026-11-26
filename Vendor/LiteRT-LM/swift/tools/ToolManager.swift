@@ -17,9 +17,40 @@
 // validated for JSONSerialization (non-finite floats stringified before encoding).
 
 import Foundation
+import Synchronization
+
+/// A pre-decoded mutating tool invocation queued for grouped pre-execution confirmation.
+public struct PendingToolInvocation: Sendable {
+  public let index: Int
+  public let name: String
+  public let argumentsJSON: Data
+
+  public init(index: Int, name: String, argumentsJSON: Data) {
+    self.index = index
+    self.name = name
+    self.argumentsJSON = argumentsJSON
+  }
+}
 
 /// Manages the discovery, schema generation, and execution of tools.
 public final class ToolManager: Sendable {
+  /// Optional app-provided hook invoked when a single model round emits multiple mutating
+  /// (`isReadOnly == false`) tool calls. Return the set of approved call `index` values to execute
+  /// (unchecked indices emit `{"executed": false, "status": "skipped_by_user"}`), or `nil` to fall
+  /// back to per-tool confirmation.
+  public typealias BatchConfirmHandler = @Sendable ([PendingToolInvocation]) async -> Set<Int>?
+
+  private static let batchConfirmLock = Mutex<BatchConfirmHandler?>(nil)
+
+  public static func setBatchConfirmHandler(_ handler: BatchConfirmHandler?) {
+    batchConfirmLock.withLock { $0 = handler }
+  }
+
+  public static func confirmBatch(_ calls: [PendingToolInvocation]) async -> Set<Int>? {
+    let handler = batchConfirmLock.withLock { $0 }
+    guard let handler else { return nil }
+    return await handler(calls)
+  }
 
   /// A map of tool names to their corresponding Swift Types.
   /// We store the `Type` so we can instantiate new copies via Codable.

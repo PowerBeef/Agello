@@ -154,17 +154,26 @@ enum SystemPrompt {
   }
 
   /// Base prompt, personalization, saved memories, then the project's
-  /// instructions, plus untrusted-data boundary guidance when agentic tools are enabled.
+  /// instructions, plus untrusted-data boundary guidance when agentic tools are enabled
+  /// and a concise allowlist line only when the user has registered Shortcuts.
   static func compose(
     base: String, personalization: Personalization, project: ProjectContext?,
     memories: [String] = [], today: Date = .now, current: CurrentInfo = .none,
-    dataSecurity: Bool = false
+    dataSecurity: Bool = false, allowedShortcuts: [RegisteredShortcut] = []
   ) -> String {
     var prompt = composeText(
       base: base, personalization: personalization, project: project, memories: memories,
       today: today, current: current)
     if dataSecurity {
       prompt += "\n\n" + UntrustedContext.dataBoundaryInstruction
+    }
+    if !allowedShortcuts.isEmpty {
+      let summary = allowedShortcuts.prefix(AutomationRegistry.maxSchemaShortcuts).map { item in
+        item.summary.isEmpty
+          ? "\(item.id) (\"\(item.name)\")"
+          : "\(item.id) (\"\(item.name)\": \(item.summary))"
+      }.joined(separator: "; ")
+      prompt += "\n\nAllowed Shortcuts for run_shortcut: \(PromptText.neutralized(summary))."
     }
     return prompt
   }

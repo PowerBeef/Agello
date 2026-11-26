@@ -30,6 +30,8 @@ final class AppRouter {
     case openProject(UUID)
     /// Open the chat or project that owns a saved document.
     case openDocument(UUID)
+    /// Run a saved multi-step automation recipe by ID (`agello://recipe/<id>`).
+    case runRecipe(String)
   }
 
   /// The action waiting to be carried out by the chat screen.
@@ -61,8 +63,20 @@ final class AppRouter {
 
   nonisolated static let scheme = "agello"
 
+  /// Intercepts `agello://shortcut-result?...` callbacks immediately (even while `.inactive`) and
+  /// hands them to ``ShortcutCallbackBroker`` for 256-bit nonce verification and foreground delivery.
+  nonisolated static func handleShortcutCallbackIfNeeded(_ url: URL) -> Bool {
+    guard
+      url.scheme?.lowercased() == scheme,
+      url.host()?.lowercased() == ShortcutCallbackBroker.callbackHost
+    else { return false }
+    _ = ShortcutCallbackBroker.shared.deliver(url: url)
+    return true
+  }
+
   /// `agello://new`, `agello://voice`, `agello://voice-camera`, `agello://camera`,
-  /// `agello://ask?q=…`, `agello://chat/<id>`, `agello://project/<id>`, `agello://document/<id>`.
+  /// `agello://ask?q=…`, `agello://chat/<id>`, `agello://project/<id>`, `agello://document/<id>`,
+  /// `agello://recipe/<id>`.
   nonisolated static func action(for url: URL) -> Action? {
     guard url.scheme?.lowercased() == scheme, let host = url.host()?.lowercased() else { return nil }
     switch host {
@@ -89,6 +103,10 @@ final class AppRouter {
     case "document":
       let id = url.pathComponents.dropFirst().first.flatMap(UUID.init(uuidString:))
       return id.map(Action.openDocument)
+    case "recipe":
+      let raw = url.pathComponents.dropFirst().first?.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard let raw, !raw.isEmpty else { return nil }
+      return .runRecipe(raw)
     default:
       return nil
     }
@@ -103,6 +121,9 @@ final class AppRouter {
     case .openChat(let id): return URL(string: "\(scheme)://chat/\(id.uuidString)")!
     case .openProject(let id): return URL(string: "\(scheme)://project/\(id.uuidString)")!
     case .openDocument(let id): return URL(string: "\(scheme)://document/\(id.uuidString)")!
+    case .runRecipe(let id):
+      let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+      return URL(string: "\(scheme)://recipe/\(encoded)")!
     case .ask(let text), .draft(let text):
       var components = URLComponents(string: "\(scheme)://ask")!
       components.queryItems = [URLQueryItem(name: "q", value: text)]

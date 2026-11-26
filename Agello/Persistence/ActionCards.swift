@@ -73,6 +73,8 @@ struct ActionCardRecord: Codable, Equatable, Sendable, Identifiable {
       return "weather:\(card.locationName.lowercased())"
     case .alarm(let card):
       return "alarm:\(card.alarmID)"
+    case .automationHandoff(let card):
+      return "automation:\(card.callbackRequestID ?? card.shortcutID)"
     case .unknown:
       return "unknown:\(id.uuidString)"
     }
@@ -90,6 +92,7 @@ enum ActionCardPayload: Codable, Equatable, Sendable {
   case messageDraft(MessageDraftCard)
   case weather(WeatherCard)
   case alarm(AlarmCard)
+  case automationHandoff(AutomationHandoffCard)
   case unknown
 
   private enum CodingKeys: String, CodingKey {
@@ -116,6 +119,10 @@ enum ActionCardPayload: Codable, Equatable, Sendable {
       self = (try? .weather(container.decode(WeatherCard.self, forKey: .data))) ?? .unknown
     case "alarm":
       self = (try? .alarm(container.decode(AlarmCard.self, forKey: .data))) ?? .unknown
+    case "automationHandoff":
+      self =
+        (try? .automationHandoff(container.decode(AutomationHandoffCard.self, forKey: .data)))
+        ?? .unknown
     default:
       self = .unknown
     }
@@ -147,6 +154,9 @@ enum ActionCardPayload: Codable, Equatable, Sendable {
       try container.encode(card, forKey: .data)
     case .alarm(let card):
       try container.encode("alarm", forKey: .kind)
+      try container.encode(card, forKey: .data)
+    case .automationHandoff(let card):
+      try container.encode("automationHandoff", forKey: .kind)
       try container.encode(card, forKey: .data)
     case .unknown:
       try container.encode("unknown", forKey: .kind)
@@ -325,6 +335,19 @@ struct AlarmCard: Codable, Equatable, Sendable {
   var weekdays: [String]
   var durationSeconds: Double?
   var state: State
+}
+
+struct AutomationHandoffCard: Codable, Equatable, Sendable {
+  enum State: String, Codable, Equatable, Sendable {
+    case readyToRun, completed, failed, cancelled
+  }
+
+  var shortcutID: String
+  var shortcutName: String
+  var inputSummary: String?
+  var state: State
+  var resultSummary: String?
+  var callbackRequestID: String?
 }
 
 // MARK: - Merging & Capping

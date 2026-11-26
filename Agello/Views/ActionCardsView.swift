@@ -64,6 +64,8 @@ struct ActionCardStack: View {
       WeatherCardView(card: card, isCompact: isCompact)
     case .alarm(let card):
       AlarmCardView(card: card)
+    case .automationHandoff(let card):
+      AutomationHandoffCardView(card: card)
     case .unknown:
       EmptyView()
     }

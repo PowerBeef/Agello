@@ -495,10 +495,31 @@ public final class Conversation: Sendable {
       return ["role": "tool", "content": ordered]
     }
 
+    let mutatingCalls = parsed.filter { !toolManager.isReadOnly(name: $0.name) }
+    var approvedMutatingIndices: Set<Int>?
+    if mutatingCalls.count > 1 {
+      let invocations = mutatingCalls.map { call in
+        PendingToolInvocation(
+          index: call.index, name: call.name, argumentsJSON: call.argumentsData ?? Data("{}".utf8))
+      }
+      approvedMutatingIndices = await ToolManager.confirmBatch(invocations)
+    }
+
     var toolResponses: [[String: Any]] = []
     toolResponses.reserveCapacity(parsed.count)
     for call in parsed {
       try Task.checkCancellation()
+      if !toolManager.isReadOnly(name: call.name),
+        let approved = approvedMutatingIndices,
+        !approved.contains(call.index)
+      {
+        toolResponses.append([
+          "type": "tool_response",
+          "name": call.name,
+          "response": ["executed": false, "status": "skipped_by_user"],
+        ])
+        continue
+      }
       let entry = try await Conversation.executeSingleToolCall(
         name: call.name, argumentsData: call.argumentsData, toolManager: toolManager, logger: logger)
       toolResponses.append(entry)

@@ -60,6 +60,9 @@ struct AppBootstrap {
     // mainContext): turns are appended to view-owned threads, then saved here.
     state.modelContext = container.mainContext
     AppIntentBridge.appState = state
+    ShortcutCallbackBroker.shared.setLauncher { url in
+      await NativeActions.openExternalURL(url)
+    }
     if let notice = opened.recoveryNotice { state.generationError = notice }
     appState = state
     shell = ShellModel(appState: state, context: container.mainContext)

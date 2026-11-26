@@ -354,6 +354,9 @@ extension AppState {
   /// continued processing task (keeps `.gpu` entitlement held during drain).
   func stopAndDrain() async {
     cancelPendingToolConfirmation(reason: "Stopped by the user.")
+    ToolConfirmationGate.clearBatchGrants()
+    pendingShortcutReturnName = nil
+    ShortcutCallbackBroker.shared.cancelPending(reason: "Stopped by the user.")
     stopCount &+= 1
     drainingBackgroundWork = true
     if !isInForeground { GPUGate.set(false) }
@@ -373,8 +376,24 @@ extension AppState {
   /// command buffers fail or the app be terminated.
   func enterBackground() {
     isInForeground = false
+    ShortcutCallbackBroker.shared.setAppInForeground(false)
     applyOptionsTask?.cancel()
     cancelPendingToolConfirmation(reason: "Cancelled because Agello moved to the background.")
+    // Outbound Shortcuts Bridge: user just approved an allowlisted Shortcut and iOS is switching
+    // to Shortcuts. Close GPUGate immediately (zero background GPU submissions) while keeping the
+    // parked generation alive (C++ engine is idle inside ToolManager.execute) until x-callback return.
+    if ShortcutCallbackBroker.shared.hasPendingCallback {
+      GPUGate.set(false)
+      helperTimer?.cancel()
+      if knowledge.usesGPUEmbedder { knowledge.cancelIndexing() }
+      let handoffGuard = BackgroundTaskGuard.begin(name: "AgelloShortcutHandoff")
+      Task {
+        try? await Task.sleep(for: .milliseconds(400))
+        handoffGuard.end()
+      }
+      Log.lifecycle.info("background: parked awaiting verified Shortcut callback (GPUGate closed)")
+      return
+    }
     // A continued task with background GPU access (submitted or running) lets the reply finish.
     let continuing = BackgroundWork.shared.isPendingOrActive
     GPUGate.set(continuing)
@@ -402,7 +421,23 @@ extension AppState {
   /// Back in the foreground: GPU work may start again.
   func enterForeground() {
     isInForeground = true
+    ShortcutCallbackBroker.shared.setAppInForeground(true)
     GPUGate.set(true)
+    // Flush any verified Shortcut callback buffered while the app was `.inactive` during onOpenURL.
+    ShortcutCallbackBroker.shared.flushBufferedForForeground()
+    if let pending = ShortcutCallbackBroker.shared.pendingSummary {
+      let reqID = pending.requestID
+      let name = pending.shortcutName
+      Task { @MainActor [weak self] in
+        try? await Task.sleep(for: .milliseconds(1_500))
+        guard let self, self.isInForeground,
+          ShortcutCallbackBroker.shared.pendingSummary?.requestID == reqID
+        else { return }
+        self.pendingShortcutReturnName = name
+      }
+    } else {
+      pendingShortcutReturnName = nil
+    }
     if pendingOptionsApply, !isBusy, !isBenchmarking {
       pendingOptionsApply = false
       Task { await self.applyCurrentOptions() }

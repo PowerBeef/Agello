@@ -126,6 +126,10 @@ final class VoiceSession: Identifiable {
     appState.resolvePendingToolConfirmation(id: id, approved: approved)
   }
 
+  func resolveToolConfirmation(id: UUID, approvedSteps: Set<Int>) {
+    appState.resolvePendingToolConfirmation(id: id, approvedSteps: approvedSteps)
+  }
+
   func end() {
     appState.cancelPendingToolConfirmation(reason: "Voice mode closed.")
     // Stop the reply first: cancelling only the turn's task would leave the engine busy.

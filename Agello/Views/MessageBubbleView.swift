@@ -349,6 +349,8 @@ struct MessageBubbleView: View {
     case "get_weather": String(localized: "Checked weather")
     case "list_alarms": String(localized: "Checked alarms")
     case "manage_alarm": String(localized: "Updated alarm")
+    case "search_photos": String(localized: "Searched photos")
+    case "run_shortcut": String(localized: "Ran shortcut")
     case "web_search": String(localized: "Searched the web")
     case "memory": String(localized: "Updated memory")
     default: String(localized: "Used \(name.replacingOccurrences(of: "_", with: " "))")
@@ -375,6 +377,8 @@ struct MessageBubbleView: View {
     case "prepare_message": "paperplane"
     case "get_weather": "cloud.sun.fill"
     case "list_alarms", "manage_alarm": "alarm.fill"
+    case "search_photos": "photo.on.rectangle.angled"
+    case "run_shortcut": "bolt.fill"
     case "web_search": "globe"
     case "memory": "brain.head.profile"
     default: "wrench.and.screwdriver"

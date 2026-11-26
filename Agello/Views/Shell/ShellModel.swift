@@ -148,6 +148,10 @@ final class ShellModel {
     case .draft(let text):
       newChat()
       AppRouter.shared.draftRequested = text
+    case .runRecipe(let id):
+      guard let recipe = AutomationRegistry.shared.recipe(id: id) else { return }
+      newChat()
+      AppRouter.shared.draftRequested = recipe.prompt
     }
   }
 

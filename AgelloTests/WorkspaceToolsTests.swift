@@ -168,10 +168,11 @@ final class WorkspaceToolsTests: XCTestCase {
   // MARK: - Large-context ToolBudget invariant
 
   func testLargeWindowAllowsFourToolCallsSafely() {
-    for room in [16_384, 30_000, 60_000] {
+    for room in [16_384, 30_000, 32_768, 60_000] {
       for thinking in [nil, 1_024, 4_096] {
         let plan = ToolBudget.plan(room: room, toolsOffered: true, thinkingBudget: thinking)
-        XCTAssertEqual(plan.limits.maxCalls, 4, "room \(room)")
+        let expectedCalls = room >= 32_768 ? 5 : 4
+        XCTAssertEqual(plan.limits.maxCalls, expectedCalls, "room \(room)")
         let total =
           plan.outputCap
           + plan.limits.maxCalls * plan.followUpCap

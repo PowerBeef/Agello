@@ -304,6 +304,63 @@ struct AgelloFocusFilter: SetFocusFilterIntent {
   }
 }
 
+// MARK: - Saved Multi-Step Recipes Intent
+
+struct RecipeEntity: AppEntity {
+  static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Agello Recipe")
+  static let defaultQuery = RecipeEntityQuery()
+
+  let id: String
+  let name: String
+  let summary: String
+  let symbol: String
+
+  var displayRepresentation: DisplayRepresentation {
+    DisplayRepresentation(
+      title: LocalizedStringResource(stringLiteral: name),
+      subtitle: LocalizedStringResource(stringLiteral: summary),
+      image: .init(systemName: symbol))
+  }
+}
+
+struct RecipeEntityQuery: EntityQuery {
+  func entities(for identifiers: [String]) async throws -> [RecipeEntity] {
+    let set = Set(identifiers)
+    return AutomationRegistry.shared.allRecipes
+      .filter { set.contains($0.id) }
+      .map { RecipeEntity(id: $0.id, name: $0.name, summary: $0.summary, symbol: $0.symbol) }
+  }
+
+  func suggestedEntities() async throws -> [RecipeEntity] {
+    AutomationRegistry.shared.allRecipes.map {
+      RecipeEntity(id: $0.id, name: $0.name, summary: $0.summary, symbol: $0.symbol)
+    }
+  }
+}
+
+/// Opens Agello directly into a saved multi-step workflow recipe ready for confirmation.
+struct RunAgelloRecipeIntent: AppIntent {
+  static let title: LocalizedStringResource = "Run Agello Recipe"
+  static let description = IntentDescription(
+    "Open Agello with a saved multi-step workflow ready to run.")
+  static let supportedModes: IntentModes = .foreground(.dynamic)
+  static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+
+  @Parameter(title: "Recipe")
+  var recipe: RecipeEntity
+
+  static var parameterSummary: some ParameterSummary {
+    Summary("Run \(\.$recipe) in Agello")
+  }
+
+  func perform() async throws -> some IntentResult {
+    await MainActor.run {
+      AppRouter.shared.handle(.runRecipe(recipe.id))
+    }
+    return .result()
+  }
+}
+
 // MARK: - App Shortcuts
 
 /// Siri phrases, the Shortcuts app, Spotlight, and the Action Button.

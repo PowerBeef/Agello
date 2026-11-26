@@ -129,7 +129,7 @@ enum ToolBudget {
         thinkingBudget: reasoningBudget, followUpThinkingBudget: reasoningBudget,
         limits: Limits(maxResultTokens: room / 8, maxCalls: 0))
     }
-    let maxCalls = room >= 16_384 ? 4 : 2
+    let maxCalls = room >= 32_768 ? 5 : (room >= 16_384 ? 4 : 2)
     let resultTokens = room / (maxCalls * 4)
     let laterFloor = room / (maxCalls * 8)
     let laterRound = min(resultTokens, max(laterFloor, thinkingBudget.map { $0 + answerTokens } ?? 0))

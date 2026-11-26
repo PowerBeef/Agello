@@ -9,6 +9,7 @@ extension View {
       if let action = SpotlightIndex.action(from: activity) { AppRouter.shared.handle(action) }
     }
     .onOpenURL { url in
+      if AppRouter.handleShortcutCallbackIfNeeded(url) { return }
       if let action = AppRouter.action(for: url) { AppRouter.shared.handle(action) }
     }
     .onChange(of: AppRouter.shared.pending, initial: true) {

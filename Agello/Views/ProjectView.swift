@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A project: its name, instructions shared by its chats, shared files, and
 /// its chats. Edits are saved when the screen closes.
@@ -18,6 +19,8 @@ struct ProjectView: View {
   @State private var instructions = ""
   @State private var loaded = false
   @State private var showFiles = false
+  @State private var showFolderPicker = false
+  @State private var linkedFolder: FolderBookmarks.LinkedFolder?
   @State private var readingFiles = 0
   @State private var confirmDelete = false
   @State private var files: [ChatDocument] = []
@@ -127,6 +130,47 @@ struct ProjectView: View {
               .foregroundStyle(Theme.Brand.glacier)
           }
           .accessibilityIdentifier("project.addFiles")
+          if let folder = linkedFolder {
+            HStack(spacing: Theme.Spacing.sm) {
+              TintTile(symbol: "folder.badge.gearshape", tint: Theme.Brand.teal)
+              VStack(alignment: .leading, spacing: 2) {
+                Text(folder.folderName)
+                  .font(.subheadline)
+                  .foregroundStyle(Theme.Text.primary)
+                  .lineLimit(1)
+                if let synced = folder.lastSyncedAt {
+                  Text("Synced \(synced.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.Text.tertiary)
+                }
+              }
+              Spacer(minLength: Theme.Spacing.xs)
+              Button("Sync") { syncLinkedFolder() }
+                .font(.caption.weight(.semibold))
+                .buttonStyle(.bordered)
+                .tint(Theme.Brand.teal)
+                .disabled(readingFiles > 0)
+                .accessibilityIdentifier("project.syncFolder")
+              Button {
+                FolderBookmarks.remove(for: project.id)
+                linkedFolder = nil
+              } label: {
+                Image(systemName: "xmark.circle.fill")
+                  .foregroundStyle(Theme.Text.tertiary)
+              }
+              .buttonStyle(.borderless)
+              .accessibilityLabel("Unlink folder")
+              .accessibilityIdentifier("project.unlinkFolder")
+            }
+          } else {
+            Button {
+              showFolderPicker = true
+            } label: {
+              Label("Link folder", systemImage: "folder.badge.plus")
+                .foregroundStyle(Theme.Brand.teal)
+            }
+            .accessibilityIdentifier("project.linkFolder")
+          }
         } header: {
           Text("Files").eyebrowStyle()
         } footer: {
@@ -190,10 +234,23 @@ struct ProjectView: View {
         guard case .success(let urls) = result else { return }
         for url in urls { read(url) }
       }
+      .fileImporter(
+        isPresented: $showFolderPicker, allowedContentTypes: [.folder],
+        allowsMultipleSelection: false
+      ) { result in
+        guard case .success(let urls) = result, let folderURL = urls.first else { return }
+        do {
+          linkedFolder = try FolderBookmarks.save(folderURL: folderURL, for: project.id)
+          syncLinkedFolder()
+        } catch {
+          appState.generationError = error.localizedDescription
+        }
+      }
       .confirmationDialog(
         "Delete \"\(name)\"?", isPresented: $confirmDelete, titleVisibility: .visible
       ) {
         Button(deleteTitle, role: .destructive) {
+          FolderBookmarks.remove(for: project.id)
           onDelete()
           dismiss()
         }
@@ -205,6 +262,7 @@ struct ProjectView: View {
         name = project.name
         instructions = project.instructions
         loaded = true
+        linkedFolder = FolderBookmarks.folder(for: project.id)
         reloadFiles()
       }
       .onDisappear(perform: save)
@@ -230,6 +288,38 @@ struct ProjectView: View {
           try await DocumentIngestor.extract(from: url)
         }.value
         appState.knowledge.add(extracted, projectID: project.id)
+        reloadFiles()
+      } catch {
+        appState.generationError = error.localizedDescription
+      }
+    }
+  }
+
+  private func syncLinkedFolder() {
+    let projectID = project.id
+    let existingNames = Set(files.map(\.name))
+    readingFiles += 1
+    Task {
+      defer {
+        readingFiles -= 1
+        linkedFolder = FolderBookmarks.folder(for: projectID)
+      }
+      do {
+        let extracted: [ExtractedDocument] =
+          try await Task.detached(priority: .utility) {
+            try await FolderBookmarks.withSupportedFiles(for: projectID) { urls -> [ExtractedDocument] in
+              var docs: [ExtractedDocument] = []
+              for url in urls where !existingNames.contains(url.lastPathComponent) {
+                if let doc = try? await DocumentIngestor.extract(from: url) {
+                  docs.append(doc)
+                }
+              }
+              return docs
+            } ?? []
+          }.value
+        for doc in extracted {
+          appState.knowledge.add(doc, projectID: projectID)
+        }
         reloadFiles()
       } catch {
         appState.generationError = error.localizedDescription

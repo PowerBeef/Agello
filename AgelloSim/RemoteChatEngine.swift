@@ -443,8 +443,30 @@ actor RemoteChatEngine: ChatEngineProtocol {
       }
       return messages.map(\.dictionary)
     }
+    let mutatingCalls = calls.enumerated().filter { !toolManager.isReadOnly(name: $0.element.name) }
+    var approvedMutatingIndices: Set<Int>?
+    if mutatingCalls.count > 1 {
+      let invocations = mutatingCalls.map { idx, call in
+        PendingToolInvocation(
+          index: idx, name: call.name,
+          argumentsJSON: call.argumentsJSON.data(using: .utf8) ?? Data("{}".utf8))
+      }
+      approvedMutatingIndices = await ToolManager.confirmBatch(invocations)
+    }
+
     var results: [[String: Any]] = []
-    for call in calls {
+    for (idx, call) in calls.enumerated() {
+      if !toolManager.isReadOnly(name: call.name),
+        let approved = approvedMutatingIndices,
+        !approved.contains(idx)
+      {
+        results.append(
+          ToolCallMessage(
+            id: call.id, name: call.name,
+            content: #"{"executed":false,"status":"skipped_by_user"}"#
+          ).dictionary)
+        continue
+      }
       results.append(await Self.runSingleTool(call, using: toolManager).dictionary)
     }
     return results

@@ -185,11 +185,21 @@ struct SettingsView: View {
       .themedRow()
       .disabled(!appState.enableTools)
       .accessibilityIdentifier("settings.personalTools")
+      NavigationLink {
+        AutomationGalleryView()
+      } label: {
+        RowLabel(
+          title: String(localized: "Automations & Shortcuts"), symbol: "bolt.shield.fill",
+          tint: Theme.Brand.glacier, value: automationsSummary)
+      }
+      .themedRow()
+      .disabled(!appState.enableTools)
+      .accessibilityIdentifier("settings.automations")
     } header: {
       Text("Model").eyebrowStyle()
     } footer: {
       Text(
-        "Tools let the assistant check the date, calculate, convert units, query files and tables, and optionally access Calendar, Reminders, Contacts, Maps, Weather, and Alarms on this \(Platform.deviceName)."
+        "Tools let the assistant check the date, calculate, convert units, query files and tables, and optionally access Calendar, Reminders, Contacts, Maps, Weather, Alarms, Photos, and registered Shortcuts on this \(Platform.deviceName)."
       )
       .foregroundStyle(Theme.Text.tertiary)
     }
@@ -200,6 +210,12 @@ struct SettingsView: View {
       return String(localized: "Off")
     }
     return String(localized: "\(appState.personalTools.enabledCount) on")
+  }
+
+  private var automationsSummary: String {
+    _ = appState.automationRegistryVersion
+    let count = AutomationRegistry.shared.enabledShortcuts.count
+    return count == 0 ? String(localized: "Off") : String(localized: "\(count) allowed")
   }
 
   private var helpSection: some View {

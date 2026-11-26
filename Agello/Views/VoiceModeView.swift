@@ -41,6 +41,9 @@ struct VoiceModeView: View {
           ToolConfirmationCard(
             request: confirmation,
             onApprove: { session.resolveToolConfirmation(id: confirmation.id, approved: true) },
+            onApproveSteps: { selected in
+              session.resolveToolConfirmation(id: confirmation.id, approvedSteps: selected)
+            },
             onDeny: { session.resolveToolConfirmation(id: confirmation.id, approved: false) }
           )
           .padding(.horizontal, Theme.Spacing.lg)

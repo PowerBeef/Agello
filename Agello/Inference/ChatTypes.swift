@@ -124,10 +124,12 @@ struct InferenceOptions: Codable, Sendable, Equatable {
   var workspaceFileTools: Bool = false
   /// Opt-in native iOS personal context tools (Calendar, Reminders, Contacts, Maps; runtime only).
   var personalTools: PersonalToolsSettings = PersonalToolsSettings()
+  /// Fingerprint of allowlisted Shortcuts enabling `run_shortcut` (runtime only, never saved).
+  var shortcutAllowlistKey: String = ""
 
   /// Identifies the runtime tool configuration that alters conversation tool schemas.
   var toolSetKey: String {
-    "web=\(webSearchTool),files=\(workspaceFileTools),\(personalTools.toolSetKey)"
+    "web=\(webSearchTool),files=\(workspaceFileTools),\(personalTools.toolSetKey),sc=\(shortcutAllowlistKey)"
   }
 
   /// Stored keys (runtime tool flags are decided per conversation, never saved).

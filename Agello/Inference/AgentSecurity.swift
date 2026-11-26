@@ -1,6 +1,38 @@
 import Foundation
 import Synchronization
 
+// MARK: - Per-turn untrusted data taint tracker
+
+/// Tracks untrusted external sources (`file:*`, `web_search`, `photo_ocr`, `shortcut:*`,
+/// `read_calendar`, etc.) that entered the current reply turn so ``ToolConfirmationCard`` and
+/// ``PlanConfirmationCard`` surface a provenance warning whenever a mutating action follows
+/// external content.
+enum TurnSecurityContext {
+  private static let state = Mutex<[String]>([])
+
+  /// Clears taint state at the start of a new user turn.
+  static func reset() {
+    state.withLock { $0.removeAll(keepingCapacity: true) }
+  }
+
+  /// Records that untrusted content from `source` entered the active turn.
+  static func recordUntrusted(source: String) {
+    let clean = source.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else { return }
+    state.withLock { list in
+      if !list.contains(clean), list.count < 16 {
+        list.append(clean)
+      }
+    }
+  }
+
+  /// Distinct untrusted sources seen during the active turn.
+  static var sources: [String] { state.withLock { $0 } }
+
+  /// Whether any untrusted external content has entered the active turn.
+  static var isTainted: Bool { state.withLock { !$0.isEmpty } }
+}
+
 // MARK: - Untrusted context spotlighting
 
 /// Delimits untrusted external text (web pages, attached/shared files, and tool outputs)
@@ -17,6 +49,7 @@ enum UntrustedContext {
   /// inside `<untrusted_data source="...">...</untrusted_data>`.
   static func wrap(_ text: String, source: String) -> String {
     let safeSource = escapeAttribute(source)
+    TurnSecurityContext.recordUntrusted(source: safeSource)
     let safeBody = escapeBody(PromptText.neutralized(text))
     return "<untrusted_data source=\"\(safeSource)\">\n\(safeBody)\n</untrusted_data>"
   }
@@ -25,6 +58,7 @@ enum UntrustedContext {
   /// `</untrusted_data>` delimiter is never truncated by ``ToolBudget/fit(_:_:)``.
   static func wrapFitted(_ text: String, source: String, limits: ToolBudget.Limits) -> String {
     let safeSource = escapeAttribute(source)
+    TurnSecurityContext.recordUntrusted(source: safeSource)
     let open = "<untrusted_data source=\"\(safeSource)\">\n"
     let close = "\n</untrusted_data>"
     let overhead = ContextBudget.estimateTextTokens(open) + ContextBudget.estimateTextTokens(close)
@@ -88,16 +122,47 @@ struct ToolConfirmationRequest: Identifiable, Equatable, Sendable {
     let value: String
   }
 
+  /// One pre-decoded mutating step inside a grouped ``PlanConfirmationCard`` batch.
+  struct Step: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let index: Int
+    let toolName: String
+    let title: String
+    let summary: String
+    let parameters: [Parameter]
+    let risk: RiskTier
+
+    init(
+      id: UUID = UUID(), index: Int, toolName: String, title: String, summary: String,
+      parameters: [Parameter], risk: RiskTier = .standard
+    ) {
+      self.id = id
+      self.index = index
+      self.toolName = toolName
+      self.title = title
+      self.summary = summary
+      self.parameters = parameters
+      self.risk = risk
+    }
+  }
+
   let id: UUID
   let toolName: String
   let title: String
   let summary: String
   let parameters: [Parameter]
   let risk: RiskTier
+  /// Non-empty when presenting a multi-step grouped `PlanConfirmationCard` batch.
+  let steps: [Step]
+  /// Untrusted external sources read earlier in this turn (surfaces amber provenance warning).
+  let untrustedSources: [String]
+
+  var isPlanBatch: Bool { !steps.isEmpty }
 
   init(
     id: UUID = UUID(), toolName: String, title: String, summary: String,
-    parameters: [Parameter], risk: RiskTier = .standard
+    parameters: [Parameter], risk: RiskTier = .standard,
+    steps: [Step] = [], untrustedSources: [String]? = nil
   ) {
     self.id = id
     self.toolName = toolName
@@ -105,13 +170,24 @@ struct ToolConfirmationRequest: Identifiable, Equatable, Sendable {
     self.summary = summary
     self.parameters = parameters
     self.risk = risk
+    self.steps = steps
+    self.untrustedSources = untrustedSources ?? TurnSecurityContext.sources
   }
 }
 
 /// Deterministic user decision returned by ``ToolConfirmationGate``.
 enum ToolConfirmationDecision: Equatable, Sendable {
   case approved
+  case approvedSteps(Set<Int>)
   case denied(reason: String)
+
+  func allows(stepIndex: Int) -> Bool {
+    switch self {
+    case .approved: true
+    case .approvedSteps(let indices): indices.contains(stepIndex)
+    case .denied: false
+    }
+  }
 }
 
 /// Fail-closed pre-execution gate for every side-effectful / mutating tool (`isReadOnly == false`).
@@ -125,6 +201,9 @@ enum ToolConfirmationGate {
   private struct State {
     var presenter: Handler?
     var testOverride: Handler?
+    /// Single-use per-tool grants issued strictly after a grouped `PlanConfirmationCard` approval
+    /// so pre-decoded approved steps execute once without double-prompting (zero TOCTOU).
+    var batchGrants: [String: Int] = [:]
   }
 
   private static let state = Mutex(State())
@@ -136,17 +215,43 @@ enum ToolConfirmationGate {
 
   /// Registers a deterministic handler for unit and adversarial tests (overrides `presenter`).
   static func setTestHandler(_ handler: Handler?) {
-    state.withLock { $0.testOverride = handler }
+    state.withLock {
+      $0.testOverride = handler
+      $0.batchGrants.removeAll()
+    }
+  }
+
+  /// Grants one pre-approved execution for `toolName` after a grouped `PlanConfirmationCard`
+  /// decision has already been approved by the user for that exact pre-decoded step.
+  static func grantBatchStep(toolName: String) {
+    state.withLock { $0.batchGrants[toolName, default: 0] += 1 }
+  }
+
+  /// Clears any unconsumed batch grants at the end of a tool round or on cancel/stop.
+  static func clearBatchGrants() {
+    state.withLock { $0.batchGrants.removeAll() }
   }
 
   /// Suspends until the user explicitly approves or denies `request`. Always fails closed.
   static func confirm(_ request: ToolConfirmationRequest) async -> ToolConfirmationDecision {
+    guard !Task.isCancelled else {
+      return .denied(reason: "Cancelled before confirmation.")
+    }
+    if !request.isPlanBatch {
+      let consumed = state.withLock { s -> Bool in
+        guard let count = s.batchGrants[request.toolName], count > 0 else { return false }
+        if count == 1 {
+          s.batchGrants.removeValue(forKey: request.toolName)
+        } else {
+          s.batchGrants[request.toolName] = count - 1
+        }
+        return true
+      }
+      if consumed { return .approved }
+    }
     let handler = state.withLock { $0.testOverride ?? $0.presenter }
     guard let handler else {
       return .denied(reason: "User confirmation is unavailable; action was not executed.")
-    }
-    guard !Task.isCancelled else {
-      return .denied(reason: "Cancelled before confirmation.")
     }
     return await handler(request)
   }

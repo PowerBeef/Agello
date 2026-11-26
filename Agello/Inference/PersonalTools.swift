@@ -12,10 +12,11 @@ struct PersonalToolsSettings: Codable, Equatable, Sendable {
   var maps = false
   var weather = false
   var alarms = false
+  var photos = false
 
   init(
     calendar: Bool = false, reminders: Bool = false, contacts: Bool = false, maps: Bool = false,
-    weather: Bool = false, alarms: Bool = false
+    weather: Bool = false, alarms: Bool = false, photos: Bool = false
   ) {
     self.calendar = calendar
     self.reminders = reminders
@@ -23,6 +24,7 @@ struct PersonalToolsSettings: Codable, Equatable, Sendable {
     self.maps = maps
     self.weather = weather
     self.alarms = alarms
+    self.photos = photos
   }
 
   /// Tolerant decoding so saved preferences never reset when keys are added.
@@ -34,16 +36,17 @@ struct PersonalToolsSettings: Codable, Equatable, Sendable {
     maps = try container.decodeIfPresent(Bool.self, forKey: .maps) ?? false
     weather = try container.decodeIfPresent(Bool.self, forKey: .weather) ?? false
     alarms = try container.decodeIfPresent(Bool.self, forKey: .alarms) ?? false
+    photos = try container.decodeIfPresent(Bool.self, forKey: .photos) ?? false
   }
 
-  var anyEnabled: Bool { calendar || reminders || contacts || maps || weather || alarms }
+  var anyEnabled: Bool { calendar || reminders || contacts || maps || weather || alarms || photos }
 
   var enabledCount: Int {
-    [calendar, reminders, contacts, maps, weather, alarms].filter { $0 }.count
+    [calendar, reminders, contacts, maps, weather, alarms, photos].filter { $0 }.count
   }
 
   var toolSetKey: String {
-    "cal=\(calendar),rem=\(reminders),con=\(contacts),map=\(maps),wx=\(weather),alm=\(alarms)"
+    "cal=\(calendar),rem=\(reminders),con=\(contacts),map=\(maps),wx=\(weather),alm=\(alarms),pho=\(photos)"
   }
 
   /// Returns a copy with all personal-context domains disabled (used by Focus Filters).
@@ -166,6 +169,16 @@ struct AlarmSummary: Equatable, Sendable {
   var state: AlarmCard.State = .scheduled
 }
 
+struct PhotoSearchMatch: Equatable, Sendable {
+  var localIdentifier: String
+  var creationDate: Date?
+  var locationName: String? = nil
+  var isFavorite: Bool = false
+  var width: Int = 0
+  var height: Int = 0
+  var ocrText: String? = nil
+}
+
 /// Optional options when creating or updating a Calendar event.
 struct CalendarEventMutation: Equatable, Sendable {
   var title: String? = nil
@@ -269,6 +282,10 @@ protocol PersonalContextBackend: Sendable {
   func pauseAlarm(identifier: String) async -> PersonalToolResult<AlarmSummary>
 
   func resumeAlarm(identifier: String) async -> PersonalToolResult<AlarmSummary>
+
+  func searchPhotos(
+    query: String?, start: Date?, end: Date?, favoritesOnly: Bool, includeOCR: Bool, limit: Int
+  ) async -> PersonalToolResult<[PhotoSearchMatch]>
 }
 
 extension PersonalContextBackend {
@@ -347,6 +364,12 @@ extension PersonalContextBackend {
 
   func resumeAlarm(identifier: String) async -> PersonalToolResult<AlarmSummary> {
     .error("Alarms and timers are only available on iOS.")
+  }
+
+  func searchPhotos(
+    query: String?, start: Date?, end: Date?, favoritesOnly: Bool, includeOCR: Bool, limit: Int
+  ) async -> PersonalToolResult<[PhotoSearchMatch]> {
+    .error("Photos search is only available on iOS.")
   }
 }
 
@@ -774,5 +797,25 @@ enum PersonalToolsLogic {
       return "\(idx + 1). \(step.instruction)\(stepDist)"
     }.joined(separator: "\n")
     return "\(header)\nTurn-by-turn steps:\n\(stepsText)"
+  }
+
+  static func formatPhotos(_ photos: [PhotoSearchMatch], timeZone: TimeZone = .current) -> String {
+    guard !photos.isEmpty else { return "No matching photos found." }
+    return photos.enumerated().map { idx, photo in
+      var parts = ["\(idx + 1)."]
+      if let date = photo.creationDate {
+        parts.append(formatISO(date, timeZone: timeZone))
+      } else {
+        parts.append("Unknown date")
+      }
+      if photo.isFavorite { parts.append("[favorite]") }
+      if let loc = photo.locationName, !loc.isEmpty { parts.append("at \(loc)") }
+      if photo.width > 0, photo.height > 0 { parts.append("(\(photo.width)×\(photo.height))") }
+      var line = parts.joined(separator: " ")
+      if let ocr = photo.ocrText?.trimmingCharacters(in: .whitespacesAndNewlines), !ocr.isEmpty {
+        line += "\n   OCR text: \(String(ocr.prefix(600)))"
+      }
+      return line
+    }.joined(separator: "\n")
   }
 }

@@ -3,8 +3,11 @@ import Contacts
 import CoreLocation
 import EventKit
 import Foundation
+import ImageIO
 import MapKit
+import Photos
 import SwiftUI
+import Vision
 
 /// Native iOS implementation of ``PersonalContextBackend`` backed by EventKit, Contacts, MapKit,
 /// WeatherKit, and AlarmKit. All queries and writes stay strictly on-device; permission is requested
@@ -839,5 +842,151 @@ final class PersonalContextService: PersonalContextBackend, @unchecked Sendable 
     } catch {
       return .error("Could not resume timer: \(error.localizedDescription)")
     }
+  }
+
+  // MARK: - Photos + On-Device Vision OCR (ANE / .utility QoS)
+
+  private func ensurePhotosAccess() async -> String? {
+    let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+    switch status {
+    case .authorized, .limited:
+      return nil
+    case .notDetermined:
+      let granted = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+      return (granted == .authorized || granted == .limited)
+        ? nil : "Photos access was denied. Enable it in Settings > Agello."
+    default:
+      return "Photos access is not enabled. Enable Photos access in Settings > Agello."
+    }
+  }
+
+  func searchPhotos(
+    query: String?, start: Date?, end: Date?, favoritesOnly: Bool, includeOCR: Bool, limit: Int
+  ) async -> PersonalToolResult<[PhotoSearchMatch]> {
+    if let err = await ensurePhotosAccess() { return .error(err) }
+
+    let fetchOptions = PHFetchOptions()
+    fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+    var predicates: [NSPredicate] = [
+      NSPredicate(format: "mediaType == %d", PHAssetMediaType.image.rawValue)
+    ]
+    if let start { predicates.append(NSPredicate(format: "creationDate >= %@", start as NSDate)) }
+    if let end { predicates.append(NSPredicate(format: "creationDate <= %@", end as NSDate)) }
+    if favoritesOnly { predicates.append(NSPredicate(format: "favorite == YES")) }
+    fetchOptions.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
+
+    let thermal = ThermalPolicy.current
+    let scanOCR = includeOCR && !thermal.pauseBackgroundANE
+    let maxOCRScan = thermal.deferBackgroundChatIndexing ? 4 : 12
+    let candidateCap = scanOCR ? max(limit, maxOCRScan) : limit
+    fetchOptions.fetchLimit = candidateCap
+
+    let result = PHAsset.fetchAssets(with: fetchOptions)
+    var assets: [PHAsset] = []
+    assets.reserveCapacity(min(result.count, candidateCap))
+    result.enumerateObjects { asset, _, stop in
+      assets.append(asset)
+      if assets.count >= candidateCap { stop.pointee = true }
+    }
+    guard !assets.isEmpty else { return .success([]) }
+
+    let cleanQuery = query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let matches = await Task.detached(priority: .utility) {
+      await Self.processPhotoAssets(
+        assets, query: cleanQuery, scanOCR: scanOCR, limit: limit)
+    }.value
+    return .success(matches)
+  }
+
+  /// Processes candidate Photo assets with at most 2 concurrent downsampled (<= 1,600 px) Vision
+  /// OCR tasks on `.utility` QoS so peak memory and thermal load never clip Gemma 4 E4B.
+  private static func processPhotoAssets(
+    _ assets: [PHAsset], query: String, scanOCR: Bool, limit: Int
+  ) async -> [PhotoSearchMatch] {
+    var collected: [(Int, PhotoSearchMatch)] = []
+    let maxInFlight = 2
+
+    await withTaskGroup(of: (Int, PhotoSearchMatch).self) { group in
+      var nextIndex = 0
+      func enqueueNext() {
+        guard nextIndex < assets.count else { return }
+        let idx = nextIndex
+        let asset = assets[idx]
+        nextIndex += 1
+        group.addTask {
+          let ocr = scanOCR ? await Self.recognizeDownsampledText(for: asset) : nil
+          let match = PhotoSearchMatch(
+            localIdentifier: asset.localIdentifier,
+            creationDate: asset.creationDate,
+            locationName: nil,
+            isFavorite: asset.isFavorite,
+            width: asset.pixelWidth,
+            height: asset.pixelHeight,
+            ocrText: ocr)
+          return (idx, match)
+        }
+      }
+
+      for _ in 0..<min(maxInFlight, assets.count) { enqueueNext() }
+      for await item in group {
+        collected.append(item)
+        enqueueNext()
+      }
+    }
+
+    let ordered = collected.sorted { $0.0 < $1.0 }.map(\.1)
+    guard !query.isEmpty else { return Array(ordered.prefix(limit)) }
+
+    let tokens = query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+    let filtered = ordered.filter { match in
+      let haystack = [match.ocrText, match.locationName].compactMap { $0 }.joined(separator: " ").lowercased()
+      guard !haystack.isEmpty else { return false }
+      return tokens.allSatisfy { haystack.contains($0) }
+        || haystack.contains(query.lowercased())
+    }
+    return Array(filtered.prefix(limit))
+  }
+
+  private static func recognizeDownsampledText(for asset: PHAsset) async -> String? {
+    guard let cgImage = await loadDownsampledImage(for: asset, maxDimension: 1_600) else { return nil }
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    request.usesLanguageCorrection = true
+    request.automaticallyDetectsLanguage = true
+    let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+    do {
+      try handler.perform([request])
+      let lines = (request.results ?? [])
+        .compactMap { $0.topCandidates(1).first?.string }
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+      return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    } catch {
+      return nil
+    }
+  }
+
+  private static func loadDownsampledImage(for asset: PHAsset, maxDimension: Int) async -> CGImage? {
+    let options = PHImageRequestOptions()
+    options.deliveryMode = .highQualityFormat
+    options.isNetworkAccessAllowed = false
+    options.isSynchronous = false
+    let data: Data? = await withCheckedContinuation { continuation in
+      var resumed = false
+      PHImageManager.default().requestImageDataAndOrientation(for: asset, options: options) {
+        imageData, _, _, _ in
+        guard !resumed else { return }
+        resumed = true
+        continuation.resume(returning: imageData)
+      }
+    }
+    guard let data,
+      let source = CGImageSourceCreateWithData(data as CFData, nil)
+    else { return nil }
+    let thumbOptions: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: maxDimension,
+    ]
+    return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary)
   }
 }

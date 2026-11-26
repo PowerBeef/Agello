@@ -51,6 +51,13 @@ struct PersonalToolsSettingsView: View {
             tint: Theme.Brand.gold)
         }
         .accessibilityIdentifier("personalTools.alarms")
+
+        Toggle(isOn: $appState.personalTools.photos) {
+          RowLabel(
+            title: String(localized: "Photos (OCR)"), symbol: "photo.on.rectangle.angled",
+            tint: Theme.Brand.lavender)
+        }
+        .accessibilityIdentifier("personalTools.photos")
       } header: {
         Text("Personal tools").eyebrowStyle()
       } footer: {

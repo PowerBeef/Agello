@@ -493,6 +493,12 @@ struct ChatComposerView: View {
       Button("Files", systemImage: "folder") { showFiles = true }
       Button("Scan document", systemImage: "doc.viewfinder") { showScanner = true }
         .disabled(!CaptureSources.scannerAvailable)
+      PasteButton(payloadType: String.self) { strings in
+        let pasted = strings.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !pasted.isEmpty else { return }
+        draft = draft.isEmpty ? pasted : "\(draft)\n\(pasted)"
+        inputFocused = true
+      }
       Button("Voice message", systemImage: "waveform") {
         onStopReading()
         dictating = false

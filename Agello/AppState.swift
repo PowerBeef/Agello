@@ -32,13 +32,20 @@ final class AppState {
   /// user's personalization, plus runtime tool availability for the active chat.
   var effectiveOptions: InferenceOptions {
     var effective = options
+    let shortcuts =
+      (enableTools && !focusFilter.hidePersonalTools)
+      ? AutomationRegistry.shared.activeShortcuts()
+      : []
     effective.systemPrompt = SystemPrompt.compose(
       base: options.systemPrompt, personalization: personalization, project: activeProject,
       memories: memoryEnabled ? memoryTexts() : [], current: SystemPrompt.CurrentInfo(webSettings: webSettings),
-      dataSecurity: enableTools || webSettings.allowed)
+      dataSecurity: enableTools || webSettings.allowed,
+      allowedShortcuts: shortcuts)
     effective.webSearchTool = webSettings.allowed && webSettings.automatic
     effective.workspaceFileTools = activeThreadHasDocuments
     effective.personalTools = focusFilter.hidePersonalTools ? personalTools.suppressed : personalTools
+    effective.shortcutAllowlistKey =
+      shortcuts.isEmpty ? "" : AutomationRegistry.shared.toolSetFingerprint
     return effective
   }
 
@@ -57,6 +64,11 @@ final class AppState {
   @ObservationIgnored private var focusFilterObserver: NSObjectProtocol?
   @ObservationIgnored private var thermalObserver: NSObjectProtocol?
   @ObservationIgnored private var powerModeObserver: NSObjectProtocol?
+  @ObservationIgnored private var automationObserver: NSObjectProtocol?
+  /// Name of an external Shortcut whose callback hasn't arrived yet after returning to Agello.
+  var pendingShortcutReturnName: String?
+  /// Version counter bumped whenever `AutomationRegistry` changes so SwiftUI views refresh.
+  var automationRegistryVersion = 0
 
   /// Opt-in native iOS personal context tools (Calendar, Reminders, Contacts, Maps). Off by default.
   var personalTools = PersonalToolsSettings() {
@@ -252,6 +264,15 @@ final class AppState {
     powerModeObserver = NotificationCenter.default.addObserver(
       forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main,
       using: handleThermalChange)
+    automationObserver = NotificationCenter.default.addObserver(
+      forName: AutomationRegistry.didChangeNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        self.automationRegistryVersion &+= 1
+        self.scheduleApplyOptions()
+      }
+    }
     if let projectID = focusFilter.defaultProjectID, selectedThreadID == nil, newChatProjectID == nil {
       newChatProjectID = projectID
     }
@@ -622,6 +643,9 @@ final class AppState {
     guard let context = modelContext else { return false }
     generationError = nil
     notice = nil
+    pendingShortcutReturnName = nil
+    TurnSecurityContext.reset()
+    ToolConfirmationGate.clearBatchGrants()
     ReplyTrace.begin(prompt: prompt, options: options, resolved: resolved, search: webSearch, tools: enableTools)
     let stopsAtStart = stopCount
     var stopped: Bool { stopCount != stopsAtStart }

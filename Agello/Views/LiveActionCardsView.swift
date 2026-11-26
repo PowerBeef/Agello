@@ -246,3 +246,52 @@ struct AlarmCardView: View {
     }
   }
 }
+
+// MARK: - Automation Handoff Card (Shortcuts Bridge)
+
+struct AutomationHandoffCardView: View {
+  let card: AutomationHandoffCard
+
+  private var statusBadge: (text: String, tone: Color) {
+    switch card.state {
+    case .readyToRun: (String(localized: "Ready"), Theme.Brand.glacier)
+    case .completed: (String(localized: "Completed"), Theme.Status.healthy)
+    case .failed: (String(localized: "Failed"), Theme.Status.critical)
+    case .cancelled: (String(localized: "Cancelled"), Theme.Status.guarded)
+    }
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+      HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+        TintTile(symbol: "bolt.fill", tint: Theme.Brand.glacier)
+        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+          Text(card.shortcutName)
+            .font(.system(.subheadline, weight: .semibold))
+            .foregroundStyle(Theme.Text.primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          if let input = card.inputSummary, !input.isEmpty {
+            Text("Input: \(input)")
+              .font(.caption)
+              .foregroundStyle(Theme.Text.tertiary)
+              .lineLimit(2)
+          }
+        }
+        StatusBadge(text: statusBadge.text, tone: statusBadge.tone)
+      }
+
+      if let result = card.resultSummary, !result.isEmpty {
+        Text(result)
+          .font(.caption)
+          .foregroundStyle(Theme.Text.secondary)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(Theme.Spacing.sm)
+          .surfaceCard(radius: Theme.Radius.row)
+      }
+    }
+    .padding(Theme.Spacing.md)
+    .surfaceCard(radius: Theme.Radius.card)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("actionCard.automation")
+  }
+}
