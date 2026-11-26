@@ -1,49 +1,52 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="400" height="418" viewBox="0 0 400 418" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="424" viewBox="0 0 400 424" role="img" aria-labelledby="title desc">
 <title id="title">Sustained decode speed at 64K context</title>
-<desc id="desc">Bar chart of sustained decode speed on iPhone 17 Pro at 64K context: Rewrite 84.3 tok/s, Chat 57.8 tok/s, Document Q&amp;A 56.9 tok/s, and Think 51.9 tok/s — each well above upstream v0.18.0's 27 tok/s at 32K.</desc>
+<desc id="desc">Bar chart of sustained decode speed on iPhone 17 Pro at 64K context: Rewrite 84.3 tok/s (3.1x), Chat 57.8 tok/s (2.1x), Document Q&amp;A 56.9 tok/s (2.1x), and Think 51.9 tok/s (1.9x) compared with stock v0.18.0's 27 tok/s at 32K.</desc>
 <defs><linearGradient id="canvas" x1="0" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#161823"/><stop offset="0.45" stop-color="#1C1E26"/><stop offset="1" stop-color="#0C0E14"/></linearGradient><radialGradient id="glow0" cx="340" cy="0" r="360" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#BFAADC" stop-opacity="0.09"/><stop offset="1" stop-color="#BFAADC" stop-opacity="0"/></radialGradient></defs>
-<rect width="400" height="418" rx="24" fill="url(#canvas)"/><rect width="400" height="418" rx="24" fill="url(#glow0)"/><rect x="0.5" y="0.5" width="399" height="417" rx="23.5" fill="none" stroke="#F7EBD1" stroke-opacity="0.10"/>
-<text x="24" y="44" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" font-weight="600" fill="#F2F0EB">Sustained decode speed at 64K context</text>
-<text x="24" y="66" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#948F84">iPhone 17 Pro (Release, tok/s, higher is faster)</text>
-<line x1="114" y1="104" x2="114" y2="336" stroke="#2F3342" stroke-width="1"/>
-<text x="114" y="354" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84" text-anchor="middle">0</text>
-<line x1="158" y1="104" x2="158" y2="336" stroke="#2F3342" stroke-width="1"/>
-<text x="158" y="354" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84" text-anchor="middle">25</text>
-<line x1="202" y1="104" x2="202" y2="336" stroke="#2F3342" stroke-width="1"/>
-<text x="202" y="354" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84" text-anchor="middle">50</text>
-<line x1="246" y1="104" x2="246" y2="336" stroke="#2F3342" stroke-width="1"/>
-<text x="246" y="354" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84" text-anchor="middle">75</text>
-<line x1="290" y1="104" x2="290" y2="336" stroke="#2F3342" stroke-width="1"/>
-<text x="290" y="354" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#948F84" text-anchor="middle">100</text>
-<line x1="161.52" y1="96" x2="161.52" y2="336" stroke="#ADB5C2" stroke-width="1.5" stroke-dasharray="4 4"/>
-<text x="166.52" y="102" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#ADB5C2">v0.18 @ 32K (27)</text>
-<circle cx="30" cy="127" r="4.5" fill="#EDCC8A"/>
-<text x="42" y="131.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="600" fill="#F2F0EB">Rewrite</text>
-<text x="42" y="153" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.8" font-weight="400" fill="#948F84">0.65 s TTFT</text>
-<path d="M114 114 h142.37 a6 6 0 0 1 6 6 v14 a6 6 0 0 1 -6 6 h-142.37 z" fill="#C89B42"/>
-<text x="270.37" y="131.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#F2F0EB">84.3</text>
-<rect x="301.87" y="117" width="38" height="20" rx="10" fill="#EDCC8A" fill-opacity="0.16" stroke="#EDCC8A" stroke-opacity="0.42"/>
-<text x="320.87" y="131" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.8" font-weight="700" fill="#EDCC8A" text-anchor="middle">3.1×</text>
-<circle cx="30" cy="185" r="4.5" fill="#8AB0C8"/>
-<text x="42" y="189.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="600" fill="#F2F0EB">Chat</text>
-<text x="42" y="211" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.8" font-weight="400" fill="#948F84">0.85 s TTFT</text>
-<path d="M114 172 h95.73 a6 6 0 0 1 6 6 v14 a6 6 0 0 1 -6 6 h-95.73 z" fill="#5B8AAD"/>
-<text x="223.73" y="189.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#F2F0EB">57.8</text>
-<rect x="255.23" y="175" width="38" height="20" rx="10" fill="#8AB0C8" fill-opacity="0.16" stroke="#8AB0C8" stroke-opacity="0.42"/>
-<text x="274.23" y="189" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.8" font-weight="700" fill="#8AB0C8" text-anchor="middle">2.1×</text>
-<circle cx="30" cy="243" r="4.5" fill="#8CC7BF"/>
-<text x="42" y="247.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="600" fill="#F2F0EB">File Q&amp;A</text>
-<text x="42" y="269" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.8" font-weight="400" fill="#948F84">3.80 s TTFT</text>
-<path d="M114 230 h94.14 a6 6 0 0 1 6 6 v14 a6 6 0 0 1 -6 6 h-94.14 z" fill="#529B91"/>
-<text x="222.14" y="247.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#F2F0EB">56.9</text>
-<rect x="253.64" y="233" width="38" height="20" rx="10" fill="#8CC7BF" fill-opacity="0.16" stroke="#8CC7BF" stroke-opacity="0.42"/>
-<text x="272.64" y="247" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.8" font-weight="700" fill="#8CC7BF" text-anchor="middle">2.1×</text>
-<circle cx="30" cy="301" r="4.5" fill="#BFAADC"/>
-<text x="42" y="305.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="600" fill="#F2F0EB">Think</text>
-<text x="42" y="327" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.8" font-weight="400" fill="#948F84">0.97 s TTFT</text>
-<path d="M114 288 h85.34 a6 6 0 0 1 6 6 v14 a6 6 0 0 1 -6 6 h-85.34 z" fill="#8F76B8"/>
-<text x="213.34" y="305.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#F2F0EB">51.9</text>
-<rect x="244.84" y="291" width="38" height="20" rx="10" fill="#BFAADC" fill-opacity="0.16" stroke="#BFAADC" stroke-opacity="0.42"/>
-<text x="263.84" y="305" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.8" font-weight="700" fill="#BFAADC" text-anchor="middle">1.9×</text>
-<text x="376" y="398" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#948F84" text-anchor="end">phone-bench.sh · 0.5% median noise · 0 host copies</text>
+<rect width="400" height="424" rx="24" fill="url(#canvas)"/><rect width="400" height="424" rx="24" fill="url(#glow0)"/><rect x="0.5" y="0.5" width="399" height="423" rx="23.5" fill="none" stroke="#F7EBD1" stroke-opacity="0.10"/>
+<text x="22" y="42" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="18" font-weight="600" fill="#F2F0EB">Sustained decode speed at 64K context</text>
+<text x="22" y="63" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#948F84">iPhone 17 Pro (Release, tok/s, higher is faster)</text>
+<line x1="108" y1="112" x2="108" y2="328" stroke="#2F3342" stroke-width="1"/>
+<text x="108" y="346" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#948F84" text-anchor="middle">0</text>
+<line x1="166" y1="112" x2="166" y2="328" stroke="#2F3342" stroke-width="1"/>
+<text x="166" y="346" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#948F84" text-anchor="middle">30</text>
+<line x1="224" y1="112" x2="224" y2="328" stroke="#2F3342" stroke-width="1"/>
+<text x="224" y="346" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#948F84" text-anchor="middle">60</text>
+<line x1="282" y1="112" x2="282" y2="328" stroke="#2F3342" stroke-width="1"/>
+<text x="282" y="346" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#948F84" text-anchor="middle">90</text>
+<circle cx="28" cy="131" r="4.5" fill="#EDCC8A"/>
+<text x="40" y="135.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#F2F0EB">Rewrite</text>
+<text x="40" y="157" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="400" fill="#948F84">0.65 s TTFT</text>
+<rect x="108" y="118" width="174" height="26" rx="6" fill="#0C0E14" fill-opacity="0.72" stroke="#F7EBD1" stroke-opacity="0.06"/>
+<rect x="108" y="118" width="162.98" height="26" rx="6" fill="#C89B42"/>
+<text x="292" y="135.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#F2F0EB">84.3</text>
+<rect x="328" y="121" width="38" height="20" rx="10" fill="#EDCC8A" fill-opacity="0.16" stroke="#EDCC8A" stroke-opacity="0.42"/>
+<text x="347" y="135" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.8" font-weight="700" fill="#EDCC8A" text-anchor="middle">3.1×</text>
+<circle cx="28" cy="189" r="4.5" fill="#8AB0C8"/>
+<text x="40" y="193.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#F2F0EB">Chat</text>
+<text x="40" y="215" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="400" fill="#948F84">0.85 s TTFT</text>
+<rect x="108" y="176" width="174" height="26" rx="6" fill="#0C0E14" fill-opacity="0.72" stroke="#F7EBD1" stroke-opacity="0.06"/>
+<rect x="108" y="176" width="111.75" height="26" rx="6" fill="#5B8AAD"/>
+<text x="292" y="193.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#F2F0EB">57.8</text>
+<rect x="328" y="179" width="38" height="20" rx="10" fill="#8AB0C8" fill-opacity="0.16" stroke="#8AB0C8" stroke-opacity="0.42"/>
+<text x="347" y="193" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.8" font-weight="700" fill="#8AB0C8" text-anchor="middle">2.1×</text>
+<circle cx="28" cy="247" r="4.5" fill="#8CC7BF"/>
+<text x="40" y="251.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#F2F0EB">File Q&amp;A</text>
+<text x="40" y="273" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="400" fill="#948F84">3.80 s TTFT</text>
+<rect x="108" y="234" width="174" height="26" rx="6" fill="#0C0E14" fill-opacity="0.72" stroke="#F7EBD1" stroke-opacity="0.06"/>
+<rect x="108" y="234" width="110.01" height="26" rx="6" fill="#529B91"/>
+<text x="292" y="251.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#F2F0EB">56.9</text>
+<rect x="328" y="237" width="38" height="20" rx="10" fill="#8CC7BF" fill-opacity="0.16" stroke="#8CC7BF" stroke-opacity="0.42"/>
+<text x="347" y="251" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.8" font-weight="700" fill="#8CC7BF" text-anchor="middle">2.1×</text>
+<circle cx="28" cy="305" r="4.5" fill="#BFAADC"/>
+<text x="40" y="309.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#F2F0EB">Think</text>
+<text x="40" y="331" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.5" font-weight="400" fill="#948F84">0.97 s TTFT</text>
+<rect x="108" y="292" width="174" height="26" rx="6" fill="#0C0E14" fill-opacity="0.72" stroke="#F7EBD1" stroke-opacity="0.06"/>
+<rect x="108" y="292" width="100.34" height="26" rx="6" fill="#8F76B8"/>
+<text x="292" y="309.5" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="700" fill="#F2F0EB">51.9</text>
+<rect x="328" y="295" width="38" height="20" rx="10" fill="#BFAADC" fill-opacity="0.16" stroke="#BFAADC" stroke-opacity="0.42"/>
+<text x="347" y="309" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="10.8" font-weight="700" fill="#BFAADC" text-anchor="middle">1.9×</text>
+<line x1="160.2" y1="110" x2="160.2" y2="328" stroke="#ADB5C2" stroke-width="1.6" stroke-dasharray="4 4"/>
+<circle cx="160.2" cy="106" r="3.2" fill="#ADB5C2"/>
+<text x="168.2" y="110" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#ADB5C2">Stock v0.18 @ 32K (27)</text>
+<text x="378" y="404" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#948F84" text-anchor="end">phone-bench.sh · 0.5% median noise · 0 host copies</text>
 </svg>

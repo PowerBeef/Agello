@@ -107,7 +107,7 @@ Most on-device AI apps wrap an off-the-shelf inference library and stop there. A
 
 <picture>
   <source media="(max-width: 700px)" srcset="docs/readme/performance-narrow.svg">
-  <img src="docs/readme/performance.svg" width="100%" alt="How Agello performs on iPhone 17 Pro (Apple A19 Pro, 12 GB, iOS 27.2.1, 64K window): 1,668 tok/s peak long-file prefill, 52 to 84 tok/s sustained decode speed, and 0.86 s to index a 40-page PDF on the 16-Core Neural Engine with 0% GPU load.">
+  <img src="docs/readme/performance.svg" width="100%" alt="How Agello performs on iPhone 17 Pro (Apple A19 Pro, 12 GB, iOS 27.2.1, 64K window): 1,668 tok/s peak long-file prefill, 84.3 tok/s peak 64K decode speed (Rewrite 84, Chat 58, Think 52), and 0.86 s to index a 40-page PDF on the 16-Core Neural Engine with 0% GPU load.">
 </picture>
 
 <picture>

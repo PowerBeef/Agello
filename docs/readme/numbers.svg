@@ -5,27 +5,27 @@
 <rect width="880" height="300" rx="24" fill="url(#canvas)"/><rect width="880" height="300" rx="24" fill="url(#glow0)"/><rect x="0.5" y="0.5" width="879" height="299" rx="23.5" fill="none" stroke="#F7EBD1" stroke-opacity="0.10"/>
 <text x="50" y="78" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="36" font-weight="700" fill="#BFAADC" letter-spacing="-0.5">64K</text>
 <text x="50" y="103" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F2F0EB">exact token context</text>
-<text x="50" y="123" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#948F84">bit-exact to position 65,534</text>
+<text x="50" y="123" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#948F84">bit-exact to pos 65,534</text>
 <rect x="302.67" y="46" width="1" height="86" fill="#2F3342"/>
-<text x="324.67" y="78" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="36" font-weight="700" fill="#8AB0C8" letter-spacing="-0.5">0</text>
-<text x="324.67" y="103" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F2F0EB">host read copies</text>
-<text x="324.67" y="123" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#948F84">zero-copy NEON greedy on Metal</text>
+<text x="324.67" y="78" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="36" font-weight="700" fill="#8AB0C8" letter-spacing="-0.5">0 B</text>
+<text x="324.67" y="103" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F2F0EB">host logit readbacks</text>
+<text x="324.67" y="123" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#948F84">in-place NEON on Metal</text>
 <rect x="577.33" y="46" width="1" height="86" fill="#2F3342"/>
 <text x="599.33" y="78" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="36" font-weight="700" fill="#8CC7BF" letter-spacing="-0.5">0%</text>
 <text x="599.33" y="103" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F2F0EB">GPU load during RAG</text>
-<text x="599.33" y="123" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#948F84">EmbeddingGemma 2 on 16-Core ANE</text>
+<text x="599.33" y="123" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#948F84">16-Core Neural Engine</text>
 <rect x="50" y="150" width="230.67" height="1" fill="#2F3342"/>
 <text x="50" y="200" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="36" font-weight="700" fill="#EDCC8A" letter-spacing="-0.5">4.5×</text>
 <text x="50" y="225" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F2F0EB">faster Vision encode</text>
-<text x="50" y="245" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#948F84">112 ViT linears on matrix units</text>
+<text x="50" y="245" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#948F84">112 ViT linears on MPP</text>
 <rect x="302.67" y="168" width="1" height="86" fill="#2F3342"/>
 <rect x="324.67" y="150" width="230.67" height="1" fill="#2F3342"/>
-<text x="324.67" y="200" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="36" font-weight="700" fill="#8AB0C8" letter-spacing="-0.5">+4.95 MB</text>
+<text x="324.67" y="200" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="36" font-weight="700" fill="#8AB0C8" letter-spacing="-0.5">+5 MB</text>
 <text x="324.67" y="225" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F2F0EB">200-turn soak delta</text>
-<text x="324.67" y="245" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#948F84">100% shared verify/decode pool</text>
+<text x="324.67" y="245" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#948F84">shared verify/decode pool</text>
 <rect x="577.33" y="168" width="1" height="86" fill="#2F3342"/>
 <rect x="599.33" y="150" width="230.67" height="1" fill="#2F3342"/>
 <text x="599.33" y="200" font-family="ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="36" font-weight="700" fill="#8CC7BF" letter-spacing="-0.5">622</text>
 <text x="599.33" y="225" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F2F0EB">automated tests</text>
-<text x="599.33" y="245" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#948F84">iPhone 17 Pro gates + AgelloSim UI</text>
+<text x="599.33" y="245" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#948F84">iPhone 17 Pro + AgelloSim</text>
 </svg>
