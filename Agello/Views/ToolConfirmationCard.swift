@@ -8,6 +8,7 @@ import SwiftUI
 /// warning banner whenever external/untrusted content entered the active turn.
 struct ToolConfirmationCard: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.verticalSizeClass) private var verticalSizeClass
   let request: ToolConfirmationRequest
   let isCompact: Bool
@@ -147,34 +148,48 @@ struct ToolConfirmationCard: View {
   }
 
   private var header: some View {
-    HStack(spacing: Theme.Spacing.sm) {
-      Image(systemName: shieldSymbol)
-        .font(.title3)
-        .foregroundStyle(accentTint)
-        .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-        Text(request.title)
-          .font(.headline)
-          .foregroundStyle(Theme.Text.primary)
-        Text(request.toolName)
-          .font(.caption.monospaced())
-          .foregroundStyle(Theme.Text.tertiary)
-          .accessibilityIdentifier("tool.confirm.name")
+    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+      HStack(spacing: Theme.Spacing.sm) {
+        Image(systemName: shieldSymbol)
+          .font(.title3)
+          .foregroundStyle(accentTint)
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+          Text(request.title)
+            .font(.headline)
+            .foregroundStyle(Theme.Text.primary)
+          Text(request.toolName)
+            .font(.caption.monospaced())
+            .foregroundStyle(Theme.Text.tertiary)
+            .accessibilityIdentifier("tool.confirm.name")
+        }
+        Spacer(minLength: Theme.Spacing.xs)
+        if !dynamicTypeSize.isAccessibilitySize {
+          StatusBadge(text: badgeText, tone: accentTint)
+        }
       }
-      Spacer(minLength: Theme.Spacing.xs)
-      StatusBadge(text: badgeText, tone: accentTint)
+      if dynamicTypeSize.isAccessibilitySize {
+        StatusBadge(text: badgeText, tone: accentTint)
+      }
     }
   }
 
   private var taintBanner: some View {
-    let sourceList = request.untrustedSources.prefix(3).joined(separator: ", ")
+    let shown = request.untrustedSources.prefix(3)
+    let extraCount = max(0, request.untrustedSources.count - shown.count)
+    let sourceList =
+      extraCount > 0
+      ? "\(shown.joined(separator: ", ")) +\(extraCount) more"
+      : shown.joined(separator: ", ")
     return HStack(alignment: .top, spacing: Theme.Spacing.sm) {
       Image(systemName: "exclamationmark.shield.fill")
         .font(.subheadline)
         .foregroundStyle(Theme.Status.guarded)
+        .accessibilityHidden(true)
       Text("Triggered after reading external content (\(sourceList)). Verify all details carefully.")
         .font(.caption)
         .foregroundStyle(Theme.Text.primary)
+        .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
     .padding(Theme.Spacing.sm)
@@ -209,17 +224,23 @@ struct ToolConfirmationCard: View {
                 .appAnimation(Theme.Motion.stateChange, value: isSelected, kind: .dissolve)
                 .frame(width: 28, height: Theme.Size.target)
                 .accessibilityHidden(true)
-              VStack(alignment: .leading, spacing: 2) {
+              VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                 Text(step.title)
                   .font(.system(.subheadline, weight: .semibold))
                   .foregroundStyle(isSelected ? Theme.Text.primary : Theme.Text.tertiary)
                 Text(step.summary)
                   .font(.caption)
                   .foregroundStyle(Theme.Text.secondary)
-                  .lineLimit(2)
+                  .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
+                  .fixedSize(horizontal: false, vertical: true)
+                if dynamicTypeSize.isAccessibilitySize, step.risk != .standard {
+                  StatusBadge(
+                    text: step.risk == .destructive ? String(localized: "Destructive") : String(localized: "External"),
+                    tone: tint(for: step.risk))
+                }
               }
               .frame(maxWidth: .infinity, alignment: .leading)
-              if step.risk != .standard {
+              if !dynamicTypeSize.isAccessibilitySize, step.risk != .standard {
                 StatusBadge(
                   text: step.risk == .destructive ? String(localized: "Destructive") : String(localized: "External"),
                   tone: tint(for: step.risk))
@@ -236,19 +257,32 @@ struct ToolConfirmationCard: View {
           if isSelected, !step.parameters.isEmpty {
             VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
               ForEach(step.parameters) { param in
-                HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
-                  Text(param.name)
-                    .font(.caption2.monospaced())
-                    .foregroundStyle(Theme.Text.tertiary)
-                    .frame(minWidth: 58, alignment: .leading)
-                  Text(param.value)
-                    .font(.caption)
-                    .foregroundStyle(Theme.Text.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if dynamicTypeSize.isAccessibilitySize {
+                  VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text(param.name)
+                      .font(.caption2.monospaced())
+                      .foregroundStyle(Theme.Text.tertiary)
+                    Text(param.value)
+                      .font(.caption)
+                      .foregroundStyle(Theme.Text.primary)
+                      .fixedSize(horizontal: false, vertical: true)
+                  }
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                  HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+                    Text(param.name)
+                      .font(.caption2.monospaced())
+                      .foregroundStyle(Theme.Text.tertiary)
+                      .frame(minWidth: 58, alignment: .leading)
+                    Text(param.value)
+                      .font(.caption)
+                      .foregroundStyle(Theme.Text.primary)
+                      .frame(maxWidth: .infinity, alignment: .leading)
+                  }
                 }
               }
             }
-            .padding(.leading, 36)
+            .padding(.leading, dynamicTypeSize.isAccessibilitySize ? Theme.Spacing.sm : Theme.Size.pill)
             .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
           }
         }
@@ -261,16 +295,30 @@ struct ToolConfirmationCard: View {
   private func parameterList(_ parameters: [ToolConfirmationRequest.Parameter]) -> some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
       ForEach(parameters) { param in
-        HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
-          Text(param.name)
-            .font(.caption.monospaced())
-            .foregroundStyle(Theme.Text.tertiary)
-            .frame(minWidth: 68, alignment: .leading)
-          Text(param.value)
-            .font(.subheadline)
-            .foregroundStyle(Theme.Text.primary)
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        if dynamicTypeSize.isAccessibilitySize {
+          VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+            Text(param.name)
+              .font(.caption.monospaced())
+              .foregroundStyle(Theme.Text.tertiary)
+            Text(param.value)
+              .font(.subheadline)
+              .foregroundStyle(Theme.Text.primary)
+              .textSelection(.enabled)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+          HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
+            Text(param.name)
+              .font(.caption.monospaced())
+              .foregroundStyle(Theme.Text.tertiary)
+              .frame(minWidth: 68, alignment: .leading)
+            Text(param.value)
+              .font(.subheadline)
+              .foregroundStyle(Theme.Text.primary)
+              .textSelection(.enabled)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
         }
       }
     }
@@ -334,12 +382,12 @@ struct ToolConfirmationCard: View {
 /// Capsule-matched Deny / Cancel button paired symmetrically with `LitButtonStyle`.
 private struct QuietConfirmDenyButtonStyle: ButtonStyle {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 52
+  @ScaledMetric(relativeTo: .headline) private var height: CGFloat = Theme.Size.target + Theme.Spacing.sm
 
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .font(.headline)
-      .tracking(-0.17)
+      .tracking(Theme.Typography.ctaTracking)
       .foregroundStyle(Theme.Text.secondary)
       .padding(.horizontal, Theme.Spacing.md)
       .frame(maxWidth: .infinity, minHeight: height)

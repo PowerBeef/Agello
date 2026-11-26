@@ -1,4 +1,5 @@
 import BackgroundTasks
+import UIKit
 import XCTest
 
 /// Real-tap flows on the device. Each test launches the app from a clean
@@ -258,6 +259,28 @@ final class ChatFlowUITests: XCTestCase {
     XCTAssertEqual(rows().count, 0)
   }
 
+  /// Drawer gesture: leading-edge swipe opens the drawer and a left drag closes it.
+  func testDrawerEdgeSwipeOpenAndDragClose() throws {
+    launchApp(mockEngine: true)
+    try openNewChat()
+
+    let edgeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5))
+    let openTarget = app.coordinate(withNormalizedOffset: CGVector(dx: 0.78, dy: 0.5))
+    edgeStart.press(forDuration: 0.05, thenDragTo: openTarget)
+
+    XCTAssertTrue(element("drawer.search").waitForExistence(timeout: 5), "Edge swipe did not open drawer")
+    XCTAssertTrue(element("drawer.close").waitForExistence(timeout: 5), "Drawer close scrim missing")
+    usleep(400_000)
+    attachScreenshot("drawer-edge-swipe-open")
+
+    let closeStart = app.coordinate(withNormalizedOffset: CGVector(dx: 0.80, dy: 0.5))
+    let closeTarget = app.coordinate(withNormalizedOffset: CGVector(dx: 0.10, dy: 0.5))
+    closeStart.press(forDuration: 0.05, thenDragTo: closeTarget)
+
+    XCTAssertTrue(element("drawer.close").waitForNonExistence(timeout: 5), "Drag did not close drawer")
+    XCTAssertTrue(element("chat.input").isHittable, "Chat composer not hittable after closing drawer")
+  }
+
   /// Rename and delete from the chat's toolbar menu.
   func testRenameAndDeleteChat() throws {
     launchApp(mockEngine: true)
@@ -486,7 +509,7 @@ final class ChatFlowUITests: XCTestCase {
     XCTAssertTrue(element("chat.send").exists || element("composer.voice").exists)
   }
 
-  /// Voice mode opens from the empty composer and ends back in the chat
+  /// Voice mode opens from the empty composer, toggles mute cleanly, and ends back in the chat
   /// (test microphone: XCTest can't answer the system prompt on device).
   func testVoiceModeOpensAndCloses() throws {
     launchApp(mockEngine: true, extraArgs: ["--uitest-fake-mic"])
@@ -497,6 +520,24 @@ final class ChatFlowUITests: XCTestCase {
     let state = element("voice.state")
     XCTAssertTrue(state.waitForExistence(timeout: 10))
     XCTAssertEqual(state.label, "Listening")
+    XCTAssertTrue(element("voice.toggleCamera").exists, "Camera button missing in voice mode")
+
+    let mute = element("voice.mute")
+    XCTAssertTrue(mute.waitForExistence(timeout: 5), "Mute button missing in voice mode")
+    XCTAssertEqual(mute.label, "Mute")
+    mute.tap()
+    XCTAssertEqual(
+      XCTWaiter.wait(
+        for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Unmute"), object: mute)],
+        timeout: 5),
+      .completed, "Mute button did not switch to Unmute")
+    XCTAssertEqual(state.label, "Listening")
+    mute.tap()
+    XCTAssertEqual(
+      XCTWaiter.wait(
+        for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Mute"), object: mute)],
+        timeout: 5),
+      .completed, "Mute button did not switch back to Mute")
     attachScreenshot("voice-mode")
     element("voice.end").tap()
     XCTAssertTrue(element("chat.input").waitForExistence(timeout: 5), "Didn't return to the chat")
@@ -530,7 +571,7 @@ final class ChatFlowUITests: XCTestCase {
     XCTAssertTrue(element("chat.input").waitForExistence(timeout: 5))
   }
 
-  /// Memory: turn it on and add a memory by hand.
+  /// Memory: turn it on and add a memory by hand through the compact multiline sheet.
   func testMemorySettings() throws {
     launchApp(mockEngine: true)
     openSettings()
@@ -539,10 +580,16 @@ final class ChatFlowUITests: XCTestCase {
     XCTAssertTrue(toggle.waitForExistence(timeout: 5))
     if (toggle.value as? String) != "1" { toggle.switches.firstMatch.tap() }
     element("memory.add").tap()
-    let field = app.alerts.textFields.firstMatch
-    XCTAssertTrue(field.waitForExistence(timeout: 5))
-    field.typeText("Prefers metric units\n")
-    if app.alerts.firstMatch.waitForExistence(timeout: 1) { app.alerts.buttons["Save"].tap() }
+    let field = element("memory.field")
+    XCTAssertTrue(field.waitForExistence(timeout: 5), "Memory editor sheet did not appear")
+    let save = element("memory.save")
+    XCTAssertTrue(save.waitForExistence(timeout: 5), "Memory save button missing")
+    XCTAssertFalse(save.isEnabled, "Save should be disabled when memory draft is empty")
+    field.tap()
+    field.typeText("Prefers metric units")
+    XCTAssertTrue(save.isEnabled, "Save should enable once memory text is entered")
+    save.tap()
+    XCTAssertTrue(field.waitForNonExistence(timeout: 5), "Memory editor sheet did not dismiss")
     XCTAssertTrue(element("memory.row").waitForExistence(timeout: 5), "Memory not listed")
     attachScreenshot("memory")
   }
@@ -564,9 +611,9 @@ final class ChatFlowUITests: XCTestCase {
   }
 
   /// Think and Search are either titled or icon-only, never truncated (they
-  /// used to render as "T…" / "S…", about 52–70 pt wide), and at a large
-  /// accessibility text size every composer control still fits inside the
-  /// composer and can be tapped.
+  /// used to render as "T…" / "S…", about 52–70 pt wide), and at large and
+  /// maximum accessibility text sizes (AX2/AX3/AX5) every composer control
+  /// remains >= 44 pt, hittable, and inside the composer bounds.
   func testComposerControlsFit() throws {
     launchApp(mockEngine: true)
     let think = element("composer.think")
@@ -580,21 +627,30 @@ final class ChatFlowUITests: XCTestCase {
     }
     attachScreenshot("composer-default")
 
+    assertComposerControlsFit(
+      sizeCategory: UIContentSizeCategory.accessibilityLarge.rawValue,
+      screenshotName: "composer-accessibility-L")
+    assertComposerControlsFit(
+      sizeCategory: UIContentSizeCategory.accessibilityExtraExtraExtraLarge.rawValue,
+      screenshotName: "composer-accessibility-XXXL")
+  }
+
+  private func assertComposerControlsFit(sizeCategory: String, screenshotName: String) {
     app.terminate()
-    launchApp(
-      mockEngine: true,
-      extraArgs: [
-        "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL",
-      ])
+    launchApp(mockEngine: true, extraArgs: ["-UIPreferredContentSizeCategoryName", sizeCategory])
     let composer = element("chat.composer")
-    XCTAssertTrue(composer.waitForExistence(timeout: 10))
+    XCTAssertTrue(composer.waitForExistence(timeout: 10), "Composer missing at \(sizeCategory)")
     for id in ["composer.attach", "composer.think", "composer.search", "composer.mic", "composer.voice"] {
       let control = element(id)
-      XCTAssertTrue(control.waitForExistence(timeout: 5), id)
-      XCTAssertTrue(control.isHittable, "\(id) not hittable")
-      XCTAssertTrue(composer.frame.insetBy(dx: -1, dy: -1).contains(control.frame), "\(id) outside the composer")
+      XCTAssertTrue(control.waitForExistence(timeout: 5), "\(id) missing at \(sizeCategory)")
+      XCTAssertTrue(control.isHittable, "\(id) not hittable at \(sizeCategory)")
+      XCTAssertGreaterThanOrEqual(control.frame.width, 44, "\(id) width < 44 pt at \(sizeCategory)")
+      XCTAssertGreaterThanOrEqual(control.frame.height, 44, "\(id) height < 44 pt at \(sizeCategory)")
+      XCTAssertTrue(
+        composer.frame.insetBy(dx: -1, dy: -1).contains(control.frame),
+        "\(id) outside the composer at \(sizeCategory)")
     }
-    attachScreenshot("composer-accessibility-L")
+    attachScreenshot(screenshotName)
   }
 
   // MARK: - Helpers

@@ -93,8 +93,9 @@ struct ActionCardRecord: Codable, Equatable, Sendable, Identifiable {
   var deduplicationKey: String {
     switch payload {
     case .places(let card):
+      let area = (card.areaLabel ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
       let top = card.places.first?.name.lowercased() ?? ""
-      return "places:\(card.query.lowercased()):\(top)"
+      return "places:\(card.query.lowercased()):\(area):\(top)"
     case .route(let card):
       return "route:\(card.destinationName.lowercased()):\(card.transport.lowercased())"
     case .calendarEvent(let card):
@@ -108,7 +109,8 @@ struct ActionCardRecord: Codable, Equatable, Sendable, Identifiable {
       return "contact:\(key)"
     case .messageDraft(let card):
       let recips = card.recipients.map { $0.lowercased() }.joined(separator: ",")
-      return "draft:\(card.channel.rawValue):\(recips):\(card.body.prefix(40).lowercased())"
+      let subject = (card.subject ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      return "draft:\(card.channel.rawValue):\(recips):\(subject):\(card.body.prefix(40).lowercased())"
     case .weather(let card):
       return "weather:\(card.locationName.lowercased())"
     case .alarm(let card):
@@ -118,6 +120,17 @@ struct ActionCardRecord: Codable, Equatable, Sendable, Identifiable {
     case .unknown:
       return "unknown:\(id.uuidString)"
     }
+  }
+
+  /// Blank-area key for an area-labelled `.places` card so a later area-enriched result for
+  /// the same `(query, topPlace)` can upgrade an earlier unlabelled card in place while keeping
+  /// distinct non-empty `areaLabel`s separate.
+  fileprivate var unlabelledPlacesKey: String? {
+    guard case .places(let card) = payload else { return nil }
+    let area = (card.areaLabel ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !area.isEmpty else { return nil }
+    let top = card.places.first?.name.lowercased() ?? ""
+    return "places:\(card.query.lowercased())::\(top)"
   }
 
   typealias Payload = ActionCardPayload
@@ -206,6 +219,30 @@ enum ActionCardPayload: Codable, Equatable, Sendable {
 
 // MARK: - Typed Card Payloads (Pure Foundation)
 
+private func normalizedItemID(_ raw: String?) -> String {
+  guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+    return UUID().uuidString
+  }
+  return trimmed
+}
+
+private enum PlaceItemCodingKeys: String, CodingKey {
+  case id, name, category, address, phone, websiteURL, latitude, longitude, distanceMeters,
+    mapItemIdentifier
+}
+
+private enum WeatherHourCodingKeys: String, CodingKey {
+  case id, date, temperature, symbolName, precipitationPercent
+}
+
+private enum WeatherDayCodingKeys: String, CodingKey {
+  case id, date, label, high, low, symbolName, precipitationPercent
+}
+
+private enum WeatherAlertCodingKeys: String, CodingKey {
+  case id, summary, severity, detailsURL
+}
+
 struct PlacesCard: Codable, Equatable, Sendable {
   struct PlaceItem: Codable, Equatable, Sendable, Identifiable {
     var id: String
@@ -224,7 +261,7 @@ struct PlacesCard: Codable, Equatable, Sendable {
       phone: String? = nil, websiteURL: String? = nil, latitude: Double, longitude: Double,
       distanceMeters: Double? = nil, mapItemIdentifier: String? = nil
     ) {
-      self.id = id ?? mapItemIdentifier ?? String(format: "%@|%.5f|%.5f", name, latitude, longitude)
+      self.id = normalizedItemID(id)
       self.name = name
       self.category = category
       self.address = address
@@ -234,6 +271,34 @@ struct PlacesCard: Codable, Equatable, Sendable {
       self.longitude = longitude
       self.distanceMeters = distanceMeters
       self.mapItemIdentifier = mapItemIdentifier
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: PlaceItemCodingKeys.self)
+      id = normalizedItemID(try c.decodeIfPresent(String.self, forKey: .id))
+      name = try c.decode(String.self, forKey: .name)
+      category = try c.decodeIfPresent(String.self, forKey: .category)
+      address = try c.decodeIfPresent(String.self, forKey: .address)
+      phone = try c.decodeIfPresent(String.self, forKey: .phone)
+      websiteURL = try c.decodeIfPresent(String.self, forKey: .websiteURL)
+      latitude = try c.decode(Double.self, forKey: .latitude)
+      longitude = try c.decode(Double.self, forKey: .longitude)
+      distanceMeters = try c.decodeIfPresent(Double.self, forKey: .distanceMeters)
+      mapItemIdentifier = try c.decodeIfPresent(String.self, forKey: .mapItemIdentifier)
+    }
+
+    func encode(to encoder: Encoder) throws {
+      var c = encoder.container(keyedBy: PlaceItemCodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(name, forKey: .name)
+      try c.encodeIfPresent(category, forKey: .category)
+      try c.encodeIfPresent(address, forKey: .address)
+      try c.encodeIfPresent(phone, forKey: .phone)
+      try c.encodeIfPresent(websiteURL, forKey: .websiteURL)
+      try c.encode(latitude, forKey: .latitude)
+      try c.encode(longitude, forKey: .longitude)
+      try c.encodeIfPresent(distanceMeters, forKey: .distanceMeters)
+      try c.encodeIfPresent(mapItemIdentifier, forKey: .mapItemIdentifier)
     }
   }
 
@@ -318,28 +383,115 @@ struct MessageDraftCard: Codable, Equatable, Sendable {
 
 struct WeatherCard: Codable, Equatable, Sendable {
   struct HourItem: Codable, Equatable, Sendable, Identifiable {
-    var id: String { "\(Int(date.timeIntervalSince1970))" }
+    var id: String
     var date: Date
     var temperature: String
     var symbolName: String
     var precipitationPercent: Int
+
+    init(
+      id: String? = nil, date: Date, temperature: String, symbolName: String,
+      precipitationPercent: Int
+    ) {
+      self.id = normalizedItemID(id)
+      self.date = date
+      self.temperature = temperature
+      self.symbolName = symbolName
+      self.precipitationPercent = precipitationPercent
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: WeatherHourCodingKeys.self)
+      id = normalizedItemID(try c.decodeIfPresent(String.self, forKey: .id))
+      date = try c.decode(Date.self, forKey: .date)
+      temperature = try c.decode(String.self, forKey: .temperature)
+      symbolName = try c.decode(String.self, forKey: .symbolName)
+      precipitationPercent = try c.decode(Int.self, forKey: .precipitationPercent)
+    }
+
+    func encode(to encoder: Encoder) throws {
+      var c = encoder.container(keyedBy: WeatherHourCodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(date, forKey: .date)
+      try c.encode(temperature, forKey: .temperature)
+      try c.encode(symbolName, forKey: .symbolName)
+      try c.encode(precipitationPercent, forKey: .precipitationPercent)
+    }
   }
 
   struct DayItem: Codable, Equatable, Sendable, Identifiable {
-    var id: String { "\(Int(date.timeIntervalSince1970))" }
+    var id: String
     var date: Date
     var label: String
     var high: String
     var low: String
     var symbolName: String
     var precipitationPercent: Int
+
+    init(
+      id: String? = nil, date: Date, label: String, high: String, low: String,
+      symbolName: String, precipitationPercent: Int
+    ) {
+      self.id = normalizedItemID(id)
+      self.date = date
+      self.label = label
+      self.high = high
+      self.low = low
+      self.symbolName = symbolName
+      self.precipitationPercent = precipitationPercent
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: WeatherDayCodingKeys.self)
+      id = normalizedItemID(try c.decodeIfPresent(String.self, forKey: .id))
+      date = try c.decode(Date.self, forKey: .date)
+      label = try c.decode(String.self, forKey: .label)
+      high = try c.decode(String.self, forKey: .high)
+      low = try c.decode(String.self, forKey: .low)
+      symbolName = try c.decode(String.self, forKey: .symbolName)
+      precipitationPercent = try c.decode(Int.self, forKey: .precipitationPercent)
+    }
+
+    func encode(to encoder: Encoder) throws {
+      var c = encoder.container(keyedBy: WeatherDayCodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(date, forKey: .date)
+      try c.encode(label, forKey: .label)
+      try c.encode(high, forKey: .high)
+      try c.encode(low, forKey: .low)
+      try c.encode(symbolName, forKey: .symbolName)
+      try c.encode(precipitationPercent, forKey: .precipitationPercent)
+    }
   }
 
   struct AlertItem: Codable, Equatable, Sendable, Identifiable {
-    var id: String { "\(summary)|\(severity)" }
+    var id: String
     var summary: String
     var severity: String
     var detailsURL: String?
+
+    init(id: String? = nil, summary: String, severity: String, detailsURL: String? = nil) {
+      self.id = normalizedItemID(id)
+      self.summary = summary
+      self.severity = severity
+      self.detailsURL = detailsURL
+    }
+
+    init(from decoder: Decoder) throws {
+      let c = try decoder.container(keyedBy: WeatherAlertCodingKeys.self)
+      id = normalizedItemID(try c.decodeIfPresent(String.self, forKey: .id))
+      summary = try c.decode(String.self, forKey: .summary)
+      severity = try c.decode(String.self, forKey: .severity)
+      detailsURL = try c.decodeIfPresent(String.self, forKey: .detailsURL)
+    }
+
+    func encode(to encoder: Encoder) throws {
+      var c = encoder.container(keyedBy: WeatherAlertCodingKeys.self)
+      try c.encode(id, forKey: .id)
+      try c.encode(summary, forKey: .summary)
+      try c.encode(severity, forKey: .severity)
+      try c.encodeIfPresent(detailsURL, forKey: .detailsURL)
+    }
   }
 
   var locationName: String
@@ -355,6 +507,49 @@ struct WeatherCard: Codable, Equatable, Sendable {
   var daily: [DayItem]
   var alerts: [AlertItem]
   var attributionLegalURL: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case locationName, temperature, feelsLike, condition, conditionSymbol, high, low,
+      humidityPercent, windSpeed, hourly, daily, alerts, attributionLegalURL
+  }
+
+  init(
+    locationName: String, temperature: String, feelsLike: String? = nil, condition: String,
+    conditionSymbol: String, high: String? = nil, low: String? = nil,
+    humidityPercent: Int? = nil, windSpeed: String? = nil, hourly: [HourItem] = [],
+    daily: [DayItem] = [], alerts: [AlertItem] = [], attributionLegalURL: String? = nil
+  ) {
+    self.locationName = locationName
+    self.temperature = temperature
+    self.feelsLike = feelsLike
+    self.condition = condition
+    self.conditionSymbol = conditionSymbol
+    self.high = high
+    self.low = low
+    self.humidityPercent = humidityPercent
+    self.windSpeed = windSpeed
+    self.hourly = hourly
+    self.daily = daily
+    self.alerts = alerts
+    self.attributionLegalURL = attributionLegalURL
+  }
+
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    locationName = try c.decode(String.self, forKey: .locationName)
+    temperature = try c.decode(String.self, forKey: .temperature)
+    feelsLike = try c.decodeIfPresent(String.self, forKey: .feelsLike)
+    condition = try c.decode(String.self, forKey: .condition)
+    conditionSymbol = try c.decode(String.self, forKey: .conditionSymbol)
+    high = try c.decodeIfPresent(String.self, forKey: .high)
+    low = try c.decodeIfPresent(String.self, forKey: .low)
+    humidityPercent = try c.decodeIfPresent(Int.self, forKey: .humidityPercent)
+    windSpeed = try c.decodeIfPresent(String.self, forKey: .windSpeed)
+    hourly = try c.decodeIfPresent([HourItem].self, forKey: .hourly) ?? []
+    daily = try c.decodeIfPresent([DayItem].self, forKey: .daily) ?? []
+    alerts = try c.decodeIfPresent([AlertItem].self, forKey: .alerts) ?? []
+    attributionLegalURL = try c.decodeIfPresent(String.self, forKey: .attributionLegalURL)
+  }
 }
 
 struct AlarmCard: Codable, Equatable, Sendable {
@@ -407,6 +602,11 @@ enum ActionCards {
       let key = card.deduplicationKey
       if let existingIndex = indexByKey[key] {
         result[existingIndex] = card
+      } else if let unlabelledKey = card.unlabelledPlacesKey,
+        let existingIndex = indexByKey.removeValue(forKey: unlabelledKey)
+      {
+        result[existingIndex] = card
+        indexByKey[key] = existingIndex
       } else {
         guard result.count < limit else { continue }
         indexByKey[key] = result.count

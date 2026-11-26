@@ -425,6 +425,7 @@ struct ShareView: View {
           HStack(spacing: 12) {
             ProgressView()
               .tint(SharePalette.glacier)
+              .accessibilityLabel("Saving to Agello")
             Text("Saving for Agello…")
               .foregroundStyle(SharePalette.secondary)
           }

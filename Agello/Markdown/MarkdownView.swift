@@ -253,13 +253,13 @@ struct CodeBlockView: View {
             .foregroundStyle(Theme.Text.secondary)
             .contentTransition(.symbolEffect(.replace))
             .appAnimation(Theme.Motion.stateChange, value: copied, kind: .dissolve)
-            .frame(minHeight: Theme.Size.glyph)
+            .frame(minHeight: Theme.Size.target)
+            .contentShape(.rect)
         }
         .buttonStyle(.borderless)
         .accessibilityIdentifier("code.copy")
       }
       .padding(.horizontal, Theme.Spacing.md)
-      .padding(.vertical, Theme.Spacing.xxs)
       Rectangle().fill(Theme.Surface.hairline).frame(height: Theme.Stroke.hairline)
       ScrollView(.horizontal, showsIndicators: false) {
         // A long block is drawn in pieces: one Text past the GPU's largest texture draws nothing
@@ -380,14 +380,15 @@ private struct MathBlockView: View {
     if MathLabel.canRender(latex) {
       ScrollView(.horizontal, showsIndicators: false) {
         MathLabel(latex: latex)
-          .padding(.vertical, 4)
+          .padding(.vertical, Theme.Spacing.xs)
+          .accessibilityElement(children: .ignore)
+          .accessibilityLabel(LaTeXText.unicode(latex))
+          .accessibilityIdentifier("message.math")
       }
-      .accessibilityLabel(LaTeXText.unicode(latex))
-      .accessibilityIdentifier("message.math")
     } else {
       Text(latex)
         .font(.callout.monospaced())
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Theme.Text.secondary)
     }
   }
 }

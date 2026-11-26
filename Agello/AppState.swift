@@ -163,7 +163,7 @@ final class AppState {
     }
   }
 
-  var modelContext: ModelContext? {
+  @ObservationIgnored var modelContext: ModelContext? {
     didSet { knowledge.modelContext = modelContext }
   }
   /// Attached files: storage, indexing, and retrieval.
@@ -497,7 +497,8 @@ final class AppState {
 
   private func selectedThreadHistory() -> [(role: ChatRole, text: String)] {
     guard let context = modelContext, let id = selectedThreadID else { return [] }
-    let descriptor = FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == id })
+    var descriptor = FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == id })
+    descriptor.fetchLimit = 1
     return (try? context.fetch(descriptor))?.first?.textHistory ?? []
   }
 
@@ -534,7 +535,8 @@ final class AppState {
     // Refresh workspace file availability & project context before deciding whether to rebuild.
     activeProject = projectContext(for: threadID)
     if let context = modelContext {
-      let desc = FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == threadID })
+      var desc = FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == threadID })
+      desc.fetchLimit = 1
       if let thread = (try? context.fetch(desc))?.first {
         activeThreadHasDocuments = !documents(for: thread).isEmpty
       }
@@ -1087,7 +1089,8 @@ final class AppState {
 
   private func thread(withID id: UUID) -> ChatThread? {
     guard let context = modelContext else { return nil }
-    let descriptor = FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == id })
+    var descriptor = FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == id })
+    descriptor.fetchLimit = 1
     return (try? context.fetch(descriptor))?.first
   }
 

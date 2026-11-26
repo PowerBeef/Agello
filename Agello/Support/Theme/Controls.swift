@@ -15,7 +15,7 @@ struct LitButtonStyle: ButtonStyle {
   private struct StyleBody: View {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 52
+    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = Theme.Size.target + Theme.Spacing.sm
     let configuration: Configuration
     let tint: Color
     let fullWidth: Bool
@@ -24,7 +24,7 @@ struct LitButtonStyle: ButtonStyle {
       let pressed = isEnabled && configuration.isPressed
       configuration.label
         .font(.headline)
-        .tracking(-0.17)
+        .tracking(Theme.Typography.ctaTracking)
         .foregroundStyle(isEnabled ? Theme.Text.primary : Theme.Text.secondary)
         .symbolRenderingMode(.hierarchical)
         .padding(.horizontal, fullWidth ? Theme.Spacing.lg : Theme.Spacing.xxl)
@@ -280,18 +280,35 @@ struct RowLabel: View {
 struct StatusBadge: View {
   let text: String
   var tone: Color = Theme.Status.healthy
+  @ScaledMetric(relativeTo: .caption) private var dotSize: CGFloat = Theme.Spacing.tight
 
   var body: some View {
     HStack(spacing: Theme.Spacing.tight) {
-      Circle().fill(tone).frame(width: 6, height: 6)
+      Circle()
+        .fill(tone)
+        .frame(width: min(dotSize, Theme.Spacing.snug), height: min(dotSize, Theme.Spacing.snug))
       Text(text)
     }
     .font(.system(.caption, weight: .semibold))
     .foregroundStyle(tone)
+    .lineLimit(1)
+    .fixedSize()
     .padding(.horizontal, Theme.Spacing.snug)
     .padding(.vertical, Theme.Spacing.xs)
-    .background { Capsule().fill(tone.opacity(0.16)) }
-    .overlay { Capsule().stroke(tone.opacity(0.30), lineWidth: Theme.Stroke.hairline) }
+    .background { Capsule().fill(Theme.badgeSurface(tone)) }
+    .overlay { Capsule().stroke(Theme.badgeStroke(tone), lineWidth: Theme.Stroke.hairline) }
+  }
+}
+
+/// Ensures inline banner action buttons meet the 44 pt HIG touch target without inflating
+/// actionless banners.
+private struct InlineBannerActionButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .padding(.horizontal, Theme.Spacing.xs)
+      .frame(minHeight: Theme.Size.target)
+      .contentShape(.rect)
+      .opacity(configuration.isPressed ? 0.65 : 1)
   }
 }
 
@@ -334,12 +351,12 @@ struct InlineBanner<Actions: View>: View {
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityIdentifier(identifier)
       actions
-        .buttonStyle(.plain)
+        .buttonStyle(InlineBannerActionButtonStyle())
         .font(.system(.footnote, weight: .semibold))
         .foregroundStyle(tint)
     }
     .padding(.horizontal, Theme.Spacing.lg)
-    .padding(.vertical, Theme.Spacing.md)
+    .padding(.vertical, Actions.self == EmptyView.self ? Theme.Spacing.md : Theme.Spacing.xs)
     .chromeSurface(in: RoundedRectangle(cornerRadius: Theme.Radius.group, style: .continuous))
     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
   }

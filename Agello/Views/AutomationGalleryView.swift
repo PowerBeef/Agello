@@ -106,7 +106,6 @@ struct AutomationGalleryView: View {
                   updated.enabled = enabled
                   AutomationRegistry.shared.upsert(updated)
                   Haptics.selection()
-                  reload()
                 })
             )
             .labelsHidden()
@@ -118,10 +117,10 @@ struct AutomationGalleryView: View {
         }
         .onDelete { offsets in
           Haptics.warning()
-          for index in offsets {
-            AutomationRegistry.shared.removeShortcut(id: shortcuts[index].id)
+          let ids = offsets.map { shortcuts[$0].id }
+          for id in ids {
+            AutomationRegistry.shared.removeShortcut(id: id)
           }
-          reload()
         }
       }
     } header: {
@@ -141,7 +140,7 @@ struct AutomationGalleryView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
           HStack(spacing: Theme.Spacing.md) {
             TintTile(symbol: template.symbol, tint: Theme.Brand.gold)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
               Text(template.name)
                 .font(.system(.subheadline, weight: .semibold))
                 .foregroundStyle(Theme.Text.primary)
@@ -152,7 +151,6 @@ struct AutomationGalleryView: View {
             Spacer(minLength: Theme.Spacing.xs)
             Button(isRegistered ? "Added" : "Register") {
               AutomationRegistry.shared.upsert(template.asRegisteredShortcut())
-              reload()
               Haptics.success()
             }
             .buttonStyle(
@@ -281,7 +279,6 @@ struct AutomationGalleryView: View {
               inputMode: newInputMode, outputMode: newOutputMode)
             do {
               try AutomationRegistry.shared.register(item)
-              reload()
               Haptics.success()
               showAddSheet = false
             } catch {
@@ -305,7 +302,9 @@ struct AutomationGalleryView: View {
   }
 
   private func reload() {
-    shortcuts = AutomationRegistry.shared.shortcuts
-    recipes = AutomationRegistry.shared.allRecipes
+    let latestShortcuts = AutomationRegistry.shared.shortcuts
+    if shortcuts != latestShortcuts { shortcuts = latestShortcuts }
+    let latestRecipes = AutomationRegistry.shared.allRecipes
+    if recipes != latestRecipes { recipes = latestRecipes }
   }
 }

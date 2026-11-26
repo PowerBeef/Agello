@@ -70,11 +70,13 @@ struct ActionCardStack: View {
             HStack(spacing: Theme.Spacing.sm) {
               ForEach(renderable) { record in
                 cardView(for: record, suppressPlacesSnapshot: hasRoute)
-                  .frame(width: 280)
+                  .containerRelativeFrame(.horizontal, count: 10, span: 8, spacing: Theme.Spacing.sm)
               }
             }
+            .scrollTargetLayout()
             .padding(.horizontal, Theme.Spacing.lg)
           }
+          .scrollTargetBehavior(.viewAligned)
         } else {
           // Put RouteCard ahead of PlacesCard when both ran in the same directions turn.
           let ordered = hasRoute
@@ -116,7 +118,7 @@ struct ActionCardStack: View {
     case .contact(let card):
       ContactCardView(card: card)
     case .messageDraft(let card):
-      MessageDraftCardView(card: card)
+      MessageDraftCardView(card: card, isCompact: isCompact)
     case .weather(let card):
       WeatherCardView(card: card, isCompact: isCompact)
     case .alarm(let card):
@@ -162,7 +164,9 @@ private struct PlacesCardView: View {
   let card: PlacesCard
   var isCompact = false
   @Environment(\.displayScale) private var displayScale
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(AppState.self) private var appState: AppState?
+  @ScaledMetric(relativeTo: .caption2) private var indexCircleSize: CGFloat = 20
   @State private var selectedIndex = 0
   @State private var snapshot: UIImage?
   @State private var renderedSnapshotKey: String?
@@ -276,13 +280,13 @@ private struct PlacesCardView: View {
         Text(selectedPlace?.name ?? card.query)
           .font(.system(.subheadline, weight: .semibold))
           .foregroundStyle(Theme.Text.primary)
-          .lineLimit(2)
+          .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
           .frame(maxWidth: .infinity, alignment: .leading)
         if let sub = subtitleLine {
           Text(sub)
             .font(.caption)
             .foregroundStyle(Theme.Text.secondary)
-            .lineLimit(2)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
@@ -291,9 +295,11 @@ private struct PlacesCardView: View {
           .font(.system(.caption, weight: .semibold))
           .monospacedDigit()
           .foregroundStyle(Theme.Brand.teal)
+          .lineLimit(1)
           .padding(.horizontal, Theme.Spacing.sm)
           .padding(.vertical, Theme.Spacing.xs)
           .background { Capsule().fill(Theme.Brand.teal.opacity(0.14)) }
+          .layoutPriority(1)
       }
     }
   }
@@ -330,11 +336,13 @@ private struct PlacesCardView: View {
               ZStack {
                 Theme.Surface.card
                 HStack(spacing: Theme.Spacing.tight) {
-                  Image(systemName: "map").foregroundStyle(Theme.Brand.teal)
+                  Image(systemName: "map")
+                    .foregroundStyle(Theme.Brand.teal)
+                    .accessibilityHidden(true)
                   Text(primary.address ?? primary.name)
                     .font(.caption)
                     .foregroundStyle(Theme.Text.tertiary)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
                 }
               }
               .transition(.opacity)
@@ -437,6 +445,7 @@ private struct PlacesCardView: View {
     let visible = showsAllPlaces ? card.places : Array(card.places.prefix(3))
     return VStack(alignment: .leading, spacing: 0) {
       ForEach(Array(visible.enumerated()), id: \.element.id) { idx, place in
+        let isSelected = idx == selectedIndex
         Button {
           Haptics.selection()
           selectedIndex = idx
@@ -445,22 +454,22 @@ private struct PlacesCardView: View {
             Text("\(idx + 1)")
               .font(.system(.caption2, weight: .bold))
               .monospacedDigit()
-              .foregroundStyle(idx == selectedIndex ? Theme.Brand.teal : Theme.Text.tertiary)
-              .frame(width: 20, height: 20)
+              .foregroundStyle(isSelected ? Theme.Brand.teal : Theme.Text.tertiary)
+              .frame(width: indexCircleSize, height: indexCircleSize)
               .background {
                 Circle().fill(
-                  idx == selectedIndex ? Theme.Brand.teal.opacity(0.18) : Theme.Surface.group)
+                  isSelected ? Theme.Brand.teal.opacity(0.18) : Theme.Surface.group)
               }
             VStack(alignment: .leading, spacing: 1) {
               Text(place.name)
-                .font(.system(.footnote, weight: idx == selectedIndex ? .semibold : .medium))
+                .font(.system(.footnote, weight: isSelected ? .semibold : .medium))
                 .foregroundStyle(Theme.Text.primary)
-                .lineLimit(1)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
               if let addr = place.address, !addr.isEmpty {
                 Text(addr)
                   .font(.caption2)
                   .foregroundStyle(Theme.Text.tertiary)
-                  .lineLimit(1)
+                  .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
               }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -469,6 +478,7 @@ private struct PlacesCardView: View {
                 .font(.caption2)
                 .monospacedDigit()
                 .foregroundStyle(Theme.Text.secondary)
+                .layoutPriority(1)
             }
           }
           .padding(.vertical, Theme.Spacing.sm)
@@ -476,6 +486,7 @@ private struct PlacesCardView: View {
         }
         .buttonStyle(.plain)
         .frame(minHeight: Theme.Size.target)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         if idx + 1 < visible.count {
           Rectangle().fill(Theme.Surface.hairline).frame(height: Theme.Stroke.hairline)
         }
@@ -487,7 +498,8 @@ private struct PlacesCardView: View {
           Text(showsAllPlaces ? "Show fewer" : "Show all \(card.places.count) places")
             .font(.caption.weight(.medium))
             .foregroundStyle(Theme.Brand.teal)
-            .frame(minHeight: Theme.Size.target, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: Theme.Size.target, alignment: .leading)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
       }
@@ -501,6 +513,7 @@ private struct PlacesCardView: View {
 private struct RouteCardView: View {
   let card: RouteCard
   var isCompact = false
+  @ScaledMetric(relativeTo: .caption) private var stepNumberWidth: CGFloat = 20
   @State private var selectedMode: String
   @State private var routesByMode: [String: RouteCard]
   @State private var loadingMode: String?
@@ -615,6 +628,14 @@ private struct RouteCardView: View {
     .surfaceCard(radius: Theme.Radius.card)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("actionCard.route")
+    .onChange(of: card) { _, latest in
+      let mode = latest.transport.lowercased()
+      selectedMode = mode
+      routesByMode = [mode: latest]
+      failedModes.removeAll()
+      loadingMode = nil
+      showsSteps = false
+    }
     .task(id: selectedMode) {
       let mode = selectedMode
       guard routesByMode[mode] == nil else { return }
@@ -654,18 +675,20 @@ private struct RouteCardView: View {
             .lineLimit(1)
             .minimumScaleFactor(0.85)
             .padding(.horizontal, Theme.Spacing.sm)
-            .frame(minHeight: 32)
+            .frame(minHeight: Theme.Size.glyph)
             .background {
               if active {
                 Capsule().fill(Theme.Brand.glacier.opacity(0.24))
-                  .overlay { Capsule().stroke(Theme.Brand.glacier.opacity(0.45), lineWidth: 0.8) }
+                  .overlay { Capsule().stroke(Theme.Brand.glacier.opacity(0.45), lineWidth: Theme.Stroke.chrome) }
               } else {
                 QuietBackground(shape: Capsule())
               }
             }
             .frame(minHeight: Theme.Size.target)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(active ? .isSelected : [])
       }
     }
   }
@@ -685,11 +708,13 @@ private struct RouteCardView: View {
             .font(.caption2.weight(.semibold))
             .foregroundStyle(Theme.Text.tertiary)
             .rotationEffect(.degrees(showsSteps ? 180 : 0))
+            .accessibilityHidden(true)
         }
         .frame(minHeight: Theme.Size.target)
         .contentShape(.rect)
       }
       .buttonStyle(.plain)
+      .accessibilityValue(showsSteps ? String(localized: "Expanded") : String(localized: "Collapsed"))
       .accessibilityIdentifier("actionCard.route.stepsToggle")
 
       if showsSteps {
@@ -699,7 +724,7 @@ private struct RouteCardView: View {
               Text("\(step.id + 1).")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(Theme.Text.tertiary)
-                .frame(minWidth: 20, alignment: .trailing)
+                .frame(minWidth: stepNumberWidth, alignment: .trailing)
               Text(step.instruction)
                 .font(.caption)
                 .foregroundStyle(Theme.Text.primary)
@@ -722,6 +747,7 @@ private struct RouteCardView: View {
 // MARK: - Calendar Event Card
 
 private struct CalendarEventCardView: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let card: CalendarEventCard
   var onUpdate: ((CalendarEventCard) -> Void)? = nil
   @State private var currentCard: CalendarEventCard
@@ -790,7 +816,7 @@ private struct CalendarEventCardView: View {
             Label(location, systemImage: "mappin")
               .font(.caption)
               .foregroundStyle(Theme.Text.tertiary)
-              .lineLimit(1)
+              .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
           }
         }
         StatusBadge(text: statusBadge.text, tone: statusBadge.tone)
@@ -900,6 +926,7 @@ private struct ReminderCardView: View {
             .contentTransition(.symbolEffect(.replace))
             .appAnimation(Theme.Motion.stateChange, value: isCompleted, kind: .dissolve)
             .frame(width: Theme.Size.target, height: Theme.Size.target)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .disabled(isUpdating || card.reminderIdentifier == nil || status == .deleted)
@@ -1042,6 +1069,7 @@ private struct ReminderCardView: View {
 
 private struct ContactCardView: View {
   let card: ContactCard
+  @ScaledMetric(relativeTo: .body) private var avatarScale: CGFloat = 1
   @State private var showsContactSheet = false
 
   private var initials: String {
@@ -1051,13 +1079,15 @@ private struct ContactCardView: View {
   }
 
   var body: some View {
+    let avatarSide = Theme.Size.tile * min(avatarScale, 1.5)
     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
       HStack(spacing: Theme.Spacing.sm) {
         Text(initials)
           .font(.system(.subheadline, weight: .bold))
           .foregroundStyle(Theme.Brand.glacier)
-          .frame(width: Theme.Size.tile, height: Theme.Size.tile)
+          .frame(width: avatarSide, height: avatarSide)
           .background { Circle().fill(Theme.Brand.glacier.opacity(0.16)) }
+          .accessibilityHidden(true)
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
           Text(card.fullName)
             .font(.system(.subheadline, weight: .semibold))
@@ -1139,6 +1169,7 @@ private struct ContactCardView: View {
 
 private struct MessageDraftCardView: View {
   let card: MessageDraftCard
+  var isCompact = false
   @State private var showsSMSComposer = false
   @State private var showsMailComposer = false
   @State private var copied = false
@@ -1147,6 +1178,13 @@ private struct MessageDraftCardView: View {
 
   private var canCompose: Bool {
     card.channel == .sms ? NativeActions.canSendText : NativeActions.canSendMail
+  }
+
+  private var shareableText: String {
+    if let subject = card.subject?.trimmingCharacters(in: .whitespacesAndNewlines), !subject.isEmpty {
+      return "Subject: \(subject)\n\n\(card.body)"
+    }
+    return card.body
   }
 
   var body: some View {
@@ -1171,9 +1209,11 @@ private struct MessageDraftCardView: View {
         HStack(alignment: .top, spacing: Theme.Spacing.tight) {
           Image(systemName: "exclamationmark.triangle.fill")
             .foregroundStyle(Theme.Status.guarded)
+            .accessibilityHidden(true)
           Text("Unverified recipient (not in Contacts): \(card.unverifiedRecipients.joined(separator: ", "))")
             .font(.caption)
             .foregroundStyle(Theme.Status.guarded)
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(Theme.Spacing.sm)
@@ -1183,17 +1223,16 @@ private struct MessageDraftCardView: View {
         .accessibilityIdentifier("actionCard.draft.unverifiedWarning")
       }
 
-      VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-        if let subject = card.subject, !subject.isEmpty {
-          Text(subject)
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(Theme.Text.primary)
+      Group {
+        if isCompact {
+          ScrollView {
+            draftBodyContent
+          }
+          .scrollBounceBehavior(.basedOnSize)
+          .frame(maxHeight: 120)
+        } else {
+          draftBodyContent
         }
-        Text(card.body)
-          .font(.footnote)
-          .foregroundStyle(Theme.Text.secondary)
-          .textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .leading)
       }
       .padding(Theme.Spacing.sm)
       .surfaceCard(radius: Theme.Radius.row, fill: Theme.Surface.card)
@@ -1225,7 +1264,7 @@ private struct MessageDraftCardView: View {
             copyDraft()
           }
         }
-        ShareLink(item: card.body) {
+        ShareLink(item: shareableText) {
           ActionCardPillLabel(title: String(localized: "Share"), symbol: "square.and.arrow.up")
         }
         .buttonStyle(ActionCardPressStyle())
@@ -1252,8 +1291,23 @@ private struct MessageDraftCardView: View {
     }
   }
 
+  private var draftBodyContent: some View {
+    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+      if let subject = card.subject, !subject.isEmpty {
+        Text(subject)
+          .font(.footnote.weight(.semibold))
+          .foregroundStyle(Theme.Text.primary)
+      }
+      Text(card.body)
+        .font(.footnote)
+        .foregroundStyle(Theme.Text.secondary)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+
   private func copyDraft() {
-    Platform.copy(card.body)
+    Platform.copy(shareableText)
     Haptics.complete()
     copyResetTask?.cancel()
     withAppAnimation(Theme.Motion.stateChange, kind: .dissolve) {
@@ -1311,6 +1365,7 @@ struct ActionCardPrimaryPill: View {
   var fullWidth = false
   let id: String
   var isDisabled = false
+  var isBusy = false
   let action: () -> Void
 
   var body: some View {
@@ -1318,17 +1373,28 @@ struct ActionCardPrimaryPill: View {
       Haptics.selection()
       action()
     } label: {
-      Label(title, systemImage: symbol)
-        .font(.system(.footnote, weight: .semibold))
-        .foregroundStyle(Theme.Text.primary)
-        .contentTransition(.symbolEffect(.replace))
-        .lineLimit(1)
-        .minimumScaleFactor(0.85)
-        .padding(.horizontal, Theme.Spacing.md)
-        .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: 36)
-        .background { LitTintBackground(shape: Capsule(), tint: tint, isEnabled: !isDisabled, strength: .pill) }
-        .frame(minHeight: Theme.Size.target)
-        .contentShape(.rect)
+      Group {
+        if isBusy {
+          HStack(spacing: Theme.Spacing.tight) {
+            ProgressView()
+              .controlSize(.mini)
+              .tint(Theme.Text.primary)
+            Text(title)
+          }
+        } else {
+          Label(title, systemImage: symbol)
+            .contentTransition(.symbolEffect(.replace))
+        }
+      }
+      .font(.system(.footnote, weight: .semibold))
+      .foregroundStyle(Theme.Text.primary)
+      .lineLimit(1)
+      .minimumScaleFactor(0.85)
+      .padding(.horizontal, Theme.Spacing.md)
+      .frame(maxWidth: fullWidth ? .infinity : nil, minHeight: Theme.Size.pill)
+      .background { LitTintBackground(shape: Capsule(), tint: tint, isEnabled: !isDisabled, strength: .pill) }
+      .frame(minHeight: Theme.Size.target)
+      .contentShape(.rect)
     }
     .buttonStyle(ActionCardPressStyle())
     .disabled(isDisabled)
@@ -1339,8 +1405,10 @@ struct ActionCardPrimaryPill: View {
 struct ActionCardSecondaryPill: View {
   let title: String
   let symbol: String
+  var foreground: Color = Theme.Text.secondary
   let id: String
   var isDisabled = false
+  var isBusy = false
   let action: () -> Void
 
   var body: some View {
@@ -1348,7 +1416,7 @@ struct ActionCardSecondaryPill: View {
       Haptics.selection()
       action()
     } label: {
-      ActionCardPillLabel(title: title, symbol: symbol)
+      ActionCardPillLabel(title: title, symbol: symbol, foreground: foreground, isBusy: isBusy)
     }
     .buttonStyle(ActionCardPressStyle())
     .disabled(isDisabled)
@@ -1359,18 +1427,31 @@ struct ActionCardSecondaryPill: View {
 struct ActionCardPillLabel: View {
   let title: String
   let symbol: String
+  var foreground: Color = Theme.Text.secondary
+  var isBusy = false
 
   var body: some View {
-    Label(title, systemImage: symbol)
-      .font(.system(.footnote, weight: .medium))
-      .foregroundStyle(Theme.Text.secondary)
-      .lineLimit(1)
-      .minimumScaleFactor(0.85)
-      .padding(.horizontal, Theme.Spacing.md)
-      .frame(minHeight: 36)
-      .background { QuietBackground(shape: Capsule()) }
-      .frame(minHeight: Theme.Size.target)
-      .contentShape(.rect)
+    Group {
+      if isBusy {
+        HStack(spacing: Theme.Spacing.tight) {
+          ProgressView()
+            .controlSize(.mini)
+            .tint(foreground)
+          Text(title)
+        }
+      } else {
+        Label(title, systemImage: symbol)
+      }
+    }
+    .font(.system(.footnote, weight: .medium))
+    .foregroundStyle(foreground)
+    .lineLimit(1)
+    .minimumScaleFactor(0.85)
+    .padding(.horizontal, Theme.Spacing.md)
+    .frame(minHeight: Theme.Size.pill)
+    .background { QuietBackground(shape: Capsule()) }
+    .frame(minHeight: Theme.Size.target)
+    .contentShape(.rect)
   }
 }
 

@@ -21,6 +21,7 @@ struct DrawerView: View {
   @State private var cachedGroupsKey: GroupsCacheKey?
   @State private var cachedGroups: [ThreadGrouping.Group<CachedRow>] = []
   @State private var showAllProjects = false
+  @State private var movingThreadID: UUID?
   @FocusState private var searchFocused: Bool
 
   var onSelect: (ChatThread) -> Void
@@ -186,6 +187,29 @@ struct DrawerView: View {
       // Ready for search by meaning by the time the user types.
       appState.knowledge.indexChats(threads.filter(isLiveNonEmpty))
     }
+    .confirmationDialog(
+      "Move to project",
+      isPresented: Binding(
+        get: { movingThreadID != nil },
+        set: { if !$0 { movingThreadID = nil } }),
+      titleVisibility: .visible
+    ) {
+      if let threadID = movingThreadID, let thread = liveThreadsByID[threadID] {
+        ForEach(projects.filter { !$0.isDeleted && $0.modelContext != nil }) { project in
+          Button(project.name) {
+            onMove(thread, project.id)
+            movingThreadID = nil
+          }
+          .disabled(thread.projectID == project.id)
+        }
+        if thread.projectID != nil {
+          Button("Remove from project") {
+            onMove(thread, nil)
+            movingThreadID = nil
+          }
+        }
+      }
+    }
     .task(id: query) {
       // Results for the previous query must not linger while typing.
       relatedIDs = []
@@ -318,6 +342,7 @@ private extension DrawerView {
             Image(systemName: showAllProjects ? "chevron.up" : "chevron.down")
               .font(.caption2.weight(.semibold))
               .foregroundStyle(Theme.Brand.glacier)
+              .accessibilityHidden(true)
           }
           .padding(.horizontal, Theme.Spacing.sm)
           .frame(maxWidth: .infinity, minHeight: Theme.Size.target, alignment: .leading)
@@ -351,7 +376,7 @@ private extension DrawerView {
         Text(project.name)
           .font(.rowTitle)
           .foregroundStyle(Theme.Text.primary)
-          .lineLimit(1)
+          .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
         Spacer(minLength: 0)
       }
       .drawerRow(selected: false)
@@ -449,6 +474,7 @@ private extension DrawerView {
     // The long-press menu as actions VoiceOver and Switch Control can reach.
     .accessibilityAction(named: thread.isPinned ? "Unpin" : "Pin") { onTogglePin(thread) }
     .accessibilityAction(named: "Rename") { onRename(thread) }
+    .modifier(MoveToProjectAccessibilityAction(enabled: !projects.isEmpty) { movingThreadID = thread.id })
     .accessibilityAction(named: "Delete") {
       if !isBusy(thread) { onDelete(thread) }
     }
@@ -473,13 +499,28 @@ private extension DrawerView {
           Image(systemName: "chevron.right")
             .font(.caption.weight(.semibold))
             .foregroundStyle(Theme.Text.tertiary)
+            .accessibilityHidden(true)
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .frame(minHeight: Theme.Size.target + Theme.Spacing.md)
         .contentShape(.rect)
       }
       .buttonStyle(.plain)
+      .keyboardShortcut(",", modifiers: .command)
       .accessibilityIdentifier("drawer.settings")
+    }
+  }
+}
+
+private struct MoveToProjectAccessibilityAction: ViewModifier {
+  let enabled: Bool
+  let action: () -> Void
+
+  func body(content: Content) -> some View {
+    if enabled {
+      content.accessibilityAction(named: String(localized: "Move to project"), action)
+    } else {
+      content
     }
   }
 }

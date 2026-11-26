@@ -149,7 +149,7 @@ private struct ModelCardView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
       HStack(alignment: .top, spacing: Theme.Spacing.md) {
-        TintTile(symbol: symbol, tint: tint, size: 40)
+        TintTile(symbol: symbol, tint: tint, size: Theme.Size.target)
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
           Text(spec.displayName)
             .font(.headline)

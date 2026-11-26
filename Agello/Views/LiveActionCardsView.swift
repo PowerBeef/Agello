@@ -3,8 +3,12 @@ import SwiftUI
 // MARK: - Weather Card (Apple WeatherKit)
 
 struct WeatherCardView: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let card: WeatherCard
   var isCompact = false
+  @ScaledMetric(relativeTo: .caption) private var dayLabelWidth: CGFloat = 44
+  @ScaledMetric(relativeTo: .caption) private var daySymbolWidth: CGFloat = 20
+  @ScaledMetric(relativeTo: .caption) private var hourlyItemWidth: CGFloat = 44
 
   var body: some View {
     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
@@ -14,11 +18,11 @@ struct WeatherCardView: View {
           Text(card.locationName)
             .font(.system(.subheadline, weight: .semibold))
             .foregroundStyle(Theme.Text.primary)
-            .lineLimit(1)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
           Text(card.condition.capitalized)
             .font(.caption)
             .foregroundStyle(Theme.Text.secondary)
-            .lineLimit(1)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
           let details = [
             card.feelsLike.map { "Feels like \($0)" },
             card.high.flatMap { hi in card.low.map { lo in "H:\(hi) L:\(lo)" } },
@@ -34,6 +38,8 @@ struct WeatherCardView: View {
           .font(.system(.title2, weight: .semibold))
           .monospacedDigit()
           .foregroundStyle(Theme.Brand.glacier)
+          .lineLimit(1)
+          .layoutPriority(1)
       }
 
       if !card.alerts.isEmpty {
@@ -92,6 +98,40 @@ struct WeatherCardView: View {
           }
         }
 
+        if !card.hourly.isEmpty {
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Spacing.sm) {
+              ForEach(card.hourly.prefix(8)) { hour in
+                VStack(spacing: Theme.Spacing.xs) {
+                  Text(hour.date, format: .dateTime.hour())
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(Theme.Text.secondary)
+                  Image(systemName: hour.symbolName)
+                    .font(.caption)
+                    .foregroundStyle(Theme.Brand.glacier)
+                    .accessibilityHidden(true)
+                  Text(hour.temperature)
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.Text.primary)
+                  if hour.precipitationPercent >= 15 {
+                    Text("\(hour.precipitationPercent)%")
+                      .font(.caption2.monospacedDigit())
+                      .foregroundStyle(Theme.Brand.teal)
+                  }
+                }
+                .frame(minWidth: hourlyItemWidth)
+                .padding(.vertical, Theme.Spacing.xs)
+                .accessibilityElement(children: .combine)
+              }
+            }
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, Theme.Spacing.xs)
+          }
+          .surfaceCard(radius: Theme.Radius.row, fill: Theme.Surface.card)
+          .accessibilityIdentifier("actionCard.weather.hourly")
+        }
+
         if !card.daily.isEmpty {
           VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             ForEach(card.daily.prefix(4)) { day in
@@ -99,11 +139,12 @@ struct WeatherCardView: View {
                 Text(day.label)
                   .font(.caption.weight(.medium))
                   .foregroundStyle(Theme.Text.secondary)
-                  .frame(width: 44, alignment: .leading)
+                  .frame(minWidth: dayLabelWidth, alignment: .leading)
                 Image(systemName: day.symbolName)
                   .font(.caption)
                   .foregroundStyle(Theme.Brand.glacier)
-                  .frame(width: 20)
+                  .frame(width: daySymbolWidth)
+                  .accessibilityHidden(true)
                 if day.precipitationPercent >= 15 {
                   Text("\(day.precipitationPercent)%")
                     .font(.caption2.monospacedDigit())
@@ -121,7 +162,7 @@ struct WeatherCardView: View {
         }
       }
 
-      WeatherAttributionMark()
+      WeatherAttributionMark(legalURLOverride: NativeActionURLs.website(card.attributionLegalURL))
     }
     .padding(Theme.Spacing.md)
     .surfaceCard(radius: Theme.Radius.card)
@@ -229,51 +270,38 @@ struct AlarmCardView: View {
         if state != .cancelled, !isExpired {
           WrapFlowLayout(horizontalSpacing: Theme.Spacing.sm, verticalSpacing: Theme.Spacing.xs) {
             if card.kind == .timer, state == .countdown {
-              Button {
-                Haptics.selection()
+              ActionCardSecondaryPill(
+                title: String(localized: "Pause"),
+                symbol: "pause.fill",
+                id: "actionCard.alarm.pause",
+                isDisabled: isUpdating,
+                isBusy: activeAction == .pause
+              ) {
                 performAction(.pause)
-              } label: {
-                alarmPillLabel(
-                  title: String(localized: "Pause"),
-                  symbol: "pause.fill",
-                  foreground: Theme.Text.secondary,
-                  isBusy: activeAction == .pause,
-                  isPrimary: false)
               }
-              .buttonStyle(ActionCardPressStyle())
-              .disabled(isUpdating)
-              .accessibilityIdentifier("actionCard.alarm.pause")
             } else if card.kind == .timer, state == .paused {
-              Button {
-                Haptics.selection()
+              ActionCardPrimaryPill(
+                title: String(localized: "Resume"),
+                symbol: "play.fill",
+                tint: Theme.Brand.teal,
+                id: "actionCard.alarm.resume",
+                isDisabled: isUpdating,
+                isBusy: activeAction == .resume
+              ) {
                 performAction(.resume)
-              } label: {
-                alarmPillLabel(
-                  title: String(localized: "Resume"),
-                  symbol: "play.fill",
-                  foreground: Theme.Text.primary,
-                  isBusy: activeAction == .resume,
-                  isPrimary: true)
               }
-              .buttonStyle(ActionCardPressStyle())
-              .disabled(isUpdating)
-              .accessibilityIdentifier("actionCard.alarm.resume")
             }
 
-            Button {
-              Haptics.selection()
+            ActionCardSecondaryPill(
+              title: state == .alerting ? String(localized: "Stop") : String(localized: "Cancel"),
+              symbol: "xmark",
+              foreground: Theme.Status.critical,
+              id: "actionCard.alarm.cancel",
+              isDisabled: isUpdating,
+              isBusy: activeAction == .cancel
+            ) {
               performAction(.cancel)
-            } label: {
-              alarmPillLabel(
-                title: state == .alerting ? String(localized: "Stop") : String(localized: "Cancel"),
-                symbol: "xmark",
-                foreground: Theme.Status.critical,
-                isBusy: activeAction == .cancel,
-                isPrimary: false)
             }
-            .buttonStyle(ActionCardPressStyle())
-            .disabled(isUpdating)
-            .accessibilityIdentifier("actionCard.alarm.cancel")
           }
         }
       }
@@ -296,44 +324,17 @@ struct AlarmCardView: View {
         Task { await syncWithAlarmManager() }
       }
     }
-    .onChange(of: card) { _, latest in
+    .onChange(of: card) { old, latest in
       state = latest.state
       fireDate = latest.fireDate
       durationSeconds = latest.durationSeconds
+      if old.alarmID != latest.alarmID {
+        errorMessage = nil
+      }
     }
   }
 
   private enum AlarmAction: Equatable { case pause, resume, cancel }
-
-  private func alarmPillLabel(
-    title: String, symbol: String, foreground: Color, isBusy: Bool, isPrimary: Bool
-  ) -> some View {
-    HStack(spacing: Theme.Spacing.tight) {
-      if isBusy {
-        ProgressView()
-          .controlSize(.mini)
-          .tint(foreground)
-      } else {
-        Image(systemName: symbol)
-      }
-      Text(title)
-    }
-    .font(.system(.footnote, weight: isPrimary ? .semibold : .medium))
-    .foregroundStyle(foreground)
-    .lineLimit(1)
-    .minimumScaleFactor(0.85)
-    .padding(.horizontal, Theme.Spacing.md)
-    .frame(minHeight: 36)
-    .background {
-      if isPrimary {
-        LitTintBackground(shape: Capsule(), tint: Theme.Brand.teal, isEnabled: !isUpdating, strength: .pill)
-      } else {
-        QuietBackground(shape: Capsule())
-      }
-    }
-    .frame(minHeight: Theme.Size.target)
-    .contentShape(.rect)
-  }
 
   private func performAction(_ action: AlarmAction) {
     guard !isUpdating else { return }

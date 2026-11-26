@@ -131,8 +131,8 @@ enum FolderBookmarks {
     persist(list, defaults: defaults)
   }
 
-  /// Resolves a stored folder bookmark and enumerates supported regular files (capped at
-  /// ``maxFilesPerSync``) inside a security-scoped access block.
+  /// Resolves a stored folder bookmark and enumerates top-level (non-recursive) supported regular
+  /// files (capped at ``maxFilesPerSync``) inside a security-scoped access block.
   static func withSupportedFiles<T: Sendable>(
     for projectID: UUID, defaults: UserDefaults = .standard,
     markSyncedOnReturn: Bool = true,
@@ -151,6 +151,7 @@ enum FolderBookmarks {
     let accessed = url.startAccessingSecurityScopedResource()
     defer { if accessed { url.stopAccessingSecurityScopedResource() } }
     let files = collectSupportedFiles(in: url)
+    try Task.checkCancellation()
     let output = try await work(files)
     if markSyncedOnReturn {
       markSynced(for: projectID, defaults: defaults)
@@ -173,15 +174,18 @@ enum FolderBookmarks {
     persist(list, defaults: defaults)
   }
 
+  /// Enumerates top-level (non-recursive) supported regular files in `folderURL`, honoring
+  /// cooperative task cancellation and capping results at `limit`.
   static func collectSupportedFiles(in folderURL: URL, limit: Int = maxFilesPerSync) -> [URL] {
     guard
       let enumerator = FileManager.default.enumerator(
         at: folderURL,
         includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey, .contentModificationDateKey, .fileSizeKey],
-        options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        options: [.skipsHiddenFiles, .skipsPackageDescendants, .skipsSubdirectoryDescendants])
     else { return [] }
     var urls: [URL] = []
     for case let item as URL in enumerator {
+      if Task.isCancelled { break }
       let values = try? item.resourceValues(forKeys: [.isRegularFileKey])
       guard values?.isRegularFile == true else { continue }
       let ext = item.pathExtension.lowercased()

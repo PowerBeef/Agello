@@ -292,11 +292,6 @@ actor MockChatEngine: ChatEngineProtocol {
   ) -> AsyncThrowingStream<ChatEvent, Error> {
     AsyncThrowingStream { continuation in
       let task = Task {
-        let script =
-          // A user asking for markdown ("Show me markdown"; UI tests), not an instruction
-          // that mentions it.
-          text.localizedCaseInsensitiveContains("show me markdown")
-          ? MockChatEngine.markdownSample : await self.script
         // Like the real model: reasoning only streams when thinking is on.
         let thinking = await self.thinkingEnabled
         let stats = await self.stats
@@ -307,6 +302,29 @@ actor MockChatEngine: ChatEngineProtocol {
         }
         let failure = await self.takeStreamFailure()
         await self.setGenerating(true)
+        let script: [ChatChunk]
+        #if DEBUG
+          if let uiTestChunks = await Self.uiTestScript(for: text) {
+            let stopRequested = await self.cancelRequested
+            if Task.isCancelled || stopRequested {
+              await self.setGenerating(false)
+              await self.poison()
+              continuation.finish(throwing: ChatError.generationCancelled)
+              return
+            }
+            script = uiTestChunks
+          } else if text.localizedCaseInsensitiveContains("show me markdown") {
+            // A user asking for markdown ("Show me markdown"; UI tests), not an instruction
+            // that mentions it.
+            script = MockChatEngine.markdownSample
+          } else {
+            script = await self.script
+          }
+        #else
+          script =
+            text.localizedCaseInsensitiveContains("show me markdown")
+            ? MockChatEngine.markdownSample : await self.script
+        #endif
         var reply = ""
         for (index, chunk) in script.enumerated() {
           if let failure, index == failure.afterChunks {
@@ -459,3 +477,199 @@ actor MockChatEngine: ChatEngineProtocol {
     return outputs
   }
 }
+
+#if DEBUG
+  extension MockChatEngine {
+    /// Deterministic UI-test triggers (`--mock-engine` only, DEBUG builds only).
+    /// Never matches normal user or unit-test prompts.
+    fileprivate static func uiTestScript(for text: String) async -> [ChatChunk]? {
+      if text.contains("__uitest_long__") {
+        return longScrollSample
+      }
+      if text.contains("__uitest_cards__") {
+        return actionCardsSample
+      }
+      if text.contains("__uitest_live_cards__") {
+        return liveActionCardsSample
+      }
+      if text.contains("__uitest_confirm__") {
+        let decision = await ToolConfirmationGate.confirm(sampleConfirmationRequest)
+        let outcome =
+          decision == .approved
+          ? "Confirmed and deleted Board Review."
+          : "Cancelled deleting Board Review."
+        return [ChatChunk(textDelta: outcome, thoughtDelta: nil)]
+      }
+      if text.contains("__uitest_plan__") {
+        let decision = await ToolConfirmationGate.confirm(samplePlanConfirmationRequest)
+        let outcome: String
+        switch decision {
+        case .approved:
+          outcome = "Approved all plan steps."
+        case .approvedSteps(let indices):
+          let list = indices.sorted().map(String.init).joined(separator: ",")
+          outcome = "Approved plan steps: \(list)."
+        case .denied:
+          outcome = "Denied plan."
+        }
+        return [ChatChunk(textDelta: outcome, thoughtDelta: nil)]
+      }
+      return nil
+    }
+
+    private static let longScrollSample: [ChatChunk] = {
+      let paragraphs = (1...24).map { idx in
+        "Section \(idx): On-device inference keeps private notes, documents, and conversations local while streaming structured responses cleanly across long threads."
+      }
+      return stride(from: 0, to: paragraphs.count, by: 4).map { start in
+        let end = min(start + 4, paragraphs.count)
+        let body = paragraphs[start..<end].joined(separator: "\n\n") + (end < paragraphs.count ? "\n\n" : "")
+        return ChatChunk(textDelta: body, thoughtDelta: nil)
+      }
+    }()
+
+    private static var actionCardsSample: [ChatChunk] {
+      let now = Date(timeIntervalSince1970: 1_795_564_800)
+      let cards: [ActionCardRecord] = [
+        ActionCardRecord(
+          payload: .places(
+            PlacesCard(
+              query: "coffee", areaLabel: "Downtown",
+              places: [
+                .init(
+                  name: "Cafe Saint-Henri", category: "cafe", address: "123 Rue Peel",
+                  phone: "+1 514-555-0100", websiteURL: "https://example.com",
+                  latitude: 45.5017, longitude: -73.5673, distanceMeters: 280),
+                .init(
+                  name: "Crew Collective", category: "cafe", address: "360 Rue Saint-Jacques",
+                  latitude: 45.5021, longitude: -73.5594, distanceMeters: 520),
+              ]))),
+        ActionCardRecord(
+          payload: .route(
+            RouteCard(
+              originName: "Current location", originLatitude: 45.5017, originLongitude: -73.5673,
+              originIsCurrentLocation: true, destinationName: "Cafe Saint-Henri",
+              destinationAddress: "123 Rue Peel", destinationLatitude: 45.5025,
+              destinationLongitude: -73.5690, destinationMapItemIdentifier: nil,
+              transport: "driving", distanceMeters: 1_100, expectedTravelSeconds: 240,
+              routeName: "Rue Peel",
+              steps: [
+                .init(id: 0, instruction: "Head north on Rue Peel", distanceMeters: 400),
+                .init(id: 1, instruction: "Turn right onto Rue Sainte-Catherine", distanceMeters: 700),
+              ]))),
+        ActionCardRecord(
+          payload: .calendarEvent(
+            CalendarEventCard(
+              status: .created, eventIdentifier: "ui-ev-1", title: "Design Sync",
+              startDate: now, endDate: now.addingTimeInterval(3_600), isAllDay: false,
+              location: "Room 4B", calendarName: "Work"))),
+        ActionCardRecord(
+          payload: .reminder(
+            ReminderCard(
+              status: .created, reminderIdentifier: "ui-rem-1", title: "Buy espresso beans",
+              dueDate: now, listName: "Errands", isCompleted: false))),
+        ActionCardRecord(
+          payload: .contact(
+            ContactCard(
+              contactIdentifier: "ui-c-1", fullName: "Ada Lovelace",
+              organization: "Analytical Engine", phones: ["+1 514-555-0142"],
+              emails: ["ada@example.com"], postalAddress: "123 Rue Peel, Montreal"))),
+        ActionCardRecord(
+          payload: .messageDraft(
+            MessageDraftCard(
+              channel: .email, recipients: ["ada@example.com", "unknown@example.org"],
+              subject: "Design Sync", body: "See you at 3 PM in Room 4B.",
+              unverifiedRecipients: ["unknown@example.org"]))),
+      ]
+      return [
+        ChatChunk(
+          textDelta: "Here are your places, route, event, reminder, contact, and draft.",
+          thoughtDelta: nil, actionCards: cards)
+      ]
+    }
+
+    private static var liveActionCardsSample: [ChatChunk] {
+      let base = Date(timeIntervalSince1970: 1_795_564_800)
+      let cards: [ActionCardRecord] = [
+        ActionCardRecord(
+          payload: .weather(
+            WeatherCard(
+              locationName: "Montréal, QC", temperature: "18°C", feelsLike: "17°C",
+              condition: "Partly Cloudy", conditionSymbol: "cloud.sun.fill",
+              high: "21°C", low: "12°C", humidityPercent: 55, windSpeed: "12 km/h",
+              hourly: [
+                .init(date: base, temperature: "18°C", symbolName: "cloud.sun.fill", precipitationPercent: 10),
+                .init(
+                  date: base.addingTimeInterval(3_600), temperature: "19°C",
+                  symbolName: "sun.max.fill", precipitationPercent: 0),
+              ],
+              daily: [
+                .init(
+                  date: base, label: "Today", high: "21°C", low: "12°C",
+                  symbolName: "cloud.sun.fill", precipitationPercent: 20),
+                .init(
+                  date: base.addingTimeInterval(86_400), label: "Tue", high: "20°C", low: "11°C",
+                  symbolName: "sun.max.fill", precipitationPercent: 0),
+              ],
+              alerts: [
+                .init(
+                  summary: "Wind Advisory", severity: "moderate",
+                  detailsURL: "https://weatherkit.apple.com/legal-attribution.html")
+              ],
+              attributionLegalURL: "https://weatherkit.apple.com/legal-attribution.html"))),
+        ActionCardRecord(
+          payload: .alarm(
+            AlarmCard(
+              alarmID: "ui-alm-1", kind: .alarm, label: "Morning Run",
+              fireDate: nil, hour: 7, minute: 30, weekdays: ["mon", "wed"],
+              durationSeconds: nil, state: .scheduled))),
+        ActionCardRecord(
+          payload: .automationHandoff(
+            AutomationHandoffCard(
+              shortcutID: "log_expense", shortcutName: "Log Expense",
+              inputSummary: "Coffee $5", state: .completed,
+              resultSummary: "Logged Coffee $5", callbackRequestID: "ui-cb-1"))),
+      ]
+      return [
+        ChatChunk(
+          textDelta: "Here are your weather, alarm, and shortcut cards.",
+          thoughtDelta: nil, actionCards: cards)
+      ]
+    }
+
+    private static var sampleConfirmationRequest: ToolConfirmationRequest {
+      ToolConfirmationRequest(
+        toolName: "manage_calendar_event",
+        title: "Delete calendar event",
+        summary: "Delete \"Board Review\" from Work calendar.",
+        parameters: [
+          .init(name: "event", value: "Board Review"),
+          .init(name: "calendar", value: "Work"),
+        ],
+        risk: .destructive,
+        untrustedSources: ["web_search"])
+    }
+
+    private static var samplePlanConfirmationRequest: ToolConfirmationRequest {
+      ToolConfirmationRequest(
+        toolName: "plan",
+        title: "Confirm 2 actions",
+        summary: "Review and choose which actions Agello should run.",
+        parameters: [],
+        risk: .destructive,
+        steps: [
+          .init(
+            index: 0, toolName: "manage_calendar_event", title: "Create calendar event",
+            summary: "Design Sync tomorrow at 10 AM",
+            parameters: [.init(name: "title", value: "Design Sync")],
+            risk: .standard),
+          .init(
+            index: 1, toolName: "manage_reminder", title: "Delete reminder",
+            summary: "Remove Old Errand from Reminders",
+            parameters: [.init(name: "title", value: "Old Errand")],
+            risk: .destructive),
+        ],
+        untrustedSources: ["file:notes.txt"])
+    }
+  }
+#endif

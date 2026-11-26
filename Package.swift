@@ -30,7 +30,7 @@ let package = Package(
         // The UI tests, but for the bench's cases (below).
         "AgelloUITests/AccessibilityAuditUITests.swift", "AgelloUITests/BenchUITests.swift",
         "AgelloUITests/ChatFlowUITests.swift", "AgelloUITests/DeviceFloorUITests.swift",
-        "AgelloUITests/ScreenshotTourUITests.swift",
+        "AgelloUITests/ScreenshotTourUITests.swift", "AgelloUITests/Wave4UICoverageUITests.swift",
         "AgelloiOS", "Vendor", "build", "docs", "scripts", "AGENTS.md", "LICENSE", "NOTICE",
         "README.md", "buildServer.json",
         // The app's interface, and what only it uses.

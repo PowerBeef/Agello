@@ -59,6 +59,12 @@ enum Theme {
     static let glassOuterStroke = Color.white.opacity(0.12)
     static let glassInnerStroke = Color.white.opacity(0.04)
     static let increasedContrastStroke = Color.white.opacity(0.5)
+    static let litOuterStroke = Color.white.opacity(0.16)
+    static let litInnerStroke = Color.white.opacity(0.06)
+    static let litTopEdge = Color.white.opacity(0.22)
+    static let quietFill = Color.white.opacity(0.06)
+    static let quietPressedFill = Color.white.opacity(0.10)
+    static let quietStroke = Color.white.opacity(0.10)
   }
 
   // MARK: - Text
@@ -81,12 +87,17 @@ enum Theme {
 
   // MARK: - Accent helpers
 
+  private static let tintedGlassOpacity = 0.126
+  private static let neutralGlassOpacity = 0.09
+
   static func accentSurface(_ tint: Color) -> Color { tint.opacity(0.10) }
   static func accentWash(_ tint: Color) -> Color { tint.opacity(0.20) }
   static func accentStroke(_ tint: Color) -> Color { tint.opacity(0.34) }
+  static func badgeSurface(_ tint: Color) -> Color { tint.opacity(0.16) }
+  static func badgeStroke(_ tint: Color) -> Color { tint.opacity(0.30) }
 
   static func glassTint(_ tint: Color?) -> Color {
-    tint.map { $0.opacity(0.14 * 0.9) } ?? Brand.silver.opacity(0.10 * 0.9)
+    tint.map { $0.opacity(tintedGlassOpacity) } ?? Brand.silver.opacity(neutralGlassOpacity)
   }
 
   // MARK: - Geometry
@@ -101,6 +112,10 @@ enum Theme {
 
   enum Stroke {
     static let hairline: CGFloat = 0.5
+    static let inner: CGFloat = 0.55
+    static let topEdge: CGFloat = 0.6
+    static let innerInset: CGFloat = 0.65
+    static let chrome: CGFloat = 0.8
   }
 
   enum Spacing {
@@ -124,9 +139,15 @@ enum Theme {
   enum Elevation {
     static func glow(_ tint: Color) -> Color { tint.opacity(0.28) }
     static let glowRadius: CGFloat = 8
+    static let glowOffsetY: CGFloat = 1
     static func ctaGlow(_ tint: Color) -> Color { tint.opacity(0.35) }
     static let ctaGlowRadius: CGFloat = 16
+    static let ctaGlowOffsetY: CGFloat = 4
     static let floating = Color.black.opacity(0.40)
+  }
+
+  enum Typography {
+    static let ctaTracking: CGFloat = -0.17
   }
 
   // MARK: - Motion

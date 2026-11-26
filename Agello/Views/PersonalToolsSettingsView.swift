@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// Opt-in permissions for native on-device personal context tools (Calendar, Reminders,
-/// Contacts, Maps, Weather, Alarms & Timers, and Photos OCR). All toggles default to Off;
-/// mutating actions always require explicit confirmation in the chat stream before executing.
+/// Contacts, Maps & Places, Weather, Alarms & Timers, and Photos OCR). All toggles default
+/// to Off, respect active Focus Filters, and require explicit confirmation in the chat stream
+/// before executing any mutating action.
 struct PersonalToolsSettingsView: View {
   @Environment(AppState.self) private var appState
 

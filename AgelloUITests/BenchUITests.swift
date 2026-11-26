@@ -45,6 +45,7 @@ final class BenchUITests: XCTestCase {
 
   /// One case: launch, set the modes, send, wait, read the screen.
   private func run(_ bench: BenchCase, isLastAttempt: Bool) -> [String: Any] {
+    let runStarted = Date()
     var row: [String: Any] = ["id": bench.id, "think": bench.think, "search": bench.search]
     // Heat slows decoding by up to a fifth: BENCH_COOL=1 waits for the phone to cool first.
     if ProcessInfo.processInfo.environment["BENCH_COOL"] == "1" {
@@ -99,13 +100,19 @@ final class BenchUITests: XCTestCase {
     row["turns"] = turns
     let chat = app.scrollViews.firstMatch
     if chat.exists {
+      let scrollStarted = Date()
       for _ in 0..<12 { chat.swipeDown(velocity: .fast) }
+      row["topScrollSeconds"] = Date().timeIntervalSince(scrollStarted)
       attachScreenshot("bench-\(bench.id)-top")
       row["topReached"] = app.descendants(matching: .any).matching(identifier: "message.user").firstMatch.isHittable
     }
     // The title and memory helpers start once the chat has been idle for a few seconds: leave
     // them the time, so the last reply's trace holds them.
     Thread.sleep(forTimeInterval: 8)
+    if let hitchSummary = Self.latestTraceFrameMetrics(since: runStarted) {
+      row["frameMonitor"] = hitchSummary.dictionary
+      enforceHitchBudgetIfConfigured(hitchSummary, caseID: bench.id, isLastAttempt: isLastAttempt)
+    }
     app.terminate()
     return row
   }
@@ -153,13 +160,19 @@ final class BenchUITests: XCTestCase {
     }
 
     // What the screen holds: the reply as VoiceOver reads it, and any banner.
+    let snapshotStarted = Date()
     let bubble = bubbles.element(boundBy: max(0, bubbles.count - 1))
     let spoken = bubble.exists ? bubble.label : ""
+    turn["screenSnapshotSeconds"] = Date().timeIntervalSince(snapshotStarted)
     turn["screenCharacters"] = spoken.count
     let noticeBanner = element("chat.banner.notice")
     let failedBanner = element("chat.banner.failed")
+    let failedText = failedBanner.exists ? failedBanner.label : ""
     turn["notice"] = noticeBanner.exists ? noticeBanner.label : ""
-    turn["error"] = failedBanner.exists ? failedBanner.label : ""
+    turn["error"] = failedText
+    if isLastAttempt {
+      XCTAssertTrue(failedText.isEmpty, "\(bench.id) turn \(number): engine banner failed: \(failedText)")
+    }
     attach(Data(spoken.utf8), named: "\(name)-screen.txt")
     attachScreenshot("\(name)-end")
     return turn
@@ -202,5 +215,83 @@ final class BenchUITests: XCTestCase {
     attachment.name = name
     attachment.lifetime = .keepAlways
     add(attachment)
+  }
+
+  /// Parsed `FrameMonitor` counters emitted by `ReplyTrace` under `"frames"`.
+  private struct FrameHitchSummary {
+    let frames: Int
+    let hitches: Int
+    let hitchSeconds: Double
+    let longestGapSeconds: Double
+
+    var hitchRatio: Double {
+      frames > 0 ? Double(hitches) / Double(frames) : 0
+    }
+
+    var dictionary: [String: Any] {
+      [
+        "frames": frames,
+        "hitches": hitches,
+        "hitchSeconds": hitchSeconds,
+        "longestGapSeconds": longestGapSeconds,
+        "hitchRatio": hitchRatio,
+      ]
+    }
+  }
+
+  /// Reads the newest `ReplyTrace` JSON written to `AGELLO_TRACE_DIR` (when shared with the test
+  /// runner) to surface `FrameMonitor` hitch counts directly in `bench-surface.json`.
+  private static func latestTraceFrameMetrics(since startedAt: Date) -> FrameHitchSummary? {
+    guard let traceDir = ProcessInfo.processInfo.environment["AGELLO_TRACE_DIR"], !traceDir.isEmpty else {
+      return nil
+    }
+    let folder = URL(fileURLWithPath: (traceDir as NSString).expandingTildeInPath, isDirectory: true)
+    guard
+      let urls = try? FileManager.default.contentsOfDirectory(
+        at: folder, includingPropertiesForKeys: [.contentModificationDateKey],
+        options: [.skipsHiddenFiles])
+    else { return nil }
+    let recent = urls
+      .filter { $0.pathExtension == "json" }
+      .compactMap { url -> (url: URL, modified: Date)? in
+        guard let mod = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+          mod >= startedAt.addingTimeInterval(-2)
+        else { return nil }
+        return (url, mod)
+      }
+      .sorted { $0.modified > $1.modified }
+    for entry in recent {
+      guard let data = try? Data(contentsOf: entry.url),
+        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let frames = object["frames"] as? [String: Any], !frames.isEmpty
+      else { continue }
+      return FrameHitchSummary(
+        frames: Int((frames["frames"] as? NSNumber)?.doubleValue ?? 0),
+        hitches: Int((frames["hitches"] as? NSNumber)?.doubleValue ?? 0),
+        hitchSeconds: (frames["hitchSeconds"] as? NSNumber)?.doubleValue ?? 0,
+        longestGapSeconds: (frames["longestGapSeconds"] as? NSNumber)?.doubleValue ?? 0)
+    }
+    return nil
+  }
+
+  /// Enforces optional `FrameMonitor` hitch budgets (`BENCH_MAX_HITCH_RATIO`,
+  /// `BENCH_MAX_LONGEST_GAP_MS`) when configured by the harness.
+  private func enforceHitchBudgetIfConfigured(
+    _ summary: FrameHitchSummary, caseID: String, isLastAttempt: Bool
+  ) {
+    guard isLastAttempt else { return }
+    let env = ProcessInfo.processInfo.environment
+    if let maxRatioText = env["BENCH_MAX_HITCH_RATIO"], let maxRatio = Double(maxRatioText), summary.frames > 0 {
+      XCTAssertLessThanOrEqual(
+        summary.hitchRatio, maxRatio,
+        "\(caseID): FrameMonitor hitch ratio \(String(format: "%.3f", summary.hitchRatio)) exceeded \(maxRatio) "
+          + "(\(summary.hitches)/\(summary.frames) frames)")
+    }
+    if let maxGapText = env["BENCH_MAX_LONGEST_GAP_MS"], let maxGapMs = Double(maxGapText) {
+      let actualMs = summary.longestGapSeconds * 1_000
+      XCTAssertLessThanOrEqual(
+        actualMs, maxGapMs,
+        "\(caseID): FrameMonitor longest gap \(String(format: "%.1f", actualMs)) ms exceeded \(maxGapMs) ms")
+    }
   }
 }

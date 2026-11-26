@@ -8,6 +8,7 @@ struct PersonalizationView: View {
 
   @Environment(AppState.self) private var appState
   @Environment(\.scenePhase) private var scenePhase
+  @ScaledMetric(relativeTo: .body) private var editorMinHeight: CGFloat = Theme.Size.target * 2
   @State private var draft = Personalization()
   @State private var loaded = false
   @FocusState private var focusedField: Field?
@@ -125,7 +126,7 @@ struct PersonalizationView: View {
       .foregroundStyle(Theme.Text.primary)
       .focused($focusedField, equals: field)
       .accessibilityLabel(label)
-      .frame(minHeight: 90)
+      .frame(minHeight: editorMinHeight)
       .onChange(of: text.wrappedValue) { _, value in
         if value.count > Personalization.fieldLimit {
           text.wrappedValue = String(value.prefix(Personalization.fieldLimit))

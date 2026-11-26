@@ -8,6 +8,7 @@ import UIKit
 struct MessageBubbleView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.modelContext) private var modelContext
   @Environment(AppState.self) private var appState
   let turn: ChatTurn
@@ -20,6 +21,7 @@ struct MessageBubbleView: View {
   var showsStats = false
   let reader: SpeechReader
   let composerBridge: ComposerBridge
+  @ScaledMetric(relativeTo: .caption2) private var sourceIndexSize: CGFloat = 20
   @State private var copied = false
   @State private var copyResetTask: Task<Void, Never>?
   @State private var showsThought = false
@@ -110,12 +112,13 @@ struct MessageBubbleView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
-        // While a reply streams, the spoken form runs only when VoiceOver reads it;
-        // completed replies hit the bounded spoken-text cache.
+        // VoiceOver traverses the structured markdown children (headings, links, code copy, math)
+        // under a concise container name instead of repeating the full reply twice; UI/bench tests
+        // read the cached spoken-text label directly when VoiceOver is inactive.
         .accessibilityLabel(
-          Text(
-            isStreaming && !voiceOverEnabled
-              ? turn.text : Self.cachedSpokenText(for: turn.id, markdown: turn.text)))
+          voiceOverEnabled
+            ? Text("Assistant reply")
+            : Text(isStreaming ? turn.text : Self.cachedSpokenText(for: turn.id, markdown: turn.text)))
         .accessibilityIdentifier("message.model")
         .onAppear { ReplyTrace.onScreen(turn.id) }
       } else if isStreaming {
@@ -234,16 +237,18 @@ struct MessageBubbleView: View {
     return turn.thought.count >= 110 || turn.thought.components(separatedBy: .newlines).count > 2
   }
 
+  private func toggleThought() {
+    withAppAnimation(Theme.Motion.easeOut) { showsThought.toggle() }
+    Haptics.selection()
+  }
+
   /// Quiet card above the answer; collapsed to two lines of the thought.
   private var thoughtCard: some View {
     let tint = Theme.Mode.think.tint
     let isActivelyThinking = isStreaming && turn.text.isEmpty
     let shouldPulseHeader = isActivelyThinking && !showsThought && !reduceMotion
-    return Button {
-      withAppAnimation(Theme.Motion.easeOut) { showsThought.toggle() }
-      Haptics.selection()
-    } label: {
-      VStack(alignment: .leading, spacing: Theme.Spacing.tight) {
+    return VStack(alignment: .leading, spacing: 0) {
+      Button(action: toggleThought) {
         HStack(spacing: Theme.Spacing.tight) {
           thoughtHeaderTitle(
             tint: tint,
@@ -258,24 +263,40 @@ struct MessageBubbleView: View {
           }
         }
         .foregroundStyle(tint)
-        Text(turn.thought)
-          .font(.footnote)
-          .foregroundStyle(Theme.Text.secondary)
-          .lineLimit(showsThought ? nil : 2)
-          .multilineTextAlignment(.leading)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .accessibilityIdentifier("message.reasoning.text")
+        .frame(minHeight: Theme.Size.target)
+        .contentShape(.rect)
       }
-      .padding(Theme.Spacing.md)
-      .surfaceCard(
-        radius: Theme.Radius.card, fill: Theme.accentSurface(tint).opacity(0.6),
-        stroke: tint.opacity(0.18))
-      .contentShape(.rect)
+      .buttonStyle(.plain)
+      .accessibilityLabel(isActivelyThinking ? String(localized: "Thinking") : String(localized: "Reasoning"))
+      .accessibilityValue(showsThought ? String(localized: "Expanded") : String(localized: "Collapsed"))
+      .accessibilityHint(
+        showsThought
+          ? String(localized: "Collapses the reasoning")
+          : String(localized: "Shows all of the reasoning"))
+
+      Text(turn.thought)
+        .font(.footnote)
+        .foregroundStyle(Theme.Text.secondary)
+        .lineLimit(showsThought ? nil : 2)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, Theme.Spacing.md)
+        .contentShape(.rect)
+        .onTapGesture(perform: toggleThought)
+        .accessibilityAction(
+          named: showsThought
+            ? String(localized: "Collapse reasoning")
+            : String(localized: "Expand reasoning")
+        ) {
+          toggleThought()
+        }
+        .accessibilityIdentifier("message.reasoning.text")
     }
-    .buttonStyle(.plain)
+    .padding(.horizontal, Theme.Spacing.md)
+    .surfaceCard(
+      radius: Theme.Radius.card, fill: Theme.accentSurface(tint).opacity(0.6),
+      stroke: tint.opacity(0.18))
     .accessibilityElement(children: .contain)
-    .accessibilityValue(showsThought ? "Expanded" : "Collapsed")
-    .accessibilityHint(showsThought ? "Collapses the reasoning" : "Shows all of the reasoning")
     .accessibilityIdentifier("message.reasoning")
   }
 
@@ -287,6 +308,7 @@ struct MessageBubbleView: View {
       Image(systemName: "lightbulb.fill")
         .font(.caption2)
         .symbolEffect(.pulse, isActive: shouldPulse)
+        .accessibilityHidden(true)
       Text(isActivelyThinking ? "Thinking…" : "Reasoning")
         .eyebrowStyle(tint)
         .contentTransition(.opacity)
@@ -355,7 +377,7 @@ struct MessageBubbleView: View {
         .font(.system(.caption2, weight: .bold))
         .monospacedDigit()
         .foregroundStyle(tint)
-        .frame(width: 20, height: 20)
+        .frame(width: sourceIndexSize, height: sourceIndexSize)
         .background { Circle().fill(tint.opacity(0.14)) }
       VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
         Text(source.title)
@@ -395,13 +417,18 @@ struct MessageBubbleView: View {
 
   // MARK: - Tools
 
+  private var uniqueToolNames: [String] {
+    var seen = Set<String>()
+    return turn.toolNames.filter { seen.insert($0).inserted }
+  }
+
   private var toolChips: some View {
     WrapFlowLayout(horizontalSpacing: Theme.Spacing.tight, verticalSpacing: Theme.Spacing.tight) {
-      ForEach(turn.toolNames, id: \.self) { name in
+      ForEach(uniqueToolNames, id: \.self) { name in
         Label(Self.toolLabel(name), systemImage: Self.toolSymbol(name))
           .font(.system(.caption, weight: .medium))
           .foregroundStyle(Theme.Text.secondary)
-          .lineLimit(1)
+          .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
           .padding(.horizontal, Theme.Spacing.snug)
           .padding(.vertical, Theme.Spacing.xs)
           .background { QuietBackground(shape: Capsule()) }
@@ -493,6 +520,7 @@ struct MessageBubbleView: View {
         ShareLink(item: turn.text) {
           Image(systemName: "square.and.arrow.up")
             .frame(width: Theme.Size.target, height: Theme.Size.target)
+            .contentShape(.rect)
         }
         .accessibilityLabel("Share")
         .accessibilityIdentifier("message.share")
@@ -513,6 +541,7 @@ struct MessageBubbleView: View {
         .contentTransition(.symbolEffect(.replace))
         .appAnimation(Theme.Motion.stateChange, value: symbol, kind: .dissolve)
         .frame(width: Theme.Size.target, height: Theme.Size.target)
+        .contentShape(.rect)
     }
     .accessibilityLabel(label)
     .accessibilityIdentifier(id)
@@ -602,6 +631,7 @@ struct MessageBubbleView: View {
 /// rows never subscribe to `appState.toolStatus`.
 private struct LiveToolStatusRow: View {
   @Environment(AppState.self) private var appState
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   var body: some View {
     if let toolStatus = appState.toolStatus {
@@ -610,7 +640,8 @@ private struct LiveToolStatusRow: View {
         Text(toolStatus)
           .font(.footnote)
           .foregroundStyle(Theme.Text.secondary)
-          .lineLimit(1)
+          .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+          .fixedSize(horizontal: false, vertical: true)
       }
       .accessibilityElement(children: .combine)
       .accessibilityIdentifier("message.toolStatus")
@@ -636,6 +667,7 @@ private struct SpeakActionButton: View {
         .foregroundStyle(isSpeaking ? Theme.Mode.voice.tint : Theme.Text.tertiary)
         .contentTransition(.symbolEffect(.replace))
         .frame(width: Theme.Size.target, height: Theme.Size.target)
+        .contentShape(.rect)
     }
     .appAnimation(Theme.Motion.stateChange, value: isSpeaking, kind: .dissolve)
     .accessibilityLabel(isSpeaking ? "Stop reading" : "Read aloud")
@@ -659,6 +691,7 @@ private struct RegenerateActionButton: View {
       Image(systemName: "arrow.clockwise")
         .contentTransition(.symbolEffect(.replace))
         .frame(width: Theme.Size.target, height: Theme.Size.target)
+        .contentShape(.rect)
     }
     .disabled(appState.isBusy)
     .accessibilityLabel(isError ? "Retry" : "Regenerate")
@@ -699,7 +732,8 @@ private struct VersionSwitcherView: View {
         }
       } label: {
         Image(systemName: "chevron.left")
-          .frame(width: Theme.Size.glyph, height: Theme.Size.target)
+          .frame(minWidth: Theme.Size.target, minHeight: Theme.Size.target)
+          .contentShape(.rect)
       }
       .disabled(index == 0 || isBusy)
       .accessibilityLabel("Previous version")
@@ -720,7 +754,8 @@ private struct VersionSwitcherView: View {
         }
       } label: {
         Image(systemName: "chevron.right")
-          .frame(width: Theme.Size.glyph, height: Theme.Size.target)
+          .frame(minWidth: Theme.Size.target, minHeight: Theme.Size.target)
+          .contentShape(.rect)
       }
       .disabled(index + 1 >= versions.count || isBusy)
       .accessibilityLabel("Next version")
@@ -971,18 +1006,20 @@ private enum WeatherAttributionCache {
 /// Apple Weather's mark, linked to its legal page, under a reply that used its data: shown, not
 /// tucked in the collapsed sources, as WeatherKit's terms and App Review require.
 struct WeatherAttributionMark: View {
+  var legalURLOverride: URL?
   @State private var mark: WeatherLookup.Mark?
   @State private var image: UIImage?
   @ScaledMetric(relativeTo: .caption2) private var height = Theme.Size.attributionMark
 
-  init() {
+  init(legalURLOverride: URL? = nil) {
+    self.legalURLOverride = legalURLOverride
     let cached = WeatherAttributionCache.current
     _mark = State(initialValue: cached.mark)
     _image = State(initialValue: cached.image)
   }
 
   var body: some View {
-    let legalURL = mark?.legal ?? WeatherLookup.fallbackLegalURL
+    let legalURL = legalURLOverride ?? mark?.legal ?? WeatherLookup.fallbackLegalURL
     let serviceName = mark?.name ?? String(localized: "Apple Weather")
     Link(destination: legalURL) {
       Group {
@@ -996,6 +1033,7 @@ struct WeatherAttributionMark: View {
         }
       }
       .frame(minHeight: Theme.Size.target, alignment: .leading)
+      .contentShape(.rect)
     }
     .accessibilityLabel("\(serviceName), legal attribution")
     .accessibilityIdentifier("message.weatherAttribution")

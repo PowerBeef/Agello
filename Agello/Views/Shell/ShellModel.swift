@@ -207,17 +207,20 @@ final class ShellModel {
   }
 
   private func threadExists(_ id: UUID) -> Bool {
-    let descriptor = FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == id })
+    var descriptor = FetchDescriptor<ChatThread>(predicate: #Predicate { $0.id == id })
+    descriptor.fetchLimit = 1
     return ((try? context.fetchCount(descriptor)) ?? 0) > 0
   }
 
   private func project(withID id: UUID) -> Project? {
-    let descriptor = FetchDescriptor<Project>(predicate: #Predicate { $0.id == id })
+    var descriptor = FetchDescriptor<Project>(predicate: #Predicate { $0.id == id })
+    descriptor.fetchLimit = 1
     return try? context.fetch(descriptor).first
   }
 
   private func document(withID id: UUID) -> ChatDocument? {
-    let descriptor = FetchDescriptor<ChatDocument>(predicate: #Predicate { $0.id == id })
+    var descriptor = FetchDescriptor<ChatDocument>(predicate: #Predicate { $0.id == id })
+    descriptor.fetchLimit = 1
     return try? context.fetch(descriptor).first
   }
 }

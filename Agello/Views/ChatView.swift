@@ -44,7 +44,11 @@ struct ChatView: View {
       .background {
         ChatBackdropView(bridge: composerBridge)
       }
-      .navigationTitle(thread?.title ?? "")
+      .background {
+        ChatKeyboardShortcuts {
+          AppRouter.shared.handle(.newChat)
+        }
+      }
       .inlineTitleDisplay()
       .sheet(isPresented: $showLibrary) {
         NavigationStack {
@@ -119,6 +123,36 @@ private struct ChatBackdropView: View {
   var body: some View {
     AmbientBackdrop(tint: mode.tint)
       .appAnimation(Theme.Motion.modeCrossfade, value: mode, kind: .dissolve)
+  }
+}
+
+/// Hardware keyboard shortcuts scoped to the chat screen: `⌘N` opens a new chat, and `⌘.` / `Esc`
+/// stop active generation without subscribing `ChatView.body` to `appState.isBusy`.
+private struct ChatKeyboardShortcuts: View {
+  @Environment(AppState.self) private var appState
+  let onNewChat: () -> Void
+
+  var body: some View {
+    ZStack {
+      Button("New chat", action: onNewChat)
+        .keyboardShortcut("n", modifiers: .command)
+      if appState.isBusy {
+        Button("Stop generating") {
+          Haptics.selection()
+          appState.stop()
+        }
+        .keyboardShortcut(".", modifiers: .command)
+        Button("Stop generating") {
+          Haptics.selection()
+          appState.stop()
+        }
+        .keyboardShortcut(.escape, modifiers: [])
+      }
+    }
+    .frame(width: 0, height: 0)
+    .hidden()
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
   }
 }
 
@@ -206,6 +240,8 @@ private struct ChatBannersView: View {
           identifier: "chat.banner.download"
         ) {
           Button("Models") { showLibrary = true }
+            .frame(minHeight: Theme.Size.target)
+            .contentShape(.rect)
         }
         .bannerInsets()
       }
@@ -220,6 +256,8 @@ private struct ChatBannersView: View {
         identifier: "chat.banner.failed"
       ) {
         Button("Retry") { Task { await appState.ensureEngineLoaded() } }
+          .frame(minHeight: Theme.Size.target)
+          .contentShape(.rect)
       }
       .bannerInsets()
     case .ready, .generating:
@@ -241,6 +279,8 @@ private struct ChatBannersView: View {
         identifier: "chat.banner.pendingApproval"
       ) {
         Button("Review") { AppRouter.shared.handle(.openChat(ownerID)) }
+          .frame(minHeight: Theme.Size.target)
+          .contentShape(.rect)
       }
       .bannerInsets()
     }
@@ -257,6 +297,8 @@ private struct ChatBannersView: View {
         identifier: "chat.banner.shortcut"
       ) {
         Button("Continue") { appState.continueWithoutShortcutCallback() }
+          .frame(minHeight: Theme.Size.target)
+          .contentShape(.rect)
       }
       .bannerInsets()
     } else if let error = appState.generationError {
@@ -265,11 +307,15 @@ private struct ChatBannersView: View {
         identifier: "chat.banner.notice"
       ) {
         Button("Dismiss") { appState.generationError = nil }
+          .frame(minHeight: Theme.Size.target)
+          .contentShape(.rect)
       }
       .bannerInsets()
     } else if let notice = appState.notice {
       InlineBanner(symbol: "info.circle", message: notice, identifier: "chat.banner.notice") {
         Button("Dismiss") { appState.notice = nil }
+          .frame(minHeight: Theme.Size.target)
+          .contentShape(.rect)
       }
       .bannerInsets()
     }
@@ -548,6 +594,7 @@ private struct ChatMessagesList: View {
 private struct ChatEmptyStateView: View {
   @Environment(AppState.self) private var appState
   @Environment(\.modelContext) private var context
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let isNewChat: Bool
   let composerBridge: ComposerBridge
 
@@ -586,27 +633,34 @@ private struct ChatEmptyStateView: View {
   }
 
   var body: some View {
-    VStack(spacing: Theme.Spacing.xxl) {
-      Spacer()
-      VStack(spacing: Theme.Spacing.sm) {
-        if let projectName {
-          Label(projectName, systemImage: "folder")
-            .eyebrowStyle(Theme.Brand.glacier)
-            .accessibilityIdentifier("chat.project")
+    GeometryReader { proxy in
+      ScrollView(.vertical, showsIndicators: false) {
+        VStack(spacing: Theme.Spacing.xxl) {
+          Spacer(minLength: Theme.Spacing.lg)
+          VStack(spacing: Theme.Spacing.sm) {
+            if let projectName {
+              Label(projectName, systemImage: "folder")
+                .eyebrowStyle(Theme.Brand.glacier)
+                .accessibilityIdentifier("chat.project")
+            }
+            Text(greeting)
+              .font(.greeting)
+              .foregroundStyle(Theme.Text.primary)
+              .multilineTextAlignment(.center)
+              .fixedSize(horizontal: false, vertical: true)
+              .accessibilityIdentifier("chat.empty")
+          }
+          suggestions
+          Spacer(minLength: Theme.Spacing.lg)
         }
-        Text(greeting)
-          .font(.greeting)
-          .foregroundStyle(Theme.Text.primary)
-          .multilineTextAlignment(.center)
-          .accessibilityIdentifier("chat.empty")
+        .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+        .padding(.horizontal, Theme.Spacing.xl)
+        .contentShape(.rect)
+        .onTapGesture { composerBridge.send(.dismissKeyboard) }
       }
-      suggestions
-      Spacer()
+      .scrollBounceBehavior(.basedOnSize)
+      .scrollDismissesKeyboard(.interactively)
     }
-    .frame(maxWidth: .infinity)
-    .padding(.horizontal, Theme.Spacing.xl)
-    .contentShape(.rect)
-    .onTapGesture { composerBridge.send(.dismissKeyboard) }
     .task(id: isNewChat ? appState.newChatProjectID : nil) {
       guard isNewChat, let id = appState.newChatProjectID else {
         projectName = nil
@@ -619,10 +673,11 @@ private struct ChatEmptyStateView: View {
   }
 
   private var suggestions: some View {
-    LazyVGrid(
-      columns: [GridItem(.flexible(), spacing: Theme.Spacing.sm), GridItem(.flexible())],
-      spacing: Theme.Spacing.sm
-    ) {
+    let columns =
+      dynamicTypeSize.isAccessibilitySize
+      ? [GridItem(.flexible())]
+      : [GridItem(.flexible(), spacing: Theme.Spacing.sm), GridItem(.flexible())]
+    return LazyVGrid(columns: columns, spacing: Theme.Spacing.sm) {
       ForEach(Suggestion.allCases, id: \.self) { suggestion in
         Button {
           Haptics.selection()
@@ -640,7 +695,7 @@ private struct ChatEmptyStateView: View {
             // Spacer it would get half the width and wrap early).
             Text(suggestion.title)
               .foregroundStyle(Theme.Text.secondary)
-              .lineLimit(2)
+              .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 2)
               .multilineTextAlignment(.leading)
               .fixedSize(horizontal: false, vertical: true)
               .frame(maxWidth: .infinity, alignment: .leading)

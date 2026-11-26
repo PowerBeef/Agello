@@ -10,8 +10,7 @@ struct UnsupportedDeviceView: View {
         return String(format: "%.0f", simulated)
       }
     #endif
-    let bytes = Double(ProcessInfo.processInfo.physicalMemory)
-    return String(format: "%.0f", bytes / 1_073_741_824)
+    return String(format: "%.0f", DeviceProfile.current.memoryGB)
   }
 
   var body: some View {
@@ -25,7 +24,8 @@ struct UnsupportedDeviceView: View {
             .frame(width: Theme.Size.hero, height: Theme.Size.hero)
             .background {
               LitTintBackground(
-                shape: RoundedRectangle(cornerRadius: Theme.Radius.group + 2, style: .continuous),
+                shape: RoundedRectangle(
+                  cornerRadius: Theme.Radius.group + Theme.Spacing.xxs, style: .continuous),
                 tint: Theme.Brand.glacier)
             }
             .accessibilityHidden(true)

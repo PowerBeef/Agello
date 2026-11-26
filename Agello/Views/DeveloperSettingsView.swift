@@ -151,7 +151,7 @@ struct DeveloperSettingsView: View {
   }
 
   private func benchmarkStat(value: String, label: LocalizedStringKey) -> some View {
-    VStack(alignment: .leading, spacing: 1) {
+    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
       Text(value)
         .font(.system(.title3, weight: .bold))
         .monospacedDigit()

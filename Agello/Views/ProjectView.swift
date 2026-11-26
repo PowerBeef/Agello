@@ -8,6 +8,7 @@ struct ProjectView: View {
   @Environment(AppState.self) private var appState
   @Environment(\.modelContext) private var context
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.dynamicTypeSize) private var typeSize
   @Query private var threads: [ChatThread]
 
   let project: Project
@@ -233,7 +234,9 @@ private extension ProjectView {
     HStack(spacing: Theme.Spacing.md) {
       TintTile(symbol: (DocumentKind(rawValue: file.kindRaw) ?? .text).symbol)
       VStack(alignment: .leading) {
-        Text(file.name).lineLimit(1).foregroundStyle(Theme.Text.primary)
+        Text(file.name)
+          .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+          .foregroundStyle(Theme.Text.primary)
         if file.pageCount > 0 {
           Text("\(file.pageCount) pages").font(.caption).foregroundStyle(Theme.Text.tertiary)
         }
@@ -242,12 +245,16 @@ private extension ProjectView {
             Text("Keyword search").font(.caption).foregroundStyle(Theme.Text.tertiary)
               .accessibilityIdentifier("project.file.keywordSearch")
             // Indexing failed once; it's not retried on its own.
-            Button("Index again") {
+            Button {
               appState.knowledge.reindex(file)
               reloadFiles()
+            } label: {
+              Text("Index again")
+                .font(.caption)
+                .foregroundStyle(Theme.Brand.glacier)
+                .frame(minHeight: Theme.Size.target)
+                .contentShape(.rect)
             }
-            .font(.caption)
-            .foregroundStyle(Theme.Brand.glacier)
             .buttonStyle(.borderless)
             .accessibilityIdentifier("project.file.reindex")
           }
@@ -290,11 +297,11 @@ private extension ProjectView {
     if let folder = linkedFolder {
       HStack(spacing: Theme.Spacing.sm) {
         TintTile(symbol: "folder.badge.gearshape", tint: Theme.Brand.teal)
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
           Text(folder.folderName)
             .font(.subheadline)
             .foregroundStyle(Theme.Text.primary)
-            .lineLimit(1)
+            .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
           if let synced = folder.lastSyncedAt {
             Text("Synced \(synced.formatted(date: .abbreviated, time: .shortened))")
               .font(.caption2)
@@ -302,13 +309,21 @@ private extension ProjectView {
           }
         }
         Spacer(minLength: Theme.Spacing.xs)
-        Button("Sync") {
+        Button {
           Haptics.selection()
           syncLinkedFolder()
+        } label: {
+          Text("Sync")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Theme.Brand.teal)
+            .padding(.horizontal, Theme.Spacing.md)
+            .frame(minHeight: Theme.Size.pill)
+            .background { QuietBackground(shape: Capsule()) }
+            .frame(minWidth: Theme.Size.target, minHeight: Theme.Size.target)
+            .contentShape(.rect)
         }
-        .font(.caption.weight(.semibold))
-        .buttonStyle(.bordered)
-        .tint(Theme.Brand.teal)
+        .buttonStyle(.borderless)
+        .opacity(readingFiles > 0 ? 0.42 : 1)
         .disabled(readingFiles > 0)
         .accessibilityIdentifier("project.syncFolder")
         Button {
@@ -352,7 +367,7 @@ private extension ProjectView {
                 Text(thread.title)
                   .font(.rowTitle)
                   .foregroundStyle(Theme.Text.primary)
-                  .lineLimit(1)
+                  .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                 Text(thread.updatedAt.formatted(date: .abbreviated, time: .omitted))
                   .font(.caption)
                   .foregroundStyle(Theme.Text.tertiary)
@@ -361,6 +376,7 @@ private extension ProjectView {
               Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Theme.Text.tertiary)
+                .accessibilityHidden(true)
             }
           }
           .accessibilityIdentifier("project.chat")

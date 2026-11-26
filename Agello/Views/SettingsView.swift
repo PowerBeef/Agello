@@ -49,14 +49,14 @@ struct SettingsView: View {
         if typeSize.isAccessibilitySize {
           VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             HStack(alignment: .top, spacing: Theme.Spacing.md) {
-              TintTile(symbol: "sparkles", tint: Theme.Brand.glacier, size: 44)
+              TintTile(symbol: "sparkles", tint: Theme.Brand.glacier, size: Theme.Size.target)
               statusHeaderText
             }
             StatusBadge(text: status.word, tone: status.tone)
           }
         } else {
           HStack(spacing: Theme.Spacing.md) {
-            TintTile(symbol: "sparkles", tint: Theme.Brand.glacier, size: 44)
+            TintTile(symbol: "sparkles", tint: Theme.Brand.glacier, size: Theme.Size.target)
             statusHeaderText
             Spacer(minLength: Theme.Spacing.sm)
             StatusBadge(text: status.word, tone: status.tone)
@@ -299,7 +299,7 @@ struct SettingsView: View {
         // Five taps within 3 s open the developer screen (the stats line, benchmark, what's loaded).
         .contentShape(.rect)
         .onTapGesture { handleVersionTap() }
-        .accessibilityAction(named: String(localized: "Developer settings")) {
+        .accessibilityAction(named: String(localized: "Unlock Developer Settings")) {
           Haptics.success()
           showDeveloper = true
         }

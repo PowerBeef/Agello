@@ -22,14 +22,14 @@ struct ChromeSurface<S: InsettableShape>: ViewModifier {
         shape
           .strokeBorder(
             contrast == .increased ? Theme.Surface.increasedContrastStroke : Theme.Surface.glassOuterStroke,
-            lineWidth: 0.8
+            lineWidth: Theme.Stroke.chrome
           )
           .allowsHitTesting(false)
       }
       .overlay {
         shape
-          .inset(by: 0.65)
-          .strokeBorder(Theme.Surface.glassInnerStroke, lineWidth: 0.55)
+          .inset(by: Theme.Stroke.innerInset)
+          .strokeBorder(Theme.Surface.glassInnerStroke, lineWidth: Theme.Stroke.inner)
           .allowsHitTesting(false)
       }
       .glassEffect(glass, in: shape)
@@ -72,7 +72,7 @@ private struct SurfaceCard: ViewModifier {
         shape
           .strokeBorder(
             resolvedStroke,
-            lineWidth: contrast == .increased ? 0.8 : Theme.Stroke.hairline
+            lineWidth: contrast == .increased ? Theme.Stroke.chrome : Theme.Stroke.hairline
           )
           .allowsHitTesting(false)
       }
@@ -102,8 +102,11 @@ struct LitTintBackground<S: InsettableShape>: View {
   enum Strength {
     case primary, pill
 
-    var top: Double { self == .primary ? 0.46 : 0.30 }
-    var bottom: Double { self == .primary ? 0.24 : 0.14 }
+    /// Top stop keeps `Theme.Text.primary` >= 4.5:1 (WCAG 2.1 AA) over `Theme.Surface.stage` even
+    /// for the brightest accent (`Theme.Brand.gold`: `5.39:1` resting at `0.38`, `4.59:1` pressed
+    /// at `0.44`).
+    var top: Double { self == .primary ? 0.38 : 0.30 }
+    var bottom: Double { self == .primary ? 0.20 : 0.14 }
   }
 
   var body: some View {
@@ -113,29 +116,29 @@ struct LitTintBackground<S: InsettableShape>: View {
         color: reduceTransparency || !isEnabled
           ? .clear : (strength == .primary ? Theme.Elevation.ctaGlow(tint) : Theme.Elevation.glow(tint)),
         radius: strength == .primary ? Theme.Elevation.ctaGlowRadius : Theme.Elevation.glowRadius,
-        y: strength == .primary ? 4 : 1
+        y: strength == .primary ? Theme.Elevation.ctaGlowOffsetY : Theme.Elevation.glowOffsetY
       )
       .overlay {
         shape
           .strokeBorder(
-            contrast == .increased ? Theme.Surface.increasedContrastStroke : Color.white.opacity(0.16),
-            lineWidth: 0.8
+            contrast == .increased ? Theme.Surface.increasedContrastStroke : Theme.Surface.litOuterStroke,
+            lineWidth: Theme.Stroke.chrome
           )
           .allowsHitTesting(false)
       }
       .overlay {
         shape
-          .inset(by: 0.65)
-          .strokeBorder(Color.white.opacity(0.06), lineWidth: 0.55)
+          .inset(by: Theme.Stroke.innerInset)
+          .strokeBorder(Theme.Surface.litInnerStroke, lineWidth: Theme.Stroke.inner)
           .allowsHitTesting(false)
       }
       .overlay {
         shape
           .strokeBorder(
             LinearGradient(
-              colors: [Color.white.opacity(0.22), .clear],
+              colors: [Theme.Surface.litTopEdge, .clear],
               startPoint: .top, endPoint: .center),
-            lineWidth: 0.6
+            lineWidth: Theme.Stroke.topEdge
           )
           .allowsHitTesting(false)
       }
@@ -148,14 +151,14 @@ struct LitTintBackground<S: InsettableShape>: View {
         if !isEnabled {
           0.70
         } else if isPressed {
-          0.34
+          0.48
         } else {
-          0.42
+          0.52
         }
       return AnyShapeStyle(tint.mix(with: .black, by: darken, in: .perceptual))
     }
-    let top = isPressed ? min(1, strength.top + 0.08) : strength.top
-    let bottom = isPressed ? min(1, strength.bottom + 0.06) : strength.bottom
+    let top = isPressed ? min(1, strength.top + 0.06) : strength.top
+    let bottom = isPressed ? min(1, strength.bottom + 0.04) : strength.bottom
     return AnyShapeStyle(
       LinearGradient(
         colors: isEnabled
@@ -179,8 +182,8 @@ struct QuietBackground<S: InsettableShape>: View {
       .overlay {
         shape
           .strokeBorder(
-            contrast == .increased ? Theme.Surface.increasedContrastStroke : Color.white.opacity(0.10),
-            lineWidth: 0.8
+            contrast == .increased ? Theme.Surface.increasedContrastStroke : Theme.Surface.quietStroke,
+            lineWidth: Theme.Stroke.chrome
           )
           .allowsHitTesting(false)
       }
@@ -193,6 +196,6 @@ struct QuietBackground<S: InsettableShape>: View {
         ? Theme.Surface.stage.mix(with: .white, by: 0.08, in: .perceptual)
         : Theme.Surface.stage
     }
-    return Color.white.opacity(isPressed ? 0.10 : 0.06)
+    return isPressed ? Theme.Surface.quietPressedFill : Theme.Surface.quietFill
   }
 }

@@ -347,9 +347,14 @@ struct VoiceModeView: View {
 /// `phaseAnimator` strictly while `.thinking` or `.speaking` (0 frames while idle `.listening`).
 private struct VoiceOrbView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   let session: VoiceSession
   let isCompact: Bool
   let tint: Color
+
+  private var canInterrupt: Bool {
+    session.state == .thinking || session.state == .speaking
+  }
 
   var body: some View {
     let active = session.state == .hearing
@@ -361,21 +366,24 @@ private struct VoiceOrbView: View {
         hasConfirmation ? 80 : (session.cameraOn ? 96 : 200)
       }
     let scale = 1 + (active ? session.level * 0.35 : 0)
-    let shouldPulse = !reduceMotion && (session.state == .thinking || session.state == .speaking)
+    let shouldPulse = !reduceMotion && canInterrupt
     let core = ZStack {
-      // Halo: zero-offscreen-pass soft radial bloom replacing a 44 pt Gaussian `.blur`.
-      Circle()
-        .fill(
-          RadialGradient(
-            stops: [
-              .init(color: tint.opacity(0.32), location: 0.0),
-              .init(color: tint.opacity(0.22), location: 0.48),
-              .init(color: tint.opacity(0.08), location: 0.72),
-              .init(color: .clear, location: 1.0),
-            ],
-            center: .center, startRadius: 0, endRadius: size * 0.92))
-        .frame(width: size * 1.84, height: size * 1.84)
-        .allowsHitTesting(false)
+      // Halo: zero-offscreen-pass soft radial bloom replacing a 44 pt Gaussian `.blur`,
+      // suppressed when Reduce Transparency is enabled.
+      if !reduceTransparency {
+        Circle()
+          .fill(
+            RadialGradient(
+              stops: [
+                .init(color: tint.opacity(0.32), location: 0.0),
+                .init(color: tint.opacity(0.22), location: 0.48),
+                .init(color: tint.opacity(0.08), location: 0.72),
+                .init(color: .clear, location: 1.0),
+              ],
+              center: .center, startRadius: 0, endRadius: size * 0.92))
+          .frame(width: size * 1.84, height: size * 1.84)
+          .allowsHitTesting(false)
+      }
       // Core: warm light at the center fading to deep gold.
       Circle()
         .fill(
@@ -408,7 +416,7 @@ private struct VoiceOrbView: View {
     .onTapGesture { session.interrupt() }
     .accessibilityLabel("Voice conversation")
     .accessibilityValue(session.state.label)
-    .accessibilityHint("Double-tap to interrupt the answer")
+    .accessibilityHint(canInterrupt ? String(localized: "Double-tap to interrupt") : "")
     .accessibilityAddTraits(.isButton)
   }
 }

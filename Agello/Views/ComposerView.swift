@@ -48,6 +48,7 @@ final class ComposerBridge {
 struct ChatComposerView: View {
   @Environment(AppState.self) private var appState
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let thread: ChatThread?
   let bridge: ComposerBridge
   var onStopReading: () -> Void
@@ -319,7 +320,8 @@ struct ChatComposerView: View {
         Text(status)
           .font(.footnote)
           .foregroundStyle(Theme.Text.secondary)
-          .lineLimit(1)
+          .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+          .fixedSize(horizontal: false, vertical: true)
           .accessibilityIdentifier("chat.preparing")
         Spacer()
       }
@@ -406,6 +408,7 @@ struct ChatComposerView: View {
             .foregroundStyle(Theme.Status.critical)
             .buttonStyle(.plain)
             .frame(minHeight: Theme.Size.target)
+            .contentShape(.rect)
             .accessibilityIdentifier("composer.stopVoice")
           }
         } else if recorder.finishedURL != nil, !dictating, !appState.isTranscribing {
@@ -419,6 +422,8 @@ struct ChatComposerView: View {
               .padding(.horizontal, Theme.Spacing.md)
               .frame(minHeight: Theme.Size.pill)
               .background { LitTintBackground(shape: Capsule(), tint: Theme.Mode.voice.tint, strength: .pill) }
+              .frame(minHeight: Theme.Size.target)
+              .contentShape(.rect)
           }
           .buttonStyle(.plain)
           .accessibilityHint("Removes the voice message")
@@ -434,6 +439,7 @@ struct ChatComposerView: View {
           .foregroundStyle(Theme.Text.secondary)
           .buttonStyle(.plain)
           .frame(minHeight: Theme.Size.target)
+          .contentShape(.rect)
         }
       }
       .padding(.horizontal, Theme.Spacing.lg)
