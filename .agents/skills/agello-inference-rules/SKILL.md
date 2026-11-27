@@ -5,7 +5,7 @@ description: Rules that keep LiteRT-LM from crashing or misbehaving in Agello. R
 
 # Agello inference rules
 
-Every rule below prevents a crash (native heap corruption, background GPU kill) or silent output/security regression. `AgelloSim` tests real UI, tools, and prompts via `agello serve`, not on-iPhone Metal/jetsam limits — confirm runtime/memory changes on physical hardware. Runtime internals live in `../LiteRT-LM/docs/agello/reference/` (`docs/LITERT-LM.md`); active binary & Swift patch pins live in [Vendor/README.md](../../../Vendor/README.md).
+Every rule below prevents a crash (native heap corruption, background GPU kill) or silent output/security regression. `AgelloSim` tests real UI, tools, and prompts via `agello serve`, not on-iPhone Metal/jetsam limits — confirm runtime/memory changes on physical hardware. Runtime internals live in `../LiteRT-LM/docs/agello/reference/` (`docs/LITERT-LM.md`); active binary & Swift patch pins live in [Vendor/README.md](../../../Vendor/README.md). **Before** proposing or implementing engine, KV/tool-budget, ANE/RAG, prompt, speculative-decode, constrained-decoding, or backend changes, consult [docs/BACKEND_KNOWLEDGE_BASE.md](../../../docs/BACKEND_KNOWLEDGE_BASE.md) (**Part 4 Worth Revisiting / `§4.1` M6-vs-iPhone Silicon Divergence Matrix** and **Part 6 "Do Not Repeat" Graveyard**) so rejected designs, Swift 6 `-O` traps, and M6-only wins are never repeated.
 
 ## Ownership & conversation lifecycle
 
@@ -69,4 +69,4 @@ Every rule below prevents a crash (native heap corruption, background GPU kill) 
 
 ## Verify
 
-Verify prompts, tools, confirmations, and UI in `AgelloSim` (`scripts/sim-launch.sh`) and `scripts/cli-test.sh` (`unit`, `inference`, `security`); confirm engine, memory, background-GPU, and thermal behavior on physical iPhone (`scripts/device-harness.sh gate`, `inference`, `files`, `memory`, `security`). Unit tests use `MockChatEngine` and never exercise LiteRT-LM.
+Verify prompts, tools, confirmations, and UI in `AgelloSim` (`scripts/sim-launch.sh`) and `scripts/cli-test.sh` (`unit`, `inference`, `security`); confirm engine, memory, background-GPU, and thermal behavior on physical iPhone (`scripts/device-harness.sh gate`, `inference`, `files`, `memory`, `security`). Unit tests use `MockChatEngine` and never exercise LiteRT-LM. Record every new optimization, probe, fix, negative/reverted result, or M6-vs-iPhone divergence in [docs/BACKEND_KNOWLEDGE_BASE.md](../../../docs/BACKEND_KNOWLEDGE_BASE.md) (following **Part 7**) in the same commit.

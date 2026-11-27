@@ -1,6 +1,6 @@
 # Engineering notes
 
-How Agello keeps a 4-billion-parameter model fast, correct and stable on a phone. Every safeguard here comes from a failure reproduced on a real iPhone by the [test harness](TESTING.md).
+How Agello keeps a 4-billion-parameter model fast, correct and stable on a phone. Every safeguard here comes from a failure reproduced on a real iPhone by the [test harness](TESTING.md); the living outcome-categorized ledger of shipped implementations, research probes, M6-vs-iPhone silicon divergences, and failed/reverted attempts lives in [BACKEND_KNOWLEDGE_BASE.md](BACKEND_KNOWLEDGE_BASE.md).
 
 - [Long-context digits on the GPU (LiteRT-LM #3913)](#long-context-digits-on-the-gpu-litert-lm-3913)
 - [A context window that never overflows](#a-context-window-that-never-overflows)

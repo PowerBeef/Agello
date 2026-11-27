@@ -207,7 +207,7 @@ scripts/device-harness.sh gate         # single-build physical iPhone hardware +
 python3 scripts/generate_readme_art.py --check
 ```
 
-Documentation: [Architecture](docs/ARCHITECTURE.md) · [Engineering notes](docs/ENGINEERING.md) · [The backend](docs/BACKEND.md) · [LiteRT-LM reference](docs/LITERT-LM.md) · [Mac CLI](docs/CLI.md) · [Roadmap](docs/ROADMAP.md)
+Documentation: [Architecture](docs/ARCHITECTURE.md) · [Engineering notes](docs/ENGINEERING.md) · [The backend](docs/BACKEND.md) · [Backend knowledge base](docs/BACKEND_KNOWLEDGE_BASE.md) · [LiteRT-LM reference](docs/LITERT-LM.md) · [Mac CLI](docs/CLI.md) · [Roadmap](docs/ROADMAP.md)
 
 ---
 

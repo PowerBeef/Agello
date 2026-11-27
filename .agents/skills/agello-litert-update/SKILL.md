@@ -11,6 +11,8 @@ description: Update the vendored LiteRT-LM package (Vendor/LiteRT-LM), work in t
 
 **Vendored surface (`Vendor/LiteRT-LM`):** Holds only what Xcode/SwiftPM needs (`Package.swift`, `swift/`, `LICENSE`) because upstream Git LFS breaks SwiftPM resolution. **Binary release vs `swift/` commits are tracked separately in [Vendor/README.md](../../../Vendor/README.md):** Swift-only changes on fork `main` can lead the shipped `CLiteRTLM.xcframework` release until the next binary cut. Keep `Vendor/LiteRT-LM/swift/` (including `swift/BUILD`) byte-identical to `../LiteRT-LM/swift/` (`diff -rq ../LiteRT-LM/swift Vendor/LiteRT-LM/swift`).
 
+**Living engineering ledger ([docs/BACKEND_KNOWLEDGE_BASE.md](../../../docs/BACKEND_KNOWLEDGE_BASE.md)):** **Before** proposing or implementing any Metal/MSL 4.1 kernel, speculative-decoding, KV/pool, executor, ANE, or `tools/model-surgery/` change, consult **Part 4 (Worth Revisiting Later, incl. `§4.1` M6 Mac vs. iPhone 17 Pro Silicon Divergence Matrix, `§4.2` v3 Prototypes, `§4.3` High-ROI Runtime Tracks, `§4.4` Wave 3 Backlog)** and **Part 6 ("Do Not Repeat" Graveyard)** so dead ends and M6-only illusions are never repeated. **After** measuring on Mac (`cli-bench.sh`) and/or physical iPhone (`phone-bench.sh`, `device-harness.sh`), record the outcome in `docs/BACKEND_KNOWLEDGE_BASE.md` following **Part 7 (How to Maintain This Living Document)** — **including negative/flat trials, reverted commits, and M6-win / iPhone-loss divergences** — in the same commit.
+
 ## The fork (`../LiteRT-LM`)
 
 Open `../LiteRT-LM` alongside `iRT` in a multi-root Antigravity workspace (all rules, skills, and hooks live in `iRT`).
@@ -62,7 +64,7 @@ Google's stock Gemma 4 E4B file computes RoPE angles from FP16 position copies, 
 ## Patches & source builds
 
 - **Swift & C++ patch inventory:** [Vendor/README.md](../../../Vendor/README.md) is the single source of truth for all Swift wrapper patches (with verification tests) and runtime C++/Metal changes. Each patched file keeps an Apache 2.0 §4 modification notice, and `NOTICE` (synced to `Agello/Resources/NOTICE.txt`) records the change.
-- **Fork docs:** `../LiteRT-LM/docs/agello/` holds `BUILD.md`, `TELEMETRY.md`, and `reference/` (mapped by [docs/LITERT-LM.md](../../../docs/LITERT-LM.md)). Note `reference/facts.md` is pinned to `b7b856a0` (`2026-11-17`, v1 32K) until its next `tools/agello-docs/repin.py` pass — cross-check `docs/ROADMAP.md` and `Vendor/README.md`.
+- **Fork docs:** `../LiteRT-LM/docs/agello/` holds `BUILD.md`, `TELEMETRY.md`, and `reference/` (mapped by [docs/LITERT-LM.md](../../../docs/LITERT-LM.md)). Note `reference/facts.md` is pinned to `b7b856a0` (`2026-11-17`, v1 32K) until its next `tools/agello-docs/repin.py` pass — cross-check `docs/ROADMAP.md`, [docs/BACKEND_KNOWLEDGE_BASE.md](../../../docs/BACKEND_KNOWLEDGE_BASE.md), and `Vendor/README.md`.
 - **Building (`BypassSandbox: true`, `WaitMsBeforeAsync: 500`):**
   ```sh
   ../LiteRT-LM/agello/build-xcframework.sh --mac-only   # fast macos-arm64 rebuild for Mac CLI iteration (~2x faster)
@@ -76,7 +78,7 @@ Google's stock Gemma 4 E4B file computes RoPE angles from FP16 position copies, 
 - **Releasing & vendoring:**
   1. Dry-run on fork: `../LiteRT-LM/agello/release-xcframework.sh <tag>` (writes `dist/release/<tag>/` + `THIRD_PARTY_NOTICES.md`). Note `--publish` rebuilds first — to publish the exact tested dry-run zip, run its `gh release create` command on `dist/release/<tag>/` after explicit user go-ahead (verify slices against `BUILD-INFO.txt`), then delete `dist/release/<tag>/`.
   2. Vendor in `iRT`: `REF=<commit on main> TAG=<release tag> ./Vendor/use-release-litert.sh`.
-  3. Update [Vendor/README.md](../../../Vendor/README.md), `docs/BACKEND.md`, `docs/ROADMAP.md`, and `NOTICE` (from regenerated `THIRD_PARTY_NOTICES.md`, synced verbatim to `Agello/Resources/NOTICE.txt`).
+  3. Update [Vendor/README.md](../../../Vendor/README.md), `docs/BACKEND.md`, [docs/BACKEND_KNOWLEDGE_BASE.md](../../../docs/BACKEND_KNOWLEDGE_BASE.md) (Part 7), `docs/ROADMAP.md`, and `NOTICE` (from regenerated `THIRD_PARTY_NOTICES.md`, synced verbatim to `Agello/Resources/NOTICE.txt`).
 - **Benchmarking & telemetry:** `tools/agello-bench` (`LITERTLM_PACKAGE=<checkout> swift build -c release --scratch-path .build-<arm>`), `compare.py`, `telemetry.py`; env vars `AGELLO_TELEMETRY=<0-4>`, `AGELLO_TELEMETRY_OUT`, `AGELLO_TELEMETRY_GRAPH_DIR`, `AGELLO_VERIFY_DIRECT_COPIES=1` (`../LiteRT-LM/docs/agello/TELEMETRY.md`).
 
 ## Checking upstream, API boundaries & verification
@@ -96,4 +98,4 @@ Google's stock Gemma 4 E4B file computes RoPE angles from FP16 position copies, 
 4. **Verify (Mac workbench → physical iPhone gate):**
    - Run `scripts/cli-test.sh unit`, targeted scenarios + `MTL_DEBUG_LAYER=1`, `scripts/cli-bench.sh`, and `AgelloSim` (`scripts/sim-launch.sh`) first.
    - Ask the user, then run `scripts/device-harness.sh gate` (`~7.5–9 min`) on physical iPhone. Add `probes` or `soak` if KV/pool/constraint internals changed; save `calibrate`, `bench`, and `phone-bench.sh` for speed milestones or release cuts.
-   - Commit cleanly on `main` (zero AI attribution).
+   - Record all measured results (shipped wins in Part 2, probes in Part 3, M6-vs-iPhone divergences / deferred candidates in Part 4, superseded paths in Part 5, and failed/reverted arms in Part 6, following Part 7) in [docs/BACKEND_KNOWLEDGE_BASE.md](../../../docs/BACKEND_KNOWLEDGE_BASE.md) in the same commit, then commit cleanly on `main` (zero AI attribution).

@@ -14,7 +14,9 @@ LL(1) FC parser, strict 220-symbol `_litert_lm_*` exports, bundled `.dSYM`s, emb
 release alongside the v2 64K/ring-KV/`verify_8` model (`gemma-4-E4B-it-agello-v2.litertlm`, commit
 `c2758a36`) and Core AI ANE `EmbeddingGemma 2` bundle (`41026d1c`). The vendored Swift wrapper
 (`Vendor/LiteRT-LM/swift/`) tracks fork `main` (`3af6200d`; see [Vendor/README.md](../Vendor/README.md)),
-and live status is tracked in [ROADMAP.md](ROADMAP.md#current-status).
+live status is tracked in [ROADMAP.md](ROADMAP.md#current-status), and every optimization, probe,
+M6-vs-iPhone divergence, and failed/reverted attempt across both repos is cataloged in
+[BACKEND_KNOWLEDGE_BASE.md](BACKEND_KNOWLEDGE_BASE.md).
 
 Agello's backend stops being Google's LiteRT-LM with patches kept close to upstream. It becomes
 our own code base, a hard fork, with one job: run our model file on Apple GPUs under iOS 27 as
@@ -239,6 +241,11 @@ again on the baseline, since these figures come from a busy Mac.
 
 ### How a change is judged
 
+0. **Check prior art first:** Consult [BACKEND_KNOWLEDGE_BASE.md](BACKEND_KNOWLEDGE_BASE.md) (**Part 4:
+   Worth Revisiting Later**, including **`§4.1` M6 Mac vs. iPhone 17 Pro Silicon Divergence Matrix**, and
+   **Part 6: Failed, Reverted & Rejected — "Do Not Repeat" Graveyard**) before proposing or building a
+   model, kernel, executor, speculative-decode, ANE, or backend change so dead ends and M6-only wins
+   that regressed on A19 Pro aren't repeated.
 1. **Build** the change as the `next` build beside the shipped one.
 2. **Performance, on the Mac:** `ROUNDS=5 scripts/cli-bench.sh release next`, builds taking
    turns. The run checks the Mac is quiet before it starts (`scripts/mac-ready.sh`), reads from
@@ -256,6 +263,11 @@ again on the baseline, since these figures come from a busy Mac.
    iPhone"), the bench against its baseline, and the suites the change touches. Mac numbers are
    a lead: the phone's speed, heat and memory decide. With the Mac busy, the phone's comparison
    can come first: the Mac only builds the two apps.
+5. **Record every outcome in the same commit:** Log shipped implementations (**Part 2**), diagnostic
+   probes (**Part 3**), M6-vs-iPhone divergences or deferred candidates (**Part 4**), superseded
+   stepping stones (**Part 5**), and failed or reverted attempts (**Part 6**) in
+   [BACKEND_KNOWLEDGE_BASE.md](BACKEND_KNOWLEDGE_BASE.md) following **Part 7**, alongside release
+   milestones in the ledger below.
 
 ## The ledger
 

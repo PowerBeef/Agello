@@ -2,7 +2,7 @@
 
 Engineering Agello into the definitive local AI assistant and multi-step agent for **iPhone 17 Pro and newer** — purpose-built around **Gemma 4 E4B** and the **A19 Pro+ heterogeneous silicon architecture** (6-core Apple10+ GPU with per-core Neural Accelerators, Metal 4 / MSL 4.1, 16-core Apple Neural Engine, and 12 GB unified memory on iOS 27.0+).
 
-Updated 2026-11-27. Technical backing: [archive/runtime-audit-2026-11-21.md](archive/runtime-audit-2026-11-21.md).
+Updated 2026-11-27. Technical backing: [BACKEND_KNOWLEDGE_BASE.md](BACKEND_KNOWLEDGE_BASE.md) · [archive/runtime-audit-2026-11-21.md](archive/runtime-audit-2026-11-21.md).
 
 ## Current status
 
@@ -55,7 +55,7 @@ flowchart LR
 
 ## Tracked Work-Item Ledger
 
-Every roadmap deliverable has a stable ID checked off with its commit SHA once verified against its gate. Detailed narrative logs for Phases 1–6, Audit Waves 1–2, and Phases A–C live in [archive/roadmap-2026-11-phases-1-6.md](archive/roadmap-2026-11-phases-1-6.md).
+Every roadmap deliverable has a stable ID checked off with its commit SHA once verified against its gate. Detailed narrative logs for Phases 1–6, Audit Waves 1–2, and Phases A–C live in [archive/roadmap-2026-11-phases-1-6.md](archive/roadmap-2026-11-phases-1-6.md); the living outcome-categorized backend knowledge base (including Part 4 Worth Revisiting / `§4.1` M6-vs-iPhone divergences and Part 6 "Do Not Repeat" graveyard) lives in [BACKEND_KNOWLEDGE_BASE.md](BACKEND_KNOWLEDGE_BASE.md).
 
 | Done | ID | Pri | Repo | Work Item | Primary Verification Gate | Commit |
 | :---: | :---: | :---: | :---: | --- | --- | :---: |

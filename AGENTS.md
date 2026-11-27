@@ -10,16 +10,16 @@ Instructions for Antigravity in Agello (`iRT`) and sibling fork (`../LiteRT-LM`)
 - **Our backend only.** Hard fork in one repo ([BACKEND](docs/BACKEND.md)): our GPU runtime + patched model. Never build/download/run/compare Google's binary or CPU backend; upstream repos are read-only (no merges/rebases). Judge speed via our harness (keep Mac idle during measuring runs, this session included) and quality by reading replies.
 - **M6 freely; ask before physical iPhone.** Run `AgelloSim`, `cli-test.sh`, `agello`, `build-xcframework.sh --mac-only`, `PLATFORM=mac device-harness.sh`, `cli-bench.sh` (`mac-ready.sh`) freely. **Always ask before physical iPhone runs.** One harness run at a time; phone connected, unlocked, Mirroring closed (exit `4`). Never lock iPhone or toggle Mirroring unless asked.
 - **No edits during builds.** Stage `Agello*/` or `Vendor/LiteRT-LM/` edits in `<Artifact Directory Path>/scratch/` (or work in `docs/`, `.agents/`, `scripts/`) until Xcode starts testing. Never edit `../LiteRT-LM` during Bazel builds.
-- **Roadmap, Git & storage.** Start from [ROADMAP](docs/ROADMAP.md) `Current status` (`<= 3 KB`) and keep it current. Commit verified chunks on `main` (fast-forward worktrees); **push only when asked**; zero AI attribution (git, GitHub, HF). Storage: 40 GB budget, 50 GB free on `/` (`scripts/storage.sh` outside sandbox; `clean` deletes scratch; ask before deleting `review`/`keep`).
+- **Roadmap, Git & storage.** Start from [ROADMAP](docs/ROADMAP.md) `Current status` (`<= 3 KB`) and keep it current; consult [BACKEND_KNOWLEDGE_BASE](docs/BACKEND_KNOWLEDGE_BASE.md) (Part 4 Worth Revisiting / `§4.1` M6-vs-iPhone & Part 6 "Do Not Repeat") before proposing or implementing model, kernel, executor, speculative-decode, ANE, or backend changes, and record every new optimization, probe, fix, negative/reverted result, or M6-vs-iPhone divergence (per Part 7) in the same commit. Commit verified chunks on `main` (fast-forward worktrees); **push only when asked**; zero AI attribution (git, GitHub, HF). Storage: 40 GB budget, 50 GB free on `/` (`scripts/storage.sh` outside sandbox; `clean` deletes scratch; ask before deleting `review`/`keep`).
 - **Load skills first** (`.agents/skills/`): `agello-device-testing`, `agello-inference-rules` (before engine/lifecycle/budget/helper/tool edits), `agello-litert-update`, `agello-release`.
 
 ## Project
 
-iPhone-only SwiftUI app running Gemma 4 E4B via LiteRT-LM + ANE EmbeddingGemma 2. Docs: `README.md`, `docs/` (`ROADMAP`, `TESTING`, `HARNESS`, `CLI`, `BACKEND`, `SYSTEM-PROMPT`, `ARCHITECTURE`, `ENGINEERING`, `LITERT-LM`, `USER_GUIDE`, `privacy`), [B5 Perf](docs/archive/performance-b5-2026-11.md).
+iPhone-only SwiftUI app running Gemma 4 E4B via LiteRT-LM + ANE EmbeddingGemma 2. Docs: `README.md`, `docs/` (`ROADMAP`, `TESTING`, `HARNESS`, `CLI`, `BACKEND`, `BACKEND_KNOWLEDGE_BASE`, `SYSTEM-PROMPT`, `ARCHITECTURE`, `ENGINEERING`, `LITERT-LM`, `USER_GUIDE`, `privacy`), [B5 Perf](docs/archive/performance-b5-2026-11.md).
 
 - **Schemes:** `Agello` (app/widgets/share/tests), `AgelloBench` (Release+`BENCH`), `AgelloSim` (`iphonesimulator`, `SKIP_INSTALL = YES`, links `LiteRTLMTools`). Hooks: `#if DEBUG || BENCH` (CLI defines `BENCH`); `hostsTests`: `#if DEBUG`.
 - **Packages:** `Vendor/LiteRT-LM` (Swift wrapper + dual-slice `CLiteRTLM.xcframework`; pins/patches in [Vendor/README.md](Vendor/README.md)), `swift-markdown`, `SwiftMath`. Sync `NOTICE` ↔ `Agello/Resources/NOTICE.txt`.
-- **Fork (`../LiteRT-LM`):** `PowerBeef/agello-litert-lm` `main` (`agello/litert`, `agello/ml_drift`, `docs/agello/reference/`, `tools/`, `dist/`). `facts.md` (`b7b856a0`, `2026-11-17`, v1 32K) lags recent phases — cross-check `ROADMAP.md`, `Vendor/README.md`, `ModelCatalog.swift`.
+- **Fork (`../LiteRT-LM`):** `PowerBeef/agello-litert-lm` `main` (`agello/litert`, `agello/ml_drift`, `docs/agello/reference/`, `tools/`, `dist/`). `facts.md` (`b7b856a0`, `2026-11-17`, v1 32K) lags recent phases — cross-check `ROADMAP.md`, `Vendor/README.md`, `BACKEND_KNOWLEDGE_BASE.md`, `ModelCatalog.swift`.
 
 ## Quick commands
 
@@ -48,10 +48,10 @@ Suites, `ONLY` (not `gate`/`all`), durations, exit codes, `--mock-engine`: [TEST
 
 ## The fix loop
 
-1. **Reproduce** from report, chat store, or bench case; locate root cause.
+1. **Reproduce** from report, chat store, or bench case; locate root cause (consult `docs/BACKEND_KNOWLEDGE_BASE.md` Part 4 / `§4.1` & Part 6 first for model, kernel, executor, speculative-decode, ANE, or backend work).
 2. **Verify on Mac + `AgelloSim`:** `cli-test.sh` + `AgelloSim` via `mobilebuildmcp` (read real replies & screenshots).
 3. **Ask & confirm on physical iPhone** (`device-harness.sh`/`phone-bench.sh`) for silicon truth, benchmarks, screenshots.
-4. **Update `ROADMAP.md` `Current status` and commit** on `main`.
+4. **Update `ROADMAP.md` `Current status` (+ `docs/BACKEND_KNOWLEDGE_BASE.md` per Part 7 in the same commit for any model/backend/runtime optimization, probe, fix, negative/reverted result, or M6-vs-iPhone divergence) and commit** on `main`.
 
 ## Architecture
 

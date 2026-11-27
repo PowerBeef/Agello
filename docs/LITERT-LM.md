@@ -16,7 +16,10 @@ row in [`facts.md`](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs
 
 Exact binary release pins, vendored `swift/` commits, checksums, and the full Swift patch inventory
 live in [Vendor/README.md](../Vendor/README.md) (single source of truth). Performance release rows
-live in [BACKEND.md](BACKEND.md#the-ledger).
+live in [BACKEND.md](BACKEND.md#the-ledger), and the living outcome-categorized engineering knowledge
+base (shipped implementations in Part 2, probes in Part 3, M6-vs-iPhone divergences & deferred tracks
+in Part 4, superseded paths in Part 5, and the "Do Not Repeat" graveyard in Part 6) lives in
+[BACKEND_KNOWLEDGE_BASE.md](BACKEND_KNOWLEDGE_BASE.md).
 
 | Part | What | Canonical owner / reference |
 | --- | --- | --- |
@@ -27,7 +30,7 @@ live in [BACKEND.md](BACKEND.md#the-ledger).
 | Embedding model | `PowerBeef02/embeddinggemma-2-text-270m-coreai-ane` (`embeddinggemma-2-text-270m-ane.aar`), unpacked atomically into a 4-bucket asymmetric INT4 Core AI Apple Neural Engine bundle (0% GPU contention), pinned in `Agello/ModelHub/ModelCatalog.swift`. | [ModelCatalog.swift](../Agello/ModelHub/ModelCatalog.swift), [models/embeddinggemma.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/models/embeddinggemma.md) |
 
 > [!NOTE]
-> The fork's claim-checked reference (`../LiteRT-LM/docs/agello/reference/facts.md`) was last re-pinned on 2026-11-17 against `main` `b7b856a0` (fork `4318c4a1`, `agello-one-20261115`, v1 32K; 648 claims checked). It awaits its next `repin.py` pass after the next binary cut — cross-check [Vendor/README.md](../Vendor/README.md), [BACKEND.md](BACKEND.md), [ROADMAP.md](ROADMAP.md#current-status), and `ModelCatalog.swift` for Phases 3–6, Audit Waves 1–2, and Phases A–C rather than quoting superseded v1 rows from `facts.md`. Remaining loose ends are tracked in `../LiteRT-LM/docs/agello/reference/_work/audits.md`.
+> The fork's claim-checked reference (`../LiteRT-LM/docs/agello/reference/facts.md`) was last re-pinned on 2026-11-17 against `main` `b7b856a0` (fork `4318c4a1`, `agello-one-20261115`, v1 32K; 648 claims checked). It awaits its next `repin.py` pass after the next binary cut — cross-check [Vendor/README.md](../Vendor/README.md), [BACKEND.md](BACKEND.md), [BACKEND_KNOWLEDGE_BASE.md](BACKEND_KNOWLEDGE_BASE.md), [ROADMAP.md](ROADMAP.md#current-status), and `ModelCatalog.swift` for Phases 3–6, Audit Waves 1–2, and Phases A–C rather than quoting superseded v1 rows from `facts.md`. Remaining loose ends are tracked in `../LiteRT-LM/docs/agello/reference/_work/audits.md`.
 
 ## What Agello sets
 
@@ -112,8 +115,8 @@ The rest is in [glossary.md](https://github.com/PowerBeef/agello-litert-lm/blob/
 - Quote numbers from `facts.md` (with their conditions and safe wording) only for rows still valid
   at the current pin. While `facts.md` remains pinned to `b7b856a0` (`agello-one-20261115`, v1 32K),
   cross-check [Vendor/README.md](../Vendor/README.md), [BACKEND.md](BACKEND.md),
-  [ROADMAP.md](ROADMAP.md#current-status), and `ModelCatalog.swift` instead of quoting superseded
-  v1 / pre-Phase-4 rows.
+  [BACKEND_KNOWLEDGE_BASE.md](BACKEND_KNOWLEDGE_BASE.md), [ROADMAP.md](ROADMAP.md#current-status),
+  and `ModelCatalog.swift` instead of quoting superseded v1 / pre-Phase-4 rows.
 - Follow the checklist in [contributing.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/contributing.md) for user docs, commit messages
   and anything posted upstream: name the build and date with any speed or memory figure, and say
   whether a statement is about the trained model, the exported file or the runtime.
@@ -121,12 +124,17 @@ The rest is in [glossary.md](https://github.com/PowerBeef/agello-litert-lm/blob/
 ## Updating
 
 1. Engine changes follow the `agello-inference-rules` skill; LiteRT-LM updates, the fork and
-   upstream work follow `agello-litert-update`.
+   upstream work follow `agello-litert-update` (both require consulting
+   [BACKEND_KNOWLEDGE_BASE.md](BACKEND_KNOWLEDGE_BASE.md) Part 4 / `§4.1` & Part 6 before starting,
+   and updating it per Part 7 in the same commit).
 2. After changing `agello/litert` or `agello/ml_drift`, vendoring a new release, or a model update,
    re-verify the reference as
    [maintenance.md](https://github.com/PowerBeef/agello-litert-lm/blob/main/docs/agello/reference/maintenance.md) describes: move the pins in `tools/agello-docs/pins.json`,
    and `tools/agello-docs/repin.py` re-cites every citation whose lines didn't change and lists the
    claims to re-verify; they are re-verified and the pages fixed before anyone quotes them.
-3. After vendoring a new release, update [Vendor/README.md](../Vendor/README.md) (sole canonical
-   inventory for pins and Swift patches), [BACKEND.md](BACKEND.md#the-ledger), `NOTICE` /
-   `Agello/Resources/NOTICE.txt`, and `docs/ROADMAP.md` `Current status`.
+3. After vendoring a new release (or completing any kernel, executor, speculative-decode, ANE, or
+   model-surgery experiment — including negative/reverted trials or M6-vs-iPhone divergences), update
+   [Vendor/README.md](../Vendor/README.md) (sole canonical inventory for pins and Swift patches),
+   [BACKEND.md](BACKEND.md#the-ledger), [BACKEND_KNOWLEDGE_BASE.md](BACKEND_KNOWLEDGE_BASE.md)
+   (following Part 7), `NOTICE` / `Agello/Resources/NOTICE.txt`, and `docs/ROADMAP.md`
+   `Current status`.

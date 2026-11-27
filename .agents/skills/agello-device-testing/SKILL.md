@@ -8,7 +8,7 @@ description: Test Agello's iOS UI, features, and in-app output quality in the iO
 - **`AgelloSim` (primary UI, iOS-feature & in-app quality workbench):** `scripts/sim-launch.sh` + `mobilebuildmcp` (`ui-automation` + `simulator`) test the real iOS 27 SwiftUI UI, sandboxed iOS features (Maps w/ `simctl location`, EventKit, Contacts, Photos, Shortcuts/Recipes, WebSearch, Files/PDF), and real Gemma 4 E4B replies across all shipping Swift tools ([docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md)). Streams real Metal 4 E4B (`SIM_GPU=Apple_A19_Pro`) + ANE EmbeddingGemma 2 from host `agello serve` (`127.0.0.1:8091`).
 - **Physical iPhone (hardware truth & benchmarking):** All benchmarks (`phone-bench.sh`, `bench`), hardware suites (`gate`, `memory`, `soak`, Metal 4, on-device ANE, `BGContinuedProcessingTask`, `AVFAudio`/`SpeechAnalyzer`, signed `WeatherKit`, `AlarmKit` Live Activities, real Shortcuts round-trip), App Store screenshots, and final silicon checks stay on physical iPhone (`CLiteRTLM.xcframework` has no simulator slice). `.agents/hooks.json` blocks `axiom_xclog_*` (incl. `mcp_*`), `asc-shots-pipeline`, and `asc-notarization`.
 
-SSOT references: suite catalog, exact test totals & measured durations → [docs/TESTING.md](../../../docs/TESTING.md); `bench` & `phone-bench.sh` internals → [docs/HARNESS.md](../../../docs/HARNESS.md); `agello` CLI & `agello serve` → [docs/CLI.md](../../../docs/CLI.md).
+SSOT references: suite catalog, exact test totals & measured durations → [docs/TESTING.md](../../../docs/TESTING.md); `bench` & `phone-bench.sh` internals → [docs/HARNESS.md](../../../docs/HARNESS.md); `agello` CLI & `agello serve` → [docs/CLI.md](../../../docs/CLI.md); historical probes (`Part 1` / `Part 3`), M6-vs-iPhone silicon divergences (`Part 4 §4.1`), "Do Not Repeat" graveyard (`Part 6`) & attempt ledger → [docs/BACKEND_KNOWLEDGE_BASE.md](../../../docs/BACKEND_KNOWLEDGE_BASE.md).
 
 ## `AgelloSim` Simulator playbook
 
@@ -151,4 +151,4 @@ Symbolicate crashes via `axiom` MCP (`axiom_xcsym_crash`/`triage`/`axiom_get_age
 
 ## After a change
 
-Run the narrowest covering suite, verify replies/screenshots, then commit on `main`. Push only when asked.
+Run the narrowest covering suite, verify replies/screenshots, record any new optimization, probe, fix, negative/reverted trial, or M6-vs-iPhone divergence in [docs/BACKEND_KNOWLEDGE_BASE.md](../../../docs/BACKEND_KNOWLEDGE_BASE.md) (following **Part 7**) in the same commit, then commit on `main`. Push only when asked.
