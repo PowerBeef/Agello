@@ -15,13 +15,15 @@
 // Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
 // failed tool calls return an error response the model can read instead of ending
 // the turn; read-only rounds run concurrently via withThrowingTaskGroup and
-// multi-call mutating rounds support ToolManager.BatchConfirmHandler with 1-to-1
-// skipped_by_user parity (handleToolCalls); streams hold their conversation weakly
-// (deadlock fix), are indexed by ID, end once, stop native/tool work on cancel via
-// sendGateLock and StreamTable.activeToolRounds, respect automaticToolCalling == false,
-// propagate followUpThinkingConfig and extraContext across rounds, cap tool rounds,
-// and expose waitUntilDone() (ConversationStream.swift); JSON payloads validate via
-// safeJSONData; the native handle is declared for Swift 6 language mode.
+// multi-call registered mutating rounds support ToolManager.BatchConfirmHandler
+// (`BatchConfirmationOutcome`) with 1-to-1 skipped_by_user parity (handleToolCalls);
+// streams hold their conversation weakly (deadlock fix), are indexed by ID, end once,
+// stop native/tool work on cancel via ConversationSendGate (latching cancel across
+// both sendToStream and off-pool blocking sendMessage) and StreamTable.activeToolRounds,
+// respect automaticToolCalling == false, propagate followUpThinkingConfig and
+// extraContext across rounds, cap tool rounds, and expose waitUntilDone()
+// (ConversationStream.swift); JSON payloads validate via safeJSONData; the native
+// handle is declared for Swift 6 language mode.
 
 import Foundation
 import OSLog
@@ -46,6 +48,90 @@ private let logger = Logger(
 )
 
 private let recurringToolCallLimit = 25
+
+/// Dedicated concurrent queue for blocking `litert_lm_conversation_send_message` calls so
+/// multi-second prefill/decode never starves Swift's global cooperative thread pool.
+private let blockingSendQueue = DispatchQueue(
+  label: "com.google.ai.edge.litertlm.swift.conversation.blocking",
+  qos: .userInitiated,
+  attributes: .concurrent
+)
+
+/// Synchronizes `sendToStream`, blocking `sendMessage`, `cancel()`, and `waitUntilDone()` so:
+/// - Once `cancel()` runs, neither a queued stream round nor a queued blocking `sendMessage` can
+///   enter native C++ (which resets `process_cancelled_ = false` on entry).
+/// - `cancel()` is never blocked by an in-progress blocking `sendMessage`.
+/// - `waitUntilDone()` never returns while a blocking `sendMessage` is still in flight.
+@_spi(Testing) public final class ConversationSendGate: @unchecked Sendable {
+  private let condition = NSCondition()
+  private var cancelled = false
+  private var activeBlockingSends = 0
+
+  public init() {}
+
+  public var isCancelled: Bool {
+    condition.lock()
+    defer { condition.unlock() }
+    return cancelled
+  }
+
+  public func withLock<T>(_ body: (_ isCancelled: Bool) throws -> T) rethrows -> T {
+    condition.lock()
+    defer { condition.unlock() }
+    return try body(cancelled)
+  }
+
+  /// Marks the conversation cancelled, wakes any waiter, and runs `body` while holding the gate.
+  public func markCancelledAndRun(_ body: () throws -> Void) rethrows {
+    condition.lock()
+    defer {
+      condition.broadcast()
+      condition.unlock()
+    }
+    cancelled = true
+    try body()
+  }
+
+  /// Atomically checks the cancelled latch and registers an in-flight blocking send.
+  /// Returns `false` if the conversation was already cancelled.
+  public func tryBeginBlockingSend() -> Bool {
+    condition.lock()
+    defer { condition.unlock() }
+    if cancelled { return false }
+    activeBlockingSends += 1
+    return true
+  }
+
+  public func endBlockingSend() {
+    condition.lock()
+    activeBlockingSends -= 1
+    if activeBlockingSends == 0 {
+      condition.broadcast()
+    }
+    condition.unlock()
+  }
+
+  /// Waits until all in-flight blocking sends have returned from native C++. If `cancelled` is
+  /// set while a blocking send is still in flight (e.g. a narrow race before `SendMessageAsync`
+  /// resets `process_cancelled_`), invokes `reissueCancel` periodically until it unwinds.
+  public func waitForBlockingSends(reissueCancel: () -> Void) {
+    condition.lock()
+    while activeBlockingSends > 0 {
+      if cancelled {
+        let deadline = Date(timeIntervalSinceNow: 0.005)
+        _ = condition.wait(until: deadline)
+        if activeBlockingSends > 0 {
+          condition.unlock()
+          reissueCancel()
+          condition.lock()
+        }
+      } else {
+        condition.wait()
+      }
+    }
+    condition.unlock()
+  }
+}
 
 /// Represents a conversation with the LiteRT-LM model.
 ///
@@ -81,9 +167,9 @@ public final class Conversation: Sendable {
   private let visualTokenBudget: Int32?
   /// Identifies this conversation's streams in ``StreamTable``, after it's gone too.
   let streamOwner = StreamTable.shared.makeOwner()
-  /// Serializes native stream starts against `cancel()` so a cancelled tool round cannot launch
-  /// new native work after `cancel()` + `waitUntilDone()` already returned.
-  private let sendGateLock = NSLock()
+  /// Serializes native stream starts, blocking `sendMessage` admission, `cancel()`, and
+  /// `waitUntilDone()` so a cancelled conversation never launches new native work.
+  private let sendGate = ConversationSendGate()
 
   /// Serializes a JSON object after verifying validity so non-finite floats or invalid objects
   /// throw a Swift error instead of raising an uncatchable ObjC NSInvalidArgumentException.
@@ -156,59 +242,10 @@ public final class Conversation: Sendable {
     responseFormat: ResponseFormat? = nil,
     followUpThinkingConfig: ThinkingConfig? = nil
   ) async throws -> Message {
-    let handle = try checkIsAlive()
+    _ = try checkIsAlive()
 
     if responseFormat != nil && !enableResponseFormat {
       throw LiteRTLMError.conversation(.responseFormatNotEnabled)
-    }
-
-    var currentMessageJson: [String: Any] = message.toJson
-
-    for i in 0..<recurringToolCallLimit {
-      let (responseJson, responseString) = try attemptSendMessage(
-        handle: handle,
-        messageJson: currentMessageJson,
-        extraContext: extraContext,
-        repetitionPenaltyConfig: repetitionPenaltyConfig,
-        noRepeatNgramConfig: noRepeatNgramConfig,
-        suppressTokensConfig: suppressTokensConfig,
-        maxOutputTokens: maxOutputTokens,
-        thinkingConfig: i == 0 ? thinkingConfig : (followUpThinkingConfig ?? thinkingConfig),
-        responseFormat: responseFormat
-      )
-
-      guard let toolCalls = responseJson["tool_calls"] as? [[String: Any]] else {
-        if responseJson["content"] != nil || responseJson["channels"] != nil {
-          return try Conversation.jsonToMessage(responseString)
-        } else {
-          throw LiteRTLMError.conversation(.invalidResponse(responseString))
-        }
-      }
-      if !automaticToolCalling {
-        return try Conversation.jsonToMessage(responseString)
-      }
-      currentMessageJson = try await handleToolCalls(toolCalls)
-    }
-    throw LiteRTLMError.conversation(
-      .recurringToolCallLimitExceeded(limit: recurringToolCallLimit))
-  }
-
-  private func attemptSendMessage(
-    handle: CConversationHandle,
-    messageJson: [String: Any],
-    extraContext: [String: Any]?,
-    repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
-    noRepeatNgramConfig: NoRepeatNgramConfig? = nil,
-    suppressTokensConfig: SuppressTokensConfig? = nil,
-    maxOutputTokens: Int? = nil,
-    thinkingConfig: ThinkingConfig? = nil,
-    responseFormat: ResponseFormat? = nil
-  ) throws
-    -> (responseJson: [String: Any], responseString: String)
-  {
-    let messageData = try Conversation.safeJSONData(messageJson)
-    guard let messageString = String(data: messageData, encoding: .utf8) else {
-      throw LiteRTLMError.conversation(.failedToSerializeMessage)
     }
 
     var extraContextString: String? = nil
@@ -217,37 +254,133 @@ public final class Conversation: Sendable {
     {
       extraContextString = String(data: extraData, encoding: .utf8)
     }
-    let optionalArgs = try makeOptionalArgs(
-      forMessageDict: messageJson,
-      repetitionPenaltyConfig: repetitionPenaltyConfig,
-      noRepeatNgramConfig: noRepeatNgramConfig,
-      suppressTokensConfig: suppressTokensConfig,
-      maxOutputTokens: maxOutputTokens,
-      thinkingConfig: thinkingConfig,
-      responseFormat: responseFormat
-    )
-    defer { litert_lm_conversation_optional_args_delete(optionalArgs) }
 
-    let responseError: (String) -> LiteRTLMError = { .conversation(.invalidResponse($0)) }
-    let responsePtr = try LiteRTLMError.create(
-      "litert_lm_conversation_send_message", responseError
-    ) { out in
-      litert_lm_conversation_send_message(
-        handle, messageString, extraContextString, optionalArgs, out)
-    }
-    // Delete the response pointer at the end of each iteration. Handled by defer block.
-    let responsePtrRef = responsePtr
-    defer { litert_lm_json_response_delete(responsePtrRef) }
+    return try await withTaskCancellationHandler {
+      var currentMessageJson: [String: Any] = message.toJson
 
-    let responseChars: UnsafePointer<CChar>? = try LiteRTLMError.get(
-      nil, "litert_lm_json_response_get_string", responseError
-    ) { litert_lm_json_response_get_string(responsePtr, $0) }
-    guard let responseChars else {
+      for i in 0..<recurringToolCallLimit {
+        try Task.checkCancellation()
+        if sendGate.isCancelled {
+          throw CancellationError()
+        }
+
+        let (responseJson, responseString) = try await attemptSendMessage(
+          messageJson: currentMessageJson,
+          extraContextString: extraContextString,
+          repetitionPenaltyConfig: repetitionPenaltyConfig,
+          noRepeatNgramConfig: noRepeatNgramConfig,
+          suppressTokensConfig: suppressTokensConfig,
+          maxOutputTokens: maxOutputTokens,
+          thinkingConfig: i == 0 ? thinkingConfig : (followUpThinkingConfig ?? thinkingConfig),
+          responseFormat: responseFormat
+        )
+
+        guard let toolCalls = responseJson["tool_calls"] as? [[String: Any]] else {
+          if responseJson["content"] != nil || responseJson["channels"] != nil {
+            return try Conversation.jsonToMessage(responseString)
+          } else {
+            throw LiteRTLMError.conversation(.invalidResponse(responseString))
+          }
+        }
+        if !automaticToolCalling {
+          return try Conversation.jsonToMessage(responseString)
+        }
+        try Task.checkCancellation()
+        if sendGate.isCancelled {
+          throw CancellationError()
+        }
+        currentMessageJson = try await handleToolCalls(toolCalls)
+      }
       throw LiteRTLMError.conversation(
-        .invalidResponse("litert_lm_json_response_get_string returned a null string"))
+        .recurringToolCallLimitExceeded(limit: recurringToolCallLimit))
+    } onCancel: { [weak self] in
+      try? self?.cancel()
     }
-    let responseString = String(cString: responseChars)
+  }
 
+  private func attemptSendMessage(
+    messageJson: [String: Any],
+    extraContextString: String?,
+    repetitionPenaltyConfig: RepetitionPenaltyConfig? = nil,
+    noRepeatNgramConfig: NoRepeatNgramConfig? = nil,
+    suppressTokensConfig: SuppressTokensConfig? = nil,
+    maxOutputTokens: Int? = nil,
+    thinkingConfig: ThinkingConfig? = nil,
+    responseFormat: ResponseFormat? = nil
+  ) async throws
+    -> (responseJson: [String: Any], responseString: String)
+  {
+    try Task.checkCancellation()
+    if sendGate.isCancelled {
+      throw CancellationError()
+    }
+    let messageData = try Conversation.safeJSONData(messageJson)
+    guard let messageString = String(data: messageData, encoding: .utf8) else {
+      throw LiteRTLMError.conversation(.failedToSerializeMessage)
+    }
+    let applyResponseFormat = shouldApplyResponseFormat(
+      responseFormat, forMessageDict: messageJson)
+
+    let responseString: String = try await withCheckedThrowingContinuation { continuation in
+      blockingSendQueue.async {
+        do {
+          let handle = try self.checkIsAlive()
+          if self.sendGate.isCancelled {
+            throw CancellationError()
+          }
+          let optionalArgs = try self.makeOptionalArgs(
+            applyResponseFormat: applyResponseFormat,
+            repetitionPenaltyConfig: repetitionPenaltyConfig,
+            noRepeatNgramConfig: noRepeatNgramConfig,
+            suppressTokensConfig: suppressTokensConfig,
+            maxOutputTokens: maxOutputTokens,
+            thinkingConfig: thinkingConfig,
+            responseFormat: responseFormat
+          )
+          defer { litert_lm_conversation_optional_args_delete(optionalArgs) }
+
+          guard self.sendGate.tryBeginBlockingSend() else {
+            throw CancellationError()
+          }
+          defer { self.sendGate.endBlockingSend() }
+          if self.sendGate.isCancelled {
+            throw CancellationError()
+          }
+
+          let responseError: (String) -> LiteRTLMError = { .conversation(.invalidResponse($0)) }
+          let responsePtr = try LiteRTLMError.create(
+            "litert_lm_conversation_send_message", responseError
+          ) { out in
+            litert_lm_conversation_send_message(
+              handle, messageString, extraContextString, optionalArgs, out)
+          }
+          // Delete the response pointer at the end of each iteration. Handled by defer block.
+          let responsePtrRef = responsePtr
+          defer { litert_lm_json_response_delete(responsePtrRef) }
+
+          let responseChars: UnsafePointer<CChar>? = try LiteRTLMError.get(
+            nil, "litert_lm_json_response_get_string", responseError
+          ) { litert_lm_json_response_get_string(responsePtr, $0) }
+          guard let responseChars else {
+            throw LiteRTLMError.conversation(
+              .invalidResponse("litert_lm_json_response_get_string returned a null string"))
+          }
+          let result = String(cString: responseChars)
+          if self.sendGate.isCancelled {
+            throw CancellationError()
+          }
+          continuation.resume(returning: result)
+        } catch {
+          if self.sendGate.isCancelled {
+            continuation.resume(throwing: CancellationError())
+          } else {
+            continuation.resume(throwing: error)
+          }
+        }
+      }
+    }
+
+    try Task.checkCancellation()
     guard let responseData = responseString.data(using: .utf8),
       let responseJson = try JSONSerialization.jsonObject(with: responseData) as? [String: Any]
     else {
@@ -259,7 +392,7 @@ public final class Conversation: Sendable {
   /// Creates native optional args for a single `send_message` call and applies the given settings.
   ///
   /// - Parameters:
-  ///   - messageJson: The message being sent, used to decide whether `responseFormat` applies.
+  ///   - applyResponseFormat: Whether `responseFormat` applies to this message round.
   ///   - repetitionPenaltyConfig: Optional configuration for repetition penalty.
   ///   - noRepeatNgramConfig: Optional configuration for no-repeat n-gram.
   ///   - suppressTokensConfig: Optional configuration for suppressed tokens.
@@ -271,7 +404,7 @@ public final class Conversation: Sendable {
   /// - Throws: A `LiteRTLMError` if creating the optional args or any native setter fails. The
   ///   optional args are deleted before the error is thrown.
   private func makeOptionalArgs(
-    forMessageDict messageJson: [String: Any],
+    applyResponseFormat: Bool,
     repetitionPenaltyConfig: RepetitionPenaltyConfig?,
     noRepeatNgramConfig: NoRepeatNgramConfig?,
     suppressTokensConfig: SuppressTokensConfig?,
@@ -400,9 +533,7 @@ public final class Conversation: Sendable {
           litert_lm_conversation_optional_args_set_thinking_config(optionalArgs, cThinkingConfig),
           "litert_lm_conversation_optional_args_set_thinking_config", optionalArgsError)
       }
-      if let responseFormat = responseFormat,
-        shouldApplyResponseFormat(responseFormat, forMessageDict: messageJson)
-      {
+      if let responseFormat = responseFormat, applyResponseFormat {
         try LiteRTLMError.check(
           litert_lm_conversation_optional_args_set_constraint(
             optionalArgs, responseFormat.type.cConstraintType, responseFormat.schemaOrPattern),
@@ -497,23 +628,26 @@ public final class Conversation: Sendable {
       return ["role": "tool", "content": ordered]
     }
 
-    let mutatingCalls = parsed.filter { !toolManager.isReadOnly(name: $0.name) }
-    var approvedMutatingIndices: Set<Int>?
+    let mutatingCalls = parsed.filter {
+      toolManager.isRegistered(name: $0.name) && !toolManager.isReadOnly(name: $0.name)
+    }
+    var batchOutcome: BatchConfirmationOutcome?
     if mutatingCalls.count > 1 {
       let invocations = mutatingCalls.map { call in
         PendingToolInvocation(
           index: call.index, name: call.name, argumentsJSON: call.argumentsData ?? Data("{}".utf8))
       }
-      approvedMutatingIndices = await ToolManager.confirmBatch(invocations)
+      batchOutcome = await ToolManager.confirmBatch(invocations)
     }
 
     var toolResponses: [[String: Any]] = []
     toolResponses.reserveCapacity(parsed.count)
     for call in parsed {
       try Task.checkCancellation()
-      if !toolManager.isReadOnly(name: call.name),
-        let approved = approvedMutatingIndices,
-        !approved.contains(call.index)
+      if toolManager.isRegistered(name: call.name),
+        !toolManager.isReadOnly(name: call.name),
+        let outcome = batchOutcome,
+        outcome.skippedByUser.contains(call.index)
       {
         toolResponses.append([
           "type": "tool_response",
@@ -738,7 +872,7 @@ public final class Conversation: Sendable {
     }
 
     let optionalArgs = try makeOptionalArgs(
-      forMessageDict: messageJson,
+      applyResponseFormat: shouldApplyResponseFormat(responseFormat, forMessageDict: messageJson),
       repetitionPenaltyConfig: repetitionPenaltyConfig,
       noRepeatNgramConfig: noRepeatNgramConfig,
       suppressTokensConfig: suppressTokensConfig,
@@ -749,9 +883,9 @@ public final class Conversation: Sendable {
     defer { litert_lm_conversation_optional_args_delete(optionalArgs) }
 
     // Synchronize stream registration + native launch with `cancel()` so a concurrent Stop or
-    // background drain cannot finish before a tool-round follow-up calls into native code.
-    let (status, id) = try sendGateLock.locked { () -> (LiteRtLmStatusCode, UInt) in
-      if context.isCancelled {
+    // background drain cannot finish before a stream or tool-round follow-up calls into native code.
+    let (status, id) = try sendGate.withLock { isCancelled -> (LiteRtLmStatusCode, UInt) in
+      if isCancelled || context.isCancelled {
         throw CancellationError()
       }
       // Registered before the call: LiteRT-LM can call back before it returns.
@@ -774,15 +908,15 @@ public final class Conversation: Sendable {
         .failedToStartStream(status: Int(status.rawValue), message: errorMsg))
     }
     // A Stop that came while this round was being set up had no native task to cancel yet.
-    if context.isCancelled {
+    if context.isCancelled || sendGate.isCancelled {
       _ = litert_lm_conversation_cancel_process(handle)
     }
   }
 
-  /// Cancels the ongoing asynchronous inference process, and any stream between tool rounds.
+  /// Cancels the ongoing asynchronous inference process, any blocking send, and any stream between tool rounds.
   public func cancel() throws {
     let handle = try checkIsAlive()
-    try sendGateLock.locked {
+    try sendGate.markCancelledAndRun {
       for context in StreamTable.shared.contexts(owner: streamOwner) {
         context.markCancelled()
       }
@@ -792,9 +926,13 @@ public final class Conversation: Sendable {
     }
   }
 
-  /// Blocks the calling thread until any ongoing asynchronous inference or cancellation finishes.
+  /// Blocks the calling thread until any ongoing blocking send, asynchronous inference, or
+  /// cancellation finishes.
   public func waitUntilDone() throws {
     let handle = try checkIsAlive()
+    sendGate.waitForBlockingSends {
+      _ = litert_lm_conversation_cancel_process(handle)
+    }
     try LiteRTLMError.check(
       litert_lm_conversation_wait_until_done(handle), "litert_lm_conversation_wait_until_done",
       { .conversation(.invalidResponse($0)) })

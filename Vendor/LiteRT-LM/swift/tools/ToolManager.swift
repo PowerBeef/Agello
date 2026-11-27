@@ -13,11 +13,11 @@
 // limitations under the License.
 //
 // Modified by Patrice Déry for Agello (PowerBeef/agello-litert-lm, branch main):
-// the tool registry declared for Swift 6 language mode; read-only tool inspection
-// (`isReadOnly`), schema-aware scalar argument coercion (`coerceArgument`),
-// JSONSerialization validation (`normalizeResult` stringifying non-finite floats),
-// and NSLock-backed grouped batch confirmation (`PendingToolInvocation`,
-// `BatchConfirmHandler`).
+// the tool registry declared for Swift 6 language mode; tool registration and read-only
+// inspection (`isRegistered`, `isReadOnly`), overflow-safe schema-aware scalar argument coercion
+// (`coerceArgument`), JSONSerialization validation (`normalizeResult` stringifying non-finite
+// floats), and NSLock-backed grouped batch confirmation (`PendingToolInvocation`,
+// `BatchConfirmationOutcome`, `BatchConfirmHandler`).
 
 import Foundation
 
@@ -34,13 +34,32 @@ public struct PendingToolInvocation: Sendable {
   }
 }
 
+/// Structured result returned by ``ToolManager/BatchConfirmHandler`` after presenting a grouped
+/// confirmation plan.
+///
+/// - `approved`: call indices explicitly approved by the user to execute.
+/// - `skippedByUser`: call indices presented on the plan that the user unchecked or denied; these
+///   emit `{"executed": false, "status": "skipped_by_user"}` without running the tool.
+/// - Any mutating call index in neither set (e.g. a call rejected during pre-validation before the
+///   plan was shown) still runs its normal execution/validation path so the model receives the true
+///   error instead of a fabricated user denial.
+public struct BatchConfirmationOutcome: Equatable, Sendable {
+  public let approved: Set<Int>
+  public let skippedByUser: Set<Int>
+
+  public init(approved: Set<Int>, skippedByUser: Set<Int>) {
+    self.approved = approved
+    self.skippedByUser = skippedByUser
+  }
+}
+
 /// Manages the discovery, schema generation, and execution of tools.
 public final class ToolManager: Sendable {
-  /// Optional app-provided hook invoked when a single model round emits multiple mutating
-  /// (`isReadOnly == false`) tool calls. Return the set of approved call `index` values to execute
-  /// (unchecked indices emit `{"executed": false, "status": "skipped_by_user"}`), or `nil` to fall
-  /// back to per-tool confirmation.
-  public typealias BatchConfirmHandler = @Sendable ([PendingToolInvocation]) async -> Set<Int>?
+  /// Optional app-provided hook invoked when a single model round emits multiple registered
+  /// mutating (`isReadOnly == false`) tool calls. Return a ``BatchConfirmationOutcome`` listing
+  /// approved vs user-skipped indices, or `nil` to fall back to per-tool confirmation.
+  public typealias BatchConfirmHandler =
+    @Sendable ([PendingToolInvocation]) async -> BatchConfirmationOutcome?
 
   /// Optional app-provided hook invoked in `defer` when every tool round finishes (including on
   /// cancellation or early error) so single-use batch confirmation grants never survive to the
@@ -89,7 +108,9 @@ public final class ToolManager: Sendable {
     batchConfirmStore.setEnd(handler)
   }
 
-  public static func confirmBatch(_ calls: [PendingToolInvocation]) async -> Set<Int>? {
+  public static func confirmBatch(
+    _ calls: [PendingToolInvocation]
+  ) async -> BatchConfirmationOutcome? {
     guard let handler = batchConfirmStore.get() else { return nil }
     return await handler(calls)
   }
@@ -135,6 +156,11 @@ public final class ToolManager: Sendable {
     } else {
       self.toolsJsonDescription = "[]"
     }
+  }
+
+  /// Whether a tool named `name` is registered in this manager.
+  public func isRegistered(name: String) -> Bool {
+    toolRegistry[name] != nil
   }
 
   /// Whether the registered tool named `name` declares itself read-only and safe for
@@ -225,15 +251,14 @@ public final class ToolManager: Sendable {
       if let str = value as? String {
         let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
         if let i = Int(trimmed) { return i }
-        if let d = Double(trimmed), d.isFinite, d.rounded() == d,
-          d >= Double(Int.min), d <= Double(Int.max)
-        {
-          return Int(d)
+        if let d = Double(trimmed), let exact = Int(exactly: d) {
+          return exact
         }
       } else if let num = value as? NSNumber, CFGetTypeID(num) != CFBooleanGetTypeID() {
-        let d = num.doubleValue
-        if d.isFinite, d.rounded() == d, d >= Double(Int.min), d <= Double(Int.max) {
-          return Int(d)
+        if !CFNumberIsFloatType(num as CFNumber) {
+          if let exact = Int(exactly: num) { return exact }
+        } else if let exact = Int(exactly: num.doubleValue) {
+          return exact
         }
       }
       return value

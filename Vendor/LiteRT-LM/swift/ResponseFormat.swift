@@ -17,9 +17,9 @@ import Foundation
 /// Response format for constrained decoding.
 ///
 /// Currently supports JSON Schema and Regex.
-public struct ResponseFormat: Equatable {
+public struct ResponseFormat: Equatable, Sendable {
   /// The type of constraint.
-  public enum FormatType: Int {
+  public enum FormatType: Int, Sendable {
     case regex = 1
     case jsonObject = 2
   }

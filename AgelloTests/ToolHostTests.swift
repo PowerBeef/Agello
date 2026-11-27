@@ -1,3 +1,4 @@
+@_spi(Testing) import LiteRTLMTools
 import XCTest
 
 @testable import Agello
@@ -163,5 +164,90 @@ final class ToolHostTests: XCTestCase {
     let prompt = HelperTasks.titlePrompt(
       user: String(repeating: "a", count: 5_000), reply: String(repeating: "b", count: 5_000))
     XCTAssertLessThan(prompt.utf8.count, 1_600)
+  }
+
+  /// Regression for RT-P0-10: 64-bit integer boundaries (`Int.max`, `2^63 - 512`, `2^53 + 1`) and
+  /// overflowing numeric values (`"9223372036854775808"`, `NSNumber(value: 2^63)`) must never trap in
+  /// `Int(Double)` or lose precision through IEEE 754 binary64.
+  func testToolManagerIntegerCoercionHandles64BitBoundariesWithoutTrapping() async throws {
+    let nearMax = Int.max - 511  // 2^63 - 512 (rounds up to 2^63 in Double)
+    let beyondDoublePrecision = (1 << 53) + 1  // 9_007_199_254_740_993
+
+    // Exact 64-bit integers and integer NSNumbers preserve full precision without trapping.
+    XCTAssertEqual(ToolManager.coerceArgument(Int.max, expectedType: "integer") as? Int, Int.max)
+    XCTAssertEqual(ToolManager.coerceArgument(Int.min, expectedType: "integer") as? Int, Int.min)
+    XCTAssertEqual(ToolManager.coerceArgument(nearMax, expectedType: "integer") as? Int, nearMax)
+    XCTAssertEqual(
+      ToolManager.coerceArgument(beyondDoublePrecision, expectedType: "integer") as? Int,
+      beyondDoublePrecision)
+    XCTAssertEqual(
+      ToolManager.coerceArgument(NSNumber(value: Int.max), expectedType: "integer") as? Int,
+      Int.max)
+    XCTAssertEqual(
+      ToolManager.coerceArgument(NSNumber(value: Int.min), expectedType: "integer") as? Int,
+      Int.min)
+    XCTAssertEqual(
+      ToolManager.coerceArgument(NSNumber(value: nearMax), expectedType: "integer") as? Int,
+      nearMax)
+    XCTAssertEqual(
+      ToolManager.coerceArgument(NSNumber(value: beyondDoublePrecision), expectedType: "integer") as? Int,
+      beyondDoublePrecision)
+
+    // Stringified exact 64-bit integers & whole-number decimals coerce accurately.
+    XCTAssertEqual(
+      ToolManager.coerceArgument("9223372036854775807", expectedType: "integer") as? Int, Int.max)
+    XCTAssertEqual(
+      ToolManager.coerceArgument("-9223372036854775808", expectedType: "integer") as? Int, Int.min)
+    XCTAssertEqual(
+      ToolManager.coerceArgument("9007199254740993", expectedType: "integer") as? Int,
+      beyondDoublePrecision)
+    XCTAssertEqual(ToolManager.coerceArgument("5.0", expectedType: "integer") as? Int, 5)
+    XCTAssertEqual(ToolManager.coerceArgument(NSNumber(value: 5.0), expectedType: "integer") as? Int, 5)
+
+    // Out-of-range / non-integer / boolean inputs must remain uncoerced (not Swift `Int`), NEVER trap.
+    // Check dynamic type directly to bypass Foundation's `NSNumber -> Int` bridge (which maps 2^63 to Int.max).
+    XCTAssertEqual(
+      ToolManager.coerceArgument("9223372036854775808", expectedType: "integer") as? String,
+      "9223372036854775808")
+    let rejectedInputs: [Any] = [
+      NSNumber(value: UInt64(Int.max) + 1),
+      NSNumber(value: 9_223_372_036_854_775_808.0),
+      NSNumber(value: 5.5),
+      NSNumber(value: Double.nan),
+      NSNumber(value: Double.infinity),
+      true,
+    ]
+    for input in rejectedInputs {
+      let coerced = ToolManager.coerceArgument(input, expectedType: "integer")
+      XCTAssertNotEqual(ObjectIdentifier(type(of: coerced)), ObjectIdentifier(Int.self))
+    }
+
+    // End-to-end ToolManager.execute: exact 64-bit values succeed; overflowing string & float NSNumber throw DecodingError.
+    let manager = ToolManager(tools: [EchoIntTool()])
+    for exact in [Int.max, Int.min, nearMax, beyondDoublePrecision] {
+      let out = try await manager.execute(
+        name: EchoIntTool.name, arguments: ["value": NSNumber(value: exact)]) as? [String: Any]
+      XCTAssertEqual(out?["value"] as? Int, exact)
+    }
+    for overflowing: Any in ["9223372036854775808", NSNumber(value: 9_223_372_036_854_775_808.0)] {
+      do {
+        _ = try await manager.execute(name: EchoIntTool.name, arguments: ["value": overflowing])
+        XCTFail("Expected DecodingError for overflowing integer \(overflowing)")
+      } catch is DecodingError {
+        // Expected clean decode failure (no SIGTRAP).
+      }
+    }
+  }
+}
+
+private struct EchoIntTool: Tool {
+  static let name = "echo_int"
+  static let description = "Echoes an integer."
+
+  @ToolParam(description: "Integer value.")
+  var value: Int
+
+  func run() async throws -> Any {
+    ["value": value]
   }
 }

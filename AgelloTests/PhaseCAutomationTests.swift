@@ -304,12 +304,12 @@ final class PhaseCAutomationTests: XCTestCase {
       "action": "create",
       "title": "Send slides",
     ])
-    let approved = await BatchConfirmationPlanner.confirmBatch([
+    let outcome = await BatchConfirmationPlanner.confirmBatch([
       PendingToolInvocation(index: 0, name: ManageCalendarEventTool.name, argumentsJSON: calArgs),
       PendingToolInvocation(index: 1, name: ManageReminderTool.name, argumentsJSON: remArgs),
     ])
 
-    XCTAssertEqual(approved, Set([0]))
+    XCTAssertEqual(outcome, BatchConfirmationOutcome(approved: Set([0]), skippedByUser: Set([1])))
     XCTAssertEqual(promptsSeen.withLock { $0.count }, 1)
     XCTAssertEqual(promptsSeen.withLock { $0.first?.steps.count }, 2)
 
@@ -409,6 +409,95 @@ final class PhaseCAutomationTests: XCTestCase {
     let warning = try XCTUnwrap(msgStep.parameters.first(where: { $0.name == "warning" })?.value)
     XCTAssertTrue(warning.contains("exfil@evil.example"))
     XCTAssertFalse(warning.contains("alice@example.com"))
+  }
+
+  /// Regression for RT-P1-16: unknown/hallucinated tool names must never produce a synthetic
+  /// `PlanConfirmationCard` step, and invalid calls in a mixed batch must stay out of
+  /// `skippedByUser` so they run their normal validation/error path instead of fabricating a user skip.
+  func testBatchConfirmationRejectsUnknownToolsAndPreservesInvalidCallErrors() async throws {
+    let backend = MockPhotosBackend()
+    PersonalTools.setTestBackend(backend)
+
+    // 1. ToolManager.isRegistered distinguishes registered tools from hallucinated names.
+    let manager = ToolManager(tools: [
+      ManageCalendarEventTool(), ManageReminderTool(), RunShortcutTool(), SearchPhotosTool(),
+    ])
+    XCTAssertTrue(manager.isRegistered(name: ManageCalendarEventTool.name))
+    XCTAssertFalse(manager.isReadOnly(name: ManageCalendarEventTool.name))
+    XCTAssertTrue(manager.isRegistered(name: SearchPhotosTool.name))
+    XCTAssertTrue(manager.isReadOnly(name: SearchPhotosTool.name))
+    XCTAssertFalse(manager.isRegistered(name: "fake_delete_all"))
+
+    // 2. Unknown tool paired with a valid mutating tool (or two unknown tools) never shows a plan card.
+    let promptsSeen = Mutex<[ToolConfirmationRequest]>([])
+    ToolConfirmationGate.setTestHandler { req in
+      promptsSeen.withLock { $0.append(req) }
+      return .approvedSteps([0])
+    }
+    let calArgs = try JSONSerialization.data(withJSONObject: [
+      "action": "create",
+      "title": "Design Review",
+      "start_date": "2026-12-03T14:00:00",
+      "end_date": "2026-12-03T15:00:00",
+    ])
+    let unknownOutcome = await BatchConfirmationPlanner.confirmBatch([
+      PendingToolInvocation(index: 0, name: ManageCalendarEventTool.name, argumentsJSON: calArgs),
+      PendingToolInvocation(index: 1, name: "fake_delete_all", argumentsJSON: Data("{}".utf8)),
+    ])
+    XCTAssertNil(unknownOutcome)
+    XCTAssertTrue(promptsSeen.withLock { $0.isEmpty }, "Unknown tools must never synthesize plan steps")
+
+    // 3. Mixed batch: 2 valid mutating calls (0, 1) + 1 invalid/unregistered shortcut (2).
+    // Only indices 0 & 1 appear on PlanConfirmationCard; unchecking 1 marks ONLY 1 as skippedByUser,
+    // leaving index 2 out of skippedByUser so it runs and returns `not_allowlisted`.
+    let remArgs = try JSONSerialization.data(withJSONObject: [
+      "action": "create",
+      "title": "Send slides",
+    ])
+    let badShortcutArgs = try JSONSerialization.data(withJSONObject: [
+      "shortcut_id": "Unregistered Secret Shortcut",
+    ])
+    let mixedOutcome = await BatchConfirmationPlanner.confirmBatch([
+      PendingToolInvocation(index: 0, name: ManageCalendarEventTool.name, argumentsJSON: calArgs),
+      PendingToolInvocation(index: 1, name: ManageReminderTool.name, argumentsJSON: remArgs),
+      PendingToolInvocation(index: 2, name: RunShortcutTool.name, argumentsJSON: badShortcutArgs),
+    ])
+    XCTAssertEqual(mixedOutcome, BatchConfirmationOutcome(approved: Set([0]), skippedByUser: Set([1])))
+    let presented = try XCTUnwrap(promptsSeen.withLock { $0.first })
+    XCTAssertEqual(presented.steps.map(\.index), [0, 1])
+
+    // Executing index 2 runs its normal pre-confirm allowlist check and returns `not_allowlisted`.
+    let shortcutRes = try await manager.execute(
+      name: RunShortcutTool.name, arguments: ["shortcut_id": "Unregistered Secret Shortcut"]
+    ) as? [String: Any]
+    XCTAssertEqual(shortcutRes?["executed"] as? Bool, false)
+    XCTAssertEqual(shortcutRes?["status"] as? String, "not_allowlisted")
+    XCTAssertEqual(promptsSeen.withLock { $0.count }, 1)
+
+    // 4. buildAlarmStep rejects booleans masquerading as NSNumber and accepts stringified numbers.
+    let boolAlarmArgs = try JSONSerialization.data(withJSONObject: [
+      "action": "set_alarm", "label": "Bad", "hour": true, "minute": false,
+    ])
+    let boolTimerArgs = try JSONSerialization.data(withJSONObject: [
+      "action": "set_timer", "label": "Bad", "duration_seconds": true,
+    ])
+    let boolBatch = await BatchConfirmationPlanner.confirmBatch([
+      PendingToolInvocation(index: 0, name: ManageAlarmTool.name, argumentsJSON: boolAlarmArgs),
+      PendingToolInvocation(index: 1, name: ManageAlarmTool.name, argumentsJSON: boolTimerArgs),
+    ])
+    XCTAssertNil(boolBatch, "JSON booleans must not pass as alarm hour/minute/duration")
+
+    let stringTimerArgs = try JSONSerialization.data(withJSONObject: [
+      "action": "set_timer", "label": "Pasta", "duration_seconds": "600",
+    ])
+    let stringAlarmArgs = try JSONSerialization.data(withJSONObject: [
+      "action": "set_alarm", "label": "Wake", "hour": "7", "minute": "30",
+    ])
+    let stringBatch = await BatchConfirmationPlanner.confirmBatch([
+      PendingToolInvocation(index: 0, name: ManageAlarmTool.name, argumentsJSON: stringTimerArgs),
+      PendingToolInvocation(index: 1, name: ManageAlarmTool.name, argumentsJSON: stringAlarmArgs),
+    ])
+    XCTAssertEqual(stringBatch, BatchConfirmationOutcome(approved: Set([0]), skippedByUser: Set([1])))
   }
 
   // MARK: - AppRouter recipe & shortcut-result + FolderBookmarks

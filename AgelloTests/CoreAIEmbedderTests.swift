@@ -138,4 +138,216 @@ final class CoreAIEmbedderTests: XCTestCase {
     XCTAssertEqual(CoreAIEmbedder.bucket(for: 513), 1024)
     XCTAssertEqual(CoreAIEmbedder.bucket(for: 2000), 1024)
   }
+
+  private enum SimulatedCoreAIError: Error {
+    case staleCompiledCache
+  }
+
+  /// Regression for RT-P1-17: concurrent callers hitting the same stale Core AI cache handle must
+  /// evict once, coalesce onto one `bypassCache: true` recovery load, and never cancel a sibling.
+  func testCoreAIEmbedderConcurrentCacheRecoveryCoalescesAndAvoidsSiblingCancellation() async throws {
+    final class State: @unchecked Sendable {
+      private let lock = NSLock()
+      private var _evictCount = 0
+      private var _normalLoads = 0
+      private var _bypassLoads = 0
+      private var _staleEntered = 0
+      private var staleWaiters: [CheckedContinuation<Void, Never>] = []
+
+      var evictCount: Int { lock.withLock { _evictCount } }
+      var normalLoads: Int { lock.withLock { _normalLoads } }
+      var bypassLoads: Int { lock.withLock { _bypassLoads } }
+
+      func recordEvict() { lock.withLock { _evictCount += 1 } }
+
+      func recordLoad(bypassCache: Bool) {
+        lock.withLock {
+          if bypassCache {
+            _bypassLoads += 1
+          } else {
+            _normalLoads += 1
+          }
+        }
+      }
+
+      /// Synchronizes 2 concurrent callers inside the stale generation-0 encoder before both fail.
+      func arriveAtStaleBarrier() async {
+        await withCheckedContinuation { continuation in
+          let release: [CheckedContinuation<Void, Never>]? = lock.withLock {
+            _staleEntered += 1
+            staleWaiters.append(continuation)
+            guard _staleEntered == 2 else { return nil }
+            let all = staleWaiters
+            staleWaiters.removeAll()
+            return all
+          }
+          release?.forEach { $0.resume() }
+        }
+      }
+    }
+
+    let state = State()
+    let embedder = CoreAIEmbedder(
+      bundleURL: FileManager.default.temporaryDirectory,
+      testHooks: .init(
+        load: { bypassCache in
+          state.recordLoad(bypassCache: bypassCache)
+          if !bypassCache {
+            return { _ in
+              await state.arriveAtStaleBarrier()
+              throw SimulatedCoreAIError.staleCompiledCache
+            }
+          }
+          // Keep the recovery load open long enough for the sibling caller to enter `catch` and join.
+          try await Task.sleep(for: .milliseconds(40))
+          return { _ in [1.0, 0.0] }
+        },
+        evict: { state.recordEvict() }
+      )
+    )
+
+    async let first = embedder.embed(query: "alpha")
+    async let second = embedder.embed(query: "beta")
+    let (v1, v2) = try await (first, second)
+
+    XCTAssertEqual(v1, [1.0, 0.0])
+    XCTAssertEqual(v2, [1.0, 0.0])
+    XCTAssertEqual(state.evictCount, 1, "Sibling failure must not evict a second time")
+    XCTAssertEqual(state.normalLoads, 1)
+    XCTAssertEqual(state.bypassLoads, 1, "Concurrent recovery must coalesce onto one bypassCache load")
+  }
+
+  /// Regression for RT-P1-17: local table/tokenizer load errors and cancellations must never evict
+  /// `AIModelCache` or trigger a redundant retry.
+  func testCoreAIEmbedderSkipsCacheEvictionForNonCoreAIErrors() async {
+    final class Counters: @unchecked Sendable {
+      private let lock = NSLock()
+      private var _loads = 0
+      private var _evicts = 0
+      var loads: Int { lock.withLock { _loads } }
+      var evicts: Int { lock.withLock { _evicts } }
+      func incLoad() { lock.withLock { _loads += 1 } }
+      func incEvict() { lock.withLock { _evicts += 1 } }
+    }
+
+    let nonCacheErrors: [Error] = [
+      INT4EmbeddingTable.LoadError.invalidHeader,
+      SentencePieceTokenizer.LoadError.malformedProtobuf,
+      CancellationError(),
+    ]
+    for injected in nonCacheErrors {
+      let counters = Counters()
+      let embedder = CoreAIEmbedder(
+        bundleURL: FileManager.default.temporaryDirectory,
+        testHooks: .init(
+          load: { _ in
+            counters.incLoad()
+            throw injected
+          },
+          evict: { counters.incEvict() }
+        )
+      )
+      do {
+        _ = try await embedder.embed(query: "test")
+        XCTFail("Expected error \(injected)")
+      } catch {
+        XCTAssertEqual(counters.evicts, 0, "Non-CoreAI error \(injected) must not evict cache")
+        XCTAssertEqual(counters.loads, 1, "Non-CoreAI error \(injected) must not retry load")
+      }
+    }
+  }
+
+  /// Regression for RT-P1-17: a runtime failure occurring after `unload()` must never evict cache
+  /// or resurrect the ANE model under memory pressure.
+  func testCoreAIEmbedderDoesNotResurrectAfterUnloadDuringFailure() async {
+    final class Gate: @unchecked Sendable {
+      private let lock = NSLock()
+      private var _evicts = 0
+      private var _bypassLoads = 0
+      private var enteredCont: CheckedContinuation<Void, Never>?
+      private var entered = false
+      private var releaseCont: CheckedContinuation<Void, Never>?
+      private var released = false
+
+      var evicts: Int { lock.withLock { _evicts } }
+      var bypassLoads: Int { lock.withLock { _bypassLoads } }
+
+      func recordEvict() { lock.withLock { _evicts += 1 } }
+      func recordBypassLoad() { lock.withLock { _bypassLoads += 1 } }
+
+      func signalEntered() {
+        let cont: CheckedContinuation<Void, Never>? = lock.withLock {
+          entered = true
+          let c = enteredCont
+          enteredCont = nil
+          return c
+        }
+        cont?.resume()
+      }
+
+      func waitEntered() async {
+        await withCheckedContinuation { cont in
+          let already: Bool = lock.withLock {
+            if entered { return true }
+            enteredCont = cont
+            return false
+          }
+          if already { cont.resume() }
+        }
+      }
+
+      func waitRelease() async {
+        await withCheckedContinuation { cont in
+          let already: Bool = lock.withLock {
+            if released { return true }
+            releaseCont = cont
+            return false
+          }
+          if already { cont.resume() }
+        }
+      }
+
+      func release() {
+        let cont: CheckedContinuation<Void, Never>? = lock.withLock {
+          released = true
+          let c = releaseCont
+          releaseCont = nil
+          return c
+        }
+        cont?.resume()
+      }
+    }
+
+    let gate = Gate()
+    let embedder = CoreAIEmbedder(
+      bundleURL: FileManager.default.temporaryDirectory,
+      testHooks: .init(
+        load: { bypassCache in
+          if bypassCache { gate.recordBypassLoad() }
+          return { _ in
+            gate.signalEntered()
+            await gate.waitRelease()
+            throw SimulatedCoreAIError.staleCompiledCache
+          }
+        },
+        evict: { gate.recordEvict() }
+      )
+    )
+
+    let embedTask = Task { try await embedder.embed(query: "memory pressure") }
+    await gate.waitEntered()
+    await embedder.unload()
+    gate.release()
+
+    do {
+      _ = try await embedTask.value
+      XCTFail("Expected stale error to propagate after unload()")
+    } catch is SimulatedCoreAIError {
+      // Expected
+    } catch {
+      XCTFail("Expected SimulatedCoreAIError, got \(error)")
+    }
+    XCTAssertEqual(gate.evicts, 0, "Failure after unload() must not evict cache")
+    XCTAssertEqual(gate.bypassLoads, 0, "Failure after unload() must not resurrect ANE model")
+  }
 }

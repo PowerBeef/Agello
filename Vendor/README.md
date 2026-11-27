@@ -10,10 +10,16 @@ Swift wrapper:
   [`agello-one-20261124`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-one-20261124),
   built from **`c819aecb`** (Build ID `8a7e34594612`, SwiftPM checksum
   `336023ee75a69eb03405763f1e3cc0da4e4e902cf825bb36696c88622bf3de7c`), pinned in `Package.swift`.
-- **Vendored Swift wrapper (`swift/`):** tracks fork `main` at **`9c8c783d`** (+4 post-release
-  commits: `9f8c904e`, `f98bbd46`, `99fc72a8`, `9c8c783d`, plus the `ToolManager` `NSLock` fix
-  below), kept byte-identical to `../LiteRT-LM/swift/` (including `swift/BUILD`). The C++/Rust
-  template edge fixes in `9f8c904e` sit on fork `main` queued for the next binary cut.
+  The next dual-slice binary cut (**Build ID `8931ed8d5a23`**, built from **`3af6200d`** with
+  `_litert_lm_*`-only symbol hiding, bundled `.dSYM`s, and embedded `PrivacyInfo.xcprivacy`) is
+  staged locally in `../LiteRT-LM/dist/` pending physical iPhone 17 Pro sign-off before GitHub
+  release publication.
+- **Vendored Swift wrapper (`swift/`):** tracks fork `main` at **`3af6200d`** (post-release
+  commits `9f8c904e..3af6200d`, including `5e60ce70` Wave 1+2 `ConversationSendGate`,
+  `BatchConfirmationOutcome`/`isRegistered`, overflow-safe 64-bit integer coercion, and `Sendable`
+  config conformances), kept byte-identical to `../LiteRT-LM/swift/` (including `swift/BUILD`).
+  The C++/Metal/Jinja/packaging fixes in `9f8c904e..3af6200d` are compiled into local Build
+  `8931ed8d5a23` queued for the next binary release.
 - `LICENSE` (Apache 2.0, Google LLC)
 
 ## The runtime
@@ -62,6 +68,13 @@ fixes:
   Vision/Audio cleanup; RFC 3629 `IsValidUtf8` guards before `cxx` `rust::Str` across all tool
   parsers; `ThinkingBudgetConstraint` KMP end-marker fallback & `budget == 0` handling; and
   tokenizer-gated `LlgConstraintProvider`;
+- Custom Runtime Audit Waves 1–2 (`5e60ce70`, `9d0bf058`, `3af6200d`, staged in local Build
+  `8931ed8d5a23`): Metal/MSL 4.1 kernel bounds & D=512 FlashAttention/Quantization fixes, sparse KV
+  & weight/program cache safety, MTP drafter & resident-round lifecycle fixes, `Conversation`
+  teardown/constraint/rewind+refill/UTF-8 C-ABI & Gemma 4 multimodal delimiter/Jinja hardening,
+  strict `_litert_lm_*`-only symbol export (`CLiteRTLM.exp`, 220 symbols), bundled `.dSYM`s,
+  embedded `PrivacyInfo.xcprivacy` (`C617.1`/`35F9.1`, zero forbidden frameworks), and exact FP64
+  Dual-`GATHER` RoPE model-surgery assertions;
 - verified on physical iPhone 17 Pro (A19 Pro, 12 GB, iOS 27.2.1): Release v2 64K `phone-bench.sh`
   (`20261122-152247`, 24/24 nominal, 23/24 undisturbed) measured `file-report` `1,654` median /
   `1,668` peak tok/s prefill (`3.80–3.84 s` TTFT, `56.5–56.9` tok/s decode, `0.98 GB` steady /
@@ -124,12 +137,21 @@ fixes:
    `@ToolParam(allowedValues:)` emitting `"enum"` constraints directly in generated JSON tool
    schemas, plus schema-aware scalar coercion in `ToolManager.coerceArgument` (`"5"` → `5` / `5.0`,
    `"true"` → `true`, numeric → string) before `JSONDecoder` decodes model tool arguments.
-9. `swift/tools/ToolManager.swift` and `swift/Conversation.swift` (`9c8c783d` + `NSLock` fix): adds
-   `PendingToolInvocation` and `ToolManager.BatchConfirmHandler` (`setBatchConfirmHandler` /
-   `confirmBatch`) for grouped multi-step confirmation of mutating tool rounds, with strict 1-to-1
-   `{"executed": false, "status": "skipped_by_user"}` response parity for unchecked steps. The
-   static handler store uses an `NSLock`-backed reference box (`BatchConfirmStore`) rather than a
-   static `Mutex`, avoiding the optimized Release crash documented in Patch 5 (`82b05ea1`).
+9. `swift/tools/ToolManager.swift` and `swift/Conversation.swift` (`9c8c783d`, `eb7ba0b2`,
+   `5e60ce70`): adds `PendingToolInvocation`, `BatchConfirmationOutcome`, `ToolManager.isRegistered`,
+   and `ToolManager.BatchConfirmHandler` (`setBatchConfirmHandler` / `confirmBatch` / `endBatch`)
+   for grouped multi-step confirmation of registered mutating tool rounds, emitting
+   `{"executed": false, "status": "skipped_by_user"}` only for user-skipped indices while preserving
+   normal error responses for invalid/unregistered calls. Uses an `NSLock`-backed `BatchConfirmStore`
+   (avoiding Patch 5's static `Mutex` crash).
+10. `swift/Conversation.swift`, `swift/Config.swift`, `swift/ResponseFormat.swift`, and
+    `swift/tools/ToolManager.swift` (`5e60ce70`): replaces `sendGateLock` with
+    `ConversationSendGate` (`NSCondition`) latching `cancel()` across both `sendToStream` and
+    off-pool blocking `sendMessage` (with `withTaskCancellationHandler` and `waitUntilDone()`
+    re-issue drain), adds `Sendable` to pure config structs (`SamplerConfig`, `ThinkingConfig`,
+    `RepetitionPenaltyConfig`, `NoRepeatNgramConfig`, `SuppressTokensConfig`, `ResponseFormat`),
+    and makes 64-bit integer coercion in `ToolManager.coerceArgument` overflow- and precision-safe
+    via `Int(exactly:)` + `CFNumberIsFloatType`.
 
 ## Why vendored instead of a remote SPM dependency?
 

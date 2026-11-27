@@ -134,7 +134,7 @@ public struct EngineConfig: Hashable, Sendable {
 }
 
 /// Configuration for the sampling process.
-public struct SamplerConfig {
+public struct SamplerConfig: Sendable {
 
   /// The number of most likely tokens (top logits) to consider at each step of sampling.
   public let topK: Int
@@ -179,7 +179,7 @@ public struct SamplerConfig {
 }
 
 /// Configuration for thinking/reasoning generation.
-public struct ThinkingConfig: Equatable {
+public struct ThinkingConfig: Equatable, Sendable {
   /// Whether thinking/reasoning generation is enabled.
   public let enableThinking: Bool
   /// The token budget for thinking/reasoning generation. Defaults to -1 (infinite budget).
@@ -297,7 +297,7 @@ public struct ConversationConfig {
 }
 
 /// Configuration for penalizing repetitive tokens during generation.
-public struct RepetitionPenaltyConfig {
+public struct RepetitionPenaltyConfig: Sendable {
 
   /// A multiplicative penalty applied to a token's logit if that token has appeared at least once
   /// inside the generated window history (e.g., 1.0 = no penalty, 1.2 = moderate penalty).
@@ -350,7 +350,7 @@ public struct RepetitionPenaltyConfig {
 }
 
 /// Configuration for banning repetitive ngrams during generation.
-public struct NoRepeatNgramConfig {
+public struct NoRepeatNgramConfig: Sendable {
 
   /// The size of the ngram to ban (e.g. 5 means 5-grams). If set to an integer greater than 0,
   /// all ngrams of that size can only occur once. The logits of the banned tokens will be set to
@@ -376,7 +376,7 @@ public struct NoRepeatNgramConfig {
 }
 
 /// Configuration for suppressing tokens during generation.
-public struct SuppressTokensConfig {
+public struct SuppressTokensConfig: Sendable {
 
   /// The list of token IDs to suppress.
   public let suppressTokens: [Int]

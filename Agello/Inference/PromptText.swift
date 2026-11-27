@@ -9,14 +9,18 @@ import Foundation
 enum PromptText {
   static let joiner: Unicode.Scalar = "\u{200D}"
 
-  /// The control tokens of Gemma 4 E4B's chat template (each is checked by the tests and probe 19).
+  /// The control tokens of Gemma 4 E4B's chat template (each is checked by the tests and probe 19),
+  /// plus legacy multimodal delimiters still matched by `Gemma4DataProcessor`.
   static let controlTokens = [
     "<|turn>", "<turn|>", "<|tool>", "<tool|>", "<|tool_call>", "<tool_call|>",
     "<|tool_response>", "<tool_response|>", "<|channel>", "<channel|>", "<|\"|>", "<|think|>",
     "<|image>", "<image|>", "<|image|>", "<|audio>", "<audio|>", "<|audio|>",
+    "<start_of_image>", "<start_of_audio>",
   ]
 
-  /// `text` with a joiner inside every `<|` and `|>`. Idempotent.
+  /// Legacy multimodal delimiters neutralized with a joiner after `<`.
+  static let legacyMultimodalTokens = ["<start_of_image>", "<start_of_audio>"]
+
   /// A date as the model's prompts give it, in English whatever the device's language: in a
   /// French iPhone's locale, "mardi 17 novembre 2026" went into English prompts and came back
   /// in English replies (probe 34, 2026-11-17). The model writes it in the reply's language itself.
@@ -33,17 +37,40 @@ enum PromptText {
     return date.formatted(style)
   }
 
+  /// `text` with a joiner inside every `<|` and `|>` and after `<` in legacy multimodal
+  /// delimiters (`<start_of_image>`, `<start_of_audio>`). Idempotent.
   static func neutralized(_ text: String) -> String {
-    guard text.utf8.contains(UInt8(ascii: "|")) else { return text }
-    var scalars = String.UnicodeScalarView()
-    var previous: Unicode.Scalar?
-    for scalar in text.unicodeScalars {
-      if (previous == "<" && scalar == "|") || (previous == "|" && scalar == ">") {
-        scalars.append(joiner)
+    let utf8 = text.utf8
+    let hasPipe = utf8.contains(UInt8(ascii: "|"))
+    let hasLessThan = utf8.contains(UInt8(ascii: "<"))
+    guard hasPipe || hasLessThan else { return text }
+
+    let hasLegacyMultimodal =
+      hasLessThan
+      && (text.range(of: "<start_of_image>", options: .literal) != nil
+        || text.range(of: "<start_of_audio>", options: .literal) != nil)
+    guard hasPipe || hasLegacyMultimodal else { return text }
+
+    var result = text
+    if hasPipe {
+      var scalars = String.UnicodeScalarView()
+      var previous: Unicode.Scalar?
+      for scalar in result.unicodeScalars {
+        if (previous == "<" && scalar == "|") || (previous == "|" && scalar == ">") {
+          scalars.append(joiner)
+        }
+        scalars.append(scalar)
+        previous = scalar
       }
-      scalars.append(scalar)
-      previous = scalar
+      result = String(scalars)
     }
-    return String(scalars)
+    if hasLegacyMultimodal {
+      result = result
+        .replacingOccurrences(
+          of: "<start_of_image>", with: "<\(joiner)start_of_image>", options: .literal)
+        .replacingOccurrences(
+          of: "<start_of_audio>", with: "<\(joiner)start_of_audio>", options: .literal)
+    }
+    return result
   }
 }

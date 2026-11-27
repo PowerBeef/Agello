@@ -139,10 +139,11 @@ enum ServeMessages {
         guard let fn = tc["function"] as? [String: Any], let name = fn["name"] as? String else {
           continue
         }
+        let safeName = PromptText.neutralized(name)
         let id = (tc["id"] as? String) ?? ""
-        if !id.isEmpty { toolNameByID[id] = name }
+        if !id.isEmpty { toolNameByID[id] = safeName }
         toolCalls.append(
-          LiteRTLM.ToolCall(name: name, id: id, arguments: parseArgumentsDict(fn["arguments"])))
+          LiteRTLM.ToolCall(name: safeName, id: id, arguments: parseArgumentsDict(fn["arguments"])))
       }
     }
     let text = extractTextOnly(msg["content"])
@@ -152,12 +153,14 @@ enum ServeMessages {
   }
 
   private static func parseArgumentsDict(_ raw: Any?) -> [String: Any] {
-    if let dict = raw as? [String: Any] { return dict }
+    if let dict = raw as? [String: Any] {
+      return (neutralizeJSONValue(dict) as? [String: Any]) ?? dict
+    }
     if let str = raw as? String,
       let data = str.data(using: .utf8),
       let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     {
-      return dict
+      return (neutralizeJSONValue(dict) as? [String: Any]) ?? dict
     }
     return [:]
   }
@@ -169,7 +172,9 @@ enum ServeMessages {
     let explicitName = (msg["name"] as? String) ?? ""
     let resolvedName = explicitName.isEmpty ? (toolNameByID[callID] ?? "unknown") : explicitName
     return .toolResponse(
-      name: resolvedName, response: parseToolResponseValue(msg["content"]), id: callID)
+      name: PromptText.neutralized(resolvedName),
+      response: parseToolResponseValue(msg["content"]),
+      id: callID)
   }
 
   private static func parseToolResponseValue(_ rawContent: Any?) -> Any {
@@ -177,26 +182,45 @@ enum ServeMessages {
       if let data = str.data(using: .utf8),
         let parsed = try? JSONSerialization.jsonObject(with: data)
       {
-        return parsed
+        return neutralizeJSONValue(parsed)
       }
-      return str
+      return PromptText.neutralized(str)
     }
-    if let rawContent, !(rawContent is NSNull) { return rawContent }
+    if let rawContent, !(rawContent is NSNull) { return neutralizeJSONValue(rawContent) }
     return ""
   }
 
+  private static func neutralizeJSONValue(_ value: Any) -> Any {
+    if let str = value as? String { return PromptText.neutralized(str) }
+    if let dict = value as? [String: Any] {
+      var out: [String: Any] = [:]
+      out.reserveCapacity(dict.count)
+      for (key, val) in dict {
+        out[PromptText.neutralized(key)] = neutralizeJSONValue(val)
+      }
+      return out
+    }
+    if let arr = value as? [Any] {
+      return arr.map(neutralizeJSONValue)
+    }
+    return value
+  }
+
   private static func extractTextOnly(_ raw: Any?) -> String {
-    if let s = raw as? String { return s }
+    if let s = raw as? String { return PromptText.neutralized(s) }
     guard let parts = raw as? [[String: Any]] else { return "" }
     return parts.compactMap { part -> String? in
-      (part["type"] as? String) == "text" ? (part["text"] as? String) : nil
+      guard (part["type"] as? String) == "text", let text = part["text"] as? String else {
+        return nil
+      }
+      return PromptText.neutralized(text)
     }.joined(separator: "\n")
   }
 
   private static func extractMultimodalContents(
     _ raw: Any?, visualTokenBudget: Int32
   ) -> ([LiteRTLM.Content], Int) {
-    if let s = raw as? String { return ([.text(s)], 0) }
+    if let s = raw as? String { return ([.text(PromptText.neutralized(s))], 0) }
     guard let parts = raw as? [[String: Any]] else { return ([], 0) }
 
     var items: [LiteRTLM.Content] = []
@@ -204,7 +228,9 @@ enum ServeMessages {
     for part in parts {
       switch (part["type"] as? String ?? "").lowercased() {
       case "text":
-        if let text = part["text"] as? String, !text.isEmpty { items.append(.text(text)) }
+        if let text = part["text"] as? String, !text.isEmpty {
+          items.append(.text(PromptText.neutralized(text)))
+        }
       case "image_url", "image":
         if let data = extractImageBytes(part) {
           items.append(.imageData(data))

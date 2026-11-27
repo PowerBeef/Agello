@@ -191,7 +191,7 @@ struct RunShortcutTool: Tool {
 /// performs authoritative EventKit/AlarmKit lookups before presenting the card, then issues
 /// single-use per-step grants ONLY for the exact user-checked step indices.
 enum BatchConfirmationPlanner {
-  static func confirmBatch(_ invocations: [PendingToolInvocation]) async -> Set<Int>? {
+  static func confirmBatch(_ invocations: [PendingToolInvocation]) async -> BatchConfirmationOutcome? {
     guard invocations.count > 1 else { return nil }
     var steps: [ToolConfirmationRequest.Step] = []
     var validIndices: Set<Int> = []
@@ -234,12 +234,13 @@ enum BatchConfirmationPlanner {
     case .denied:
       approved = []
     }
+    let skippedByUser = validIndices.subtracting(approved)
 
     ToolConfirmationGate.clearBatchGrants()
     for step in steps where approved.contains(step.index) {
       ToolConfirmationGate.grantBatchStep(toolName: step.toolName, risk: step.risk)
     }
-    return approved
+    return BatchConfirmationOutcome(approved: approved, skippedByUser: skippedByUser)
   }
 
   private static func buildStep(
@@ -257,20 +258,14 @@ enum BatchConfirmationPlanner {
     case RunShortcutTool.name:
       return buildShortcutStep(index: index, args: args)
     default:
-      let params = args.sorted { $0.key < $1.key }.prefix(4).map { key, value in
-        ToolConfirmationRequest.Parameter(name: key, value: String(describing: value))
-      }
-      return ToolConfirmationRequest.Step(
-        index: index, toolName: name,
-        title: name.replacingOccurrences(of: "_", with: " ").capitalized,
-        summary: "Run \(name).", parameters: params, risk: .standard)
+      return nil
     }
   }
 
   private static func buildCalendarStep(
     index: Int, args: [String: Any]
   ) async -> ToolConfirmationRequest.Step? {
-    let action = (args["action"] as? String ?? "").lowercased()
+    let action = (args["action"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     switch action {
     case "create":
       let title = (args["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -332,7 +327,7 @@ enum BatchConfirmationPlanner {
   private static func buildReminderStep(
     index: Int, args: [String: Any]
   ) async -> ToolConfirmationRequest.Step? {
-    let action = (args["action"] as? String ?? "").lowercased()
+    let action = (args["action"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     switch action {
     case "create":
       let title = (args["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -377,12 +372,13 @@ enum BatchConfirmationPlanner {
   private static func buildAlarmStep(
     index: Int, args: [String: Any]
   ) async -> ToolConfirmationRequest.Step? {
-    let action = (args["action"] as? String ?? "").lowercased()
+    let action = (args["action"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     switch action {
     case "set_timer":
       let label = (args["label"] as? String) ?? "Timer"
-      let secs = (args["duration_seconds"] as? NSNumber)?.doubleValue ?? 0
-      guard secs.isFinite, secs >= 5, secs <= 24 * 3_600 else { return nil }
+      guard let secs = parseDouble(args["duration_seconds"]),
+        secs.isFinite, secs >= 5, secs <= 24 * 3_600
+      else { return nil }
       return ToolConfirmationRequest.Step(
         index: index, toolName: ManageAlarmTool.name,
         title: String(localized: "Start timer"),
@@ -390,8 +386,8 @@ enum BatchConfirmationPlanner {
         parameters: [.init(name: "label", value: label)], risk: .standard)
     case "set_alarm":
       let label = (args["label"] as? String) ?? "Alarm"
-      guard let h = (args["hour"] as? NSNumber)?.intValue,
-        let m = (args["minute"] as? NSNumber)?.intValue,
+      guard let h = parseInt(args["hour"]),
+        let m = parseInt(args["minute"]),
         (0...23).contains(h), (0...59).contains(m)
       else { return nil }
       let timeText = String(format: "%02d:%02d", h, m)
@@ -414,6 +410,35 @@ enum BatchConfirmationPlanner {
     default:
       return nil
     }
+  }
+
+  private static func parseDouble(_ raw: Any?) -> Double? {
+    if let num = raw as? NSNumber, CFGetTypeID(num) != CFBooleanGetTypeID() {
+      let d = num.doubleValue
+      return d.isFinite ? d : nil
+    }
+    if let str = raw as? String,
+      let d = Double(str.trimmingCharacters(in: .whitespacesAndNewlines)),
+      d.isFinite
+    {
+      return d
+    }
+    return nil
+  }
+
+  private static func parseInt(_ raw: Any?) -> Int? {
+    if let num = raw as? NSNumber, CFGetTypeID(num) != CFBooleanGetTypeID() {
+      if !CFNumberIsFloatType(num as CFNumber) {
+        return Int(exactly: num)
+      }
+      return Int(exactly: num.doubleValue)
+    }
+    if let str = raw as? String {
+      let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
+      if let i = Int(trimmed) { return i }
+      if let d = Double(trimmed) { return Int(exactly: d) }
+    }
+    return nil
   }
 
   private static func buildMessageStep(

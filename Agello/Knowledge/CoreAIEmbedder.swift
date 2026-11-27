@@ -208,20 +208,40 @@ actor CoreAIEmbedder: TextEmbedder {
     }
   }
 
-  private struct LoadedResources {
+  private struct CoreAIResources {
     let model: AIModel
     let tokenizer: SentencePieceTokenizer
     let table: INT4EmbeddingTable
     var functions: [Int: InferenceFunction] = [:]
   }
 
+  private enum LoadedResources {
+    case coreAI(CoreAIResources)
+    case stub(@Sendable (String) async throws -> [Float])
+  }
+
+  private struct AssetLoadError: Error {
+    let underlying: Error
+  }
+
+  /// Test seam injected only by unit tests to exercise the actor's cache recovery, coalescing,
+  /// and `unload()` state machine without requiring an on-disk `.aimodel`.
+  struct TestHooks: Sendable {
+    let load: @Sendable (_ bypassCache: Bool) async throws -> (@Sendable (String) async throws -> [Float])
+    let evict: @Sendable () -> Void
+  }
+
   private let bundleURL: URL
+  private let testHooks: TestHooks?
   private var resources: LoadedResources?
   private var loading: Task<LoadedResources, Error>?
+  private var loadingBypassesCache = false
   private var generation = 0
+  private var unloadGeneration = 0
 
-  init(bundleURL: URL) {
+  init(bundleURL: URL, testHooks: TestHooks? = nil) {
     self.bundleURL = bundleURL
+    self.testHooks = testHooks
   }
 
   /// Returns `true` when `directory` contains a complete ANE EmbeddingGemma 2 bundle.
@@ -256,74 +276,115 @@ actor CoreAIEmbedder: TextEmbedder {
 
   func unload() async {
     generation += 1
+    unloadGeneration += 1
     loading?.cancel()
     loading = nil
+    loadingBypassesCache = false
     resources = nil
   }
 
   // MARK: - Inference
 
+  private static func isRecoverableCoreAIError(_ error: Error) -> Bool {
+    !(error is CancellationError || error is AssetLoadError
+      || error is INT4EmbeddingTable.LoadError || error is SentencePieceTokenizer.LoadError)
+  }
+
+  private static func unwrappedError(_ error: Error) -> Error {
+    (error as? AssetLoadError)?.underlying ?? error
+  }
+
   private func encode(prompt: String) async throws -> [Float] {
+    let gen = generation
+    let unloadGen = unloadGeneration
     do {
       let loaded = try await loadedResources(bypassCache: false)
       return try await runEncode(prompt: prompt, resources: loaded)
     } catch is CancellationError {
       throw CancellationError()
     } catch {
-      // iOS 27's AIModelCache.default can return a stale AIModel handle whose compiled
-      // MPSGraphNDX ANE binary was purged or invalidated (throwing _GenericObjCError.nilError on
-      // loadFunction/run). Evict the app's Core AI cache and re-specialize once cleanly.
-      Log.engine.warning(
-        "embedder: Core AI ANE call failed (\(error.localizedDescription, privacy: .public)); evicting cache and re-specializing"
-      )
-      evictCacheAndReset()
-      let fresh = try await loadedResources(bypassCache: true)
-      return try await runEncode(prompt: prompt, resources: fresh)
+      guard Self.isRecoverableCoreAIError(error) else {
+        throw Self.unwrappedError(error)
+      }
+      // If unload() ran while this call was in flight, never resurrect the ANE model.
+      guard unloadGeneration == unloadGen else {
+        throw error
+      }
+      do {
+        let fresh: LoadedResources
+        if generation == gen {
+          // iOS 27's AIModelCache.default can return a stale AIModel handle whose compiled
+          // MPSGraphNDX ANE binary was purged or invalidated (throwing _GenericObjCError.nilError on
+          // loadFunction/run). Evict only this model's cache entries and re-specialize once cleanly.
+          Log.engine.warning(
+            "embedder: Core AI ANE call failed (\(error.localizedDescription, privacy: .public)); evicting cache and re-specializing"
+          )
+          evictCacheAndReset()
+          fresh = try await loadedResources(bypassCache: true)
+        } else {
+          // A sibling caller already evicted the stale cache and started (or completed) recovery;
+          // join that recovery instead of cancelling it and double-evicting.
+          fresh = try await loadedResources(bypassCache: false)
+        }
+        return try await runEncode(prompt: prompt, resources: fresh)
+      } catch {
+        throw Self.unwrappedError(error)
+      }
     }
   }
 
   private func runEncode(prompt: String, resources loaded: LoadedResources) async throws -> [Float] {
-    let maxLen = Self.buckets[Self.buckets.count - 1]
-    let tokens = loaded.tokenizer.encodeWithSpecialTokens(prompt, maxLength: maxLen)
-    let bucket = Self.bucket(for: tokens.count)
-    let function = try functionForBucket(bucket, fallbackModel: loaded.model)
+    switch loaded {
+    case .stub(let encode):
+      return try await encode(prompt)
+    case .coreAI(let core):
+      let maxLen = Self.buckets[Self.buckets.count - 1]
+      let tokens = core.tokenizer.encodeWithSpecialTokens(prompt, maxLength: maxLen)
+      let bucket = Self.bucket(for: tokens.count)
+      let function = try functionForBucket(bucket, fallbackModel: core.model)
 
-    var embeddings = NDArray(shape: [1, bucket, loaded.table.dimension], scalarType: .float16)
-    embeddings.mutableView(as: Float16.self).withUnsafeMutablePointer { ptr, _, _ in
-      loaded.table.fillFloat16(tokenIDs: tokens, bucketLength: bucket, into: ptr)
-    }
-
-    var mask = NDArray(shape: [1, bucket], scalarType: .float16)
-    let validCount = min(tokens.count, bucket)
-    mask.mutableView(as: Float16.self).withUnsafeMutablePointer { ptr, _, _ in
-      for i in 0..<bucket {
-        ptr[i] = i < validCount ? Float16(1) : Float16(0)
+      var embeddings = NDArray(shape: [1, bucket, core.table.dimension], scalarType: .float16)
+      embeddings.mutableView(as: Float16.self).withUnsafeMutablePointer { ptr, _, _ in
+        core.table.fillFloat16(tokenIDs: tokens, bucketLength: bucket, into: ptr)
       }
-    }
 
-    var outputs = try await function.run(inputs: [
-      "embeddings": embeddings,
-      "input_mask": mask,
-    ])
-    guard let array = outputs.remove("encodings")?.ndArray else {
-      throw EmbedderError.missingOutput
+      var mask = NDArray(shape: [1, bucket], scalarType: .float16)
+      let validCount = min(tokens.count, bucket)
+      mask.mutableView(as: Float16.self).withUnsafeMutablePointer { ptr, _, _ in
+        for i in 0..<bucket {
+          ptr[i] = i < validCount ? Float16(1) : Float16(0)
+        }
+      }
+
+      var outputs = try await function.run(inputs: [
+        "embeddings": embeddings,
+        "input_mask": mask,
+      ])
+      guard let array = outputs.remove("encodings")?.ndArray else {
+        throw EmbedderError.missingOutput
+      }
+      let vector: [Float] = array.view(as: Float16.self).withUnsafePointer { ptr, _, _ in
+        (0..<dimensions).map { Float(ptr[$0]) }
+      }
+      return VectorIndex.normalized(vector)
     }
-    let vector: [Float] = array.view(as: Float16.self).withUnsafePointer { ptr, _, _ in
-      (0..<dimensions).map { Float(ptr[$0]) }
-    }
-    return VectorIndex.normalized(vector)
   }
 
   private func functionForBucket(
     _ bucket: Int, fallbackModel: AIModel
   ) throws -> InferenceFunction {
-    if let cached = resources?.functions[bucket] { return cached }
-    let model = resources?.model ?? fallbackModel
+    if case .coreAI(let current) = resources, let cached = current.functions[bucket] {
+      return cached
+    }
+    let model: AIModel = if case .coreAI(let current) = resources { current.model } else { fallbackModel }
     let name = "encoder_\(bucket)"
     guard let fn = try model.loadFunction(named: name) else {
       throw EmbedderError.missingFunction(name)
     }
-    resources?.functions[bucket] = fn
+    if case .coreAI(var current) = resources {
+      current.functions[bucket] = fn
+      resources = .coreAI(current)
+    }
     return fn
   }
 
@@ -331,43 +392,87 @@ actor CoreAIEmbedder: TextEmbedder {
     generation += 1
     loading?.cancel()
     loading = nil
+    loadingBypassesCache = false
     resources = nil
+    if let testHooks {
+      testHooks.evict()
+      return
+    }
     let modelURL = bundleURL.appendingPathComponent("text_encoder.aimodel", isDirectory: true)
     let options = SpecializationOptions(preferredComputeUnitKind: .neuralEngine)
     try? AIModelCache.default.deleteEntry(for: modelURL, options: options)
     try? AIModelCache.default.deleteEntries(for: modelURL)
-    try? AIModelCache.default.deleteAll()
   }
 
   private func loadedResources(bypassCache: Bool) async throws -> LoadedResources {
-    if !bypassCache, let resources { return resources }
-    let started = generation
-    if !bypassCache, let loading {
-      let shared = try await loading.value
-      guard generation == started else { throw CancellationError() }
-      return shared
+    var needsBypass = bypassCache
+    while true {
+      try Task.checkCancellation()
+      if !needsBypass, let resources { return resources }
+      let started = generation
+      let startedUnload = unloadGeneration
+      let task: Task<LoadedResources, Error>
+      let ownsTask: Bool
+      if let existing = loading, !needsBypass || loadingBypassesCache {
+        task = existing
+        ownsTask = false
+      } else {
+        loading?.cancel()
+        let url = bundleURL
+        let hooks = testHooks
+        let taskBypass = needsBypass
+        let created = Task<LoadedResources, Error> {
+          if let hooks { return .stub(try await hooks.load(taskBypass)) }
+          return .coreAI(try await Self.load(bundleURL: url, bypassCache: taskBypass))
+        }
+        loading = created
+        loadingBypassesCache = taskBypass
+        task = created
+        ownsTask = true
+      }
+      defer {
+        if ownsTask, loading == task {
+          loading = nil
+          loadingBypassesCache = false
+        }
+      }
+      do {
+        let loaded = try await task.value
+        if unloadGeneration != startedUnload { throw CancellationError() }
+        if generation == started {
+          if ownsTask { resources = loaded }
+          return loaded
+        }
+        needsBypass = false
+      } catch is CancellationError {
+        if !Task.isCancelled, unloadGeneration == startedUnload, generation != started {
+          needsBypass = false
+          continue
+        }
+        throw CancellationError()
+      }
     }
-    let url = bundleURL
-    let task = Task { try await Self.load(bundleURL: url, bypassCache: bypassCache) }
-    loading = task
-    defer { if loading == task { loading = nil } }
-    let loaded = try await task.value
-    guard generation == started else { throw CancellationError() }
-    resources = loaded
-    return loaded
   }
 
-  private static func load(bundleURL: URL, bypassCache: Bool) async throws -> LoadedResources {
+  private static func load(bundleURL: URL, bypassCache: Bool) async throws -> CoreAIResources {
     let started = ContinuousClock.now
     let modelURL = bundleURL.appendingPathComponent("text_encoder.aimodel", isDirectory: true)
     let tableURL = bundleURL.appendingPathComponent("embed_tokens.bin")
     let tokenizerURL = bundleURL.appendingPathComponent("tokenizer.model")
 
     async let tokenizerTask = Task.detached(priority: .userInitiated) {
-      try SentencePieceTokenizer(contentsOf: tokenizerURL)
+      do {
+        return try SentencePieceTokenizer(contentsOf: tokenizerURL)
+      } catch {
+        throw AssetLoadError(underlying: error)
+      }
     }.value
     async let tableTask = Task.detached(priority: .userInitiated) {
-      try INT4EmbeddingTable(contentsOf: tableURL)
+      do {
+        return try INT4EmbeddingTable(contentsOf: tableURL)
+      } catch {
+        throw AssetLoadError(underlying: error)
+      }
     }.value
 
     let options = SpecializationOptions(preferredComputeUnitKind: .neuralEngine)
@@ -383,6 +488,6 @@ actor CoreAIEmbedder: TextEmbedder {
     Log.engine.info(
       "embedder: loaded Core AI ANE bundle in \(String(describing: ContinuousClock.now - started), privacy: .public)"
     )
-    return LoadedResources(model: model, tokenizer: tokenizer, table: table)
+    return CoreAIResources(model: model, tokenizer: tokenizer, table: table)
   }
 }

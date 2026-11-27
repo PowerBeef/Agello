@@ -344,6 +344,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
       _ = try await probe.sendMessage(LiteRTLM.Message("Hi"), maxOutputTokens: 1)
     } catch {
       if !GPUGate.isOpen { throw GPUGate.closedError }
+      if error is CancellationError { throw error }
       throw EngineValidationError(underlying: String(describing: error))
     }
   }
@@ -661,6 +662,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
           enableSpeculativeDecoding: Self.jsonHelpersSpeculate ? resolved.enableSpeculativeDecoding : false))
       helperConversation = helper
       try checkHelperNotCancelled()
+      guard GPUGate.isOpen else { throw GPUGate.closedError }
       let reply = try await helper.sendMessage(
         LiteRTLM.Message(PromptText.neutralized(prompt)), maxOutputTokens: maxOutputTokens,
         responseFormat: try .json(schema: schemaJSON))
@@ -702,7 +704,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
         let helper = try await engine.createConversation(
           with: ConversationConfig(enableSpeculativeDecoding: resolved.enableSpeculativeDecoding))
         helperConversation = helper
-        if cancelRequested { break }
+        if Task.isCancelled || cancelRequested { break }
         guard GPUGate.isOpen else { throw GPUGate.closedError }
         let reply = try await helper.sendMessage(
           LiteRTLM.Message(PromptText.neutralized(prompt)), maxOutputTokens: maxOutputTokens)
@@ -747,6 +749,7 @@ actor LiteRTChatEngine: ChatEngineProtocol {
           enableSpeculativeDecoding: resolved.enableSpeculativeDecoding))
       helperConversation = helper
       try checkHelperNotCancelled()
+      guard GPUGate.isOpen else { throw GPUGate.closedError }
       let reply = try await helper.sendMessage(
         LiteRTLM.Message(contents: [
           .text(Dictation.instruction), .audioFile(audioFileURL.path),

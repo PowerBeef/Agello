@@ -291,4 +291,48 @@ final class StreamRegistryTests: XCTestCase {
     let nested = try XCTUnwrap(decoded["nested"] as? [Any])
     XCTAssertEqual(nested.first as? String, "nan")
   }
+
+  /// Regression for RT-P0-09: once `cancel()` latches `ConversationSendGate`, queued blocking
+  /// `sendMessage` and stream starts are rejected before entering C++, and `waitForBlockingSends`
+  /// waits for any in-flight blocking send while re-issuing cancel until it unwinds.
+  func testConversationSendGateLatchesCancelAndDrainsInFlightBlockingSend() async {
+    let preCancelled = ConversationSendGate()
+    preCancelled.markCancelledAndRun {}
+    XCTAssertTrue(preCancelled.isCancelled)
+    XCTAssertFalse(preCancelled.tryBeginBlockingSend(), "Cancelled gate must reject new blocking sends")
+    XCTAssertTrue(preCancelled.withLock { $0 }, "Cancelled gate must report cancelled to sendToStream")
+
+    final class SyncState: @unchecked Sendable {
+      private let lock = NSLock()
+      private var _reissues = 0
+      private var _drainDone = false
+      var reissues: Int { lock.withLock { _reissues } }
+      var drainDone: Bool { lock.withLock { _drainDone } }
+      func recordReissue() { lock.withLock { _reissues += 1 } }
+      func markDrainDone() { lock.withLock { _drainDone = true } }
+    }
+
+    let gate = ConversationSendGate()
+    let state = SyncState()
+    XCTAssertTrue(gate.tryBeginBlockingSend())
+
+    // Mark cancelled while the blocking send is in flight, then drain off-thread.
+    gate.markCancelledAndRun {}
+    DispatchQueue.global(qos: .userInitiated).async {
+      gate.waitForBlockingSends {
+        state.recordReissue()
+      }
+      state.markDrainDone()
+    }
+
+    // Drain must stay blocked and re-issue cancel until `endBlockingSend()` runs.
+    await waitUntil { state.reissues >= 1 }
+    XCTAssertFalse(state.drainDone, "waitForBlockingSends must not return while blocking send is in flight")
+    XCTAssertGreaterThanOrEqual(state.reissues, 1)
+
+    gate.endBlockingSend()
+    await waitUntil { state.drainDone }
+    XCTAssertTrue(state.drainDone)
+    XCTAssertFalse(gate.tryBeginBlockingSend(), "Latched cancel must reject subsequent sends too")
+  }
 }

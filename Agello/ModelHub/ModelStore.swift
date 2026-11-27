@@ -74,6 +74,7 @@ final class ModelStore: NSObject {
   @ObservationIgnored private let defaults: UserDefaults
   @ObservationIgnored private let modelsDirOverride: URL?
   @ObservationIgnored private let usesBackgroundSession: Bool
+  @ObservationIgnored private let catalog: [ModelSpec]
   /// Optional test seams (always `nil` in production).
   @ObservationIgnored var downloadLauncher: ((ModelSpec, Data?, Bool, String) -> Void)?
   @ObservationIgnored var pauseHandler: ((ModelID, @escaping @Sendable (Data?) -> Void) -> Void)?
@@ -91,11 +92,12 @@ final class ModelStore: NSObject {
   /// Isolated initializer for unit tests (keeps production `Models/` and `UserDefaults` untouched).
   init(
     modelsDirectoryOverride: URL?, defaults: UserDefaults = .standard,
-    usesBackgroundSession: Bool = false
+    usesBackgroundSession: Bool = false, catalog: [ModelSpec] = ModelCatalog.all
   ) {
     self.modelsDirOverride = modelsDirectoryOverride
     self.defaults = defaults
     self.usesBackgroundSession = usesBackgroundSession
+    self.catalog = catalog
     super.init()
     if usesBackgroundSession {
       // Retired preference from the two-model era.
@@ -109,7 +111,7 @@ final class ModelStore: NSObject {
     if usesBackgroundSession {
       BackgroundDownloads.delegate.store = self
     }
-    for spec in ModelCatalog.all { resumeData[spec.id] = loadSavedResumeData(for: spec.id) }
+    for spec in catalog { resumeData[spec.id] = loadSavedResumeData(for: spec) }
     refreshStates()
     if usesBackgroundSession {
       reattachRunningDownload()
@@ -119,6 +121,10 @@ final class ModelStore: NSObject {
       }
       pathMonitor.start(queue: DispatchQueue(label: "agello.network-path"))
     }
+  }
+
+  private func catalogSpec(for id: ModelID) -> ModelSpec {
+    catalog.first { $0.id == id } ?? ModelCatalog.spec(for: id)
   }
 
   private var usesExternalReadOnly: Bool {
@@ -190,21 +196,26 @@ final class ModelStore: NSObject {
   /// After a relaunch, a download may still be running in the background
   /// session: show its progress and keep pause/cancel working.
   private func reattachRunningDownload() {
+    let catalog = self.catalog
     session.getAllTasks { [weak self] tasks in
       let running = tasks.compactMap { $0 as? URLSessionDownloadTask }
         .filter { $0.state == .running || $0.state == .suspended }
       guard let task = running.first,
-        let parsed = Self.parseTaskDescription(task.taskDescription)
+        let resolved = Self.resolveSpec(
+          taskDescription: task.taskDescription,
+          requestURL: task.originalRequest?.url ?? task.currentRequest?.url,
+          resumeData: nil,
+          catalog: catalog)
       else { return }
       let expected = task.countOfBytesExpectedToReceive
       let progress = expected > 0 ? Double(task.countOfBytesReceived) / Double(expected) : 0
       Task { @MainActor in
-        guard let self, self.downloadingSpec == nil, self.states[parsed.id] != .ready else { return }
-        self.downloadingSpec = ModelCatalog.spec(for: parsed.id)
+        guard let self, self.downloadingSpec == nil, self.states[resolved.spec.id] != .ready else { return }
+        self.downloadingSpec = resolved.spec
         self.activeTask = task
-        self.activeTokens[parsed.id] = parsed.token ?? UUID()
-        self.clearProgressGate(for: parsed.id)
-        self.states[parsed.id] = .downloading(progress: progress)
+        self.activeTokens[resolved.spec.id] = resolved.token ?? UUID()
+        self.clearProgressGate(for: resolved.spec.id)
+        self.states[resolved.spec.id] = .downloading(progress: progress)
         if task.state == .suspended { task.resume() }
       }
     }
@@ -286,22 +297,58 @@ final class ModelStore: NSObject {
 
   func refreshStates() {
     removeUnknownModelFiles()
-    for spec in ModelCatalog.all {
+    let dir = modelsDirectoryURL()
+    let activeStaged = dir.map { BackgroundDownloads.coordinator.activeFiles(in: $0) } ?? []
+    for spec in catalog {
       if verifyingIDs.contains(spec.id) || pausingIDs.contains(spec.id) { continue }
       if case .downloading = states[spec.id] { continue }
       if case .paused = states[spec.id] { continue }
       if isDownloaded(spec) {
         states[spec.id] = .ready
+      } else if activeStaged.contains(Self.stagedName(spec.fileName)) {
+        // `finishDownload` staged this file synchronously on a background queue; keep
+        // verifying UI visible until its `@MainActor` handoff lands.
+        states[spec.id] = .downloading(progress: 1)
+      } else if !usesExternalReadOnly, let dir,
+        let stagedURL = recoverableStagedFileURL(for: spec, in: dir)
+      {
+        resumeStagedVerification(for: spec, stagedURL: stagedURL, in: dir)
       } else if case .failed = states[spec.id] {
         // Keep visible failure feedback until the user retries or cancels.
         continue
-      } else if let data = resumeData[spec.id] {
+      } else if let data = resumeData[spec.id] ?? loadSavedResumeData(for: spec) {
+        resumeData[spec.id] = data
         // Paused (or interrupted) in an earlier run: resume where it stopped.
         states[spec.id] = .paused(progress: Self.progress(ofResumeData: data, size: spec.sizeBytes))
       } else {
         states[spec.id] = .notDownloaded
       }
     }
+  }
+
+  private func recoverableStagedFileURL(for spec: ModelSpec, in directory: URL) -> URL? {
+    let name = Self.stagedName(spec.fileName)
+    guard !BackgroundDownloads.coordinator.activeFiles(in: directory).contains(name) else {
+      return nil
+    }
+    let url = directory.appendingPathComponent(name)
+    guard let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64,
+      size == spec.sizeBytes
+    else { return nil }
+    return url
+  }
+
+  private func resumeStagedVerification(for spec: ModelSpec, stagedURL: URL, in directory: URL) {
+    let token = UUID()
+    activeTokens[spec.id] = token
+    verifyingIDs.insert(spec.id)
+    waitingForWiFi.remove(spec.id)
+    states[spec.id] = .downloading(progress: 1)
+    let lease = BackgroundDownloads.coordinator.beginStaging(Self.stagingFiles(for: spec), in: directory)
+    BackgroundDownloads.coordinator.beginWork()
+    BackgroundDownloads.acquireBackgroundTaskGuardIfNeeded()
+    let target = DownloadTarget(spec: spec, token: token, directory: directory)
+    Self.verifyAndInstallStagedFile(.success(stagedURL), target: target, lease: lease, store: self)
   }
 
   // MARK: - Network policy
@@ -344,7 +391,7 @@ final class ModelStore: NSObject {
       // Wi-Fi again: the held download resumes.
       heldForWiFi = nil
       downloadingSpec = nil
-      startDownload(ModelCatalog.spec(for: id), overCellular: false)
+      startDownload(catalogSpec(for: id), overCellular: false)
     } else if expensive, !wantsCellular, let spec = downloadingSpec, activeTask != nil,
       resumeAllowsCellular(spec.id)
     {
@@ -387,15 +434,18 @@ final class ModelStore: NSObject {
       states[spec.id] = .downloading(progress: progress)
       return
     }
-    if resumeData[spec.id] == nil, !Self.hasRoom(for: spec, availableBytes: availableStorageBytes())
-    {
+    var saved = resumeData[spec.id]
+    if let data = saved, !Self.isResumeData(data, compatibleWith: spec) {
+      keepResumeData(nil, for: spec.id)
+      saved = nil
+    }
+    if saved == nil, !Self.hasRoom(for: spec, availableBytes: availableStorageBytes()) {
       let needed = ModelSpec.formatByteCount(Self.requiredBytes(for: spec))
       states[spec.id] = .failed(message: "Not enough storage. \(needed) free space is needed.")
       return
     }
     downloadingSpec = spec
     wantsCellular = overCellular
-    var saved = resumeData[spec.id]
     if let data = saved {
       switch Self.resumeAction(
         wantsCellular: overCellular, resumeAllowsCellular: resumeAllowsCellular(spec.id),
@@ -559,35 +609,90 @@ final class ModelStore: NSObject {
 
   // MARK: - Resume data (kept across launches)
 
-  /// Keep (or drop) where a download stopped, on disk too, so it resumes after a relaunch
-  /// instead of starting the 3.7 GB again.
-  func keepResumeData(_ data: Data?, for id: ModelID) {
-    resumeData[id] = data
-    guard let url = resumeDataFileURL(for: id) else { return }
-    if let data {
-      if let dir = modelsDirectoryURL() {
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-      }
+  /// Filename for persisted resume data, scoped to `(ModelID, revision, sha256 prefix)` so a
+  /// catalog update never replays a stale URL's resume token.
+  nonisolated static func resumeFileName(for spec: ModelSpec) -> String {
+    let safeRevision = String(
+      spec.revision.map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_" })
+    let shaSuffix = spec.sha256.map { "-\($0.prefix(8).lowercased())" } ?? ""
+    return "\(spec.id.rawValue)-\(safeRevision)\(shaSuffix).resume"
+  }
+
+  /// Original request URL embedded in `URLSession` resume data (preferring the archived
+  /// `NSURLSessionResumeOriginalRequest` so 302 redirects to signed CDN URLs still match the
+  /// catalog URL, falling back to `NSURLSessionDownloadURL` when absent).
+  nonisolated static func resumeDataURLString(from data: Data) -> String? {
+    guard
+      let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+    else { return nil }
+    if let requestData = plist["NSURLSessionResumeOriginalRequest"] as? Data,
+      let request = try? NSKeyedUnarchiver.unarchivedObject(
+        ofClasses: [NSURLRequest.self, NSMutableURLRequest.self], from: requestData
+      ) as? NSURLRequest,
+      let urlString = request.url?.absoluteString,
+      !urlString.isEmpty
+    {
+      return urlString
+    }
+    if let urlString = plist["NSURLSessionDownloadURL"] as? String, !urlString.isEmpty {
+      return urlString
+    }
+    return nil
+  }
+
+  nonisolated static func isResumeData(_ data: Data, compatibleWith spec: ModelSpec) -> Bool {
+    guard let recordedURL = resumeDataURLString(from: data) else { return true }
+    return recordedURL == spec.downloadURL.absoluteString
+  }
+
+  nonisolated static func persistResumeData(_ data: Data?, for spec: ModelSpec, in directory: URL) {
+    let url = directory.appendingPathComponent(resumeFileName(for: spec))
+    if let data, isResumeData(data, compatibleWith: spec) {
+      try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       try? data.write(to: url, options: .atomic)
     } else {
       try? FileManager.default.removeItem(at: url)
     }
   }
 
-  private func resumeDataFileURL(for id: ModelID) -> URL? {
-    modelsDirectoryURL()?.appendingPathComponent("\(id.rawValue).resume")
+  nonisolated static func loadResumeData(for spec: ModelSpec, in directory: URL) -> Data? {
+    let url = directory.appendingPathComponent(resumeFileName(for: spec))
+    guard let data = try? Data(contentsOf: url) else { return nil }
+    guard isResumeData(data, compatibleWith: spec) else {
+      try? FileManager.default.removeItem(at: url)
+      return nil
+    }
+    return data
   }
 
-  private func loadSavedResumeData(for id: ModelID) -> Data? {
-    resumeDataFileURL(for: id).flatMap { try? Data(contentsOf: $0) }
+  /// Keep (or drop) where a download stopped, on disk too, so it resumes after a relaunch
+  /// instead of starting the 3.7 GB again.
+  func keepResumeData(_ data: Data?, for id: ModelID) {
+    let spec = catalogSpec(for: id)
+    let validData = data.flatMap { Self.isResumeData($0, compatibleWith: spec) ? $0 : nil }
+    resumeData[id] = validData
+    guard let dir = modelsDirectoryURL() else { return }
+    Self.persistResumeData(validData, for: spec, in: dir)
+  }
+
+  private func loadSavedResumeData(for spec: ModelSpec) -> Data? {
+    modelsDirectoryURL().flatMap { Self.loadResumeData(for: spec, in: $0) }
+  }
+
+  nonisolated static func resumeDataURL(for spec: ModelSpec) throws -> URL {
+    try modelsDirectory().appendingPathComponent(resumeFileName(for: spec))
   }
 
   nonisolated static func resumeDataURL(for id: ModelID) throws -> URL {
-    try modelsDirectory().appendingPathComponent("\(id.rawValue).resume")
+    try resumeDataURL(for: ModelCatalog.spec(for: id))
+  }
+
+  nonisolated static func savedResumeData(for spec: ModelSpec) -> Data? {
+    (try? modelsDirectory()).flatMap { loadResumeData(for: spec, in: $0) }
   }
 
   nonisolated static func savedResumeData(for id: ModelID) -> Data? {
-    (try? resumeDataURL(for: id)).flatMap { try? Data(contentsOf: $0) }
+    savedResumeData(for: ModelCatalog.spec(for: id))
   }
 
   /// How far a download got, from its resume data (0 when it doesn't say).
@@ -609,21 +714,36 @@ final class ModelStore: NSObject {
   }
 
   /// Delete `.litertlm` files that are no longer in the catalog (e.g. after
-  /// switching model variants), except one being downloaded right now.
+  /// switching model variants), stale `.resume` files, and abandoned staging files,
+  /// while preserving actively staged files and size-complete `.partial` files awaiting recovery.
   private func removeUnknownModelFiles() {
     guard !usesExternalReadOnly, let dir = modelsDirectoryURL() else { return }
-    let known = Set(ModelCatalog.all.map(\.fileName))
+    let known = Set(catalog.map(\.fileName))
+    let knownResumeFiles = Set(catalog.map { Self.resumeFileName(for: $0) })
+    let recoverableStaged = Set(
+      catalog.compactMap { spec -> String? in
+        guard !isDownloaded(spec) else { return nil }
+        let name = Self.stagedName(spec.fileName)
+        let url = dir.appendingPathComponent(name)
+        guard let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64,
+          size == spec.sizeBytes
+        else { return nil }
+        return name
+      }
+    )
     let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-    // Staged downloads or extractions left by an interrupted check go too (unverified).
     var activeIDs = verifyingIDs
     if let downloadingID = downloadingSpec?.id { activeIDs.insert(downloadingID) }
-    let activeStaging = Set(activeIDs.map { Self.stagedName(ModelCatalog.spec(for: $0).fileName) })
-    let activeExtracting = Set(
-      activeIDs.compactMap { ModelCatalog.spec(for: $0).extractedDirectoryName.map { $0 + ".extracting" } })
+    var protectedStaging = BackgroundDownloads.coordinator.activeFiles(in: dir)
+    for id in activeIDs {
+      let spec = catalogSpec(for: id)
+      for name in Self.stagingFiles(for: spec) { protectedStaging.insert(name) }
+    }
     for file in files
     where (file.hasSuffix(".litertlm") && !known.contains(file) && file != downloadingSpec?.fileName)
-      || (file.hasSuffix(".partial") && !activeStaging.contains(file))
-      || (file.hasSuffix(".extracting") && !activeExtracting.contains(file))
+      || (file.hasSuffix(".partial") && !protectedStaging.contains(file) && !recoverableStaged.contains(file))
+      || (file.hasSuffix(".extracting") && !protectedStaging.contains(file))
+      || (file.hasSuffix(".resume") && !knownResumeFiles.contains(file))
     {
       try? FileManager.default.removeItem(at: dir.appendingPathComponent(file))
     }
@@ -831,12 +951,91 @@ enum ModelStoreError: Error, LocalizedError, Equatable {
 
 // MARK: - Background session
 
+struct StagingLease: Sendable {
+  let id: UUID
+  let files: [String]
+}
+
+/// Lock-protected (`NSLock`) process-level coordinator synchronizing background `URLSession`
+/// event completion with in-flight verification/install work and active staging paths.
+final class BackgroundDownloadCoordinator: @unchecked Sendable {
+  private let lock = NSLock()
+  /// Standardized directory path -> (filename -> active reference count).
+  private var activeFilesByDirectory: [String: [String: Int]] = [:]
+  private var activeStagingIDs: Set<UUID> = []
+  private var inFlightWorkCount = 0
+  private var sessionEventsFinished = false
+
+  private static func normalize(_ directory: URL) -> String { directory.standardizedFileURL.path }
+
+  @discardableResult
+  func beginStaging(_ fileNames: [String], in directory: URL) -> StagingLease {
+    let lease = StagingLease(id: UUID(), files: fileNames)
+    let key = Self.normalize(directory)
+    lock.withLock {
+      activeStagingIDs.insert(lease.id)
+      guard !fileNames.isEmpty else { return }
+      var counts = activeFilesByDirectory[key] ?? [:]
+      for name in fileNames { counts[name, default: 0] += 1 }
+      activeFilesByDirectory[key] = counts
+    }
+    return lease
+  }
+
+  func endStaging(_ lease: StagingLease, in directory: URL) {
+    let key = Self.normalize(directory)
+    lock.withLock {
+      activeStagingIDs.remove(lease.id)
+      guard !lease.files.isEmpty, var counts = activeFilesByDirectory[key] else { return }
+      for name in lease.files {
+        if let current = counts[name] {
+          if current <= 1 { counts.removeValue(forKey: name) } else { counts[name] = current - 1 }
+        }
+      }
+      activeFilesByDirectory[key] = counts.isEmpty ? nil : counts
+    }
+  }
+
+  func isStagingActive(_ id: UUID) -> Bool { lock.withLock { activeStagingIDs.contains(id) } }
+
+  func activeFiles(in directory: URL) -> Set<String> {
+    let key = Self.normalize(directory)
+    return lock.withLock { activeFilesByDirectory[key].map { Set($0.keys) } ?? [] }
+  }
+
+  func beginWork() { lock.withLock { inFlightWorkCount += 1 } }
+  func endWork() { lock.withLock { if inFlightWorkCount > 0 { inFlightWorkCount -= 1 } } }
+  func resetSessionEventsFinished() { lock.withLock { sessionEventsFinished = false } }
+  func markSessionEventsFinished() { lock.withLock { sessionEventsFinished = true } }
+
+  /// Atomically consumes `sessionEventsFinished` only when no background work remains.
+  func takeReadySessionEventsIfIdle() -> Bool {
+    lock.withLock {
+      guard inFlightWorkCount == 0, sessionEventsFinished else { return false }
+      sessionEventsFinished = false
+      return true
+    }
+  }
+
+  var isIdle: Bool { lock.withLock { inFlightWorkCount == 0 } }
+
+  func reset() {
+    lock.withLock {
+      activeFilesByDirectory.removeAll()
+      activeStagingIDs.removeAll()
+      inFlightWorkCount = 0
+      sessionEventsFinished = false
+    }
+  }
+}
+
 /// The app's one background download session (its identifier must be
 /// unique per process), forwarding callbacks to the current ``ModelStore``.
 enum BackgroundDownloads {
   static let identifier = "com.patricedery.agello.models"
 
   static let delegate = DownloadDelegate()
+  static let coordinator = BackgroundDownloadCoordinator()
 
   static let session: URLSession = {
     let config = URLSessionConfiguration.background(withIdentifier: identifier)
@@ -846,8 +1045,66 @@ enum BackgroundDownloads {
     return URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
   }()
 
+  @MainActor private static var storedCompletionHandler: (() -> Void)?
+  @MainActor private static var backgroundTaskGuard: BackgroundTaskGuard?
+
   /// Set by the app delegate when iOS relaunches the app for session events.
-  @MainActor static var completionHandler: (() -> Void)?
+  /// Held until both `urlSessionDidFinishEvents(forBackgroundURLSession:)` and every
+  /// in-flight verification/install/completion task have finished.
+  @MainActor static var completionHandler: (() -> Void)? {
+    get { storedCompletionHandler }
+    set {
+      storedCompletionHandler = newValue
+      if newValue != nil {
+        coordinator.resetSessionEventsFinished()
+        acquireBackgroundTaskGuardIfNeeded()
+      } else {
+        releaseBackgroundTaskGuardIfIdle()
+      }
+    }
+  }
+
+  @MainActor static var hasActiveBackgroundTask: Bool {
+    backgroundTaskGuard != nil
+  }
+
+  @MainActor static func acquireBackgroundTaskGuardIfNeeded() {
+    guard backgroundTaskGuard == nil, !coordinator.isIdle || storedCompletionHandler != nil else {
+      return
+    }
+    backgroundTaskGuard = BackgroundTaskGuard.begin(name: "AgelloModelDownload") {
+      backgroundTaskGuard = nil
+    }
+  }
+
+  @MainActor static func flushCompletionIfReady() {
+    if coordinator.takeReadySessionEventsIfIdle() {
+      let handler = storedCompletionHandler
+      storedCompletionHandler = nil
+      handler?()
+    }
+    releaseBackgroundTaskGuardIfIdle()
+  }
+
+  @MainActor static func releaseBackgroundTaskGuardIfIdle() {
+    guard coordinator.isIdle, storedCompletionHandler == nil else { return }
+    backgroundTaskGuard?.end()
+    backgroundTaskGuard = nil
+  }
+
+  nonisolated static func handleSessionDidFinishEvents() {
+    coordinator.markSessionEventsFinished()
+    Task { @MainActor in
+      flushCompletionIfReady()
+    }
+  }
+
+  @MainActor static func resetForTesting() {
+    storedCompletionHandler = nil
+    backgroundTaskGuard?.end()
+    backgroundTaskGuard = nil
+    coordinator.reset()
+  }
 }
 
 final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
@@ -872,25 +1129,53 @@ final class DownloadDelegate: NSObject, URLSessionDownloadDelegate, @unchecked S
   }
 
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-    store?.urlSession(session, task: task, didCompleteWithError: error)
+    ModelStore.handleTaskCompletion(task, error: error, store: store)
   }
 
   func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
-    Task { @MainActor in
-      BackgroundDownloads.completionHandler?()
-      BackgroundDownloads.completionHandler = nil
-    }
+    BackgroundDownloads.handleSessionDidFinishEvents()
   }
 }
 
 // MARK: - Download callbacks (called off the main actor)
 
 extension ModelStore {
+  nonisolated static func stagingFiles(for spec: ModelSpec) -> [String] {
+    var names = [stagedName(spec.fileName)]
+    if let dirName = spec.extractedDirectoryName {
+      names.append(dirName + ".extracting")
+    }
+    return names
+  }
+
+  nonisolated static func resolveSpec(
+    taskDescription: String?, requestURL: URL?, resumeData: Data?,
+    catalog: [ModelSpec] = ModelCatalog.all
+  ) -> (spec: ModelSpec, token: UUID?)? {
+    if let parsed = Self.parseTaskDescription(taskDescription),
+      let spec = catalog.first(where: { $0.id == parsed.id })
+    {
+      return (spec, parsed.token)
+    }
+    if let requestURL, let spec = catalog.first(where: { $0.downloadURL == requestURL }) {
+      return (spec, nil)
+    }
+    if let resumeData, let recorded = Self.resumeDataURLString(from: resumeData),
+      let spec = catalog.first(where: { $0.downloadURL.absoluteString == recorded })
+    {
+      return (spec, nil)
+    }
+    return nil
+  }
+
   @discardableResult
-  func beginVerification(for spec: ModelSpec, token: UUID?) -> Bool {
+  func beginVerification(for spec: ModelSpec, token: UUID?, stagingID: UUID? = nil) -> Bool {
     guard !isTokenCancelled(token) else { return false }
+    if let stagingID, !BackgroundDownloads.coordinator.isStagingActive(stagingID) { return false }
     if let token, let active = activeTokens[spec.id], active != token { return false }
     if downloadingSpec != nil, downloadingSpec?.id != spec.id { return false }
+    if states[spec.id] == .ready { return false }
+    if stagingID == nil, case .failed = states[spec.id] { return false }
     verifyingIDs.insert(spec.id)
     waitingForWiFi.remove(spec.id)
     states[spec.id] = .downloading(progress: 1)
@@ -937,51 +1222,101 @@ extension ModelStore {
     startNextQueued()
   }
 
+  struct DownloadTarget: Sendable {
+    let spec: ModelSpec?
+    let token: UUID?
+    let directory: URL?
+  }
+
   /// Place a finished download. Static: the file must be moved even if no
   /// store exists yet (the app was relaunched in the background).
   nonisolated static func finishDownload(
     _ downloadTask: URLSessionDownloadTask, at location: URL, store: ModelStore?
   ) {
+    let resolved = Self.resolveSpec(
+      taskDescription: downloadTask.taskDescription,
+      requestURL: downloadTask.originalRequest?.url ?? downloadTask.currentRequest?.url,
+      resumeData: nil)
+    let target = DownloadTarget(
+      spec: resolved?.spec, token: resolved?.token, directory: try? Self.modelsDirectory())
+    finishDownload(target, response: downloadTask.response, at: location, store: store)
+  }
+
+  nonisolated static func finishDownload(
+    _ target: DownloadTarget, response: URLResponse?, at location: URL, store: ModelStore?,
+    beforeInstall: (@Sendable () -> Void)? = nil
+  ) {
     // Stage SYNCHRONOUSLY: the temp file is only guaranteed to exist for the
     // duration of this callback. This runs on the session's background queue.
-    let parsed = Self.parseTaskDescription(downloadTask.taskDescription)
-    let spec = parsed.map { ModelCatalog.spec(for: $0.id) }
-    let token = parsed?.token
-    if let token, store?.isTokenCancelled(token) == true { return }
-    let directory = try? Self.modelsDirectory()
+    if let token = target.token, store?.isTokenCancelled(token) == true { return }
+    BackgroundDownloads.coordinator.beginWork()
+    Task { @MainActor in BackgroundDownloads.acquireBackgroundTaskGuardIfNeeded() }
+
+    let lease: StagingLease?
+    if let spec = target.spec, let directory = target.directory {
+      // Protect synchronously BEFORE `.partial` hits disk or `@MainActor` runs `beginVerification`.
+      lease = BackgroundDownloads.coordinator.beginStaging(Self.stagingFiles(for: spec), in: directory)
+    } else {
+      lease = nil
+    }
+
     let staged: Result<URL, Error> = Result {
-      guard let spec, let directory else {
+      guard let spec = target.spec, let directory = target.directory else {
         throw ChatError.underlying(message: "Download finished for an unknown model.")
       }
-      try Self.validateResponse(downloadTask.response)
+      try Self.validateResponse(response)
       return try Self.stageDownloadedFile(from: location, fileName: spec.fileName, in: directory)
     }
-    if let spec, case .success = staged {
-      Task { @MainActor [weak store] in
-        _ = store?.beginVerification(for: spec, token: token)
+
+    let activeLease: StagingLease?
+    if case .success = staged {
+      activeLease = lease
+      if let spec = target.spec {
+        let stagingID = lease?.id
+        Task { @MainActor [weak store] in
+          _ = store?.beginVerification(for: spec, token: target.token, stagingID: stagingID)
+        }
+      }
+    } else {
+      activeLease = nil
+      if let directory = target.directory, let lease {
+        BackgroundDownloads.coordinator.endStaging(lease, in: directory)
       }
     }
+
     // Verify off the session's queue (the hash takes seconds), then publish on the main actor.
+    verifyAndInstallStagedFile(
+      staged, target: target, lease: activeLease, store: store, beforeInstall: beforeInstall)
+  }
+
+  private nonisolated static func verifyAndInstallStagedFile(
+    _ staged: Result<URL, Error>, target: DownloadTarget, lease: StagingLease?, store: ModelStore?,
+    beforeInstall: (@Sendable () -> Void)? = nil
+  ) {
     DispatchQueue.global(qos: .utility).async { [weak store] in
       let isCancelled: () -> Bool = {
-        guard let token, let store else { return false }
+        guard let token = target.token, let store else { return false }
         return store.isTokenCancelled(token)
       }
       var placementError: Error?
       var cancelled = false
       do {
         let file = try staged.get()
+        beforeInstall?()
         if isCancelled() {
           try? FileManager.default.removeItem(at: file)
           cancelled = true
-        } else if let spec, let directory {
+        } else if let spec = target.spec, let directory = target.directory {
           try Self.installStagedFile(
-            file, fileName: spec.fileName, expectedSize: spec.sizeBytes, expectedSHA256: spec.sha256,
+            file, fileName: spec.fileName, expectedSize: spec.sizeBytes,
+            expectedSHA256: spec.sha256,
             extractToDirectoryName: spec.extractedDirectoryName,
             validateExtractedDirectory: spec.extractedDirectoryName != nil
               ? { EmbeddingBundleLayout.isAvailable(at: $0) } : nil,
             in: directory,
             isCancelled: isCancelled)
+          // Clear any persisted resume data on disk even if `store == nil` after background relaunch.
+          Self.persistResumeData(nil, for: spec, in: directory)
         }
       } catch is CancellationError {
         cancelled = true
@@ -989,17 +1324,25 @@ extension ModelStore {
         placementError = error
       }
       Self.publishDownload(
-        spec, token: token, error: placementError, cancelled: cancelled, store: store)
+        target, lease: lease, error: placementError, cancelled: cancelled, store: store)
     }
   }
 
   private nonisolated static func publishDownload(
-    _ spec: ModelSpec?, token: UUID?, error placementError: Error?, cancelled: Bool,
-    store: ModelStore?
+    _ target: DownloadTarget, lease: StagingLease?, error placementError: Error?,
+    cancelled: Bool, store: ModelStore?
   ) {
     Task { @MainActor [weak store] in
-      guard let self = store, let spec else { return }
-      self.publishVerification(for: spec, token: token, error: placementError, cancelled: cancelled)
+      defer {
+        if let directory = target.directory, let lease {
+          BackgroundDownloads.coordinator.endStaging(lease, in: directory)
+        }
+        BackgroundDownloads.coordinator.endWork()
+        BackgroundDownloads.flushCompletionIfReady()
+      }
+      guard let self = store, let spec = target.spec else { return }
+      self.publishVerification(
+        for: spec, token: target.token, error: placementError, cancelled: cancelled)
     }
   }
 
@@ -1032,36 +1375,95 @@ extension ModelStore {
     }
   }
 
-  nonisolated func urlSession(
-    _ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?
+  nonisolated static func handleTaskCompletion(
+    _ task: URLSessionTask, error: Error?, store: ModelStore?
+  ) {
+    handleTaskCompletion(
+      taskDescription: task.taskDescription,
+      requestURL: task.originalRequest?.url ?? task.currentRequest?.url,
+      error: error,
+      in: try? Self.modelsDirectory(),
+      catalog: ModelCatalog.all,
+      store: store)
+  }
+
+  nonisolated static func handleTaskCompletion(
+    taskDescription: String?, requestURL: URL?, error: Error?,
+    in directory: URL?, catalog: [ModelSpec] = ModelCatalog.all, store: ModelStore?
   ) {
     guard let error else { return }
     let nsError = error as NSError
     if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled { return }
-    let resume = (error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data
-    let parsed = Self.parseTaskDescription(task.taskDescription)
-    Task { @MainActor [weak self] in
-      guard let self, let parsed, let spec = self.downloadingSpec, spec.id == parsed.id,
-        !self.isTokenCancelled(parsed.token),
-        parsed.token == nil || self.activeTokens[spec.id] == parsed.token
-      else { return }
-      // No resume data: a later Retry starts over (stale resume data would fail again).
-      self.activeTokens.removeValue(forKey: spec.id)
-      self.clearProgressGate(for: spec.id)
-      self.verifyingIDs.remove(spec.id)
-      self.pausingIDs.remove(spec.id)
-      self.keepResumeData(resume, for: spec.id)
-      self.waitingForWiFi.remove(spec.id)
-      self.activeTask = nil
-      self.downloadingSpec = nil
-      let progress: Double
-      if case .downloading(let p) = self.states[spec.id] { progress = p } else { progress = 0 }
-      if resume != nil {
-        self.states[spec.id] = .paused(progress: progress)
-      } else {
-        self.states[spec.id] = .failed(message: error.localizedDescription)
-      }
-      self.startNextQueued()
+    let rawResume = nsError.userInfo[NSURLSessionDownloadTaskResumeData] as? Data
+    guard
+      let resolved = Self.resolveSpec(
+        taskDescription: taskDescription, requestURL: requestURL,
+        resumeData: rawResume, catalog: catalog)
+    else { return }
+    if let token = resolved.token, store?.isTokenCancelled(token) == true { return }
+
+    let spec = resolved.spec
+    let validResume = rawResume.flatMap { Self.isResumeData($0, compatibleWith: spec) ? $0 : nil }
+    let errorMessage = error.localizedDescription
+
+    // Persist resume data synchronously on the delegate queue so background error relaunches
+    // retain progress even when `DownloadDelegate.store == nil` or `downloadingSpec == nil`.
+    if let directory, let validResume {
+      Self.persistResumeData(validResume, for: spec, in: directory)
+    } else if let directory, store == nil {
+      Self.persistResumeData(nil, for: spec, in: directory)
     }
+
+    BackgroundDownloads.coordinator.beginWork()
+    Task { @MainActor [weak store] in
+      defer {
+        BackgroundDownloads.coordinator.endWork()
+        BackgroundDownloads.flushCompletionIfReady()
+      }
+      store?.applyTaskCompletion(
+        for: spec, token: resolved.token, validResume: validResume,
+        errorMessage: errorMessage, directory: directory)
+    }
+  }
+
+  private func applyTaskCompletion(
+    for spec: ModelSpec, token: UUID?, validResume: Data?, errorMessage: String, directory: URL?
+  ) {
+    guard !isTokenCancelled(token) else {
+      if let directory, validResume != nil, resumeData[spec.id] == nil {
+        Self.persistResumeData(nil, for: spec, in: directory)
+      }
+      return
+    }
+    if let token, let active = activeTokens[spec.id], active != token {
+      keepResumeData(resumeData[spec.id], for: spec.id)
+      return
+    }
+    let wasActive = downloadingSpec?.id == spec.id
+    activeTokens.removeValue(forKey: spec.id)
+    clearProgressGate(for: spec.id)
+    verifyingIDs.remove(spec.id)
+    pausingIDs.remove(spec.id)
+    waitingForWiFi.remove(spec.id)
+    if wasActive {
+      activeTask = nil
+      downloadingSpec = nil
+    }
+    if states[spec.id] == .ready {
+      keepResumeData(nil, for: spec.id)
+      if wasActive { startNextQueued() }
+      return
+    }
+    // No resume data: a later Retry starts over (stale resume data would fail again).
+    keepResumeData(validResume, for: spec.id)
+    let currentProgress: Double
+    if case .downloading(let p) = states[spec.id] { currentProgress = p } else { currentProgress = 0 }
+    if let validResume {
+      let resumeProgress = Self.progress(ofResumeData: validResume, size: spec.sizeBytes)
+      states[spec.id] = .paused(progress: max(currentProgress, resumeProgress))
+    } else {
+      states[spec.id] = .failed(message: errorMessage)
+    }
+    if wasActive { startNextQueued() }
   }
 }
