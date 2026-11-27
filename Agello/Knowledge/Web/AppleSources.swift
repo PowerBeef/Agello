@@ -221,7 +221,7 @@ enum PlaceSearch {
         place.phone.map { "Phone: \($0)" },
         place.website.map { "Website: \($0.absoluteString)" },
         // MapKit shares no opening hours with apps; Apple Maps shows them on the place's card.
-        "Opening hours: not available here; the place's link opens it in Apple Maps, which shows them",
+        "Opening hours: not available here; direct the user to open the place in Apple Maps (via its link) to view current hours",
       ].compactMap { $0 }
       return WebResult(
         title: "\(place.name) — Apple Maps", url: url, snippet: place.address ?? "",

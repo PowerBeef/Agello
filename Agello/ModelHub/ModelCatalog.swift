@@ -41,17 +41,17 @@ enum ModelCatalog {
   /// window with shared unshifted Dual-GATHER float16-exact rotary tables
   /// (<0.001 rad across 0..131,071; fixes LiteRT-LM #3913), and `verify_8`
   /// speculative signature. Same weights; reproducible from the patched base
-  /// with `tools/model-surgery/build_v2.sh` (sha256
-  /// 7d63a4d8efee11108933c28e9f9a0a17804998379b5fd58ae03031130dac7e7b).
+  /// with `tools/model-surgery/build_v2.sh` at `LiteRT-LM@3af6200d` (sha256
+  /// d6e644ce5c468fc0694c9587f78f722548bbe7f4fc12353f4937f573670ee3bc).
   static let e4b = ModelSpec(
     id: .e4b,
     displayName: "Gemma 4 E4B",
     tagline: "Private, on-device. Text, vision, audio and reasoning.",
     repo: "PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope",
     fileName: "gemma-4-E4B-it-agello-v2.litertlm",
-    sizeBytes: 3_686_465_536,
-    revision: "9935a8114c3a10920bbd5e85be92087727246254",
-    sha256: "7d63a4d8efee11108933c28e9f9a0a17804998379b5fd58ae03031130dac7e7b",
+    sizeBytes: 3_685_449_728,
+    revision: "c2758a36c0931fc96cd628a38492ffc759c06942",
+    sha256: "d6e644ce5c468fc0694c9587f78f722548bbe7f4fc12353f4937f573670ee3bc",
     engineCacheBytes: 2_500_000_000
   )
 

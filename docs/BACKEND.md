@@ -12,7 +12,7 @@ speculative rounds, Apple10-tuned `ConvAppleMPP`, GPU Vision MPP kernels, lazy `
 LL(1) FC parser, strict 220-symbol `_litert_lm_*` exports, bundled `.dSYM`s, embedded
 `PrivacyInfo.xcprivacy`, and full Metal 4/concurrency/UTF-8/Jinja hardening), is the shipped binary
 release alongside the v2 64K/ring-KV/`verify_8` model (`gemma-4-E4B-it-agello-v2.litertlm`, commit
-`9935a811`) and Core AI ANE `EmbeddingGemma 2` bundle (`41026d1c`). The vendored Swift wrapper
+`c2758a36`) and Core AI ANE `EmbeddingGemma 2` bundle (`41026d1c`). The vendored Swift wrapper
 (`Vendor/LiteRT-LM/swift/`) tracks fork `main` (`3af6200d`; see [Vendor/README.md](../Vendor/README.md)),
 and live status is tracked in [ROADMAP.md](ROADMAP.md#current-status).
 

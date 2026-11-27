@@ -10,12 +10,12 @@ The handoff between work sessions (injected automatically at startup by `.agents
 
 - **Active baseline (2026-11-27):**
   - **Runtime (`../LiteRT-LM`):** Shipped binary release **`agello-one-20261127`** (`3af6200d`, Build **`8931ed8d5a23`**, SwiftPM checksum `7ee6b871…3087d`), synced 1:1 with fork `main` & `Vendor/LiteRT-LM/swift/`. Carries Custom Runtime Audit Waves 1–2 (`5e60ce70`, `9d0bf058`, `3af6200d`: Metal/MSL 4.1 Quantization & FlashAttention D=512 fixes, sparse KV/cache/MTP/Conversation/Jinja/UTF-8 hardening, `CLiteRTLM.exp` 220-symbol hiding, bundled `.dSYM`s, embedded `PrivacyInfo.xcprivacy`, zero forbidden frameworks, and exact FP64 Dual-`GATHER` RoPE surgery).
-  - **Chat model:** `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` / `gemma-4-E4B-it-agello-v2.litertlm` (`9935a811`, `3,686,465,536` B, SHA-256 `7d63a4d8…dac7e7b`) pinned in `ModelCatalog.e4b`. Rebuilt v2 artifact (`d6e644ce…ee3bc`, `BLOCKS=257`, `0` dead tensors, `105,061x` lower RoPE drift) verified on iPhone 17 Pro (`test27` **90/90**, `test28` **12/12 exact**) and staged in `~/Models/agello/lab/` awaiting HF upload go-ahead.
+  - **Chat model:** `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope` / `gemma-4-E4B-it-agello-v2.litertlm` (`c2758a36`, `3,685,449,728` B, SHA-256 `d6e644ce…ee3bc`: `BLOCKS=257`, `0` dead tensors, exact FP64 Dual-`GATHER` RoPE, `ring_kv=1536`, `verify_8`, verified `test27` **90/90** & `test28` **12/12 exact** on iPhone 17 Pro) pinned in `ModelCatalog.e4b`.
   - **Embedding model:** `PowerBeef02/embeddinggemma-2-text-270m-coreai-ane` / `embeddinggemma-2-text-270m-ane.aar` (`41026d1c`, `128,245,086` B, SHA-256 `122c2d86…1b2ece`: 4-bucket INT4 Core AI ANE bundle) pinned in `ModelCatalog.embeddingGemma`.
   - **App (`iRT` `main`):** Verified on physical iPhone 17 Pro (`iPhone18,1`, iOS 27.2.1, `8931ed8d5a23`, 2026-11-27): `ui` **37/37**, `unit` **508/508**, `security` **12/12 (`V1–V12`, 0% breach)**, `inference` **25/25**, `files` **8/8**, `thinking` **3/3**, `memory` **4/4**, `probes` **18/18**, 200-turn `soak` **1/1** (`0.319 GB` flat graphics), rebuilt v2 64K `test27` **90/90** + `test28` **12/12 exact** (`web` 8/9: 12/13 in `test06`, benign Walmart wording citing `[1]–[5]`). Mac workbench: 13/13 Bazel (`199/199`), `MTL_DEBUG_LAYER=1` 0 errors, `swiftlint` 0 errors, `cli-test.sh unit` **438/438**, `cli-bench` flat (`-0.7%` decode).
   - **Completed logs:** Archived in [archive/roadmap-2026-11-phases-1-6.md](archive/roadmap-2026-11-phases-1-6.md).
 - **Next milestone:**
-  - Push `iRT` `main` on go-ahead, optionally upload/re-pin the verified rebuilt v2 model to HF, tune `AppleSources.swift:224` wording for `web/test06` if desired, and proceed with TestFlight (`agello-release`).
+  - Prepare TestFlight build & App Store Connect checklist (`agello-release`), or tackle Runtime Audit Wave 3 (`P2` hardening & `LockedBox`).
 
 ---
 
