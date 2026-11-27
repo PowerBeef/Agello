@@ -7,28 +7,27 @@ repository). It is the canonical inventory for both the shipped binary release a
 Swift wrapper:
 
 - **Binary release (`CLiteRTLM.xcframework`):**
-  [`agello-one-20261124`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-one-20261124),
-  built from **`c819aecb`** (Build ID `8a7e34594612`, SwiftPM checksum
-  `336023ee75a69eb03405763f1e3cc0da4e4e902cf825bb36696c88622bf3de7c`), pinned in `Package.swift`.
-  The next dual-slice binary cut (**Build ID `8931ed8d5a23`**, built from **`3af6200d`** with
-  `_litert_lm_*`-only symbol hiding, bundled `.dSYM`s, and embedded `PrivacyInfo.xcprivacy`) is
-  staged locally in `../LiteRT-LM/dist/` pending physical iPhone 17 Pro sign-off before GitHub
-  release publication.
-- **Vendored Swift wrapper (`swift/`):** tracks fork `main` at **`3af6200d`** (post-release
-  commits `9f8c904e..3af6200d`, including `5e60ce70` Wave 1+2 `ConversationSendGate`,
-  `BatchConfirmationOutcome`/`isRegistered`, overflow-safe 64-bit integer coercion, and `Sendable`
-  config conformances), kept byte-identical to `../LiteRT-LM/swift/` (including `swift/BUILD`).
-  The C++/Metal/Jinja/packaging fixes in `9f8c904e..3af6200d` are compiled into local Build
-  `8931ed8d5a23` queued for the next binary release.
+  [`agello-one-20261127`](https://github.com/PowerBeef/agello-litert-lm/releases/tag/agello-one-20261127),
+  built from **`3af6200d`** (Build ID `8931ed8d5a23`, SwiftPM checksum
+  `7ee6b8716c8388f6e367189252ecde8d7acce98f9ae470b0113fcaa7a423087d`), pinned in `Package.swift`.
+  Ships dual-slice `ios-arm64` (`22.7 MiB`, UUID `2C1A0A09-A3BB-330D-B30A-44AC0A53C8E0`) and
+  `macos-arm64` (`23.3 MiB`, UUID `D51F1DDA-EFCF-35A3-95A7-CD92E8287D1E`) with strict
+  `_litert_lm_*`-only symbol hiding (220 exports), bundled `.dSYM`s, embedded
+  `PrivacyInfo.xcprivacy` (`C617.1`/`35F9.1`), and zero forbidden frameworks.
+- **Vendored Swift wrapper (`swift/`):** tracks fork `main` at **`3af6200d`** (synced verbatim to
+  the published `agello-one-20261127` release, including `9f8c904e..3af6200d` and `5e60ce70` Wave
+  1+2 `ConversationSendGate`, `BatchConfirmationOutcome`/`isRegistered`, overflow-safe 64-bit
+  integer coercion, and `Sendable` config conformances), kept byte-identical to `../LiteRT-LM/swift/`
+  (including `swift/BUILD`).
 - `LICENSE` (Apache 2.0, Google LLC)
 
 ## The runtime
 
 The release's `CLiteRTLM.xcframework` has an iPhone slice and a Mac slice (a
-versioned framework), both on Metal. It's built from `c819aecb`, with LiteRT and ML Drift
+versioned framework), both on Metal. It's built from `3af6200d`, with LiteRT and ML Drift
 linked statically (folders of the same repository since 2026-11-11, `agello/litert` and
 `agello/ml_drift`; our earlier forks `PowerBeef/LiteRT` and `PowerBeef/ml-drift` were archived
-on 2026-11-15): build id `8a7e34594612`, whose `BUILD-INFO.txt` in the release names every commit. Its
+on 2026-11-15): build id `8931ed8d5a23`, whose `BUILD-INFO.txt` in the release names every commit. Its
 third-party notices are in `NOTICE`. Besides the Swift patches below, it carries our runtime
 fixes:
 
@@ -68,22 +67,25 @@ fixes:
   Vision/Audio cleanup; RFC 3629 `IsValidUtf8` guards before `cxx` `rust::Str` across all tool
   parsers; `ThinkingBudgetConstraint` KMP end-marker fallback & `budget == 0` handling; and
   tokenizer-gated `LlgConstraintProvider`;
-- Custom Runtime Audit Waves 1–2 (`5e60ce70`, `9d0bf058`, `3af6200d`, staged in local Build
-  `8931ed8d5a23`): Metal/MSL 4.1 kernel bounds & D=512 FlashAttention/Quantization fixes, sparse KV
-  & weight/program cache safety, MTP drafter & resident-round lifecycle fixes, `Conversation`
-  teardown/constraint/rewind+refill/UTF-8 C-ABI & Gemma 4 multimodal delimiter/Jinja hardening,
-  strict `_litert_lm_*`-only symbol export (`CLiteRTLM.exp`, 220 symbols), bundled `.dSYM`s,
-  embedded `PrivacyInfo.xcprivacy` (`C617.1`/`35F9.1`, zero forbidden frameworks), and exact FP64
-  Dual-`GATHER` RoPE model-surgery assertions;
+- Custom Runtime Audit Waves 1–2 (`5e60ce70`, `9d0bf058`, `3af6200d`, released in
+  `agello-one-20261127` / Build `8931ed8d5a23`): Metal/MSL 4.1 kernel bounds & D=512
+  FlashAttention/Quantization fixes, sparse KV & weight/program cache safety, MTP drafter &
+  resident-round lifecycle fixes, `Conversation` teardown/constraint/rewind+refill/UTF-8 C-ABI &
+  Gemma 4 multimodal delimiter/Jinja hardening, strict `_litert_lm_*`-only symbol export
+  (`CLiteRTLM.exp`, 220 symbols), bundled `.dSYM`s, embedded `PrivacyInfo.xcprivacy`
+  (`C617.1`/`35F9.1`, zero forbidden frameworks), and exact FP64 Dual-`GATHER` RoPE model-surgery
+  assertions;
 - verified on physical iPhone 17 Pro (A19 Pro, 12 GB, iOS 27.2.1): Release v2 64K `phone-bench.sh`
   (`20261122-152247`, 24/24 nominal, 23/24 undisturbed) measured `file-report` `1,654` median /
   `1,668` peak tok/s prefill (`3.80–3.84 s` TTFT, `56.5–56.9` tok/s decode, `0.98 GB` steady /
   `1.70 GB` peak footprint), `email` `1,556–1,599` tok/s prefill / `57.3–57.8` tok/s decode, and
-  `explain` `50.6–51.9` tok/s decode; Waves 1 & 2 hardware gate on `agello-one-20261124`
-  (`8a7e34594612`) passed 100 % across `gate-device` **14/14** (`138.7 s`), `unit` **456/456**,
-  `inference` **25/25**, `files` **8/8**, `thinking` **3/3**, `security` **100 %**, `web` **9/9**,
-  `memory` **4/4** (`0.83 GB` net at `65K`, 0 warnings), `ui` **26/26**, and 200-turn soak
-  `test38_PoolSoak` (**`+4.95 MB`** median growth, `515.7 → 520.6 MB`).
+  `explain` `50.6–51.9` tok/s decode; Custom Runtime Audit Waves 1–2 hardware sign-off on
+  `agello-one-20261127` (`8931ed8d5a23`) passed on physical iPhone 17 Pro across `ui` **37/37**,
+  `unit` **508/508**, `security` **12/12 (`V1–V12`, 0% breach)**, `inference` **25/25**, `files`
+  **8/8**, `thinking` **3/3**, `memory` **4/4**, `probes` **18/18**, 200-turn soak
+  `test38_PoolSoak` **1/1** (`0.319 GB` flat graphics, `470 MB` steady footprint), and rebuilt v2
+  64K `test27_NeedleTable` **90/90** + `test28_WindowPositions` **12/12 exact** (`web` 8/9, 12/13
+  live sources in `test06` with benign phrasing diff on Walmart hours).
 
 ## Swift patches
 

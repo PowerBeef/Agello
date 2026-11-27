@@ -1,18 +1,19 @@
 # The backend: our own runtime
 
-A plan, from the maintainer's direction of 2026-11-10. Where it stands (2026-11-25): B0–B6,
-all six roadmap phases (`P1.1`–`P6.2`), and Full-Stack Audit Waves 1 & 2 are done and verified on
+A plan, from the maintainer's direction of 2026-11-10. Where it stands (2026-11-27): B0–B6,
+all six roadmap phases (`P1.1`–`P6.2`), and Custom Runtime Audit Waves 1–2 are done and verified on
 physical iPhone 17 Pro. The runtime is one repository, `PowerBeef/agello-litert-lm`, with one
-branch, `main`, and one checkout on this Mac, `../LiteRT-LM`. Release **`agello-one-20261124`**
-(fork **`c819aecb`**, build **`8a7e34594612`**), carrying Phases 1–6 and Audit Wave 2 (MSL 4.1
-FlashAttention, zero-copy NEON greedy sampling, persistent `MTLBinaryArchive`, Metal 4
-`copyBufferMappingsFromBuffer:` helper snapshots, `verify_8` speculative rounds, Apple10-tuned
-`ConvAppleMPP`, GPU Vision MPP kernels, lazy `AudioExecutor` + `USER_INTERACTIVE` QoS, fixed
-`llguidance` `TokTrie` + Think-tool continuity, recursive-descent LL(1) FC parser, and Metal 4
-kernel/concurrency/UTF-8 FFI hardening), is the shipped binary release alongside the v2
-64K/ring-KV/`verify_8` model (`gemma-4-E4B-it-agello-v2.litertlm`, commit `9935a811`) and Core AI
-ANE `EmbeddingGemma 2` bundle (`41026d1c`). The vendored Swift wrapper (`Vendor/LiteRT-LM/swift/`)
-tracks fork `main` (`9c8c783d` + `ToolManager` `NSLock` fix; see [Vendor/README.md](../Vendor/README.md)),
+branch, `main`, and one checkout on this Mac, `../LiteRT-LM`. Release **`agello-one-20261127`**
+(fork **`3af6200d`**, build **`8931ed8d5a23`**), carrying Phases 1–6 and Runtime Audit Waves 1–2
+(MSL 4.1 FlashAttention, BOS-outlier-free INT8 quantization, zero-copy NEON greedy sampling,
+persistent `MTLBinaryArchive`, Metal 4 `copyBufferMappingsFromBuffer:` helper snapshots, `verify_8`
+speculative rounds, Apple10-tuned `ConvAppleMPP`, GPU Vision MPP kernels, lazy `AudioExecutor` +
+`USER_INTERACTIVE` QoS, fixed `llguidance` `TokTrie` + Think-tool continuity, recursive-descent
+LL(1) FC parser, strict 220-symbol `_litert_lm_*` exports, bundled `.dSYM`s, embedded
+`PrivacyInfo.xcprivacy`, and full Metal 4/concurrency/UTF-8/Jinja hardening), is the shipped binary
+release alongside the v2 64K/ring-KV/`verify_8` model (`gemma-4-E4B-it-agello-v2.litertlm`, commit
+`9935a811`) and Core AI ANE `EmbeddingGemma 2` bundle (`41026d1c`). The vendored Swift wrapper
+(`Vendor/LiteRT-LM/swift/`) tracks fork `main` (`3af6200d`; see [Vendor/README.md](../Vendor/README.md)),
 and live status is tracked in [ROADMAP.md](ROADMAP.md#current-status).
 
 Agello's backend stops being Google's LiteRT-LM with patches kept close to upstream. It becomes
@@ -54,9 +55,9 @@ fast as the hardware allows, at the quality the model has today.
 - Most of those files serve other platforms: Android, Windows, Linux and the web, OpenCL, OpenGL
   and WebGPU beside Metal (ML Drift's Metal folder is 38 files of 877), vendor NPUs, converters,
   the Kotlin, JavaScript and Python bindings, a CMake build beside Bazel.
-- The app ships release `agello-one-20261124` (build `8a7e34594612`; previously
-  `agello-one-20261122-3`, `agello-one-20261122-2`, `agello-one-20261122`, `agello-one-20261115`,
-  and `agello-next-20261024`)
+- The app ships release `agello-one-20261127` (build `8931ed8d5a23`; previously
+  `agello-one-20261124`, `agello-one-20261122-3`, `agello-one-20261122-2`, `agello-one-20261122`,
+  `agello-one-20261115`, and `agello-next-20261024`)
   with our v2 model file, `PowerBeef02/gemma-4-E4B-it-litert-lm-fp16-rope`
   (`gemma-4-E4B-it-agello-v2.litertlm`). The runtime serves that file, its MTP drafter, and the
   LiteRT EmbeddingGemma fallback (primary embeddings now run on the 16-core ANE via Core AI).
