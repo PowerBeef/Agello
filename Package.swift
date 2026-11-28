@@ -50,6 +50,7 @@ let package = Package(
         "Agello/AppState+Reply.swift", "Agello/AppState+Tools.swift", "Agello/AppState+Web.swift",
         "Agello/Inference", "Agello/Knowledge", "Agello/ModelHub", "Agello/Persistence",
         "Agello/Support/Diagnostics.swift", "Agello/Support/ImagePreparer.swift",
+        "Agello/Support/LockedBox.swift",
         "Agello/Support/ReplyTrace.swift", "Agello/Support/ThermalPolicy.swift",
         "Agello/System/ShareInbox.swift", "Agello/System/SharedItems.swift",
         "Agello/System/SpotlightIndex.swift",

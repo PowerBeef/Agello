@@ -18,6 +18,8 @@
 # Env: DEVICE_ID (default: deviceId from the git-ignored .mobilebuildmcp/config.yaml),
 #      OUT (default: build/device-run).
 set -eu
+# Fail fast if `devicectl` spawns `sudo` instead of suspending background jobs on SIGTTIN.
+export SUDO_ASKPASS=/usr/bin/false
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=scripts/lib/device.sh
@@ -46,7 +48,7 @@ case "$COMMAND" in
     # OS_ACTIVITY_DT_MODE mirrors os_log to the console, as when Xcode runs the app.
     DEVICECTL_CHILD_OS_ACTIVITY_DT_MODE=1 xcrun devicectl device process launch \
       --device "$DEVICE_ID" --console --terminate-existing "$BUNDLE_ID" "$@" \
-      >"$log" 2>&1 &
+      </dev/null >"$log" 2>&1 &
     pid=$!
     sleep "$seconds"
     kill "$pid" 2>/dev/null || true
@@ -62,13 +64,13 @@ case "$COMMAND" in
   screenshot)
     png="$OUT/${1:-screen-$STAMP}.png"
     xcrun devicectl device capture screenshot --device "$DEVICE_ID" \
-      --destination "$png" --quiet
+      --destination "$png" --quiet </dev/null
     echo "Screenshot: $png"
     ;;
   crashes)
     listing="$OUT/.crash-listing.json"
     xcrun devicectl device info files --device "$DEVICE_ID" \
-      --domain-type systemCrashLogs --quiet --json-output "$listing" >/dev/null
+      --domain-type systemCrashLogs --quiet --json-output "$listing" </dev/null >/dev/null
     reports="$(jq -r '.result.files[]
       | select((.resources.isDirectory | not) and (.name | startswith("Agello")))
       | "\(.metadata.lastModDate)\t\(.relativePath)"' "$listing" | sort -r)"
@@ -82,7 +84,7 @@ case "$COMMAND" in
       echo "$reports" | while IFS="$(printf '\t')" read -r _ path; do
         xcrun devicectl device copy from --device "$DEVICE_ID" \
           --domain-type systemCrashLogs --source "$path" \
-          --destination "$OUT/crashes/$(basename "$path")" --quiet
+          --destination "$OUT/crashes/$(basename "$path")" --quiet </dev/null
         echo "$OUT/crashes/$(basename "$path")"
       done
     else

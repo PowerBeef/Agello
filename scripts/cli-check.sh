@@ -1,11 +1,12 @@
 #!/bin/sh
-# Does the Mac command line (docs/CLI.md) still build? It compiles the app's engine files, so an
-# app change can break it: a platform type without its twin in AgelloCLI/Sources/Platform/, or
-# an engine file outside the folders Package.swift lists.
+# Does the Mac command line (docs/CLI.md) still build and start cleanly under -O? It compiles the
+# app's engine files, so an app change can break compilation (a platform type without its twin in
+# AgelloCLI/Sources/Platform/, or an engine file outside the folders Package.swift lists) or trigger
+# a Release-only -O runtime initialization crash.
 #
 # Usage: scripts/cli-check.sh [--build]
-# Prints one line and exits 0 (builds), 1 (broken) or 0 with a note when this checkout has never
-# built the tool (--build builds it anyway: about 300 MB in build/cli/release).
+# Prints one line and exits 0 (builds and passes -O env smoke), 1 (broken) or 0 with a note when
+# this checkout has never built the tool (--build builds it anyway: about 300 MB in build/cli/release).
 # scripts/device-harness.sh runs it at the end of every run.
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,9 +26,21 @@ if [ ! -d "$SCRATCH" ] && [ "${1:-}" != --build ]; then
   exit 0
 fi
 log="$(mktemp)"
-trap 'rm -f "$log"' EXIT
+tmp_root="$(mktemp -d)"
+tmp_trace="$tmp_root/traces"
+trap 'rm -rf "$log" "$tmp_root"' EXIT
 if (cd "$ROOT" && swift build -c release --scratch-path "$SCRATCH") >"$log" 2>&1; then
-  echo "- Mac command line: builds."
+  if ! "$SCRATCH/release/agello" env --trace-dir "$tmp_trace" >"$tmp_root/env.json" 2>"$tmp_root/env.err" </dev/null; then
+    rc=$?
+    err_line="$(head -1 "$tmp_root/env.err" | cut -c1-240)"
+    echo "- Mac command line: BROKEN at runtime (-O smoke exited $rc${err_line:+: $err_line})."
+    exit 1
+  fi
+  if ! python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); assert isinstance(d, dict) and "machine" in d' "$tmp_root/env.json" >/dev/null 2>&1; then
+    echo "- Mac command line: BROKEN at runtime (-O smoke output is not valid JSON)."
+    exit 1
+  fi
+  echo "- Mac command line: builds and runs (-O smoke ok)."
   exit 0
 fi
 clean="$(sed 's/\x1b\[[0-9;]*m//g' "$log")"

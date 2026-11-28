@@ -67,6 +67,9 @@
 # failed), and for bench 1 when the report finds a problem.
 # The script keeps this Mac awake until it exits.
 set -eu
+# Fail fast if Xcode 27's automatic `devicectl diagnose` -> `sudo` triggers on test failure
+# instead of suspending the background process group on SIGTTIN.
+export SUDO_ASKPASS=/usr/bin/false
 
 SUITE="${1:-all}"
 [ $# -gt 0 ] && shift
@@ -130,6 +133,9 @@ caffeinate -dims -w $$ &
 # Before an iPhone run builds anything: the one thing to fix, if there is one (scripts/lib/device.sh).
 if [ "$PLATFORM" = iphone ] && [ "${PREFLIGHT:-on}" != off ]; then
   device_preflight || exit 4
+  if [ "$SUITE" = bench ]; then
+    device_battery_preflight
+  fi
 fi
 
 BUNDLE_ID="com.patricedery.agello"
@@ -248,7 +254,7 @@ pull_report() {
   xcrun devicectl device copy from --device "$DEVICE_ID" \
     --domain-type appDataContainer --domain-identifier "$BUNDLE_ID" \
     --source Documents/harness-report.json --destination "$OUT/harness-report.json" \
-    >/dev/null 2>&1 && echo "Report: $OUT/harness-report.json" || echo "No harness report on device"
+    </dev/null >/dev/null 2>&1 && echo "Report: $OUT/harness-report.json" || echo "No harness report on device"
 }
 
 # -only-testing filters for the suite's scopes, or for ONLY's tests, which
@@ -423,7 +429,7 @@ if [ "$SUITE" = bench ]; then
   mkdir -p "$OUT/bench"
   xcrun devicectl device copy from --device "$DEVICE_ID" \
     --domain-type appDataContainer --domain-identifier "$BUNDLE_ID" \
-    --source Documents/traces --destination "$OUT/bench/traces" >/dev/null 2>&1 \
+    --source Documents/traces --destination "$OUT/bench/traces" </dev/null >/dev/null 2>&1 \
     || echo "No traces on the device"
   python3 "$ROOT/scripts/bench-report.py" "$OUT" "$BENCH_STARTED" "$BENCH_PREVIOUS" || status=$?
   rm -f "$BENCH_PREVIOUS"

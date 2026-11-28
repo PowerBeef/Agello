@@ -1,6 +1,5 @@
 import Foundation
 import SwiftData
-import Synchronization
 
 /// The current schema's models (see `Schema/` and ``ChatMigrationPlan``).
 typealias ChatThread = SchemaV3.ChatThread
@@ -225,7 +224,7 @@ private enum TurnJSONCache {
     let encoder = JSONEncoder()
   }
 
-  private static let coders = Mutex(CoderBox())
+  private static let coders = LockedBox(CoderBox())
   static let parts = TurnPayloadCache<MessageParts>(countLimit: 512, totalCostLimit: 4 * 1024 * 1024)
   static let stats = TurnPayloadCache<GenerationStats>(countLimit: 512, totalCostLimit: 512 * 1024)
 

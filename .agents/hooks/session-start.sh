@@ -85,6 +85,9 @@ build_context() {
   else
     echo "- Harness: no run in progress."
   fi
+  if binfo="$(harness_lock_info "$MAIN/../LiteRT-LM/dist/.bazel.lock")"; then
+    echo "- Bazel: building $(harness_lock_value "$binfo" target) since $(harness_lock_value "$binfo" started) (pid $(harness_lock_value "$binfo" pid)) — do not edit ../LiteRT-LM."
+  fi
 
   # 2. Active roadmap handoff, defensively capped at 3,000 bytes.
   echo

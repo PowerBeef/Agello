@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 // MARK: - Per-turn untrusted data taint tracker
 
@@ -8,7 +7,7 @@ import Synchronization
 /// ``PlanConfirmationCard`` surface a provenance warning whenever a mutating action follows
 /// external content.
 enum TurnSecurityContext {
-  private static let state = Mutex<[String]>([])
+  private static let state = LockedBox<[String]>([])
 
   /// Clears taint state at the start of a new user turn.
   static func reset() {
@@ -218,7 +217,7 @@ enum ToolConfirmationGate {
     var batchGrants: [BatchGrantKey: Int] = [:]
   }
 
-  private static let state = Mutex(State())
+  private static let state = LockedBox(State())
 
   /// Registers the app UI presenter (`AppState`).
   static func installPresenter(_ handler: Handler?) {

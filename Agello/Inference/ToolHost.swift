@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 /// Records tool invocations as they actually run. LiteRT-LM executes tools
 /// automatically inside the stream and does not surface the calls in the
@@ -7,7 +6,7 @@ import Synchronization
 /// Append-only so independent readers (the engine, the device harness) can
 /// each observe invocations via a cursor without stealing them.
 enum ToolActivity {
-  private static let log = Mutex<[ToolActivityRecord]>([])
+  private static let log = LockedBox<[ToolActivityRecord]>([])
 
   static func record(_ name: String, summary: String) {
     log.withLock { $0.append(ToolActivityRecord(name: name, summary: summary)) }
@@ -45,7 +44,7 @@ enum ToolCardRecorder {
     var nextSequence = 0
   }
 
-  private static let state = Mutex(State())
+  private static let state = LockedBox(State())
 
   static func record(_ card: ActionCardRecord) {
     guard card.isRenderable else { return }
@@ -160,7 +159,7 @@ enum ToolBudget {
     /// The last reply ended: tool rounds still running for it get nothing.
     var closed = false
   }
-  private static let state = Mutex(State())
+  private static let state = LockedBox(State())
 
   static func begin(_ limits: Limits) {
     state.withLock { $0 = State(limits: limits) }

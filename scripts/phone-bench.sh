@@ -58,6 +58,8 @@
 # records), compare-all.txt (every record), replies.txt and replies/, report.md (the answer
 # checks), build-<arm>.log, phone-bench.log. The built apps (apps/) are deleted at the end.
 set -eu
+# Fail fast if Xcode 27's `devicectl diagnose` -> `sudo` triggers instead of hanging on SIGTTIN.
+export SUDO_ASKPASS=/usr/bin/false
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=scripts/lib/device.sh
@@ -186,6 +188,7 @@ if [ -n "$(git -C "$ROOT" status --porcelain -- Vendor/LiteRT-LM)" ] || [ -e "$R
 fi
 if [ "${PREFLIGHT:-on}" != off ]; then
   device_preflight || exit 4
+  device_battery_preflight
 fi
 
 LOCK="$(harness_lock_dir "$ROOT")"
@@ -214,7 +217,7 @@ forget_runtime() {
     "$DERIVED"/Agello-*/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules/CLiteRTLM-*.pcm \
     "$DERIVED"/Agello-*/Build/Products/*-iphoneos/CLiteRTLM.framework \
     "$DERIVED"/Agello-*/Build/Products/*-iphoneos/Agello.app/Frameworks/CLiteRTLM.framework
-  xcodebuild -resolvePackageDependencies -project "$ROOT/Agello.xcodeproj" -scheme Agello >>"$LOG" 2>&1
+  xcodebuild -resolvePackageDependencies -project "$ROOT/Agello.xcodeproj" -scheme Agello </dev/null >>"$LOG" 2>&1
 }
 # The committed runtime back in Vendor/LiteRT-LM, and Xcode resolved to it.
 restore_vendor() {
@@ -244,9 +247,11 @@ say() {
   echo "$*"
   echo "$*" >>"$LOG"
 }
-hardware="$(xcrun devicectl list devices 2>/dev/null | grep "$DEVICE_ID" | grep -o 'iPhone [0-9A-Za-z ]*(iPhone[0-9,]*)' | head -1)"
+hardware="$(xcrun devicectl list devices </dev/null 2>/dev/null | grep "$DEVICE_ID" | grep -o 'iPhone [0-9A-Za-z ]*(iPhone[0-9,]*)' | head -1)"
 [ -n "$hardware" ] || hardware="iPhone"
 say "Phone comparison on $hardware:$(for n in $names; do printf ' %s' "$n"; done); cases $cases; $ROUNDS rounds; cooling $COOL; rest $REST (${CASE_REST}/${HEAVY_REST}/${WARM_REST}s). Records: $OUT"
+[ -n "${DEVICE_BATTERY_LINE:-}" ] && echo "$DEVICE_BATTERY_LINE" >>"$LOG"
+[ -n "${DEVICE_BATTERY_WARNING:-}" ] && echo "$DEVICE_BATTERY_WARNING" >>"$LOG"
 
 # 1. Build the app once per runtime, before anything is measured. Arms on the same runtime share
 # an app.
@@ -271,13 +276,13 @@ build_app() {
   # shellcheck disable=SC2086 # priority and jobs are words or nothing
   if ! $priority xcodebuild build -project "$ROOT/Agello.xcodeproj" -scheme Agello -configuration Bench \
     -destination "id=$DEVICE_ID" -allowProvisioningUpdates -allowProvisioningDeviceRegistration $jobs \
-    >"$OUT/build-$name.log" 2>&1; then
+    </dev/null >"$OUT/build-$name.log" 2>&1; then
     say "The build of $name failed: $OUT/build-$name.log"
     exit 1
   fi
   # The app target's own block: the scheme lists its extensions too.
   products="$(xcodebuild -showBuildSettings -project "$ROOT/Agello.xcodeproj" -scheme Agello \
-    -configuration Bench -destination "id=$DEVICE_ID" 2>/dev/null |
+    -configuration Bench -destination "id=$DEVICE_ID" </dev/null 2>/dev/null |
     awk '/^Build settings for action build and target / {target = $NF}
       target == "Agello:" && /^ *TARGET_BUILD_DIR = / {sub(/^ *TARGET_BUILD_DIR = /, ""); print; exit}')"
   if [ ! -d "$products/Agello.app" ]; then
@@ -329,7 +334,7 @@ echo "Test Suite 'phone-bench' started" >>"$LOG"
 
 # 2. Measure.
 locked() {
-  xcrun devicectl device info lockState --device "$DEVICE_ID" 2>/dev/null | grep -q "passcodeRequired: true"
+  xcrun devicectl device info lockState --device "$DEVICE_ID" </dev/null 2>/dev/null | grep -q "passcodeRequired: true"
 }
 wait_unlocked() {
   locked || return 0
@@ -346,7 +351,7 @@ wait_unlocked() {
 }
 trace_names() {
   xcrun devicectl device info files --device "$DEVICE_ID" --domain-type appDataContainer \
-    --domain-identifier "$BUNDLE_ID" --subdirectory Documents/traces 2>/dev/null |
+    --domain-identifier "$BUNDLE_ID" --subdirectory Documents/traces </dev/null 2>/dev/null |
     grep -oE '20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}Z-[0-9A-Fa-f-]+\.json' | sort -u
 }
 installed=""
@@ -371,7 +376,7 @@ run_case() {
   # After "--", the app's own arguments (-memoryEnabled would read as devicectl's -e otherwise).
   # shellcheck disable=SC2086 # the app's arguments are words
   if ! xcrun devicectl device process launch --device "$DEVICE_ID" --terminate-existing \
-    --environment-variables "$rc_environment" "$BUNDLE_ID" -- $rc_arguments >>"$LOG" 2>&1; then
+    --environment-variables "$rc_environment" "$BUNDLE_ID" -- $rc_arguments </dev/null >>"$LOG" 2>&1; then
     rc_status="launch failed"
   else
     rc_waited=0
@@ -391,7 +396,7 @@ run_case() {
     sleep 10
     if ! xcrun devicectl device copy from --device "$DEVICE_ID" --domain-type appDataContainer \
       --domain-identifier "$BUNDLE_ID" --source "Documents/traces/$rc_trace" \
-      --destination "$OUT/traces/$rc_trace" >>"$LOG" 2>&1; then
+      --destination "$OUT/traces/$rc_trace" </dev/null >>"$LOG" 2>&1; then
       rc_status="trace not copied"
     fi
   fi
@@ -432,7 +437,7 @@ measure_round() {
     eval "app=\"\$app_$name\""
     if [ "$app" != "$installed" ]; then
       wait_unlocked || { stopped=4; return 0; }
-      if ! xcrun devicectl device install app --device "$DEVICE_ID" "$app" >>"$LOG" 2>&1; then
+      if ! xcrun devicectl device install app --device "$DEVICE_ID" "$app" </dev/null >>"$LOG" 2>&1; then
         say "Installing $name's app failed: see $LOG"
         stopped=1
         return 0

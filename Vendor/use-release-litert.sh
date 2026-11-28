@@ -45,5 +45,34 @@ rm -rf "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Intermediates.
   "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Products/*-iphoneos/CLiteRTLM.framework \
   "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Products/Debug-*/CLiteRTLM.framework \
   "$HOME"/Library/Developer/Xcode/DerivedData/Agello-*/Build/Products/*/Agello.app/Frameworks/CLiteRTLM.framework
-xcodebuild -resolvePackageDependencies -project "$ROOT/Agello.xcodeproj" -scheme Agello >/dev/null 2>&1 || true
+# Force the Mac CLI (`agello` / `cli-test.sh`) to re-link against the newly vendored CLiteRTLM,
+# and stop any running `agello serve` daemon so `sim-launch.sh` restarts it on the new runtime.
+rm -f "$ROOT/build/cli/release/release/agello" \
+  "$ROOT/build/cli/release/debug/agello" \
+  "$ROOT/build/cli/test/debug/agello" \
+  "$ROOT/build/cli/test/release/agello"
+rm -rf "$ROOT"/build/cli/*/out/Products/*/CLiteRTLM.framework \
+  "$ROOT"/build/cli/*/out/Products/*/*.xctest/Contents/Frameworks/CLiteRTLM.framework
+if [ -d "$ROOT/build/cli" ]; then
+  find "$ROOT/build/cli" \
+    \( -path "$ROOT/build/cli/runs" -o -path "$ROOT/build/cli/test-home" -o -path "$ROOT/build/cli/traces" \) -prune \
+    -o -name 'CLiteRTLM*.pcm*' -prune -exec rm -rf {} +
+fi
+if [ -f "$ROOT/build/sim/serve.pid" ]; then
+  serve_pid="$(tr -d '[:space:]' <"$ROOT/build/sim/serve.pid")"
+  case "$serve_pid" in
+    '' | *[!0-9]*) ;;
+    *)
+      serve_comm="$(ps -p "$serve_pid" -o comm= 2>/dev/null || true)"
+      case "$serve_comm" in
+        *agello*)
+          kill "$serve_pid" 2>/dev/null || true
+          echo "Stopped agello serve (pid $serve_pid) for the runtime switch."
+          ;;
+      esac
+      ;;
+  esac
+  rm -f "$ROOT/build/sim/serve.pid"
+fi
+xcodebuild -resolvePackageDependencies -project "$ROOT/Agello.xcodeproj" -scheme Agello </dev/null >/dev/null 2>&1 || true
 echo "Vendored $REPO@$REF with release $TAG (checksum $CHECKSUM)."

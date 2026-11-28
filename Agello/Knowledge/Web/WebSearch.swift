@@ -1,7 +1,6 @@
 import Darwin
 import Foundation
 import NaturalLanguage
-import Synchronization
 
 // MARK: - Settings
 
@@ -508,7 +507,7 @@ struct WebClient: Sendable {
 /// Sources found by the `web_search` tool during the current reply (the
 /// tool runs inside LiteRT-LM's stream; the app attaches these afterwards).
 enum WebSourcesRecorder {
-  private static let sources = Mutex<[SourceRecord]>([])
+  private static let sources = LockedBox<[SourceRecord]>([])
 
   static func reset() { sources.withLock { $0 = [] } }
 

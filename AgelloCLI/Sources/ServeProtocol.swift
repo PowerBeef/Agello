@@ -1,341 +1,484 @@
 import Foundation
 import LiteRTLM
 
-/// OpenAI `/v1/chat/completions` (blocking + live token-by-token SSE streaming) and
-/// `/v1/embeddings` execution for `agello serve` (`Serve.swift`).
+/// OpenAI `/v1/chat/completions` (blocking + live token-by-token SSE streaming), `/v1/tokenize`,
+/// `/v1/embeddings`, and single-session prefix-KV reuse execution for `agello serve` (`Serve.swift`).
 enum ServeProtocol {
+  static let maxClampedTokens = 131_072, maxClampedTopK = 262_144
+
   struct ExecutionContext: Sendable {
     let options: Serve.Options
-    let allocatedPositions: Int
+    let allocatedPositions, requestIndex: Int
     let visualTokenBudget: Int32
-    let requestIndex: Int
+  }
+
+  struct CachedSession: Sendable {
+    let conversation: Conversation
+    let config: ServeSessionConfig
+    var messages: [ServeMessage]
+  }
+
+  struct CompletionOutcome: Sendable {
+    let status: Int
+    let contentType: String
+    let body: Data
+    let cachedSession: CachedSession?
   }
 
   struct CompletionRequest: Sendable {
-    let requestedModel: String
-    let stream: Bool
-    let enableThinking: Bool
-    let thinkingBudget: Int
-    let temperature: Float
-    let topP: Float
-    let topK: Int
-    let seed: Int
-    let useMTP: Bool
-    let requestedMax: Int
+    let requestedModel, toolsSignature: String
+    let stream, enableThinking, useMTP, hasResponseFormat, isHelper: Bool
+    let thinkingBudget, topK, seed, requestedMax: Int
+    let temperature, topP: Float
     let stopStrings: [String]
     let rawToolsJSON: String?
-    let hasResponseFormat: Bool
     let prefixData: Data
   }
 
   struct PreparedTurn {
     let request: CompletionRequest
+    let sessionConfig: ServeSessionConfig
+    let incomingMessages: [ServeMessage]
     let conversation: Conversation
     let lastMessage: LiteRTLM.Message
     let responseFormat: ResponseFormat?
-    let promptTokens: Int
-    let cappedOutput: Int
+    let promptTokens, cappedOutput: Int
+    let kvReused: Bool
+  }
+
+  static func healthObject(
+    modelID: String, allocatedPositions: Int, hasEmbedder: Bool, runtimeBuildID: String = EngineCache.runtimeBuildID
+  ) -> [String: Any] {
+    ["status": "ok", "model": modelID, "kv": allocatedPositions, "embeddings": hasEmbedder, "build": runtimeBuildID, "runtime_build": runtimeBuildID]
   }
 
   static func wantsStreaming(requestData: Data) -> Bool {
-    guard let body = (try? JSONSerialization.jsonObject(with: requestData)) as? [String: Any] else {
-      return false
+    ((try? JSONSerialization.jsonObject(with: requestData) as? [String: Any])?["stream"] as? Bool) ?? false
+  }
+
+  static func drainConversation(_ conversation: Conversation) async {
+    await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+      DispatchQueue.global(qos: .userInitiated).async {
+        _ = try? conversation.waitUntilDone()
+        cont.resume()
+      }
     }
-    return (body["stream"] as? Bool) ?? false
+  }
+
+  static func runTokenize(
+    engine: Engine, context: ExecutionContext, cachedSession: CachedSession?, requestData: Data
+  ) async -> (Int, Data) {
+    guard let body = (try? JSONSerialization.jsonObject(with: requestData)) as? [String: Any] else {
+      return errorResponse(status: 400, message: "Expected JSON object for /v1/tokenize.", type: "invalid_request_error")
+    }
+    if let text = (body["text"] as? String) ?? (body["prompt"] as? String) {
+      do {
+        return tokenizeSuccessResponse(
+          tokens: try await engine.countTokens(text), allocatedPositions: context.allocatedPositions)
+      } catch { return errorResponse(status: 500, message: "Tokenize failed: \(error)") }
+    }
+    guard let rawMessages = body["messages"] as? [[String: Any]], !rawMessages.isEmpty else {
+      return errorResponse(status: 400, message: "Expected 'text' string or non-empty 'messages' array.", type: "invalid_request_error")
+    }
+    do {
+      let count = try await countConversationTokens(
+        engine: engine, body: body, rawMessages: rawMessages, context: context, cachedSession: cachedSession)
+      return tokenizeSuccessResponse(tokens: count, allocatedPositions: context.allocatedPositions)
+    } catch { return errorResponse(status: 500, message: "Message tokenize failed: \(error)") }
+  }
+
+  static func tokenizeSuccessResponse(tokens: Int, allocatedPositions: Int) -> (Int, Data) {
+    (200, (try? JSONSerialization.data(withJSONObject: ["tokens": max(0, tokens), "allocated_positions": allocatedPositions])) ?? Data("{}".utf8))
   }
 
   static func runCompletion(
-    engine: Engine, context: ExecutionContext, requestData: Data
-  ) async -> (Int, String, Data) {
+    engine: Engine, context: ExecutionContext, cachedSession: CachedSession?, requestData: Data
+  ) async -> CompletionOutcome {
     let prepared: PreparedTurn
-    switch await prepareTurn(engine: engine, context: context, requestData: requestData) {
+    switch await prepareTurn(engine: engine, context: context, cachedSession: cachedSession, requestData: requestData) {
     case .success(let turn): prepared = turn
-    case .failure(let err): return (err.status, "application/json", err.data)
+    case .failure(let err): return .init(status: err.status, contentType: "application/json", body: err.rowData, cachedSession: err.retainedSession)
     }
-
     do {
       let started = ContinuousClock.now
       let reply = try await prepared.conversation.sendMessage(
-        prepared.lastMessage,
-        maxOutputTokens: prepared.cappedOutput,
-        thinkingConfig: ThinkingConfig(
-          enableThinking: prepared.request.enableThinking,
-          thinkingTokenBudget: prepared.request.thinkingBudget),
-        responseFormat: prepared.responseFormat
-      )
+        prepared.lastMessage, maxOutputTokens: prepared.cappedOutput,
+        thinkingConfig: ThinkingConfig(enableThinking: prepared.request.enableThinking, thinkingTokenBudget: prepared.request.thinkingBudget),
+        responseFormat: prepared.responseFormat)
       let elapsed = (ContinuousClock.now - started) / .seconds(1)
       let totalKV = (try? prepared.conversation.getTokenCount()) ?? prepared.promptTokens
       let completionTokens = max(1, totalKV - prepared.promptTokens)
-
+      let (_, matchedStop) = applyStopStrings(reply.toString, stopStrings: prepared.request.stopStrings)
       let envelope = buildEnvelope(
-        reply: reply,
-        request: prepared.request,
-        context: context,
-        counts: (
-          prompt: prepared.promptTokens, completion: completionTokens, cap: prepared.cappedOutput
-        )
-      )
-      logTurn(context: context, envelope: envelope, prepared: prepared, out: completionTokens, elapsed: elapsed)
-      return serializeResponse(envelope: envelope)
+        reply: reply, request: prepared.request, context: context,
+        counts: (prompt: prepared.promptTokens, completion: completionTokens, cap: prepared.cappedOutput))
+      let nextCached = updatedSessionAfterCompletion(
+        prepared: prepared, previousCached: cachedSession,
+        reply: .init(
+          text: (envelope.message["content"] as? String) ?? "", toolCalls: reply.toolCalls,
+          requestIndex: context.requestIndex, invalidatedByStop: matchedStop != nil))
+      logCompletion(context: context, envelope: envelope, prepared: prepared, out: completionTokens, elapsed: elapsed)
+      let (s, ct, d) = serializeCompletionResponse(envelope: envelope, kvReused: prepared.kvReused)
+      return CompletionOutcome(status: s, contentType: ct, body: d, cachedSession: nextCached)
     } catch {
       note("[#\(context.requestIndex)] error: \(error)")
+      try? prepared.conversation.cancel()
+      await drainConversation(prepared.conversation)
+      let retained = restoreHelperSession(isHelper: prepared.request.isHelper, previous: cachedSession)
       let (s, d) = errorResponse(status: 500, message: "Inference failed: \(error)")
-      return (s, "application/json", d)
+      return CompletionOutcome(status: s, contentType: "application/json", body: d, cachedSession: retained)
     }
   }
 
   static func runStreamingCompletion(
-    engine: Engine, context: ExecutionContext, requestData: Data, fd: Int32
-  ) async {
+    engine: Engine, context: ExecutionContext, cachedSession: CachedSession?, requestData: Data, fd: Int32
+  ) async -> CachedSession? {
     let prepared: PreparedTurn
-    switch await prepareTurn(engine: engine, context: context, requestData: requestData) {
+    switch await prepareTurn(engine: engine, context: context, cachedSession: cachedSession, requestData: requestData) {
     case .success(let turn): prepared = turn
     case .failure(let err):
-      Serve.writeRaw(fd, status: err.status, contentType: "application/json", body: err.data)
-      return
+      Serve.writeRaw(fd, status: err.status, contentType: "application/json", body: err.rowData)
+      return err.retainedSession
     }
+    guard Serve.writeSSEHeaders(fd) else {
+      try? prepared.conversation.cancel()
+      await drainConversation(prepared.conversation)
+      return restoreHelperSession(isHelper: prepared.request.isHelper, previous: cachedSession)
+    }
+    return await streamPreparedTurn(prepared: prepared, context: context, previousCached: cachedSession, fd: fd)
+  }
 
-    let id = "chatcmpl-agello-\(context.requestIndex)"
-    let created = Int(Date().timeIntervalSince1970)
-    let model = prepared.request.requestedModel
-    guard Serve.writeSSEHeaders(fd) else { return }
+  @discardableResult
+  static func writeSSEErrorAndHalt(fd: Int32, message: String, type: String = "server_error") -> Bool {
+    Serve.writeSSEObject(fd, ["error": ["message": message, "type": type]])
+  }
+}
 
+// MARK: - Streaming & turn preparation
+
+extension ServeProtocol {
+  fileprivate struct ReplySummary {
+    let text: String
+    let toolCalls: [LiteRTLM.ToolCall]
+    let requestIndex: Int
+    let invalidatedByStop: Bool
+  }
+
+  fileprivate struct StreamRunOutcome {
+    var assistantText = ""
+    var toolCalls: [LiteRTLM.ToolCall] = []
+    var disconnected = false, stoppedBySequence = false, streamFailed = false
+  }
+
+  fileprivate struct StreamFrameMeta {
+    let id, model: String
+    let created: Int
+    var elapsed: Double = 0
+  }
+
+  fileprivate struct PrepareError: Error {
+    let status: Int
+    let rowData: Data
+    let retainedSession: CachedSession?
+  }
+
+  fileprivate static func countConversationTokens(
+    engine: Engine, body: [String: Any], rawMessages: [[String: Any]], context: ExecutionContext, cachedSession: CachedSession?
+  ) async throws -> Int {
+    let (prefix, lastRawBatch, toolNameByID) = ServeMessages.splitMessages(rawMessages)
+    var syntheticBody = body
+    if let thinking = body["thinking"] as? Bool, body["enable_thinking"] == nil { syntheticBody["enable_thinking"] = thinking }
+    let req = parseRequest(body: syntheticBody, prefix: prefix, options: context.options)
+    let candidate = (config: makeSessionConfig(request: req, rawMessages: rawMessages), messages: ServeMessages.canonicalize(rawMessages))
+    if let warm = try? await measureWarmDelta(engine: engine, cachedSession: cachedSession, candidate: candidate, budget: context.visualTokenBudget) {
+      return warm.promptTokens
+    }
+    defer { if let cached = cachedSession { _ = try? cached.conversation.getTokenCount() } }
+    if lastRawBatch.isEmpty {
+      let tempConv = try await createConversation(engine: engine, request: req, visualTokenBudget: context.visualTokenBudget)
+      let media = ServeMessages.estimateMediaTokens(rawMessages, visualTokenBudget: context.visualTokenBudget)
+      return (try await engine.countTokens(try tempConv.renderPrefaceIntoString())) + 1 + media
+    }
+    return try await buildColdConversation(
+      engine: engine, request: req, budget: context.visualTokenBudget,
+      split: (prefix: prefix, lastBatch: lastRawBatch, toolNames: toolNameByID)).promptTokens
+  }
+
+  private static func measureWarmDelta(
+    engine: Engine, cachedSession: CachedSession?,
+    candidate: (config: ServeSessionConfig, messages: [ServeMessage]), budget: Int32
+  ) async throws -> (conversation: Conversation, deltaMsg: LiteRTLM.Message, promptTokens: Int)? {
+    guard let cached = cachedSession,
+      case .reuse(let delta) = ServeMessages.matchPrefix(
+        cachedMessages: cached.messages, cachedConfig: cached.config,
+        incomingMessages: candidate.messages, incomingConfig: candidate.config)
+    else { return nil }
+    let cachedKV = try cached.conversation.getTokenCount()
+    guard cachedKV > 0 else { return nil }
+    let (deltaMsg, deltaMedia) = ServeMessages.buildDeltaMessage(delta, visualTokenBudget: budget)
+    let rendered = try cached.conversation.renderMessageIntoString(deltaMsg)
+    return (cached.conversation, deltaMsg, cachedKV + (try await engine.countTokens(rendered)) + deltaMedia)
+  }
+
+  private static func buildColdConversation(
+    engine: Engine, request: CompletionRequest, budget: Int32,
+    split: (prefix: [[String: Any]], lastBatch: [[String: Any]], toolNames: [String: String])
+  ) async throws -> (conversation: Conversation, lastMessage: LiteRTLM.Message, promptTokens: Int) {
+    let conversation = try await createConversation(engine: engine, request: request, visualTokenBudget: budget)
+    let (lastMessage, lastMedia) = ServeMessages.buildFinalMessage(
+      split.lastBatch, toolNameByID: split.toolNames, visualTokenBudget: budget)
+    let prefixMedia = ServeMessages.estimateMediaTokens(split.prefix, visualTokenBudget: budget)
+    let rendered = try conversation.renderMessageIntoString(lastMessage)
+    return (conversation, lastMessage, (try await engine.countTokens(rendered)) + 1 + prefixMedia + lastMedia)
+  }
+
+  fileprivate static func streamPreparedTurn(
+    prepared: PreparedTurn, context: ExecutionContext, previousCached: CachedSession?, fd: Int32
+  ) async -> CachedSession? {
     let started = ContinuousClock.now
-    var collectedToolCalls: [LiteRTLM.ToolCall] = []
-    var clientDisconnected = false
+    var meta = StreamFrameMeta(
+      id: "chatcmpl-agello-\(context.requestIndex)", model: prepared.request.requestedModel,
+      created: Int(Date().timeIntervalSince1970))
+    let run = await consumeNativeStream(prepared: prepared, context: context, meta: meta, fd: fd)
+    if run.streamFailed || run.disconnected {
+      await drainConversation(prepared.conversation)
+      if run.disconnected { note("[#\(context.requestIndex)] stream cancelled by client") }
+      return restoreHelperSession(isHelper: prepared.request.isHelper, previous: previousCached)
+    }
+    if run.stoppedBySequence { await drainConversation(prepared.conversation) }
+    meta.elapsed = (ContinuousClock.now - started) / .seconds(1)
+    emitStreamCompletionFrames(prepared: prepared, context: context, run: run, meta: meta, fd: fd)
+    return updatedSessionAfterCompletion(
+      prepared: prepared, previousCached: previousCached,
+      reply: .init(
+        text: run.assistantText, toolCalls: run.toolCalls,
+        requestIndex: context.requestIndex, invalidatedByStop: run.stoppedBySequence))
+  }
 
+  private static func consumeNativeStream(
+    prepared: PreparedTurn, context: ExecutionContext, meta: StreamFrameMeta, fd: Int32
+  ) async -> StreamRunOutcome {
+    var outcome = StreamRunOutcome()
+    var stopFilter = StreamingStopFilter(stopStrings: prepared.request.stopStrings)
+    func emit(_ delta: [String: Any]) -> Bool {
+      Serve.writeSSEObject(
+        fd,
+        [
+          "id": meta.id, "object": "chat.completion.chunk", "created": meta.created,
+          "model": meta.model, "choices": [["index": 0, "delta": delta, "finish_reason": NSNull()]],
+        ])
+    }
     do {
       let stream = prepared.conversation.sendMessageStream(
-        prepared.lastMessage,
-        maxOutputTokens: prepared.cappedOutput,
-        thinkingConfig: ThinkingConfig(
-          enableThinking: prepared.request.enableThinking,
-          thinkingTokenBudget: prepared.request.thinkingBudget),
-        responseFormat: prepared.responseFormat
-      )
+        prepared.lastMessage, maxOutputTokens: prepared.cappedOutput,
+        thinkingConfig: ThinkingConfig(enableThinking: prepared.request.enableThinking, thinkingTokenBudget: prepared.request.thinkingBudget),
+        responseFormat: prepared.responseFormat)
       for try await chunk in stream {
-        if !chunk.toolCalls.isEmpty { collectedToolCalls.append(contentsOf: chunk.toolCalls) }
-        guard let delta = makeStreamDelta(chunk: chunk, enableThinking: prepared.request.enableThinking)
-        else { continue }
-        let frame: [String: Any] = [
-          "id": id, "object": "chat.completion.chunk", "created": created, "model": model,
-          "choices": [["index": 0, "delta": delta, "finish_reason": NSNull()]],
-        ]
-        if !Serve.writeSSEObject(fd, frame) {
-          clientDisconnected = true
+        if !chunk.toolCalls.isEmpty { outcome.toolCalls.append(contentsOf: chunk.toolCalls) }
+        guard let rawDelta = makeStreamDelta(chunk: chunk, enableThinking: prepared.request.enableThinking) else { continue }
+        let step = filterChunkDelta(rawDelta, stopFilter: &stopFilter, textOut: &outcome.assistantText)
+        if !step.delta.isEmpty, !emit(step.delta) {
+          outcome.disconnected = true
           try? prepared.conversation.cancel()
-          break
+          return outcome
+        }
+        if step.stopped {
+          outcome.stoppedBySequence = true
+          try? prepared.conversation.cancel()
+          return outcome
+        }
+      }
+      let trailing = stopFilter.flush()
+      if !trailing.isEmpty {
+        outcome.assistantText += trailing
+        if !emit(["content": trailing]) {
+          outcome.disconnected = true
+          try? prepared.conversation.cancel()
         }
       }
     } catch {
-      if !clientDisconnected {
+      outcome.streamFailed = true
+      if !outcome.disconnected {
         note("[#\(context.requestIndex)] stream error: \(error)")
-        _ = Serve.writeSSEObject(fd, ["error": ["message": "\(error)", "type": "server_error"]])
+        _ = writeSSEErrorAndHalt(fd: fd, message: "\(error)")
       }
+      try? prepared.conversation.cancel()
     }
+    return outcome
+  }
 
-    guard !clientDisconnected else {
-      note("[#\(context.requestIndex)] stream cancelled by client")
-      return
+  private static func filterChunkDelta(
+    _ rawDelta: [String: Any], stopFilter: inout StreamingStopFilter, textOut: inout String
+  ) -> (delta: [String: Any], stopped: Bool) {
+    var outDelta: [String: Any] = [:]
+    if let reasoning = rawDelta["reasoning"] as? String, !reasoning.isEmpty {
+      outDelta["reasoning"] = reasoning
+      outDelta["reasoning_content"] = reasoning
     }
+    guard let content = rawDelta["content"] as? String, !content.isEmpty else { return (outDelta, false) }
+    let (safeContent, hitStop) = stopFilter.push(content)
+    if !safeContent.isEmpty {
+      textOut += safeContent
+      outDelta["content"] = safeContent
+    }
+    return (outDelta, hitStop)
+  }
 
-    let elapsed = (ContinuousClock.now - started) / .seconds(1)
+  private static func emitStreamCompletionFrames(
+    prepared: PreparedTurn, context: ExecutionContext, run: StreamRunOutcome, meta: StreamFrameMeta, fd: Int32
+  ) {
     let totalKV = (try? prepared.conversation.getTokenCount()) ?? prepared.promptTokens
-    let completionTokens = max(1, totalKV - prepared.promptTokens)
-
-    if !collectedToolCalls.isEmpty {
-      let calls = formatToolCalls(collectedToolCalls, requestIndex: context.requestIndex, includeIndex: true)
-      let toolFrame: [String: Any] = [
-        "id": id, "object": "chat.completion.chunk", "created": created, "model": model,
-        "choices": [["index": 0, "delta": ["tool_calls": calls], "finish_reason": NSNull()]],
-      ]
-      _ = Serve.writeSSEObject(fd, toolFrame)
+    let outTokens = max(1, totalKV - prepared.promptTokens)
+    if !run.toolCalls.isEmpty {
+      let calls = formatToolCalls(run.toolCalls, requestIndex: context.requestIndex, includeIndex: true)
+      _ = Serve.writeSSEObject(
+        fd,
+        [
+          "id": meta.id, "object": "chat.completion.chunk", "created": meta.created, "model": meta.model,
+          "choices": [["index": 0, "delta": ["tool_calls": calls], "finish_reason": NSNull()]],
+        ])
     }
-
-    let finishReason =
-      !collectedToolCalls.isEmpty
-      ? "tool_calls" : (completionTokens >= prepared.cappedOutput ? "length" : "stop")
-    let usage: [String: Any] = [
-      "prompt_tokens": prepared.promptTokens,
-      "completion_tokens": completionTokens,
-      "total_tokens": prepared.promptTokens + completionTokens,
-    ]
+    let finish = !run.toolCalls.isEmpty ? "tool_calls" : (!run.stoppedBySequence && outTokens >= prepared.cappedOutput ? "length" : "stop")
     let finalFrame: [String: Any] = [
-      "id": id, "object": "chat.completion.chunk", "created": created, "model": model,
-      "choices": [["index": 0, "delta": [:] as [String: Any], "finish_reason": finishReason]],
-      "usage": usage,
+      "id": meta.id, "object": "chat.completion.chunk", "created": meta.created, "model": meta.model,
+      "choices": [["index": 0, "delta": [:] as [String: Any], "finish_reason": finish]],
+      "usage": ["prompt_tokens": prepared.promptTokens, "completion_tokens": outTokens, "total_tokens": prepared.promptTokens + outTokens],
+      "kv_reused": prepared.kvReused,
     ]
     _ = Serve.writeSSEObject(fd, finalFrame)
     _ = Serve.writeBytes(fd, Data("data: [DONE]\n\n".utf8))
     note(
       String(
-        format: "[#%d] sse in=%d out=%d tools=%d think=%@ finish=%@ %.2fs",
-        context.requestIndex, prepared.promptTokens, completionTokens, collectedToolCalls.count,
-        prepared.request.enableThinking ? "on" : "off", finishReason, elapsed)
-    )
+        format: "[#%d] sse in=%d out=%d tools=%d think=%@ kv_reused=%@ finish=%@ %.2fs",
+        context.requestIndex, prepared.promptTokens, outTokens, run.toolCalls.count,
+        prepared.request.enableThinking ? "on" : "off", prepared.kvReused ? "true" : "false", finish, meta.elapsed))
   }
 
-  // MARK: - Preparation
-
-  private struct HTTPError: Error {
-    let status: Int
-    let data: Data
-  }
-
-  private static func prepareTurn(
-    engine: Engine, context: ExecutionContext, requestData: Data
-  ) async -> Result<PreparedTurn, HTTPError> {
+  fileprivate static func prepareTurn(
+    engine: Engine, context: ExecutionContext, cachedSession: CachedSession?, requestData: Data
+  ) async -> Result<PreparedTurn, PrepareError> {
     guard let body = (try? JSONSerialization.jsonObject(with: requestData)) as? [String: Any],
       let rawMessages = body["messages"] as? [[String: Any]], !rawMessages.isEmpty
     else {
-      let (s, d) = errorResponse(status: 400, message: "Request requires a non-empty 'messages' array.")
-      return .failure(HTTPError(status: s, data: d))
+      let (s, d) = errorResponse(status: 400, message: "Request requires a non-empty 'messages' array.", type: "invalid_request_error")
+      return .failure(PrepareError(status: s, rowData: d, retainedSession: cachedSession))
     }
-
     let (prefix, lastRawBatch, toolNameByID) = ServeMessages.splitMessages(rawMessages)
     guard !lastRawBatch.isEmpty else {
-      let (s, d) = errorResponse(status: 400, message: "No user or tool message to send.")
-      return .failure(HTTPError(status: s, data: d))
+      let (s, d) = errorResponse(status: 400, message: "No user or tool message to send.", type: "invalid_request_error")
+      return .failure(PrepareError(status: s, rowData: d, retainedSession: cachedSession))
     }
-
     let req = parseRequest(body: body, prefix: prefix, options: context.options)
-    let responseFormat = ServeMessages.parseResponseFormat(body["response_format"] as? [String: Any])
+    let candidate = (
+      req: req, config: makeSessionConfig(request: req, rawMessages: rawMessages),
+      messages: ServeMessages.canonicalize(rawMessages),
+      format: ServeMessages.parseResponseFormat(body["response_format"] as? [String: Any]))
+    if !req.isHelper {
+      do {
+        if let warm = try await measureWarmDelta(
+          engine: engine, cachedSession: cachedSession,
+          candidate: (config: candidate.config, messages: candidate.messages), budget: context.visualTokenBudget)
+        {
+          let room = context.allocatedPositions - warm.promptTokens - ContextBudget.safetyMargin
+          guard room > 0 else {
+            await drainConversation(warm.conversation)
+            let (s, d) = kvOverflowError(promptTokens: warm.promptTokens, limit: context.allocatedPositions)
+            return .failure(PrepareError(status: s, rowData: d, retainedSession: nil))
+          }
+          return .success(
+            PreparedTurn(
+              request: req, sessionConfig: candidate.config, incomingMessages: candidate.messages,
+              conversation: warm.conversation, lastMessage: warm.deltaMsg, responseFormat: candidate.format,
+              promptTokens: warm.promptTokens, cappedOutput: min(max(1, req.requestedMax), room), kvReused: true))
+        }
+      } catch { if let cached = cachedSession { await drainConversation(cached.conversation) } }
+      if let stale = cachedSession { await drainConversation(stale.conversation) }
+    }
+    return await prepareColdTurn(
+      engine: engine, context: context, cachedSession: cachedSession,
+      split: (prefix: prefix, lastBatch: lastRawBatch, toolNames: toolNameByID), candidate: candidate)
+  }
 
+  private static func prepareColdTurn(
+    engine: Engine, context: ExecutionContext, cachedSession: CachedSession?,
+    split: (prefix: [[String: Any]], lastBatch: [[String: Any]], toolNames: [String: String]),
+    candidate: (req: CompletionRequest, config: ServeSessionConfig, messages: [ServeMessage], format: ResponseFormat?)
+  ) async -> Result<PreparedTurn, PrepareError> {
     do {
-      let conversation = try await createConversation(
-        engine: engine, request: req, visualTokenBudget: context.visualTokenBudget)
-      let (lastMessage, lastMediaEstimate) = ServeMessages.buildFinalMessage(
-        lastRawBatch, toolNameByID: toolNameByID, visualTokenBudget: context.visualTokenBudget)
-      let prefixMediaEstimate = ServeMessages.estimateMediaTokens(
-        prefix, visualTokenBudget: context.visualTokenBudget)
-
-      let rendered = (try? conversation.renderMessageIntoString(lastMessage)) ?? ""
-      let renderedTokens =
-        (try? await engine.countTokens(rendered)) ?? ContextBudget.estimateTextTokens(rendered)
-      let promptTokens = renderedTokens + 1 + prefixMediaEstimate + lastMediaEstimate
-      let availableRoom = context.allocatedPositions - promptTokens - 64
-      guard availableRoom > 0 else {
-        let (s, d) = errorResponse(
-          status: 400,
-          message: "Prompt (\(promptTokens) tokens) exceeds KV window (\(context.allocatedPositions)).",
-          type: "invalid_request_error")
-        return .failure(HTTPError(status: s, data: d))
+      let cold = try await buildColdConversation(
+        engine: engine, request: candidate.req, budget: context.visualTokenBudget, split: split)
+      let room = context.allocatedPositions - cold.promptTokens - ContextBudget.safetyMargin
+      guard room > 0 else {
+        let retained = restoreHelperSession(isHelper: candidate.req.isHelper, previous: cachedSession)
+        let (s, d) = kvOverflowError(promptTokens: cold.promptTokens, limit: context.allocatedPositions)
+        return .failure(PrepareError(status: s, rowData: d, retainedSession: retained))
       }
       return .success(
         PreparedTurn(
-          request: req,
-          conversation: conversation,
-          lastMessage: lastMessage,
-          responseFormat: responseFormat,
-          promptTokens: promptTokens,
-          cappedOutput: min(max(1, req.requestedMax), availableRoom)
-        ))
+          request: candidate.req, sessionConfig: candidate.config, incomingMessages: candidate.messages,
+          conversation: cold.conversation, lastMessage: cold.lastMessage, responseFormat: candidate.format,
+          promptTokens: cold.promptTokens, cappedOutput: min(max(1, candidate.req.requestedMax), room), kvReused: false))
     } catch {
+      let retained = restoreHelperSession(isHelper: candidate.req.isHelper, previous: cachedSession)
       let (s, d) = errorResponse(status: 500, message: "Conversation setup failed: \(error)")
-      return .failure(HTTPError(status: s, data: d))
+      return .failure(PrepareError(status: s, rowData: d, retainedSession: retained))
     }
   }
 
-  private static func parseRequest(
-    body: [String: Any], prefix: [[String: Any]], options: Serve.Options
-  ) -> CompletionRequest {
-    let enableThinking = resolveThinking(body: body, defaultValue: options.thinkByDefault)
-    let temperature = Float(
-      (body["temperature"] as? Double)
-        ?? (body["temperature"] as? Int).map(Double.init)
-        ?? 0.0
-    )
-    let topP = Float((body["top_p"] as? Double) ?? (temperature <= 0 ? 1.0 : 0.95))
-    let topK = (body["top_k"] as? Int) ?? (temperature <= 0 ? 1 : 64)
-    let requestedMax =
-      (body["max_completion_tokens"] as? Int)
-      ?? (body["max_tokens"] as? Int)
-      ?? 4096
-
-    let rawToolsJSON: String?
-    if let rawTools = body["tools"] as? [[String: Any]], !rawTools.isEmpty,
-      let toolsData = try? JSONSerialization.data(withJSONObject: rawTools),
-      let toolsString = String(data: toolsData, encoding: .utf8)
-    {
-      rawToolsJSON = toolsString
-    } else {
-      rawToolsJSON = nil
-    }
-
-    let prefixData = (try? JSONSerialization.data(withJSONObject: prefix)) ?? Data("[]".utf8)
-    return CompletionRequest(
-      requestedModel: (body["model"] as? String) ?? options.modelID,
-      stream: (body["stream"] as? Bool) ?? false,
-      enableThinking: enableThinking,
-      thinkingBudget: enableThinking ? max(options.thinkingBudget, requestedMax) : 0,
-      temperature: temperature,
-      topP: topP,
-      topK: topK,
-      seed: (body["seed"] as? Int) ?? 0,
-      useMTP: options.allowMTP && temperature <= 0,
-      requestedMax: requestedMax,
-      stopStrings: parseStopStrings(body["stop"]),
-      rawToolsJSON: rawToolsJSON,
-      hasResponseFormat: ServeMessages.parseResponseFormat(body["response_format"] as? [String: Any])
-        != nil,
-      prefixData: prefixData
-    )
+  private static func kvOverflowError(promptTokens: Int, limit: Int) -> (Int, Data) {
+    errorResponse(status: 400, message: "Prompt (\(promptTokens) tokens) exceeds KV window (\(limit)).", type: "invalid_request_error")
   }
 
-  private static func resolveThinking(body: [String: Any], defaultValue: Bool) -> Bool {
-    if let kwargs = body["chat_template_kwargs"] as? [String: Any],
-      let flag = kwargs["enable_thinking"] as? Bool
-    {
-      return flag
-    }
-    if let flag = body["enable_thinking"] as? Bool { return flag }
-    if let effort = body["reasoning_effort"] as? String {
-      let lowered = effort.lowercased()
-      return lowered != "none" && lowered != "off"
-    }
-    return defaultValue
+  fileprivate static func updatedSessionAfterCompletion(
+    prepared: PreparedTurn, previousCached: CachedSession?, reply: ReplySummary
+  ) -> CachedSession? {
+    if prepared.request.isHelper { return restoreHelperSession(isHelper: true, previous: previousCached) }
+    guard !reply.invalidatedByStop else { return nil }
+    let assistantMsg = ServeMessages.assistantServeMessage(
+      text: reply.text, toolCalls: reply.toolCalls, requestIndex: reply.requestIndex)
+    return CachedSession(
+      conversation: prepared.conversation, config: prepared.sessionConfig, messages: prepared.incomingMessages + [assistantMsg])
   }
 
-  private static func parseStopStrings(_ raw: Any?) -> [String] {
-    if let single = raw as? String, !single.isEmpty { return [single] }
-    if let list = raw as? [String] { return list.filter { !$0.isEmpty } }
-    return []
+  fileprivate static func restoreHelperSession(isHelper: Bool, previous: CachedSession?) -> CachedSession? {
+    guard isHelper, let previous else { return nil }
+    _ = try? previous.conversation.getTokenCount()
+    return previous
   }
 
   private static func createConversation(
     engine: Engine, request: CompletionRequest, visualTokenBudget: Int32
   ) async throws -> Conversation {
-    let prefixMessages =
-      (try? JSONSerialization.jsonObject(with: request.prefixData)) as? [[String: Any]] ?? []
-    let (systemMessage, initialMessages) = ServeMessages.translatePrefix(
-      prefixMessages, visualTokenBudget: visualTokenBudget)
+    let prefixMessages = (try? JSONSerialization.jsonObject(with: request.prefixData)) as? [[String: Any]] ?? []
+    let (systemMessage, initialMessages) = ServeMessages.translatePrefix(prefixMessages, visualTokenBudget: visualTokenBudget)
     let sampler = try SamplerConfig(
-      topK: max(1, request.topK),
-      topP: min(max(request.topP, 0), 1),
-      temperature: max(0, request.temperature),
-      seed: request.seed
-    )
+      topK: max(1, request.topK), topP: min(max(request.topP, 0), 1),
+      temperature: max(0, request.temperature), seed: request.seed)
     let config = ConversationConfig(
-      systemMessage: systemMessage,
-      initialMessages: initialMessages,
-      tools: [],
-      samplerConfig: sampler,
-      thinkingConfig: ThinkingConfig(
-        enableThinking: request.enableThinking, thinkingTokenBudget: request.thinkingBudget),
-      automaticToolCalling: false,
-      enableResponseFormat: request.hasResponseFormat,
-      visualTokenBudget: visualTokenBudget,
-      enableSpeculativeDecoding: request.useMTP,
-      rawToolsJSON: request.rawToolsJSON
-    )
+      systemMessage: systemMessage, initialMessages: initialMessages, tools: [], samplerConfig: sampler,
+      thinkingConfig: ThinkingConfig(enableThinking: request.enableThinking, thinkingTokenBudget: request.thinkingBudget),
+      automaticToolCalling: false, enableResponseFormat: request.hasResponseFormat,
+      visualTokenBudget: visualTokenBudget, enableSpeculativeDecoding: request.useMTP, rawToolsJSON: request.rawToolsJSON)
     return try await engine.createConversation(with: config)
   }
 
-  static func errorResponse(
-    status: Int, message: String, type: String = "server_error"
-  ) -> (Int, Data) {
-    let payload: [String: Any] = ["error": ["message": message, "type": type]]
-    let data = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data("{}".utf8)
-    return (status, data)
+  fileprivate static func serializeCompletionResponse(envelope: CompletionEnvelope, kvReused: Bool) -> (Int, String, Data) {
+    let obj: [String: Any] = [
+      "id": envelope.id, "object": "chat.completion", "created": envelope.created, "model": envelope.model,
+      "choices": [["index": 0, "message": envelope.message, "finish_reason": envelope.finishReason]],
+      "usage": envelope.usage, "kv_reused": kvReused,
+    ]
+    return (200, "application/json", (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8))
+  }
+
+  fileprivate static func logCompletion(
+    context: ExecutionContext, envelope: CompletionEnvelope, prepared: PreparedTurn, out: Int, elapsed: Double
+  ) {
+    let toolCount = (envelope.message["tool_calls"] as? [[String: Any]])?.count ?? 0
+    note(
+      String(
+        format: "[#%d] in=%d out=%d tools=%d think=%@ kv_reused=%@ finish=%@ %.2fs",
+        context.requestIndex, prepared.promptTokens, out, toolCount,
+        prepared.request.enableThinking ? "on" : "off", prepared.kvReused ? "true" : "false", envelope.finishReason, elapsed))
   }
 }

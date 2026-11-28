@@ -1,6 +1,5 @@
 import Foundation
 import OSLog
-import Synchronization
 
 /// One reply's path through the app, for the autonomous harness (docs/HARNESS.md): the settings
 /// in effect, each step with its time and memory, why the reply ended, and the engine's
@@ -90,9 +89,9 @@ enum ReplyTrace {
     var ended = ContinuousClock.now
   }
 
-  private static let running = Mutex<Running?>(nil)
-  private static let finished = Mutex<Finished?>(nil)
-  private static let sampleTask = Mutex<Task<Void, Never>?>(nil)
+  private static let running = LockedBox<Running?>(nil)
+  private static let finished = LockedBox<Finished?>(nil)
+  private static let sampleTask = LockedBox<Task<Void, Never>?>(nil)
   /// The same steps as events in Instruments (Points of Interest).
   private static let signposter = OSSignposter(subsystem: "com.patricedery.agello", category: .pointsOfInterest)
 

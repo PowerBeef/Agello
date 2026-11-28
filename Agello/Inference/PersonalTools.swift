@@ -1,5 +1,4 @@
 import Foundation
-import Synchronization
 
 // MARK: - Opt-in personal tools settings
 
@@ -376,7 +375,7 @@ extension PersonalContextBackend {
 /// Tracks verified phone numbers and email addresses fetched from on-device Contacts during the
 /// current reply so `prepare_message` can deterministically flag unverified/external recipients.
 enum TurnContactRoster {
-  private static let verified = Mutex<Set<String>>([])
+  private static let verified = LockedBox<Set<String>>([])
 
   static func reset() {
     verified.withLock { $0.removeAll(keepingCapacity: true) }
@@ -443,7 +442,7 @@ enum TurnContactRoster {
 
 /// Active personal-context backend dispatcher (platform implementation or injected test backend).
 enum PersonalTools {
-  private static let overrideBackend = Mutex<(any PersonalContextBackend)?>(nil)
+  private static let overrideBackend = LockedBox<(any PersonalContextBackend)?>(nil)
 
   static func setTestBackend(_ backend: (any PersonalContextBackend)?) {
     overrideBackend.withLock { $0 = backend }
